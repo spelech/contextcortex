@@ -1,36 +1,42 @@
-# Architecture
+# Architecture: Notes & Code RAG MCP Server (v2.0.0)
 
-The Notes RAG MCP Server consists of several interoperating components designed to provide fast, local, and accurate semantic search over markdown notes, documentation, and codebase files.
+The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation.
 
-## Components
+## Core Components
 
-1. **FastAPI Web Server**
-   - Serves the `/admin` UI (HTML/JS) from the `www` directory.
-   - Exposes REST APIs (`/admin/api/*`) to manage source paths, fetch statistics, retrieve extracted top keywords, and manually trigger reindexing.
-   - Hosts Model Context Protocol (MCP) endpoints via Server-Sent Events (SSE) at `/sse` and POST message relay at `/messages`.
+### 1. AST Code & Documentation Parsing Engine (`chunker.py`)
+- **Tree-sitter AST Parser**: Extracts logical functions, methods, classes, and structs across Python, TypeScript/JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more.
+- **Contextual Markdown Chunker**: Chunks documentation files by header hierarchies (`#`, `##`, `###`) with breadcrumb enrichment.
+- **Line & Symbol Tracking**: Preserves exact start/end line numbers, symbol names, and signatures for instant navigation.
 
-2. **Model Context Protocol (MCP) Server**
-   - Implemented using the `mcp.server.Server` class (version `1.1.0`).
-   - Dynamically generates tool descriptions in `list_tools()` listing active indexed document titles, categories, and key concept topics.
-   - Exposes tools (`search_notes`, `trigger_reindex`, `index_status`), resources (`notes://catalog/summary`), and prompts (`search_infrastructure_docs`).
+### 2. Hybrid Embedding & Vector Engine (`embeddings.py`)
+- **Named Multi-Vectors**: Uses Qdrant collections configured with both **Dense** vectors (`BAAI/bge-small-en-v1.5`, 384 dimensions) and **Sparse BM25** vectors (`Qdrant/bm25` via FastEmbed).
+- **Reciprocal Rank Fusion (RRF)**: Merges conceptual dense vector similarity with exact keyword matching in a single query execution.
+- **In-Process ONNX**: Zero external API costs, running locally on CPU.
 
-3. **Indexing Engine**
-   - **Cache & Topic Database (SQLite)**: Tracks modification times (`indexed_files`), custom source paths (`indexed_paths`), system metadata (`system_metadata`), and document summaries/extracted topics (`file_summaries`).
-   - **Embedding Engine (FastEmbed / LiteLLM Fallback)**: Generates vector embeddings locally in-process using CPU-optimized ONNX models (`BAAI/bge-small-en-v1.5`, 384 dimensions). Fallback support for external OpenAI/LiteLLM endpoints.
-   - **Vector Database (Qdrant)**: Stores 384-dimensional vector points and JSON payloads for cosine-similarity retrieval. Automatically handles collection recreation on vector dimension changes.
-   - **Contextual Chunking**: Splits markdown contextually by headings (`#`), prepending document titles, section headers, and tags to chunk text before vector embedding.
-   - **Thread-Safe Concurrency**: Uses `concurrent.futures.ThreadPoolExecutor` for parallel file processing and a thread-safe `fastembed_lock` around in-process ONNX inference.
+### 3. Ephemeral Git Repository Ingestion (`git_manager.py`)
+- **Shallow Cloning**: Clones repositories with `git clone --depth 1 --branch <branch> --single-branch` into temporary storage.
+- **Commit SHA Tracking**: Records remote commit SHAs and supports `git ls-remote` checks to avoid redundant clones.
+- **Zero Disk Bloat**: Prunes cloned directories immediately after vector upserts.
+- **GitHub Permalinks**: Formats clickable GitHub line range links (`https://github.com/owner/repo/blob/<sha>/src/file.py#L10-L30`).
+- **Token Management**: Resolves tokens from per-repo overrides, internal SQLite database, or `GITHUB_TOKEN` environment variables, boosting rate limits to 5,000 req/hr.
 
-## Workflow
+### 4. Database & Symbol Index (`db.py`)
+- **SQLite Registry**:
+  - `git_repositories`: Registered remote Git repos, branches, and commit SHAs.
+  - `indexed_paths`: Monitored local directories and files.
+  - `ast_symbols`: Indexed symbol table (classes, functions, methods, line numbers) for instant `find_symbol` and `get_file_outline`.
+  - `indexed_files` & `file_summaries`: File metadata, mtime change detection, and topic tags.
+  - `system_metadata`: Key-value storage for tokens and timestamps.
 
-1. **Initialization**: The server starts up, initializes SQLite tables, verifies Qdrant collection dimensions against the active embedding model, and spawns a background thread for directory scanning.
-2. **Indexing**: 
-   - Files are crawled and checked against SQLite modification times (`mtime`).
-   - Changed or new files are parsed for frontmatter, headings, and key concepts, chunked with contextual breadcrumbs, embedded via FastEmbed, and bulk-upserted to Qdrant.
-   - Metadata and extracted keywords are cached in `file_summaries`.
-   - Deleted files are pruned from Qdrant and SQLite.
-3. **Serving Queries**:
-   - Client LLM calls `search_notes` with a query string.
-   - Query is embedded locally in ~5ms.
-   - Qdrant returns top matching chunks based on cosine similarity.
-   - Formatted text content is returned to the client LLM.
+### 5. Specialized MCP Agent Tools (`server.py`)
+- `search_code`: Hybrid semantic + BM25 search over code blocks with line numbers and GitHub links.
+- `search_docs`: Dedicated search across markdown notes and architecture runbooks.
+- `find_symbol`: Instant exact/fuzzy symbol lookup from AST index.
+- `get_file_outline`: File symbol hierarchy without full token context costs.
+- `list_repositories`: Summary of all indexed Git repos and local paths.
+- `sync_repository`: On-demand re-sync for a specific repo or all sources.
+- `index_status`: Global vector stats and GitHub rate limits.
+
+### 6. Modern Web Admin Dashboard (`www/`)
+- Multi-tab UI for Overview, Git Repositories, Local Paths, Live Search & RRF Inspector, and Settings.

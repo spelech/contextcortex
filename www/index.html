@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Notes RAG MCP Admin Dashboard</title>
+    <title>Notes & Code RAG MCP Admin</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -19,198 +19,330 @@
     <div class="dashboard-container">
         <header class="dashboard-header">
             <div class="header-logo">
-                <i class="fa-solid fa-folder-tree logo-icon"></i>
+                <i class="fa-solid fa-layer-group logo-icon"></i>
                 <div class="header-title">
-                    <h1>Notes RAG Source Config</h1>
-                    <span class="badge badge-primary">v1.3.0</span>
-
-
-
+                    <h1>Code & Docs RAG Server</h1>
+                    <span class="badge badge-primary">v2.0.0 Hybrid</span>
                 </div>
             </div>
             <div class="header-status">
                 <div class="status-item">
-                    <span class="label">RAG Engine Status</span>
+                    <span class="label">Engine State</span>
                     <span class="value" id="indexing-indicator"><span class="indicator online"></span> Idle</span>
                 </div>
                 <div class="status-item">
+                    <span class="label">GitHub API</span>
+                    <span class="value" id="rate-limit-indicator"><i class="fa-brands fa-github"></i> <span id="rate-limit-text">Checking...</span></span>
+                </div>
+                <div class="status-item">
                     <span class="label">Collection</span>
-                    <span class="value code" id="collection-indicator">notes_rag</span>
+                    <span class="value code" id="collection-indicator">notes_rag_v2</span>
                 </div>
             </div>
         </header>
 
+        <!-- Navigation Tabs -->
+        <nav class="dashboard-nav">
+            <button class="nav-tab active" onclick="switchTab('overview')"><i class="fa-solid fa-chart-pie"></i> Overview</button>
+            <button class="nav-tab" onclick="switchTab('git-repos')"><i class="fa-brands fa-github"></i> Git Repositories</button>
+            <button class="nav-tab" onclick="switchTab('local-paths')"><i class="fa-solid fa-folder-tree"></i> Local Paths</button>
+            <button class="nav-tab" onclick="switchTab('search-inspector')"><i class="fa-solid fa-magnifying-glass"></i> Search & Inspector</button>
+            <button class="nav-tab" onclick="switchTab('settings')"><i class="fa-solid fa-gear"></i> Settings</button>
+        </nav>
+
         <main class="dashboard-main">
-            <!-- Left Side: System Stats & Quick Actions -->
-            <section class="left-panel">
-                <div class="glass-card stats-card">
-                    <h2><i class="fa-solid fa-chart-pie"></i> RAG Stats</h2>
-                    <div class="stats-grid">
-                        <div class="stat-box">
-                            <span class="stat-number" id="stat-paths">0</span>
-                            <span class="stat-label">Indexed Paths</span>
+            <!-- TAB 1: OVERVIEW -->
+            <div id="tab-overview" class="tab-content active">
+                <div class="overview-grid">
+                    <div class="glass-card stat-metric">
+                        <div class="metric-icon"><i class="fa-brands fa-github"></i></div>
+                        <div class="metric-info">
+                            <span class="stat-number" id="stat-repos">0</span>
+                            <span class="stat-label">Git Repositories</span>
                         </div>
-                        <div class="stat-box">
+                    </div>
+                    <div class="glass-card stat-metric">
+                        <div class="metric-icon"><i class="fa-solid fa-code"></i></div>
+                        <div class="metric-info">
+                            <span class="stat-number" id="stat-symbols">0</span>
+                            <span class="stat-label">AST Code Symbols</span>
+                        </div>
+                    </div>
+                    <div class="glass-card stat-metric">
+                        <div class="metric-icon"><i class="fa-solid fa-file-code"></i></div>
+                        <div class="metric-info">
                             <span class="stat-number" id="stat-files">0</span>
-                            <span class="stat-label">Active Files</span>
+                            <span class="stat-label">Indexed Files</span>
                         </div>
-                        <div class="stat-box">
+                    </div>
+                    <div class="glass-card stat-metric">
+                        <div class="metric-icon"><i class="fa-solid fa-network-wired"></i></div>
+                        <div class="metric-info">
                             <span class="stat-number" id="stat-vectors">0</span>
-                            <span class="stat-label">Vector Chunks</span>
+                            <span class="stat-label">Hybrid Vectors</span>
                         </div>
                     </div>
-                    <div class="stats-footer" style="margin-top: 20px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.08); font-size: 0.85rem; color: rgba(255, 255, 255, 0.55); display: flex; justify-content: space-between; align-items: center;">
-                        <span><i class="fa-regular fa-clock" style="margin-right: 5px;"></i> Last Indexed:</span>
-                        <span id="stat-last-indexed" style="font-weight: 600; font-family: 'JetBrains Mono', monospace; color: rgba(255, 255, 255, 0.85);">Never</span>
-                    </div>
-                    <div class="stats-footer" style="margin-top: 8px; font-size: 0.8rem; color: rgba(255, 255, 255, 0.55); display: flex; justify-content: space-between; align-items: center;">
-                        <span><i class="fa-solid fa-microchip" style="margin-right: 5px;"></i> Model Engine:</span>
-                        <span id="stat-embedding-provider" style="font-weight: 600; font-family: 'JetBrains Mono', monospace; color: #2dd4bf;">Local ONNX</span>
-                    </div>
                 </div>
 
-                <div class="glass-card topics-card" style="margin-top: 20px;">
-                    <h2><i class="fa-solid fa-tags"></i> Extracted Topics & Key Concepts</h2>
-                    <div id="topics-tag-cloud" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">
-                        <span style="font-size: 0.85rem; color: rgba(255,255,255,0.4);">Scanning corpus...</span>
+                <div class="two-col-layout" style="margin-top: 20px;">
+                    <div class="glass-card">
+                        <h2><i class="fa-solid fa-server"></i> System & Embedding Specs</h2>
+                        <div class="specs-list">
+                            <div class="spec-row">
+                                <span>Dense Embedding Model:</span>
+                                <code id="spec-dense">bge-small-en-v1.5 (384d)</code>
+                            </div>
+                            <div class="spec-row">
+                                <span>Sparse BM25 Model:</span>
+                                <code id="spec-sparse">Qdrant/bm25 (FastEmbed)</code>
+                            </div>
+                            <div class="spec-row">
+                                <span>Retrieval Strategy:</span>
+                                <span class="badge badge-accent">Dense + BM25 Reciprocal Rank Fusion (RRF)</span>
+                            </div>
+                            <div class="spec-row">
+                                <span>AST Chunker:</span>
+                                <span>Tree-sitter AST (Classes, Functions, Methods)</span>
+                            </div>
+                            <div class="spec-row">
+                                <span>Last Global Index:</span>
+                                <span id="stat-last-indexed" class="code">Never</span>
+                            </div>
+                        </div>
+                        <div style="margin-top: 20px;">
+                            <button class="btn btn-primary" onclick="triggerReindex()" id="btn-reindex">
+                                <i class="fa-solid fa-arrows-rotate"></i> Reindex All Sources
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="glass-card">
+                        <h2><i class="fa-solid fa-tags"></i> Top Extracted Topics & Symbols</h2>
+                        <div id="topics-tag-cloud" class="tag-cloud">
+                            <span class="text-muted">Loading topics...</span>
+                        </div>
                     </div>
                 </div>
+            </div>
 
-
-                <div class="glass-card actions-card">
-                    <h2><i class="fa-solid fa-bolt"></i> Actions</h2>
-                    <div class="actions-buttons">
-                        <button class="btn btn-primary" onclick="triggerReindex()" id="btn-reindex">
-                            <i class="fa-solid fa-arrows-rotate"></i> Reindex Source Files
-                        </button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Right Side: Configured Paths -->
-            <section class="right-panel">
-                <div class="glass-card paths-card">
+            <!-- TAB 2: GIT REPOSITORIES -->
+            <div id="tab-git-repos" class="tab-content">
+                <div class="glass-card">
                     <div class="card-header-btn">
-                        <h2><i class="fa-solid fa-file-shield"></i> Configured Search Paths</h2>
-                        <button class="btn btn-primary" onclick="openAddModal()">
-                            <i class="fa-solid fa-plus"></i> Add Path
+                        <div>
+                            <h2><i class="fa-brands fa-github"></i> Registered Git Repositories</h2>
+                            <p class="text-muted" style="margin-top: 4px; font-size: 0.85rem;">Repositories are shallow-cloned, parsed into AST chunks, and immediately pruned from disk.</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="openAddRepoModal()">
+                            <i class="fa-solid fa-plus"></i> Add Repository
                         </button>
                     </div>
-                    
+
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Repo Alias</th>
+                                    <th>Git URL</th>
+                                    <th>Branch</th>
+                                    <th>Commit SHA</th>
+                                    <th>Status</th>
+                                    <th>Files</th>
+                                    <th>Last Synced</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="repos-list-body">
+                                <tr>
+                                    <td colspan="8" class="empty-state">No Git repositories registered. Click "Add Repository" to index a remote repo.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: LOCAL PATHS -->
+            <div id="tab-local-paths" class="tab-content">
+                <div class="glass-card">
+                    <div class="card-header-btn">
+                        <div>
+                            <h2><i class="fa-solid fa-folder-tree"></i> Monitored Local Paths</h2>
+                            <p class="text-muted" style="margin-top: 4px; font-size: 0.85rem;">Mounted documentation vaults and local workspaces scanned for changes.</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="openAddPathModal()">
+                            <i class="fa-solid fa-plus"></i> Add Local Path
+                        </button>
+                    </div>
+
                     <div class="table-container">
                         <table>
                             <thead>
                                 <tr>
                                     <th>Path</th>
+                                    <th>Repo Alias</th>
                                     <th>Type</th>
                                     <th>Recursive</th>
-                                    <th>Category Override</th>
-                                    <th>Status</th>
+                                    <th>Category</th>
+                                    <th>Enabled</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="paths-list-body">
                                 <tr>
-                                    <td colspan="6" class="empty-state">No source paths configured. Defaulting to vault directory scan.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                <div class="glass-card prompts-card" style="margin-top: 24px;">
-                    <div class="card-header-btn">
-                        <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Custom MCP Prompts</h2>
-                        <button class="btn btn-primary" onclick="openAddPromptModal()">
-                            <i class="fa-solid fa-plus"></i> Add Prompt
-                        </button>
-                    </div>
-                    
-                    <div class="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Prompt Name</th>
-                                    <th>Description</th>
-                                    <th>Template Preview</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="prompts-list-body">
-                                <tr>
-                                    <td colspan="4" class="empty-state">Loading custom MCP prompts...</td>
+                                    <td colspan="7" class="empty-state">No local search paths configured.</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
-            </section>
+            </div>
+
+            <!-- TAB 4: SEARCH & INSPECTOR -->
+            <div id="tab-search-inspector" class="tab-content">
+                <div class="glass-card">
+                    <h2><i class="fa-solid fa-magnifying-glass"></i> Live Hybrid Search Inspector</h2>
+                    <p class="text-muted" style="margin-top: 4px; font-size: 0.85rem;">Test RRF search results across code and documentation directly from the browser.</p>
+
+                    <form id="search-tester-form" onsubmit="runSearchTest(event)" style="margin-top: 16px;">
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 2;">
+                                <label>Search Query</label>
+                                <input type="text" id="test-query" required placeholder="e.g. JWT token authentication or chunk_markdown">
+                            </div>
+                            <div class="form-group">
+                                <label>Target Type</label>
+                                <select id="test-type">
+                                    <option value="code">Code Snippets & Symbols</option>
+                                    <option value="doc">Documentation & Notes</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Repo Filter (Optional)</label>
+                                <input type="text" id="test-repo" placeholder="All Repos">
+                            </div>
+                            <div class="form-group" style="align-self: flex-end;">
+                                <button type="submit" class="btn btn-primary" id="btn-run-search">
+                                    <i class="fa-solid fa-play"></i> Search
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div id="search-results-area" style="margin-top: 20px;">
+                        <div class="empty-state">Enter a query above to test hybrid retrieval.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 5: SETTINGS -->
+            <div id="tab-settings" class="tab-content">
+                <div class="glass-card" style="max-width: 700px;">
+                    <h2><i class="fa-solid fa-key"></i> GitHub Authentication & Rate Limits</h2>
+                    <p class="text-muted" style="margin-top: 4px; font-size: 0.85rem;">Providing a GitHub Personal Access Token increases API rate limits from 60 to 5,000 requests/hr and enables indexing private repositories.</p>
+
+                    <div class="form-group" style="margin-top: 20px;">
+                        <label>Active Token Source</label>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span id="settings-token-source" class="badge badge-accent">Checking...</span>
+                            <span id="settings-masked-token" class="code">••••••••</span>
+                        </div>
+                    </div>
+
+                    <form id="token-form" onsubmit="saveGitHubToken(event)" style="margin-top: 16px;">
+                        <div class="form-group">
+                            <label for="github-token-input">Update GitHub Token</label>
+                            <input type="password" id="github-token-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+                        </div>
+                        <div class="form-actions" style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button type="submit" class="btn btn-primary">Save Token to DB</button>
+                            <button type="button" class="btn btn-secondary" onclick="clearGitHubToken()">Clear Token</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </main>
 
         <footer class="dashboard-footer">
-            <p>WileyRiley Infrastructure &bull; Protected by TinyAuth Forward Auth &bull; 2026</p>
+            <p>Notes & Code RAG MCP &bull; High Precision Tree-sitter & Hybrid Qdrant &bull; 2026</p>
         </footer>
     </div>
 
-    <!-- Add Custom Prompt Modal -->
-    <div class="modal-backdrop" id="prompt-modal" style="display: none;">
-        <div class="glass-card modal-card" style="max-width: 600px;">
+    <!-- Add Git Repo Modal -->
+    <div class="modal-backdrop" id="repo-modal" style="display: none;">
+        <div class="glass-card modal-card">
             <div class="modal-header">
-                <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Add Custom MCP Prompt</h2>
-                <button class="btn-close" onclick="closePromptModal()">&times;</button>
+                <h2><i class="fa-brands fa-github"></i> Register Git Repository</h2>
+                <button class="btn-close" onclick="closeRepoModal()">&times;</button>
             </div>
             
-            <form id="prompt-form" onsubmit="savePrompt(event)">
+            <form id="repo-form" onsubmit="saveGitRepo(event)">
                 <div class="form-group">
-                    <label for="prompt-name">Prompt Name</label>
-                    <input type="text" id="prompt-name" required placeholder="e.g. search_security_audits">
+                    <label for="repo-alias">Repository Alias / Identifier</label>
+                    <input type="text" id="repo-alias" required placeholder="e.g. backend-api or notes-rag-mcp">
                 </div>
 
                 <div class="form-group">
-                    <label for="prompt-desc">Description</label>
-                    <input type="text" id="prompt-desc" required placeholder="Workflow to search security audit notes and compliance docs.">
+                    <label for="repo-url">Git Clone URL (HTTPS)</label>
+                    <input type="url" id="repo-url" required placeholder="https://github.com/owner/repository.git">
                 </div>
 
-                <div class="form-group">
-                    <label for="prompt-template">Prompt Message Template (Use {variable_name} placeholders)</label>
-                    <textarea id="prompt-template" rows="4" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 10px; border-radius: 6px; font-family: 'JetBrains Mono', monospace;" required placeholder="Please search the notes for security topic '{topic}' using search_notes and summarize compliance rules..."></textarea>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="repo-branch">Branch / Tag</label>
+                        <input type="text" id="repo-branch" value="main" placeholder="main">
+                    </div>
+                    <div class="form-group">
+                        <label for="repo-token">Per-Repo Auth Token (Optional)</label>
+                        <input type="password" id="repo-token" placeholder="Optional token override">
+                    </div>
                 </div>
 
-                <div class="form-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
-                    <button type="button" class="btn btn-secondary" onclick="closePromptModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Prompt</button>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeRepoModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btn-save-repo">Add & Start Sync</button>
                 </div>
             </form>
         </div>
     </div>
 
-
-    <!-- Add/Edit Path Modal -->
+    <!-- Add Local Path Modal -->
     <div class="modal-backdrop" id="path-modal" style="display: none;">
         <div class="glass-card modal-card">
             <div class="modal-header">
-                <h2 id="modal-title"><i class="fa-solid fa-folder-open"></i> Add RAG Search Path</h2>
-                <button class="btn-close" onclick="closeModal()">&times;</button>
+                <h2><i class="fa-solid fa-folder-open"></i> Add Monitored Local Path</h2>
+                <button class="btn-close" onclick="closePathModal()">&times;</button>
             </div>
             
-            <form id="path-form" onsubmit="savePath(event)">
-                <input type="hidden" id="path-id">
-                
+            <form id="path-form" onsubmit="saveLocalPath(event)">
                 <div class="form-group">
-                    <label>Selected Path</label>
+                    <label>Selected Directory / File</label>
                     <div class="path-input-row">
-                        <input type="text" id="selected-path" readonly required placeholder="Browse workspace directories below...">
+                        <input type="text" id="selected-path" readonly required placeholder="Browse workspace directories...">
                         <button type="button" class="btn btn-secondary" onclick="openBrowser()"><i class="fa-solid fa-magnifying-glass"></i> Browse</button>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
+                        <label for="path-repo-alias">Repo / Vault Alias</label>
+                        <input type="text" id="path-repo-alias" value="local" placeholder="local">
+                    </div>
+                    <div class="form-group">
+                        <label for="path-category">Category Override</label>
+                        <input type="text" id="path-category" placeholder="Optional category">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
                         <label for="path-type">Path Type</label>
-                        <select id="path-type" onchange="toggleRecursiveField()">
+                        <select id="path-type">
                             <option value="directory">Directory</option>
                             <option value="file">Single File</option>
                         </select>
                     </div>
-                    <div class="form-group" id="recursive-group">
+                    <div class="form-group">
                         <label for="path-recursive">Scan Subfolders</label>
                         <select id="path-recursive">
                             <option value="1">Yes (Recursive)</option>
@@ -219,30 +351,15 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="path-category">Category Override (Optional)</label>
-                    <input type="text" id="path-category" placeholder="Override metadata category tag (e.g. Infrastructure)">
-                </div>
-
-                <div class="form-row checkbox-row">
-                    <div class="checkbox-group">
-                        <label class="switch">
-                            <input type="checkbox" id="path-enabled" checked>
-                            <span class="slider"></span>
-                        </label>
-                        <span class="checkbox-label">Enable Indexing</span>
-                    </div>
-                </div>
-
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="button" class="btn btn-secondary" onclick="closePathModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Path</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Directory Browser Overlay Modal -->
+    <!-- Directory Browser Modal -->
     <div class="modal-backdrop" id="browser-modal" style="display: none; z-index: 1100;">
         <div class="glass-card modal-card browser-card">
             <div class="modal-header">
@@ -253,13 +370,10 @@
             <div class="browser-body">
                 <div class="browser-breadcrumbs">
                     <span class="label">Current:</span>
-                    <span class="code" id="current-browser-path">/containers</span>
+                    <span class="code" id="current-browser-path">/</span>
                 </div>
-                
                 <div class="browser-list-container">
-                    <ul class="browser-list" id="browser-list">
-                        <!-- Dynamic directory and file lists -->
-                    </ul>
+                    <ul class="browser-list" id="browser-list"></ul>
                 </div>
             </div>
 

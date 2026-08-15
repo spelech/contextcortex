@@ -2,8 +2,6 @@ import os
 import re
 import json
 import uuid
-import sqlite3
-import hashlib
 import logging
 import threading
 import asyncio
@@ -12,6 +10,7 @@ from contextlib import AsyncExitStack
 import concurrent.futures
 from collections import Counter
 from typing import Optional, List, Dict, Any
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,14 +20,38 @@ from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent, Resource, Prompt, PromptMessage, PromptArgument
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
-from openai import OpenAI
 import frontmatter
+
+from db import (
+    get_db_connection, init_db, get_metadata, set_metadata,
+    get_effective_github_token, get_token_source, CACHE_DB_PATH
+)
+from chunker import (
+    extract_symbols_and_chunks, chunk_markdown, detect_language, 
+    is_code_file, get_file_outline
+)
+from embeddings import (
+    get_dense_embedding, get_sparse_embedding, get_hybrid_embeddings,
+    get_hybrid_embeddings_batch, get_dense_dim, EMBEDDING_PROVIDER, 
+    DENSE_MODEL_NAME, SPARSE_MODEL_NAME
+)
+from git_manager import (
+    shallow_clone_repo, cleanup_repo_dir, get_remote_head_sha,
+    format_github_permalink, check_github_rate_limit, mask_token
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("notes-rag-mcp")
 
-# Active sessions and event loop tracking for list_changed notifications
+# Environment configurations
+QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "notes_rag_v2")
+VAULT_PATH = os.getenv("VAULT_PATH", "/docs")
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1500"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
+
+# Active MCP sessions and event loop
 active_sessions = set()
 main_event_loop = None
 
@@ -48,181 +71,65 @@ def trigger_list_changed_notification():
     if main_event_loop and main_event_loop.is_running():
         asyncio.run_coroutine_threadsafe(notify_list_changed(), main_event_loop)
 
-
-# Environment configurations
-QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
-EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local").lower()
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
-LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000/v1")
-LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "dummy")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "notes_rag")
-VAULT_PATH = os.getenv("VAULT_PATH", "/docs")
-CACHE_DB_PATH = os.getenv("CACHE_DB_PATH", "/app/data/index_cache.db")
-
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1500"))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
-
 # Thread locking and indexing status flag
 indexing_lock = threading.Lock()
 is_indexing = False
 
-# Initialize clients
+# Initialize database
+init_db(VAULT_PATH)
+
+# Initialize Qdrant Client
 logger.info(f"Connecting to Qdrant at {QDRANT_URL}")
 qdrant = QdrantClient(url=QDRANT_URL)
 
-fastembed_model = None
-fastembed_lock = threading.Lock()
-openai_client = None
-
-if EMBEDDING_PROVIDER == "local":
+def ensure_collection():
+    """Initializes or validates named multi-vector (Dense + Sparse) Qdrant collection."""
+    dim = get_dense_dim()
     try:
-        from fastembed import TextEmbedding
-        logger.info(f"Initializing FastEmbed local ONNX model: {EMBEDDING_MODEL}")
-        fastembed_model = TextEmbedding(model_name=EMBEDDING_MODEL)
-        logger.info("FastEmbed model initialized successfully.")
-    except Exception as fe_err:
-        logger.error(f"Failed to initialize FastEmbed model '{EMBEDDING_MODEL}': {fe_err}. Falling back to API.")
-        EMBEDDING_PROVIDER = "api"
-
-if EMBEDDING_PROVIDER == "api":
-    logger.info(f"Using OpenAI/LiteLLM API embeddings at {LITELLM_URL} model {EMBEDDING_MODEL}")
-    openai_client = OpenAI(base_url=LITELLM_URL, api_key=LITELLM_API_KEY)
-
-# Ensure data directory exists
-os.makedirs(os.path.dirname(CACHE_DB_PATH), exist_ok=True)
-
-# Cache database setup
-def get_db_connection():
-    conn = sqlite3.connect(CACHE_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_cache_db():
-    with get_db_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS indexed_files (
-                filepath TEXT PRIMARY KEY,
-                mtime REAL,
-                hash TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS indexed_paths (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                path TEXT UNIQUE,
-                type TEXT, -- "directory" or "file"
-                recursive INTEGER, -- 1 or 0
-                enabled INTEGER DEFAULT 1,
-                category TEXT, -- Optional override
-                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS system_metadata (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS file_summaries (
-                filepath TEXT PRIMARY KEY,
-                title TEXT,
-                folder TEXT,
-                category TEXT,
-                tags TEXT,
-                headings TEXT,
-                keywords TEXT,
-                mtime REAL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS custom_prompts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                description TEXT NOT NULL,
-                arguments_json TEXT,
-                template TEXT NOT NULL,
-                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-
-        # Seed default prompts if empty
-        try:
-            prompt_count = conn.execute("SELECT count(*) FROM custom_prompts").fetchone()[0]
-            if prompt_count == 0:
-                default_prompts = [
-                    (
-                        "search_infrastructure_docs",
-                        "Workflow to search system infrastructure documentation, container mappings, or network routes.",
-                        json.dumps([{"name": "topic", "description": "The specific infrastructure topic to search for (e.g. ports, caddy, authelia)", "required": True}]),
-                        "Please perform a search using the search_notes tool for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions."
-                    ),
-                    (
-                        "summarize_codebase_notes",
-                        "Workflow to summarize architecture notes and module documentation for a specific codebase area.",
-                        json.dumps([{"name": "area", "description": "Codebase feature area or component to summarize", "required": True}]),
-                        "Please search the notes for component '{area}' using search_notes and provide an architectural summary including key files, design patterns, and dependencies."
-                    )
-                ]
-                conn.executemany(
-                    "INSERT OR IGNORE INTO custom_prompts (name, description, arguments_json, template) VALUES (?, ?, ?, ?)",
-                    default_prompts
-                )
-                conn.commit()
-        except Exception as pe:
-            logger.error(f"Failed to seed default prompts: {pe}")
-
-
-        # Seed default vault path if the configuration database has /notes or is empty
-        try:
-            # Delete old '/notes' path if it exists to clean up
-            conn.execute("DELETE FROM indexed_paths WHERE path = '/notes'")
-            conn.commit()
+        if qdrant.collection_exists(COLLECTION_NAME):
+            info = qdrant.get_collection(COLLECTION_NAME)
+            vectors_config = info.config.params.vectors
+            sparse_config = info.config.params.sparse_vectors
             
-            count = conn.execute("SELECT count(*) FROM indexed_paths").fetchone()[0]
-            if count == 0:
-                logger.info(f"Seeding default vault path: {VAULT_PATH}")
-                conn.execute(
-                    "INSERT OR IGNORE INTO indexed_paths (path, type, recursive, enabled, category) VALUES (?, ?, ?, ?, ?)",
-                    (os.path.abspath(VAULT_PATH), "directory", 1, 1, "default")
-                )
-                conn.commit()
-        except Exception as se:
-            logger.error(f"Failed to seed default path: {se}")
+            needs_recreate = False
+            if not isinstance(vectors_config, dict) or "dense" not in vectors_config:
+                logger.warning("Existing collection uses legacy single-vector schema. Upgrading to Named Multi-Vectors (Dense + Sparse)...")
+                needs_recreate = True
+            elif sparse_config is None or "sparse" not in sparse_config:
+                logger.warning("Collection missing sparse vector index. Upgrading to Hybrid collection...")
+                needs_recreate = True
+            elif vectors_config["dense"].size != dim:
+                logger.warning(f"Dense vector dimension mismatch: expected {dim}, found {vectors_config['dense'].size}. Recreating...")
+                needs_recreate = True
+                
+            if needs_recreate:
+                qdrant.delete_collection(COLLECTION_NAME)
 
-init_cache_db()
-
-def set_metadata(key, value):
-    try:
-        with get_db_connection() as conn:
-            conn.execute("INSERT OR REPLACE INTO system_metadata (key, value) VALUES (?, ?)", (key, value))
-            conn.commit()
+        if not qdrant.collection_exists(COLLECTION_NAME):
+            logger.info(f"Creating Hybrid Qdrant collection: {COLLECTION_NAME} (Dense: {dim}d, Sparse: BM25)")
+            qdrant.create_collection(
+                collection_name=COLLECTION_NAME,
+                vectors_config={
+                    "dense": qmodels.VectorParams(size=dim, distance=qmodels.Distance.COSINE)
+                },
+                sparse_vectors_config={
+                    "sparse": qmodels.SparseVectorParams()
+                }
+            )
+            # Create payload indexes for fast filtering
+            qdrant.create_payload_index(COLLECTION_NAME, "repo", qmodels.PayloadSchemaType.KEYWORD)
+            qdrant.create_payload_index(COLLECTION_NAME, "doc_type", qmodels.PayloadSchemaType.KEYWORD)
+            qdrant.create_payload_index(COLLECTION_NAME, "language", qmodels.PayloadSchemaType.KEYWORD)
+            qdrant.create_payload_index(COLLECTION_NAME, "path", qmodels.PayloadSchemaType.KEYWORD)
+        else:
+            logger.info(f"Collection {COLLECTION_NAME} verified with Named Multi-Vectors.")
     except Exception as e:
-        logger.error(f"Failed to set metadata key {key}: {e}")
+        logger.error(f"Error initializing Qdrant collection: {e}")
 
-# Generate UUID deterministically
-def get_chunk_uuid(rel_path: str, index: int) -> str:
+def get_chunk_uuid(repo: str, rel_path: str, index: int) -> str:
     namespace = uuid.uuid5(uuid.NAMESPACE_DNS, "notes-rag-mcp.lan")
-    return str(uuid.uuid5(namespace, f"{rel_path}#{index}"))
+    return str(uuid.uuid5(namespace, f"{repo}:{rel_path}#{index}"))
 
-# Retrieve Embeddings
-def get_embedding(text: str) -> List[float]:
-    if EMBEDDING_PROVIDER == "local" and fastembed_model is not None:
-        with fastembed_lock:
-            embeddings = list(fastembed_model.embed([text]))
-            return embeddings[0].tolist()
-    else:
-        if openai_client is None:
-            raise RuntimeError("OpenAI client not initialized.")
-        response = openai_client.embeddings.create(
-            input=text,
-            model=EMBEDDING_MODEL
-        )
-        return response.data[0].embedding
-
-
-# Stopwords for keyword extraction
 STOPWORDS = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren't",
     "as", "at", "be", "because", "been", "before", "being", "below", "between", "both", "but", "by",
@@ -240,7 +147,7 @@ STOPWORDS = {
     "where", "where's", "which", "while", "who", "who's", "whom", "why", "why's", "with", "won't",
     "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", "your", "yours", "yourself",
     "yourselves", "true", "false", "none", "null", "file", "path", "type", "http", "https", "com",
-    "net", "org", "yaml", "json", "txt", "md", "root"
+    "net", "org", "yaml", "json", "txt", "md", "root", "self", "def", "class", "return", "import", "from"
 }
 
 def extract_keywords_from_text(content: str, title: str, headings: List[str], tags: List[str]) -> List[str]:
@@ -250,516 +157,561 @@ def extract_keywords_from_text(content: str, title: str, headings: List[str], ta
     counts = Counter(filtered)
     return [w for w, c in counts.most_common(25)]
 
-def get_dynamic_search_tool_description() -> str:
-    base_desc = "Perform semantic search across system documentation, notes, and codebase files."
+# Dynamic MCP Catalog Description
+def get_dynamic_catalog_description() -> str:
+    base_desc = "Hybrid semantic & code symbol search across registered repositories and documentation."
     try:
         with get_db_connection() as conn:
-            rows = conn.execute("SELECT title, category, tags, keywords FROM file_summaries").fetchall()
-            
-        if not rows:
-            return base_desc + " Search by natural language query, folder, tag, or category."
+            repos = [r["name"] for r in conn.execute("SELECT name FROM git_repositories WHERE status = 'synced'").fetchall()]
+            local_paths = [r["path"] for r in conn.execute("SELECT path FROM indexed_paths WHERE enabled = 1").fetchall()]
+            symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
+            files_count = conn.execute("SELECT count(*) FROM indexed_files").fetchone()[0]
 
-        all_titles = []
-        all_categories = set()
-        all_tags = set()
-        keyword_counts = {}
-
-        for r in rows:
-            t = r["title"]
-            if t and t not in all_titles:
-                all_titles.append(t)
-            if r["category"]:
-                all_categories.add(r["category"])
-            
-            try:
-                tags_list = json.loads(r["tags"]) if r["tags"] else []
-                for tag in tags_list:
-                    all_tags.add(tag)
-            except Exception:
-                pass
-
-            try:
-                kw_list = json.loads(r["keywords"]) if r["keywords"] else []
-                for kw in kw_list:
-                    keyword_counts[kw] = keyword_counts.get(kw, 0) + 1
-            except Exception:
-                pass
-
-        top_titles = [t for t in all_titles if not t.startswith(".")]
-        top_keywords = sorted(keyword_counts.keys(), key=lambda k: keyword_counts[k], reverse=True)[:25]
-        
         parts = [base_desc]
-        if top_titles:
-            parts.append(f"Indexed Documents: {', '.join(top_titles[:15])}.")
-        if all_categories or all_tags:
-            cats_tags = list(all_categories) + list(all_tags)
-            parts.append(f"Categories & Tags: {', '.join(cats_tags[:15])}.")
-        if top_keywords:
-            parts.append(f"Key Concepts & Topics: {', '.join(top_keywords[:25])}.")
-
+        if repos or local_paths:
+            all_sources = repos + [os.path.basename(p) for p in local_paths]
+            parts.append(f"Active Sources ({len(all_sources)}): {', '.join(all_sources[:10])}.")
+        if symbols_count > 0:
+            parts.append(f"Indexed Code Symbols: {symbols_count} across {files_count} files.")
         return " ".join(parts)
     except Exception as e:
-        logger.error(f"Error building dynamic tool description: {e}")
-        return base_desc + " Search by natural language query, folder, tag, or category."
+        logger.error(f"Error building dynamic description: {e}")
+        return base_desc
 
+# ----------------------------------------------------
+# FILE & REPOSITORY PROCESSORS
+# ----------------------------------------------------
 
-# Ensure collection exists in Qdrant
-def ensure_collection():
-    try:
-        # Fetch dimensions dynamically
-        logger.info("Determining embedding dimensions from model...")
-        sample_emb = get_embedding("test")
-        dim = len(sample_emb)
-        logger.info(f"Dimension identified as: {dim}")
-    except Exception as e:
-        logger.error(f"Failed to fetch sample embedding: {e}. Defaulting dimensions to 1536.")
-        dim = 1536
+def process_file_content(
+    filepath: str, 
+    rel_path: str, 
+    content: str, 
+    repo: str, 
+    doc_type: str, 
+    git_url: Optional[str] = None, 
+    commit_sha: Optional[str] = None,
+    category_override: Optional[str] = None
+) -> Tuple[List[qmodels.PointStruct], List[Dict[str, Any]], Tuple]:
+    """Processes a single file into hybrid vector points, AST symbols, and summary metadata."""
+    language = detect_language(filepath)
+    title = os.path.basename(filepath)
+    folder = os.path.dirname(rel_path) or "root"
+    category = category_override or folder
+    tags = []
+    meta = {}
 
-    try:
-        if qdrant.collection_exists(COLLECTION_NAME):
-            info = qdrant.get_collection(COLLECTION_NAME)
-            vectors_config = info.config.params.vectors
-            current_dim = None
-            if hasattr(vectors_config, "size"):
-                current_dim = vectors_config.size
-            elif isinstance(vectors_config, dict) and "size" in vectors_config:
-                current_dim = vectors_config["size"]
-            
-            if current_dim is not None and current_dim != dim:
-                logger.warning(f"Collection dimension mismatch: expected {dim}, found {current_dim}. Recreating collection...")
-                qdrant.delete_collection(COLLECTION_NAME)
+    points = []
+    ast_symbols = []
+    headings = []
 
-        if not qdrant.collection_exists(COLLECTION_NAME):
-            logger.info(f"Creating Qdrant collection: {COLLECTION_NAME}")
-            qdrant.create_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=qmodels.VectorParams(
-                    size=dim,
-                    distance=qmodels.Distance.COSINE
-                )
-            )
-        else:
-            logger.info(f"Collection {COLLECTION_NAME} already exists with correct dimensions.")
-    except Exception as e:
-        logger.error(f"Error checking/creating Qdrant collection: {e}")
-
-
-# Markdown Chunking Logic
-def split_by_length(text: str, heading: str, max_chars: int, overlap: int) -> List[Dict[str, str]]:
-    if len(text) <= max_chars:
-        return [{"heading": heading, "content": text}]
-    
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = min(start + max_chars, len(text))
-        chunk_text = text[start:end]
-        chunks.append({"heading": heading, "content": chunk_text})
-        start += max_chars - overlap
-        if start >= len(text) - overlap:
-            break
-    return chunks
-
-def chunk_markdown(text: str, max_chars: int = 1500, overlap: int = 200) -> List[Dict[str, str]]:
-    lines = text.split("\n")
-    chunks = []
-    current_heading = "Root"
-    current_section = []
-
-    heading_pattern = re.compile(r"^(#{1,6})\s+(.+)$")
-
-    for line in lines:
-        match = heading_pattern.match(line)
-        if match:
-            if current_section:
-                section_text = "\n".join(current_section)
-                chunks.extend(split_by_length(section_text, current_heading, max_chars, overlap))
-                current_section = []
-            current_heading = match.group(2).strip()
-            current_section.append(line)
-        else:
-            current_section.append(line)
-
-    if current_section:
-        section_text = "\n".join(current_section)
-        chunks.extend(split_by_length(section_text, current_heading, max_chars, overlap))
-
-    return chunks
-
-# Parallel file processor worker
-def process_file_worker(filepath: str, category_override: Optional[str]) -> tuple:
-    try:
-        mtime = os.path.getmtime(filepath)
-        
-        # Check cache database and verify Qdrant point existence
-        cache_valid = False
-        with get_db_connection() as conn:
-            row = conn.execute("SELECT mtime FROM indexed_files WHERE filepath = ?", (filepath,)).fetchone()
-            if row and abs(row["mtime"] - mtime) < 0.01:
-                # Double check that Qdrant actually has points for this path
-                try:
-                    scroll_res = qdrant.scroll(
-                        collection_name=COLLECTION_NAME,
-                        scroll_filter=qmodels.Filter(
-                            must=[
-                                qmodels.FieldCondition(
-                                    key="path",
-                                    match=qmodels.MatchValue(value=filepath)
-                                )
-                            ]
-                        ),
-                        limit=1,
-                        with_payload=False,
-                        with_vectors=False
-                    )
-                    if scroll_res and scroll_res[0]:
-                        cache_valid = True
-                except Exception as qe:
-                    logger.error(f"Error checking Qdrant for {filepath}: {qe}")
-                    
-        if cache_valid:
-            # Check if file_summaries table already has this file
-            with get_db_connection() as conn:
-                sum_row = conn.execute("SELECT filepath FROM file_summaries WHERE filepath = ?", (filepath,)).fetchone()
-            if sum_row:
-                return (filepath, mtime, [], "skipped", None)
-                
-            # If summary is missing, parse metadata quickly without generating embeddings
-            try:
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                    text_content = f.read()
-                meta = {}
-                content = text_content
-                if filepath.endswith((".md", ".txt")):
-                    try:
-                        post = frontmatter.loads(text_content)
-                        content = post.content
-                        meta = post.metadata or {}
-                    except Exception:
-                        pass
-                folder = os.path.basename(os.path.dirname(filepath)) or "root"
-                title = os.path.basename(filepath)
-                category = category_override or meta.get("category", folder)
-                tags = meta.get("tags", [])
-                if isinstance(tags, str):
-                    tags = [t.strip() for t in tags.split(",")]
-                elif not isinstance(tags, list):
-                    tags = []
-                chunks = chunk_markdown(content, max_chars=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
-                headings = [c["heading"] for c in chunks if c.get("heading") and c["heading"] != "Root"]
-                keywords = extract_keywords_from_text(content, title, headings, tags)
-                summary_tuple = (filepath, title, folder, category, json.dumps(tags), json.dumps(list(set(headings))), json.dumps(keywords), mtime)
-                return (filepath, mtime, [], "skipped", summary_tuple)
-            except Exception:
-                return (filepath, mtime, [], "skipped", None)
-            
-        logger.info(f"Indexing RAG file: {filepath}")
-        
-        # Read text content
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            text_content = f.read()
-            
-        meta = {}
-        content = text_content
-        
-        # Attempt to parse YAML frontmatter if it is markdown/txt
+    if doc_type == "doc":
         if filepath.endswith((".md", ".txt")):
             try:
-                post = frontmatter.loads(text_content)
+                post = frontmatter.loads(content)
                 content = post.content
                 meta = post.metadata or {}
+                if "category" in meta:
+                    category = meta["category"]
+                if "tags" in meta:
+                    raw_tags = meta["tags"]
+                    tags = [t.strip() for t in raw_tags.split(",")] if isinstance(raw_tags, str) else raw_tags
             except Exception:
                 pass
-                
-        folder = os.path.basename(os.path.dirname(filepath))
-        if not folder:
-            folder = "root"
-            
-        title = os.path.basename(filepath)
-        category = category_override or meta.get("category", folder)
-        tags = meta.get("tags", [])
-        if isinstance(tags, str):
-            tags = [t.strip() for t in tags.split(",")]
-        elif not isinstance(tags, list):
-            tags = []
-            
-        # Chunk and index
+        
         chunks = chunk_markdown(content, max_chars=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
-        headings = [c["heading"] for c in chunks if c.get("heading") and c["heading"] != "Root"]
+        valid_chunks = [c for c in chunks if c.get("content", "").strip()]
+        headings = [c["heading"] for c in valid_chunks if c.get("heading") and c["heading"] != "Root"]
         keywords = extract_keywords_from_text(content, title, headings, tags)
 
-        points = []
-        for idx, chunk in enumerate(chunks):
-            chunk_content = chunk["content"].strip()
-            if not chunk_content:
-                continue
-            
-            point_id = get_chunk_uuid(filepath, idx)
-            
-            # Contextual embedding input
-            contextual_embed_text = (
-                f"Document Title: {title}\n"
-                f"Folder: {folder}\n"
+        texts_to_embed = []
+        for chunk in valid_chunks:
+            texts_to_embed.append(
+                f"Repo: {repo}\n"
+                f"Document: {rel_path}\n"
                 f"Category: {category}\n"
-                f"Section Heading: {chunk['heading']}\n"
-                f"Tags: {', '.join(tags)}\n"
-                f"Content:\n{chunk_content}"
+                f"Heading: {chunk.get('heading', 'Root')}\n"
+                f"Content:\n{chunk['content'].strip()}"
             )
-            vector = get_embedding(contextual_embed_text)
-            
-            points.append(qmodels.PointStruct(
-                id=point_id,
-                vector=vector,
-                payload={
-                    "path": filepath,
-                    "folder": folder,
-                    "title": title,
-                    "category": category,
-                    "tags": tags,
-                    "heading": chunk["heading"],
-                    "content": chunk["content"]
-                }
-            ))
 
-        summary_tuple = (
-            filepath,
-            title,
-            folder,
-            category,
-            json.dumps(tags),
-            json.dumps(list(set(headings))),
-            json.dumps(keywords),
-            mtime
-        )
-        return (filepath, mtime, points, "indexed", summary_tuple)
-    except Exception as e:
-        logger.error(f"Failed to process file {filepath}: {e}")
-        return (filepath, None, [], "failed", None)
+        if texts_to_embed:
+            batch_vecs = get_hybrid_embeddings_batch(texts_to_embed)
+            for idx, chunk in enumerate(valid_chunks):
+                point_id = get_chunk_uuid(repo, rel_path, idx)
+                github_url = format_github_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"))
+                points.append(qmodels.PointStruct(
+                    id=point_id,
+                    vector=batch_vecs[idx],
+                    payload={
+                        "repo": repo,
+                        "doc_type": "doc",
+                        "path": filepath,
+                        "rel_path": rel_path,
+                        "title": title,
+                        "folder": folder,
+                        "category": category,
+                        "tags": tags,
+                        "heading": chunk.get("heading", "Root"),
+                        "start_line": chunk.get("start_line", 1),
+                        "end_line": chunk.get("end_line", 1),
+                        "github_url": github_url,
+                        "content": chunk["content"].strip()
+                    }
+                ))
 
-# Incremental Directory Indexing
-def run_indexing():
-    global is_indexing
-    if not indexing_lock.acquire(blocking=False):
-        logger.warning("Indexing already in progress. Skipping duplicate scan request.")
-        return False
-        
-    is_indexing = True
-    try:
-        logger.info("Starting incremental scan of custom RAG paths...")
-        ensure_collection()
-        
-        # Load custom configured paths
-        active_paths = []
-        with get_db_connection() as conn:
-            rows = conn.execute("SELECT path, type, recursive, category FROM indexed_paths WHERE enabled = 1").fetchall()
-            for r in rows:
-                active_paths.append({
-                    "path": r["path"],
-                    "type": r["type"],
-                    "recursive": bool(r["recursive"]),
-                    "category": r["category"]
-                })
-                
-        # Backwards compatibility fallback if nothing is configured
-        if not active_paths:
-            logger.info("No custom RAG paths configured in database. Scanning default notes vault: %s", VAULT_PATH)
+    else: # Code file
+        ast_result = extract_symbols_and_chunks(content, filepath, repo=repo, max_chunk_chars=CHUNK_SIZE)
+        chunks = ast_result["chunks"]
+        ast_symbols = ast_result["symbols"]
+        valid_chunks = [c for c in chunks if c.get("content", "").strip()]
+        headings = [s["name"] for s in ast_symbols]
+        keywords = extract_keywords_from_text(content, title, headings, [language])
+
+        texts_to_embed = []
+        for chunk in valid_chunks:
+            symbol_label = chunk.get("symbol") or title
+            texts_to_embed.append(
+                f"Repo: {repo}\n"
+                f"File: {rel_path}\n"
+                f"Language: {language}\n"
+                f"Symbol: {symbol_label}\n"
+                f"Lines: {chunk.get('start_line')}-{chunk.get('end_line')}\n"
+                f"Code:\n{chunk['content'].strip()}"
+            )
+
+        if texts_to_embed:
+            batch_vecs = get_hybrid_embeddings_batch(texts_to_embed)
+            for idx, chunk in enumerate(valid_chunks):
+                point_id = get_chunk_uuid(repo, rel_path, idx)
+                github_url = format_github_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"))
+                symbol_label = chunk.get("symbol") or title
+                points.append(qmodels.PointStruct(
+                    id=point_id,
+                    vector=batch_vecs[idx],
+                    payload={
+                        "repo": repo,
+                        "doc_type": "code",
+                        "language": language,
+                        "path": filepath,
+                        "rel_path": rel_path,
+                        "title": title,
+                        "folder": folder,
+                        "category": language,
+                        "symbol": symbol_label,
+                        "kind": chunk.get("kind", "code"),
+                        "start_line": chunk.get("start_line", 1),
+                        "end_line": chunk.get("end_line", 1),
+                        "github_url": github_url,
+                        "content": chunk["content"].strip()
+                    }
+                ))
+
+    mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
+    summary_tuple = (
+        filepath,
+        repo,
+        title,
+        folder,
+        category,
+        json.dumps(tags),
+        json.dumps(list(set(headings[:20]))),
+        json.dumps(keywords),
+        mtime
+    )
+
+    return points, ast_symbols, summary_tuple
+
+# ----------------------------------------------------
+# INCREMENTAL SCAN & SYNC ENGINE
+# ----------------------------------------------------
+
+def sync_local_paths():
+    """Scans and indexes mounted local paths and notes vaults."""
+    logger.info("Scanning local paths...")
+    active_paths = []
+    with get_db_connection() as conn:
+        rows = conn.execute("SELECT path, type, recursive, category, repo FROM indexed_paths WHERE enabled = 1").fetchall()
+        for r in rows:
             active_paths.append({
-                "path": VAULT_PATH,
-                "type": "directory",
-                "recursive": True,
-                "category": None
+                "path": r["path"],
+                "type": r["type"],
+                "recursive": bool(r["recursive"]),
+                "category": r["category"],
+                "repo": r["repo"] or "local"
             })
-            
-        found_files = {} # Maps absolute_filepath -> category_override
-        supported_extensions = (".md", ".txt", ".yaml", ".yml", ".conf", ".json", ".py", ".cs", ".sh", ".xml", ".csproj", ".html", ".css", ".js")
-        
-        for target in active_paths:
-            tpath = target["path"]
-            ttype = target["type"]
-            category_override = target["category"]
-            
-            if not os.path.exists(tpath):
-                logger.warning(f"Indexed path does not exist on disk, skipping: {tpath}")
-                continue
-                
-            if ttype == "file":
-                if tpath.endswith(supported_extensions):
-                    found_files[os.path.abspath(tpath)] = category_override
-            else: # directory
-                recursive = target["recursive"]
-                if recursive:
-                    for root, dirs, files in os.walk(tpath):
-                        # Skip hidden directories in-place (e.g. .obsidian, .git, .trash)
-                        dirs[:] = [d for d in dirs if not d.startswith(".")]
-                        for file in files:
-                            if file.startswith("."):
-                                continue
-                            if file.endswith(supported_extensions):
-                                full_path = os.path.abspath(os.path.join(root, file))
-                                found_files[full_path] = category_override
-                else:
-                    for entry in os.scandir(tpath):
-                        if entry.name.startswith("."):
-                            continue
-                        if entry.is_file() and entry.name.endswith(supported_extensions):
-                            full_path = os.path.abspath(entry.path)
-                            found_files[full_path] = category_override
 
-        indexed_count = 0
-        skipped_count = 0
-        failed_count = 0
+    if not active_paths and os.path.exists(VAULT_PATH):
+        active_paths.append({
+            "path": VAULT_PATH,
+            "type": "directory",
+            "recursive": True,
+            "category": "vault",
+            "repo": "vault"
+        })
 
-        all_new_points = []
-        files_to_update_cache = [] # List of (filepath, mtime)
-        summaries_to_update = [] # List of summary tuples
-        files_to_delete_from_qdrant = [] # List of filepath
+    found_files = {} # abs_path -> (repo, category, base_dir)
+    supported_extensions = (
+        ".md", ".txt", ".yaml", ".yml", ".json", ".py", ".js", ".jsx", 
+        ".ts", ".tsx", ".go", ".rs", ".cs", ".cpp", ".c", ".h", ".java", 
+        ".rb", ".php", ".sh", ".sql", ".html", ".css"
+    )
 
-        # Process files concurrently in a thread pool (max 8 workers)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {
-                executor.submit(process_file_worker, filepath, cat): filepath 
-                for filepath, cat in found_files.items()
-            }
-            for future in concurrent.futures.as_completed(futures):
-                filepath, mtime, points, status, summary_tuple = future.result()
-                if summary_tuple:
-                    summaries_to_update.append(summary_tuple)
-                    
-                if status == "skipped":
-                    skipped_count += 1
-                elif status == "failed":
-                    failed_count += 1
-                elif status == "indexed":
-                    indexed_count += 1
-                    files_to_delete_from_qdrant.append(filepath)
-                    if points:
-                        all_new_points.extend(points)
-                    files_to_update_cache.append((filepath, mtime))
+    for target in active_paths:
+        tpath = os.path.abspath(target["path"])
+        if not os.path.exists(tpath):
+            continue
 
-        # Perform deletions from Qdrant in batches
-        for filepath in files_to_delete_from_qdrant:
-            try:
-                qdrant.delete(
-                    collection_name=COLLECTION_NAME,
-                    points_selector=qmodels.Filter(
-                        must=[
-                            qmodels.FieldCondition(
-                                key="path",
-                                match=qmodels.MatchValue(value=filepath)
-                            )
-                        ]
-                    )
-                )
-            except Exception as e:
-                logger.error(f"Failed to delete old points for {filepath}: {e}")
+        if target["type"] == "file":
+            if tpath.endswith(supported_extensions):
+                found_files[tpath] = (target["repo"], target["category"], os.path.dirname(tpath))
+        else:
+            base_dir = tpath
+            if target["recursive"]:
+                for root, dirs, files in os.walk(tpath):
+                    dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "vendor", "__pycache__", "venv", ".git")]
+                    for file in files:
+                        if not file.startswith(".") and file.endswith(supported_extensions):
+                            full = os.path.abspath(os.path.join(root, file))
+                            found_files[full] = (target["repo"], target["category"], base_dir)
+            else:
+                for entry in os.scandir(tpath):
+                    if not entry.name.startswith(".") and entry.is_file() and entry.name.endswith(supported_extensions):
+                        found_files[os.path.abspath(entry.path)] = (target["repo"], target["category"], base_dir)
 
-        # Bulk upsert new points to Qdrant
-        if all_new_points:
-            logger.info(f"Upserting {len(all_new_points)} vector chunks in bulk to Qdrant...")
-            try:
-                qdrant.upsert(collection_name=COLLECTION_NAME, points=all_new_points)
-            except Exception as e:
-                logger.error(f"Failed to bulk upsert points to Qdrant: {e}")
+    all_points = []
+    all_symbols = []
+    all_summaries = []
+    files_to_update_cache = []
+    files_to_delete = []
 
-        # Batch update SQLite Cache in a single write transaction
+    for filepath, (repo, category, base_dir) in found_files.items():
         try:
+            mtime = os.path.getmtime(filepath)
             with get_db_connection() as conn:
-                if files_to_update_cache:
-                    conn.executemany(
-                        "INSERT OR REPLACE INTO indexed_files (filepath, mtime) VALUES (?, ?)",
-                        files_to_update_cache
-                    )
-                if summaries_to_update:
-                    conn.executemany(
-                        """INSERT OR REPLACE INTO file_summaries 
-                           (filepath, title, folder, category, tags, headings, keywords, mtime) 
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                        summaries_to_update
-                    )
+                cached = conn.execute("SELECT mtime FROM indexed_files WHERE filepath = ?", (filepath,)).fetchone()
+            
+            if cached and abs(cached["mtime"] - mtime) < 0.01:
+                continue # Cached & unchanged
+
+            rel_path = os.path.relpath(filepath, base_dir)
+            doc_type = "code" if is_code_file(filepath) else "doc"
+            lang = detect_language(filepath)
+
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+
+            points, symbols, summary_tuple = process_file_content(
+                filepath=filepath,
+                rel_path=rel_path,
+                content=content,
+                repo=repo,
+                doc_type=doc_type,
+                category_override=category
+            )
+
+            files_to_delete.append((filepath, repo))
+            all_points.extend(points)
+            all_symbols.extend(symbols)
+            all_summaries.append(summary_tuple)
+            files_to_update_cache.append((filepath, repo, doc_type, lang, None, mtime))
+        except Exception as e:
+            logger.error(f"Error processing local file {filepath}: {e}")
+
+    # Purge old points for modified files
+    for (fpath, repo) in files_to_delete:
+        try:
+            qdrant.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=fpath))
+                    ]
+                )
+            )
+            with get_db_connection() as conn:
+                conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
                 conn.commit()
         except Exception as e:
-            logger.error(f"Failed to write cache updates to SQLite: {e}")
+            logger.error(f"Failed to delete old points for {fpath}: {e}")
 
-        # Clean up deleted files from cache & Qdrant
-        deleted_count = 0
+    # Bulk upsert to Qdrant
+    if all_points:
+        logger.info(f"Upserting {len(all_points)} hybrid vector points to Qdrant...")
+        try:
+            qdrant.upsert(collection_name=COLLECTION_NAME, points=all_points)
+        except Exception as e:
+            logger.error(f"Failed to upsert points to Qdrant: {e}")
+
+    # Batch update SQLite tables
+    try:
         with get_db_connection() as conn:
-            all_cached = [row["filepath"] for row in conn.execute("SELECT filepath FROM indexed_files").fetchall()]
-            
-        for cached_path in all_cached:
-            if cached_path not in found_files:
-                logger.info(f"Removing deleted file from RAG index: {cached_path}")
-                try:
-                    qdrant.delete(
-                        collection_name=COLLECTION_NAME,
-                        points_selector=qmodels.Filter(
-                            must=[
-                                qmodels.FieldCondition(
-                                    key="path",
-                                    match=qmodels.MatchValue(value=cached_path)
-                                )
-                            ]
-                        )
-                    )
-                    with get_db_connection() as conn:
-                        conn.execute("DELETE FROM indexed_files WHERE filepath = ?", (cached_path,))
-                        conn.execute("DELETE FROM file_summaries WHERE filepath = ?", (cached_path,))
-                        conn.commit()
-                    deleted_count += 1
-                except Exception as e:
-                    logger.error(f"Failed to remove deleted file {cached_path} from Qdrant: {e}")
+            if files_to_update_cache:
+                conn.executemany(
+                    "INSERT OR REPLACE INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime) VALUES (?, ?, ?, ?, ?, ?)",
+                    files_to_update_cache
+                )
+            if all_summaries:
+                conn.executemany(
+                    "INSERT OR REPLACE INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    all_summaries
+                )
+            if all_symbols:
+                symbol_tuples = [
+                    (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
+                    for s in all_symbols
+                ]
+                conn.executemany(
+                    "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    symbol_tuples
+                )
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Failed writing local index updates to SQLite: {e}")
 
-        logger.info(f"Indexing completed. Indexed: {indexed_count}, Skipped: {skipped_count}, Deleted: {deleted_count}, Failed: {failed_count}")
+def sync_single_git_repo(repo_id: int):
+    """Ephemeral shallow clone, AST parse, hybrid vector upsert, and immediate disk cleanup."""
+    with get_db_connection() as conn:
+        repo_row = conn.execute("SELECT id, name, url, branch, commit_sha, auth_token FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+    if not repo_row:
+        return
+
+    repo_name = repo_row["name"]
+    git_url = repo_row["url"]
+    branch = repo_row["branch"] or "main"
+    per_repo_token = repo_row["auth_token"]
+    effective_token = get_effective_github_token(per_repo_token)
+
+    logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url})...")
+    remote_sha = get_remote_head_sha(git_url, branch, token=effective_token)
+    if remote_sha and repo_row["commit_sha"] == remote_sha:
+        logger.info(f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone.")
+        with get_db_connection() as conn:
+            conn.execute("UPDATE git_repositories SET status = 'synced', last_synced = CURRENT_TIMESTAMP WHERE id = ?", (repo_id,))
+            conn.commit()
+        return
+
+    # Update status to syncing
+    with get_db_connection() as conn:
+        conn.execute("UPDATE git_repositories SET status = 'syncing' WHERE id = ?", (repo_id,))
+        conn.commit()
+
+    temp_dir = None
+    try:
+        temp_dir, commit_sha, err = shallow_clone_repo(git_url, branch, token=effective_token, repo_id=str(repo_id))
+        if err or not temp_dir:
+            logger.error(f"Failed to clone repo '{repo_name}': {err}")
+            with get_db_connection() as conn:
+                conn.execute("UPDATE git_repositories SET status = 'error' WHERE id = ?", (repo_id,))
+                conn.commit()
+            return
+
+        supported_extensions = (
+            ".md", ".txt", ".yaml", ".yml", ".json", ".py", ".js", ".jsx", 
+            ".ts", ".tsx", ".go", ".rs", ".cs", ".cpp", ".c", ".h", ".java", 
+            ".rb", ".php", ".sh", ".sql", ".html", ".css"
+        )
+
+        all_points = []
+        all_symbols = []
+        all_summaries = []
+        indexed_files = []
+
+        for root, dirs, files in os.walk(temp_dir):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "vendor", "__pycache__", "venv", ".git", "dist", "build")]
+            for file in files:
+                if file.startswith(".") or not file.endswith(supported_extensions):
+                    continue
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, temp_dir)
+                doc_type = "code" if is_code_file(full_path) else "doc"
+                lang = detect_language(full_path)
+
+                try:
+                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+
+                    # Filepath recorded in DB is repo:rel_path
+                    db_filepath = f"{repo_name}://{rel_path}"
+
+                    points, symbols, summary_tuple = process_file_content(
+                        filepath=db_filepath,
+                        rel_path=rel_path,
+                        content=content,
+                        repo=repo_name,
+                        doc_type=doc_type,
+                        git_url=git_url,
+                        commit_sha=commit_sha
+                    )
+                    all_points.extend(points)
+                    all_symbols.extend(symbols)
+                    all_summaries.append(summary_tuple)
+                    indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0))
+                except Exception as fe:
+                    logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
+
+        # Purge previous vectors for this repo in Qdrant
+        try:
+            qdrant.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=qmodels.Filter(
+                    must=[
+                        qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo_name))
+                    ]
+                )
+            )
+        except Exception as qe:
+            logger.error(f"Error purging old vectors for repo '{repo_name}': {qe}")
+
+        # Bulk upsert new points to Qdrant
+        if all_points:
+            logger.info(f"Upserting {len(all_points)} vectors for repo '{repo_name}'...")
+            qdrant.upsert(collection_name=COLLECTION_NAME, points=all_points)
+
+        # Update SQLite
+        with get_db_connection() as conn:
+            conn.execute("DELETE FROM indexed_files WHERE repo = ?", (repo_name,))
+            conn.execute("DELETE FROM file_summaries WHERE repo = ?", (repo_name,))
+            conn.execute("DELETE FROM ast_symbols WHERE repo = ?", (repo_name,))
+
+            if indexed_files:
+                conn.executemany(
+                    "INSERT INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime) VALUES (?, ?, ?, ?, ?, ?)",
+                    indexed_files
+                )
+            if all_summaries:
+                conn.executemany(
+                    "INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    all_summaries
+                )
+            if all_symbols:
+                symbol_tuples = [
+                    (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
+                    for s in all_symbols
+                ]
+                conn.executemany(
+                    "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    symbol_tuples
+                )
+
+            conn.execute(
+                "UPDATE git_repositories SET status = 'synced', commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
+                (commit_sha, repo_id)
+            )
+            conn.commit()
+
+        logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Vectors: {len(all_points)}, Symbols: {len(all_symbols)}")
+
+    finally:
+        # Crucial: Ephemeral disk cleanup!
+        cleanup_repo_dir(temp_dir)
+
+def run_full_indexing():
+    global is_indexing
+    if not indexing_lock.acquire(blocking=False):
+        logger.warning("Indexing already running. Skipping duplicate call.")
+        return False
+    is_indexing = True
+    try:
+        ensure_collection()
+        sync_local_paths()
+        
+        # Sync all registered git repos
+        with get_db_connection() as conn:
+            git_repos = conn.execute("SELECT id FROM git_repositories WHERE enabled = 1").fetchall()
+        for gr in git_repos:
+            sync_single_git_repo(gr["id"])
+
         import datetime
-        last_indexed_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        set_metadata("last_indexed", last_indexed_time)
+        set_metadata("last_indexed", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         trigger_list_changed_notification()
         return True
     finally:
         is_indexing = False
         indexing_lock.release()
 
+# ----------------------------------------------------
+# MCP SERVER & SPECIALIZED TOOLS
+# ----------------------------------------------------
 
-
-# Initialize MCP server
-mcp_server = Server("notes-rag-mcp", version="1.3.0")
-
-
-
+mcp_server = Server("notes-rag-mcp", version="2.0.0")
 
 @mcp_server.list_tools()
 async def list_tools() -> List[Tool]:
-    dynamic_desc = get_dynamic_search_tool_description()
+    catalog_desc = get_dynamic_catalog_description()
     return [
         Tool(
-            name="search_notes",
-            description=dynamic_desc,
+            name="search_code",
+            description=f"Hybrid semantic and BM25 search over code functions, classes, and logic snippets with line numbers and GitHub links. {catalog_desc}",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The natural language query or question."},
-                    "folder": {"type": "string", "description": "Optional subdirectory to filter by (e.g. Infrastructure, Books)."},
-                    "tag": {"type": "string", "description": "Optional frontmatter tag to filter by."},
-                    "category": {"type": "string", "description": "Optional frontmatter category to filter by."},
-                    "limit": {"type": "integer", "description": "Max number of search results to return.", "default": 5}
+                    "query": {"type": "string", "description": "Natural language question or code concept (e.g. 'JWT token authentication handler')."},
+                    "repo": {"type": "string", "description": "Optional repository name/alias to filter by."},
+                    "language": {"type": "string", "description": "Optional language filter (e.g. 'python', 'typescript', 'go')."},
+                    "limit": {"type": "integer", "description": "Max number of code blocks to return (default 5).", "default": 5}
                 },
                 "required": ["query"]
             }
         ),
         Tool(
-            name="trigger_reindex",
-            description="Force an immediate directory scan to index new/updated markdown & documentation files.",
+            name="search_docs",
+            description=f"Hybrid search across system documentation, markdown notes, architectural decisions, and runbooks. {catalog_desc}",
             inputSchema={
                 "type": "object",
-                "properties": {}
+                "properties": {
+                    "query": {"type": "string", "description": "Search query or documentation topic."},
+                    "repo": {"type": "string", "description": "Optional repository/vault filter."},
+                    "category": {"type": "string", "description": "Optional category filter."},
+                    "tag": {"type": "string", "description": "Optional tag filter."},
+                    "limit": {"type": "integer", "description": "Max documents to return (default 5).", "default": 5}
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="find_symbol",
+            description="Instant exact or prefix symbol lookup (functions, classes, structs, interfaces) from AST index without broad token scans.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Symbol name (e.g. 'extract_symbols_and_chunks' or 'FastAPI')."},
+                    "repo": {"type": "string", "description": "Optional repository filter."},
+                    "exact": {"type": "boolean", "description": "If true, matches exact name. If false, prefix/fuzzy matches.", "default": True},
+                    "limit": {"type": "integer", "description": "Max results (default 10).", "default": 10}
+                },
+                "required": ["name"]
+            }
+        ),
+        Tool(
+            name="get_file_outline",
+            description="Get the AST outline (classes, methods, functions, line numbers) of a file without retrieving its entire token body.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "filepath": {"type": "string", "description": "File path (e.g. 'src/server.py' or 'repo_name://src/server.py')."},
+                    "repo": {"type": "string", "description": "Repository identifier (optional)."}
+                },
+                "required": ["filepath"]
+            }
+        ),
+        Tool(
+            name="list_repositories",
+            description="Lists all indexed local paths and remote Git repositories, including active branches, commit SHAs, and file counts.",
+            inputSchema={"type": "object", "properties": {}}
+        ),
+        Tool(
+            name="sync_repository",
+            description="Trigger an immediate re-fetch and re-indexing of a registered Git repo or local path.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "repo": {"type": "string", "description": "Repository name to sync (or omit to sync all)."}
+                }
             }
         ),
         Tool(
             name="index_status",
-            description="Get indexing statistics of your documentation & notes vault.",
-            inputSchema={
-                "type": "object",
-                "properties": {}
-            }
+            description="Get global index health, vector counts, GitHub rate limits, and active embedding models.",
+            inputSchema={"type": "object", "properties": {}}
         )
     ]
 
@@ -768,8 +720,8 @@ async def list_resources() -> List[Resource]:
     return [
         Resource(
             uri="notes://catalog/summary",
-            name="Notes & Documentation Topic Catalog",
-            description="Comprehensive catalog of indexed document titles, categories, tags, and extracted topics.",
+            name="Repository & Documentation Topic Catalog",
+            description="Catalog of indexed repositories, documentation files, and AST symbol distributions.",
             mimeType="text/markdown"
         )
     ]
@@ -779,27 +731,32 @@ async def read_resource(uri: str) -> str:
     if uri == "notes://catalog/summary":
         try:
             with get_db_connection() as conn:
-                rows = conn.execute("SELECT filepath, title, category, tags, keywords FROM file_summaries").fetchall()
-            
-            md = "# Notes & Documentation Topic Catalog\n\n"
-            md += f"**Total Files Indexed:** {len(rows)}\n\n"
-            md += "| Document Title | Category | Tags | Top Key Concepts |\n"
+                git_repos = conn.execute("SELECT name, url, branch, commit_sha, status, last_synced FROM git_repositories").fetchall()
+                files = conn.execute("SELECT filepath, repo, doc_type, language FROM indexed_files").fetchall()
+                symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
+
+            md = "# Repository & Documentation Catalog\n\n"
+            md += f"**Total Files Indexed:** {len(files)} | **Total AST Code Symbols:** {symbols_count}\n\n"
+
+            if git_repos:
+                md += "## Registered Git Repositories\n\n"
+                md += "| Name | URL | Branch | Commit SHA | Status | Last Synced |\n"
+                md += "| --- | --- | --- | --- | --- | --- |\n"
+                for gr in git_repos:
+                    sha_short = gr["commit_sha"][:8] if gr["commit_sha"] else "-"
+                    md += f"| {gr['name']} | {gr['url']} | {gr['branch']} | `{sha_short}` | {gr['status']} | {gr['last_synced'] or '-'} |\n"
+                md += "\n"
+
+            md += "## Indexed File Overview\n\n"
+            md += "| Repository | File | Type | Language |\n"
             md += "| --- | --- | --- | --- |\n"
-            for r in rows:
-                tags_str = ""
-                kw_str = ""
-                try:
-                    tags_str = ", ".join(json.loads(r["tags"])) if r["tags"] else ""
-                except Exception:
-                    pass
-                try:
-                    kw_str = ", ".join(json.loads(r["keywords"])[:7]) if r["keywords"] else ""
-                except Exception:
-                    pass
-                md += f"| {r['title']} | {r['category'] or '-'} | {tags_str or '-'} | {kw_str or '-'} |\n"
+            for f in files[:40]:
+                md += f"| {f['repo']} | {f['filepath']} | {f['doc_type']} | {f['language']} |\n"
+            if len(files) > 40:
+                md += f"\n*...and {len(files) - 40} more files.*"
             return md
         except Exception as e:
-            return f"Error building catalog resource: {str(e)}"
+            return f"Error generating catalog resource: {str(e)}"
     raise ValueError(f"Unknown resource URI: {uri}")
 
 @mcp_server.list_prompts()
@@ -812,8 +769,7 @@ async def list_prompts() -> List[Prompt]:
             args_list = []
             if r["arguments_json"]:
                 try:
-                    parsed_args = json.loads(r["arguments_json"])
-                    for a in parsed_args:
+                    for a in json.loads(r["arguments_json"]):
                         args_list.append(PromptArgument(
                             name=a.get("name", ""),
                             description=a.get("description", ""),
@@ -821,13 +777,9 @@ async def list_prompts() -> List[Prompt]:
                         ))
                 except Exception:
                     pass
-            prompts.append(Prompt(
-                name=r["name"],
-                description=r["description"],
-                arguments=args_list
-            ))
+            prompts.append(Prompt(name=r["name"], description=r["description"], arguments=args_list))
     except Exception as e:
-        logger.error(f"Error listing prompts from DB: {e}")
+        logger.error(f"Error listing prompts: {e}")
     return prompts
 
 @mcp_server.get_prompt()
@@ -835,187 +787,432 @@ async def get_prompt(name: str, arguments: dict = None) -> List[PromptMessage]:
     arguments = arguments or {}
     try:
         with get_db_connection() as conn:
-            row = conn.execute("SELECT name, template, arguments_json FROM custom_prompts WHERE name = ?", (name,)).fetchone()
+            row = conn.execute("SELECT template FROM custom_prompts WHERE name = ?", (name,)).fetchone()
         if not row:
-            raise ValueError(f"Unknown prompt name: {name}")
-        
-        template = row["template"]
-        formatted_text = template
+            raise ValueError(f"Unknown prompt: {name}")
+        formatted = row["template"]
         for k, v in arguments.items():
-            formatted_text = formatted_text.replace(f"{{{k}}}", str(v))
-
-        return [
-            PromptMessage(
-                role="user",
-                content=TextContent(
-                    type="text",
-                    text=formatted_text
-                )
-            )
-        ]
+            formatted = formatted.replace(f"{{{k}}}", str(v))
+        return [PromptMessage(role="user", content=TextContent(type="text", text=formatted))]
     except Exception as e:
-        logger.error(f"Error getting prompt '{name}': {e}")
-        raise ValueError(f"Failed to get prompt '{name}': {str(e)}")
+        raise ValueError(f"Failed to get prompt '{name}': {e}")
 
+# ----------------------------------------------------
+# HYBRID RETRIEVAL EXECUTION
+# ----------------------------------------------------
+
+def execute_hybrid_search(
+    query_text: str,
+    doc_type: Optional[str] = None,
+    repo: Optional[str] = None,
+    language: Optional[str] = None,
+    category: Optional[str] = None,
+    tag: Optional[str] = None,
+    limit: int = 5
+) -> List[Any]:
+    """Executes Dense + BM25 Sparse hybrid search with Reciprocal Rank Fusion in Qdrant."""
+    dense_vec = get_dense_embedding(query_text.strip())
+    sparse_vec = get_sparse_embedding(query_text.strip())
+
+    must_conditions = []
+    if doc_type:
+        must_conditions.append(qmodels.FieldCondition(key="doc_type", match=qmodels.MatchValue(value=doc_type)))
+    if repo:
+        must_conditions.append(qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo)))
+    if language:
+        must_conditions.append(qmodels.FieldCondition(key="language", match=qmodels.MatchValue(value=language)))
+    if category:
+        must_conditions.append(qmodels.FieldCondition(key="category", match=qmodels.MatchValue(value=category)))
+    if tag:
+        must_conditions.append(qmodels.FieldCondition(key="tags", match=qmodels.MatchAny(any=[tag])))
+
+    query_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
+
+    # Use RRF if sparse vector is available, otherwise dense search
+    if sparse_vec is not None:
+        response = qdrant.query_points(
+            collection_name=COLLECTION_NAME,
+            prefetch=[
+                qmodels.Prefetch(
+                    query=dense_vec,
+                    using="dense",
+                    limit=limit * 2,
+                    filter=query_filter
+                ),
+                qmodels.Prefetch(
+                    query=sparse_vec,
+                    using="sparse",
+                    limit=limit * 2,
+                    filter=query_filter
+                )
+            ],
+            query=qmodels.FusionQuery(fusion=qmodels.Fusion.RRF),
+            limit=limit
+        )
+    else:
+        response = qdrant.query_points(
+            collection_name=COLLECTION_NAME,
+            query=dense_vec,
+            using="dense",
+            query_filter=query_filter,
+            limit=limit
+        )
+    return response.points
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> List[TextContent]:
-    if name == "search_notes":
-        query = arguments["query"]
-        folder = arguments.get("folder")
-        tag = arguments.get("tag")
-        category = arguments.get("category")
+    if name == "search_code":
+        query = arguments.get("query", "").strip()
+        repo = arguments.get("repo")
+        language = arguments.get("language")
         limit = arguments.get("limit", 5)
 
-        logger.info(f"Received search: query='{query}', folder={folder}, tag={tag}, category={category}")
-        
-        if not query.strip():
+        if not query:
             return [TextContent(type="text", text="Error: search query cannot be empty.")]
 
         try:
-            # Generate query embedding
-            query_vector = get_embedding(query.strip())
-            
-            # Construct Qdrant filters
-            must_conditions = []
-            if folder:
-                must_conditions.append(qmodels.FieldCondition(key="folder", match=qmodels.MatchValue(value=folder)))
-            if category:
-                must_conditions.append(qmodels.FieldCondition(key="category", match=qmodels.MatchValue(value=category)))
-            if tag:
-                # Assuming tags is an array of strings in Qdrant payload
-                must_conditions.append(qmodels.FieldCondition(key="tags", match=qmodels.MatchAny(any=[tag])))
+            hits = execute_hybrid_search(query_text=query, doc_type="code", repo=repo, language=language, limit=limit)
+            if not hits:
+                return [TextContent(type="text", text=f"No matching code snippets found for query: '{query}'.")]
 
-            query_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
+            formatted = []
+            for hit in hits:
+                p = hit.payload
+                header = f"### [{p.get('repo')}] {p.get('rel_path')} (Lines {p.get('start_line')}-{p.get('end_line')})"
+                if p.get("symbol"):
+                    header += f" - Symbol: `{p.get('symbol')}`"
+                if p.get("github_url"):
+                    header += f"\nGitHub Link: {p.get('github_url')}"
+                header += f"\nRRF Score: {hit.score:.4f}\n"
 
-            # Perform search
-            response = qdrant.query_points(
-                collection_name=COLLECTION_NAME,
-                query=query_vector,
-                query_filter=query_filter,
-                limit=limit
-            )
-            search_results = response.points
+                lang = p.get("language", "")
+                block = f"{header}```{lang}\n{p.get('content')}\n```"
+                formatted.append(block)
 
-            # Format outputs
-            if not search_results:
-                return [TextContent(type="text", text="No matching documents found.")]
-            
-            formatted_chunks = []
-            for hit in search_results:
+            return [TextContent(type="text", text="\n\n========================\n\n".join(formatted))]
+        except Exception as e:
+            logger.error(f"search_code failed: {e}")
+            return [TextContent(type="text", text=f"Error executing code search: {str(e)}")]
+
+    elif name == "search_docs":
+        query = arguments.get("query", "").strip()
+        repo = arguments.get("repo")
+        category = arguments.get("category")
+        tag = arguments.get("tag")
+        limit = arguments.get("limit", 5)
+
+        if not query:
+            return [TextContent(type="text", text="Error: search query cannot be empty.")]
+
+        try:
+            hits = execute_hybrid_search(query_text=query, doc_type="doc", repo=repo, category=category, tag=tag, limit=limit)
+            if not hits:
+                return [TextContent(type="text", text=f"No matching documentation found for query: '{query}'.")]
+
+            formatted = []
+            for hit in hits:
                 p = hit.payload
                 tags_str = ", ".join(p.get("tags", []))
-                header_info = f" -> {p['heading']}" if p.get("heading") and p["heading"] != "Root" else ""
-                
-                meta_block = f"File: {p['path']}{header_info}\n"
-                if p.get("category"):
-                    meta_block += f"Category: {p['category']}\n"
+                header = f"### [{p.get('repo')}] {p.get('rel_path')}"
+                if p.get("heading") and p.get("heading") != "Root":
+                    header += f" -> {p.get('heading')}"
                 if tags_str:
-                    meta_block += f"Tags: {tags_str}\n"
-                meta_block += f"Score: {hit.score:.4f}\n"
-                
-                formatted_chunks.append(f"{meta_block}---\n{p['content']}\n\n========================")
+                    header += f"\nTags: {tags_str}"
+                if p.get("github_url"):
+                    header += f"\nGitHub Link: {p.get('github_url')}"
+                header += f"\nRRF Score: {hit.score:.4f}\n"
 
-            output_text = "\n\n".join(formatted_chunks)
-            return [TextContent(type="text", text=output_text)]
+                block = f"{header}---\n{p.get('content')}"
+                formatted.append(block)
 
+            return [TextContent(type="text", text="\n\n========================\n\n".join(formatted))]
         except Exception as e:
-            logger.error(f"Search failed: {e}")
-            return [TextContent(type="text", text=f"Error performing search: {str(e)}")]
+            logger.error(f"search_docs failed: {e}")
+            return [TextContent(type="text", text=f"Error executing doc search: {str(e)}")]
 
-    elif name == "trigger_reindex":
+    elif name == "find_symbol":
+        sym_name = arguments.get("name", "").strip()
+        repo = arguments.get("repo")
+        exact = arguments.get("exact", True)
+        limit = arguments.get("limit", 10)
+
+        if not sym_name:
+            return [TextContent(type="text", text="Error: symbol name cannot be empty.")]
+
         try:
-            run_indexing()
-            return [TextContent(type="text", text="Reindexing completed successfully.")]
+            with get_db_connection() as conn:
+                query = "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language FROM ast_symbols WHERE "
+                params = []
+                if exact:
+                    query += "(name = ? OR full_symbol = ?)"
+                    params.extend([sym_name, sym_name])
+                else:
+                    query += "(name LIKE ? OR full_symbol LIKE ?)"
+                    params.extend([f"%{sym_name}%", f"%{sym_name}%"])
+
+                if repo:
+                    query += " AND repo = ?"
+                    params.append(repo)
+
+                query += f" LIMIT {limit}"
+                rows = conn.execute(query, params).fetchall()
+
+            if not rows:
+                return [TextContent(type="text", text=f"No symbols found matching '{sym_name}'.")]
+
+            lines = [f"Found {len(rows)} matching symbols for '{sym_name}':\n"]
+            for r in rows:
+                lines.append(
+                    f"- **{r['name']}** (`{r['kind']}`) in `[{r['repo']}] {r['filepath']}` (Lines {r['start_line']}-{r['end_line']})\n"
+                    f"  Signature: `{r['signature']}`"
+                )
+            return [TextContent(type="text", text="\n".join(lines))]
         except Exception as e:
-            return [TextContent(type="text", text=f"Reindexing failed: {str(e)}")]
+            logger.error(f"find_symbol error: {e}")
+            return [TextContent(type="text", text=f"Error finding symbol: {str(e)}")]
+
+    elif name == "get_file_outline":
+        filepath = arguments.get("filepath", "").strip()
+        repo = arguments.get("repo")
+
+        try:
+            with get_db_connection() as conn:
+                if repo:
+                    rows = conn.execute(
+                        "SELECT name, full_symbol, kind, start_line, end_line, signature FROM ast_symbols WHERE (filepath = ? OR filepath LIKE ?) AND repo = ? ORDER BY start_line ASC",
+                        (filepath, f"%{filepath}", repo)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature FROM ast_symbols WHERE filepath = ? OR filepath LIKE ? ORDER BY start_line ASC",
+                        (filepath, f"%{filepath}")
+                    ).fetchall()
+
+            if not rows:
+                return [TextContent(type="text", text=f"No outline available for '{filepath}'.")]
+
+            outline_text = f"# File Outline: {filepath}\n\n"
+            for r in rows:
+                outline_text += f"- **{r['name']}** ({r['kind']}, lines {r['start_line']}-{r['end_line']}): `{r['signature']}`\n"
+            return [TextContent(type="text", text=outline_text)]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Failed to get outline: {str(e)}")]
+
+    elif name == "list_repositories":
+        try:
+            with get_db_connection() as conn:
+                git_repos = conn.execute("SELECT id, name, url, branch, commit_sha, status, last_synced FROM git_repositories").fetchall()
+                local_paths = conn.execute("SELECT path, repo, category FROM indexed_paths WHERE enabled = 1").fetchall()
+                counts = conn.execute("SELECT repo, count(*) as cnt FROM indexed_files GROUP BY repo").fetchall()
+                file_count_map = {c["repo"]: c["cnt"] for c in counts}
+
+            out = "# Registered Sources & Repositories\n\n"
+            if git_repos:
+                out += "### Git Repositories\n"
+                for gr in git_repos:
+                    fc = file_count_map.get(gr["name"], 0)
+                    sha = gr["commit_sha"][:8] if gr["commit_sha"] else "None"
+                    out += f"- **{gr['name']}** ({gr['url']} @ `{gr['branch']}` | SHA: `{sha}`) - Status: `{gr['status']}` | Files: {fc} | Last Synced: {gr['last_synced'] or 'Never'}\n"
+                out += "\n"
+
+            if local_paths:
+                out += "### Local Monitored Paths\n"
+                for lp in local_paths:
+                    fc = file_count_map.get(lp["repo"], 0)
+                    out += f"- **{lp['repo']}** (`{lp['path']}`) - Category: `{lp['category']}` | Files: {fc}\n"
+
+            return [TextContent(type="text", text=out)]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error listing repositories: {str(e)}")]
+
+    elif name == "sync_repository":
+        target_repo = arguments.get("repo")
+        try:
+            if target_repo:
+                with get_db_connection() as conn:
+                    row = conn.execute("SELECT id FROM git_repositories WHERE name = ?", (target_repo,)).fetchone()
+                if row:
+                    threading.Thread(target=sync_single_git_repo, args=(row["id"],), daemon=True).start()
+                    return [TextContent(type="text", text=f"Triggered background sync for repo: '{target_repo}'")]
+            
+            threading.Thread(target=run_full_indexing, daemon=True).start()
+            return [TextContent(type="text", text="Triggered full background re-indexing.")]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Failed to trigger sync: {str(e)}")]
 
     elif name == "index_status":
         try:
             with get_db_connection() as conn:
                 files_count = conn.execute("SELECT count(*) FROM indexed_files").fetchone()[0]
+                symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
+                git_count = conn.execute("SELECT count(*) FROM git_repositories").fetchone()[0]
             
-            total_vectors = 0
+            points_count = 0
             if qdrant.collection_exists(COLLECTION_NAME):
                 info = qdrant.get_collection(COLLECTION_NAME)
-                total_vectors = info.points_count
+                points_count = info.points_count
+
+            eff_token = get_effective_github_token()
+            rate_info = check_github_rate_limit(eff_token)
 
             status_text = (
-                f"Vault Path: {VAULT_PATH}\n"
-                f"Total Files Indexed: {files_count}\n"
-                f"Total Vector Chunks Stored: {total_vectors}\n"
-                f"Vector Collection: {COLLECTION_NAME}\n"
-                f"Embedding Provider: {EMBEDDING_PROVIDER.upper()}\n"
-                f"Embedding Model: {EMBEDDING_MODEL}"
+                f"Collection: {COLLECTION_NAME}\n"
+                f"Embedding Provider: {EMBEDDING_PROVIDER.upper()} ({DENSE_MODEL_NAME} + {SPARSE_MODEL_NAME})\n"
+                f"Total Hybrid Vectors: {points_count}\n"
+                f"Total Indexed Files: {files_count}\n"
+                f"Total AST Symbols: {symbols_count}\n"
+                f"Registered Git Repos: {git_count}\n"
+                f"GitHub Token Source: {get_token_source()} (Masked: {mask_token(eff_token)})\n"
+                f"GitHub API Rate Limit: {rate_info.get('remaining', 0)} / {rate_info.get('limit', 60)}"
             )
             return [TextContent(type="text", text=status_text)]
         except Exception as e:
-            return [TextContent(type="text", text=f"Failed to gather status: {str(e)}")]
+            return [TextContent(type="text", text=f"Failed to get status: {str(e)}")]
 
     else:
-        raise ValueError(f"Unknown tool name: {name}")
+        raise ValueError(f"Unknown tool: {name}")
 
-# FastAPI setup to support SSE
-app = FastAPI(title="Notes RAG MCP Server")
+# ----------------------------------------------------
+# FASTAPI APP & REST ENDPOINTS
+# ----------------------------------------------------
+
+app = FastAPI(title="Notes & Code RAG MCP Server")
 sse_transport = SseServerTransport("/messages/")
 
-# ----------------------------------------------------
-# ADMIN DASHBOARD API ENDPOINTS
-# ----------------------------------------------------
-
 @app.get("/admin/api/stats")
-async def get_stats():
+async def api_get_stats():
     try:
         with get_db_connection() as conn:
             files_count = conn.execute("SELECT count(*) FROM indexed_files").fetchone()[0]
             paths_count = conn.execute("SELECT count(*) FROM indexed_paths").fetchone()[0]
-            row = conn.execute("SELECT value FROM system_metadata WHERE key = 'last_indexed'").fetchone()
-            last_indexed_time = row["value"] if row else "Never"
-            
-            # Aggregate top keywords for UI display
+            repos_count = conn.execute("SELECT count(*) FROM git_repositories").fetchone()[0]
+            symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
+            last_indexed = get_metadata("last_indexed", "Never")
+
             sum_rows = conn.execute("SELECT keywords FROM file_summaries").fetchall()
             kw_counts = {}
             for sr in sum_rows:
                 if sr["keywords"]:
                     try:
-                        kws = json.loads(sr["keywords"])
-                        for kw in kws:
+                        for kw in json.loads(sr["keywords"]):
                             kw_counts[kw] = kw_counts.get(kw, 0) + 1
                     except Exception:
                         pass
             top_keywords = sorted(kw_counts.keys(), key=lambda k: kw_counts[k], reverse=True)[:25]
-        
+
         points_count = 0
         if qdrant.collection_exists(COLLECTION_NAME):
             info = qdrant.get_collection(COLLECTION_NAME)
             points_count = info.points_count
-            
+
+        eff_token = get_effective_github_token()
+        rate_info = check_github_rate_limit(eff_token)
+
         return {
-            "paths_count": paths_count,
             "files_count": files_count,
+            "paths_count": paths_count,
+            "repos_count": repos_count,
+            "symbols_count": symbols_count,
             "points_count": points_count,
             "is_indexing": is_indexing,
-            "last_indexed": last_indexed_time,
+            "last_indexed": last_indexed,
             "embedding_provider": EMBEDDING_PROVIDER.upper(),
-            "embedding_model": EMBEDDING_MODEL,
-            "top_keywords": top_keywords
+            "dense_model": DENSE_MODEL_NAME,
+            "sparse_model": SPARSE_MODEL_NAME,
+            "top_keywords": top_keywords,
+            "token_source": get_token_source(),
+            "masked_token": mask_token(eff_token),
+            "rate_limit": rate_info
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-
-@app.get("/admin/api/paths")
-async def get_paths():
+@app.get("/admin/api/repos")
+async def api_get_repos():
     try:
         with get_db_connection() as conn:
-            rows = conn.execute("SELECT id, path, type, recursive, enabled, category, added_at FROM indexed_paths ORDER BY added_at DESC").fetchall()
-            paths = [dict(r) for r in rows]
-        return paths
+            rows = conn.execute("SELECT id, name, url, branch, commit_sha, enabled, status, last_synced, added_at, (SELECT count(*) FROM indexed_files WHERE repo = git_repositories.name) as file_count FROM git_repositories ORDER BY added_at DESC").fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/admin/api/repos")
+async def api_add_repo(request: Request):
+    try:
+        data = await request.json()
+        name = data.get("name", "").strip()
+        url = data.get("url", "").strip()
+        branch = data.get("branch", "main").strip() or "main"
+        token = data.get("auth_token", "").strip() or None
+
+        if not name or not url:
+            return JSONResponse(status_code=400, content={"error": "Repository name and Git URL are required."})
+
+        name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).lower()
+
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO git_repositories (name, url, branch, auth_token) VALUES (?, ?, ?, ?)",
+                (name, url, branch, token)
+            )
+            conn.commit()
+            repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        threading.Thread(target=sync_single_git_repo, args=(repo_id,), daemon=True).start()
+        return {"status": "success", "message": f"Added repo '{name}' and started background sync."}
+    except sqlite3.IntegrityError:
+        return JSONResponse(status_code=400, content={"error": f"Repository '{name}' is already registered."})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/admin/api/repos/sync/{repo_id}")
+async def api_sync_repo(repo_id: int):
+    try:
+        threading.Thread(target=sync_single_git_repo, args=(repo_id,), daemon=True).start()
+        return {"status": "success", "message": f"Sync triggered for repository ID {repo_id}"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.delete("/admin/api/repos/{repo_id}")
+async def api_delete_repo(repo_id: int):
+    try:
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT name FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+            if not row:
+                return JSONResponse(status_code=404, content={"error": "Repo not found"})
+            repo_name = row["name"]
+            conn.execute("DELETE FROM git_repositories WHERE id = ?", (repo_id,))
+            conn.execute("DELETE FROM indexed_files WHERE repo = ?", (repo_name,))
+            conn.execute("DELETE FROM file_summaries WHERE repo = ?", (repo_name,))
+            conn.execute("DELETE FROM ast_symbols WHERE repo = ?", (repo_name,))
+            conn.commit()
+
+        # Delete from Qdrant
+        try:
+            qdrant.delete(
+                collection_name=COLLECTION_NAME,
+                points_selector=qmodels.Filter(
+                    must=[qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo_name))]
+                )
+            )
+        except Exception:
+            pass
+
+        return {"status": "success", "message": f"Deleted repository '{repo_name}'"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.get("/admin/api/paths")
+async def api_get_paths():
+    try:
+        with get_db_connection() as conn:
+            rows = conn.execute("SELECT id, path, type, recursive, enabled, category, repo, added_at FROM indexed_paths ORDER BY added_at DESC").fetchall()
+            return [dict(r) for r in rows]
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.post("/admin/api/paths")
-async def add_path(request: Request):
+async def api_add_path(request: Request):
     try:
         data = await request.json()
         path = data.get("path")
@@ -1023,181 +1220,103 @@ async def add_path(request: Request):
         recursive = int(data.get("recursive", 1))
         enabled = int(data.get("enabled", 1))
         category = data.get("category")
-        
-        if not path:
-            return JSONResponse(status_code=400, content={"error": "Path is required"})
-            
-        if not os.path.exists(path):
-            return JSONResponse(status_code=400, content={"error": f"Path does not exist on disk: {path}"})
-            
-        # Standardize path
-        path = os.path.abspath(path)
-            
-        with get_db_connection() as conn:
-            conn.execute(
-                "INSERT INTO indexed_paths (path, type, recursive, enabled, category) VALUES (?, ?, ?, ?, ?)",
-                (path, ptype, recursive, enabled, category)
-            )
-            conn.commit()
-            
-        # Trigger indexing in background
-        threading.Thread(target=run_indexing, daemon=True).start()
-        
-        return {"status": "success", "message": f"Added path: {path}"}
-    except sqlite3.IntegrityError:
-        return JSONResponse(status_code=400, content={"error": "Path is already registered"})
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        repo = data.get("repo", "local") or "local"
 
-@app.put("/admin/api/paths/{path_id}")
-async def update_path(path_id: int, request: Request):
-    try:
-        data = await request.json()
-        recursive = int(data.get("recursive", 1))
-        enabled = int(data.get("enabled", 1))
-        category = data.get("category")
-        
+        if not path or not os.path.exists(path):
+            return JSONResponse(status_code=400, content={"error": f"Valid local path is required: {path}"})
+
+        path = os.path.abspath(path)
         with get_db_connection() as conn:
             conn.execute(
-                "UPDATE indexed_paths SET recursive = ?, enabled = ?, category = ? WHERE id = ?",
-                (recursive, enabled, category, path_id)
+                "INSERT INTO indexed_paths (path, type, recursive, enabled, category, repo) VALUES (?, ?, ?, ?, ?, ?)",
+                (path, ptype, recursive, enabled, category, repo)
             )
             conn.commit()
-            
-        # Trigger indexing in background
-        threading.Thread(target=run_indexing, daemon=True).start()
-        
-        return {"status": "success", "message": f"Updated path ID: {path_id}"}
+
+        threading.Thread(target=run_full_indexing, daemon=True).start()
+        return {"status": "success", "message": f"Added local path: {path}"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.delete("/admin/api/paths/{path_id}")
-async def delete_path(path_id: int):
+async def api_delete_path(path_id: int):
     try:
-        # Get path details first
         with get_db_connection() as conn:
-            row = conn.execute("SELECT path FROM indexed_paths WHERE id = ?", (path_id,)).fetchone()
-            if not row:
-                return JSONResponse(status_code=404, content={"error": "Path not found"})
-            path = row["path"]
-            
-            # Remove from path db
             conn.execute("DELETE FROM indexed_paths WHERE id = ?", (path_id,))
             conn.commit()
-            
-        # Trigger reindexing in background (this will automatically clean up deleted files)
-        threading.Thread(target=run_indexing, daemon=True).start()
-        
-        return {"status": "success", "message": f"Deleted path: {path}"}
+        threading.Thread(target=run_full_indexing, daemon=True).start()
+        return {"status": "success", "message": f"Deleted path ID {path_id}"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# ----------------------------------------------------
-# CUSTOM MCP PROMPTS MANAGEMENT API
-# ----------------------------------------------------
-
-@app.get("/admin/api/prompts")
-async def get_prompts():
-    try:
-        with get_db_connection() as conn:
-            rows = conn.execute("SELECT id, name, description, arguments_json, template, added_at FROM custom_prompts ORDER BY name ASC").fetchall()
-            prompts = []
-            for r in rows:
-                d = dict(r)
-                try:
-                    d["arguments"] = json.loads(r["arguments_json"]) if r["arguments_json"] else []
-                except Exception:
-                    d["arguments"] = []
-                prompts.append(d)
-        return prompts
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-@app.post("/admin/api/prompts")
-async def add_prompt(request: Request):
+@app.post("/admin/api/settings/token")
+async def api_set_token(request: Request):
     try:
         data = await request.json()
-        name = data.get("name", "").strip()
-        description = data.get("description", "").strip()
-        arguments = data.get("arguments", [])
-        template = data.get("template", "").strip()
-
-        if not name or not description or not template:
-            return JSONResponse(status_code=400, content={"error": "Name, description, and template are required."})
-
-        name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).lower()
-        arguments_json = json.dumps(arguments)
-
-        with get_db_connection() as conn:
-            conn.execute(
-                "INSERT INTO custom_prompts (name, description, arguments_json, template) VALUES (?, ?, ?, ?)",
-                (name, description, arguments_json, template)
-            )
-            conn.commit()
-
-        trigger_list_changed_notification()
-        return {"status": "success", "message": f"Added custom prompt '{name}'"}
-    except sqlite3.IntegrityError:
-        return JSONResponse(status_code=400, content={"error": f"Prompt '{name}' already exists."})
+        token = data.get("github_token", "").strip()
+        set_metadata("github_token", token)
+        eff_token = get_effective_github_token()
+        rate_info = check_github_rate_limit(eff_token)
+        return {
+            "status": "success",
+            "message": "GitHub token updated",
+            "token_source": get_token_source(),
+            "masked_token": mask_token(eff_token),
+            "rate_limit": rate_info
+        }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-@app.delete("/admin/api/prompts/{prompt_id}")
-async def delete_prompt(prompt_id: int):
+@app.post("/admin/api/search/test")
+async def api_test_search(request: Request):
     try:
-        with get_db_connection() as conn:
-            conn.execute("DELETE FROM custom_prompts WHERE id = ?", (prompt_id,))
-            conn.commit()
+        data = await request.json()
+        query = data.get("query", "").strip()
+        search_type = data.get("type", "code") # "code" or "doc"
+        repo = data.get("repo") or None
 
-        trigger_list_changed_notification()
-        return {"status": "success", "message": f"Deleted prompt ID {prompt_id}"}
+        if not query:
+            return JSONResponse(status_code=400, content={"error": "Query required"})
 
+        hits = execute_hybrid_search(query_text=query, doc_type=search_type, repo=repo, limit=6)
+        results = []
+        for h in hits:
+            results.append({
+                "score": round(h.score, 4),
+                "payload": h.payload
+            })
+        return {"query": query, "type": search_type, "results": results}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
 
 @app.post("/admin/api/reindex")
-async def trigger_reindex():
+async def api_trigger_reindex():
     if is_indexing:
-        return JSONResponse(status_code=409, content={"error": "Indexing is already in progress"})
-        
-    threading.Thread(target=run_indexing, daemon=True).start()
-    return {"status": "success", "message": "Indexing triggered in background"}
+        return JSONResponse(status_code=409, content={"error": "Indexing in progress"})
+    threading.Thread(target=run_full_indexing, daemon=True).start()
+    return {"status": "success", "message": "Re-indexing triggered"}
 
 @app.get("/admin/api/browse")
-async def browse_directory(path: str = "/containers"):
+async def api_browse_dir(path: str = "/"):
     resolved = os.path.abspath(path)
-    if not resolved.startswith("/containers"):
-        resolved = "/containers"
-        
     if not os.path.exists(resolved):
-        return JSONResponse(status_code=400, content={"error": f"Path '{path}' does not exist"})
-        
+        resolved = "/"
     try:
         entries = os.scandir(resolved)
         dirs = []
         files = []
-        for entry in entries:
-            try:
-                if entry.name.startswith("."):
-                    continue
-                if entry.is_dir():
-                    dirs.append({"name": entry.name, "path": os.path.abspath(entry.path)})
-                else:
-                    files.append({"name": entry.name, "path": os.path.abspath(entry.path)})
-            except Exception:
-                pass
-                
+        for e in entries:
+            if e.name.startswith("."):
+                continue
+            if e.is_dir():
+                dirs.append({"name": e.name, "path": os.path.abspath(e.path)})
+            else:
+                files.append({"name": e.name, "path": os.path.abspath(e.path)})
         dirs.sort(key=lambda x: x["name"].lower())
         files.sort(key=lambda x: x["name"].lower())
-        
-        parent = os.path.dirname(resolved)
-        if resolved in ("/containers", "/"):
-            parent = ""
-            
         return {
             "current_path": resolved,
-            "parent_path": parent,
+            "parent_path": os.path.dirname(resolved) if resolved != "/" else "",
             "directories": dirs,
             "files": files
         }
@@ -1208,7 +1327,6 @@ async def browse_directory(path: str = "/containers"):
 async def root_redirect():
     return RedirectResponse(url="/admin/")
 
-# Mount Static Files (serving the index.html page)
 app.mount("/admin", StaticFiles(directory="www", html=True), name="admin")
 
 @app.get("/sse")
@@ -1218,26 +1336,14 @@ async def sse_endpoint(request: Request):
         initialization_options = mcp_server.create_initialization_options()
         async with AsyncExitStack() as stack:
             lifespan_context = await stack.enter_async_context(mcp_server.lifespan(mcp_server))
-            session = await stack.enter_async_context(
-                ServerSession(
-                    read_stream,
-                    write_stream,
-                    initialization_options,
-                )
-            )
+            session = await stack.enter_async_context(ServerSession(read_stream, write_stream, initialization_options))
             active_sessions.add(session)
             logger.info(f"Registered active session {session}. Total active: {len(active_sessions)}")
             try:
                 async with anyio.create_task_group() as tg:
                     try:
                         async for message in session.incoming_messages:
-                            tg.start_soon(
-                                mcp_server._handle_message,
-                                message,
-                                session,
-                                lifespan_context,
-                                False,
-                            )
+                            tg.start_soon(mcp_server._handle_message, message, session, lifespan_context, False)
                     finally:
                         tg.cancel_scope.cancel()
             finally:
@@ -1246,24 +1352,20 @@ async def sse_endpoint(request: Request):
 
 app.mount("/messages", sse_transport.handle_post_message)
 
-# Health check endpoint
 @app.get("/health")
 async def health():
     return JSONResponse(content={"status": "healthy"})
 
-# Run initial indexing on startup
 @app.on_event("startup")
 async def startup_event():
     global main_event_loop
     main_event_loop = asyncio.get_running_loop()
-    logger.info("Server starting up...")
+    logger.info("Notes & Code RAG Server starting up...")
     try:
-        threading.Thread(target=run_indexing, daemon=True).start()
+        threading.Thread(target=run_full_indexing, daemon=True).start()
     except Exception as e:
-        logger.error(f"Error running initial index on startup: {e}")
-
+        logger.error(f"Startup indexing error: {e}")
 
 if __name__ == "__main__":
     import uvicorn
-    # Expose on all interfaces on port 3000
     uvicorn.run(app, host="0.0.0.0", port=3000)

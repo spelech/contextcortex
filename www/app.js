@@ -1,122 +1,146 @@
 document.addEventListener('DOMContentLoaded', () => {
     loadStats();
+    loadRepos();
     loadPaths();
-    loadPrompts();
     
-    // Poll stats and paths every 10s
-    setInterval(loadStats, 10000);
-    setInterval(loadPaths, 10000);
-    setInterval(loadPrompts, 10000);
+    // Auto-refresh every 8s
+    setInterval(loadStats, 8000);
+    setInterval(loadRepos, 8000);
+    setInterval(loadPaths, 8000);
 });
 
-
-// Cache global configs
+// State
+window.allRepos = [];
 window.allPaths = [];
-window.currentBrowserPath = "/containers";
+window.currentBrowserPath = "/";
 
+// Tab Switching
+function switchTab(tabId) {
+    document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+    const activeBtn = Array.from(document.querySelectorAll('.nav-tab')).find(b => b.getAttribute('onclick')?.includes(tabId));
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const contentEl = document.getElementById(`tab-${tabId}`);
+    if (contentEl) contentEl.classList.add('active');
+
+    if (tabId === 'settings') {
+        loadSettings();
+    }
+}
+
+// Stats & Overview
 async function loadStats() {
     try {
         const response = await fetch('/admin/api/stats');
-        if (!response.ok) throw new Error('Failed to fetch stats');
+        if (!response.ok) return;
         const data = await response.json();
-        
-        document.getElementById('stat-paths').textContent = data.paths_count;
-        document.getElementById('stat-files').textContent = data.files_count;
-        document.getElementById('stat-vectors').textContent = data.points_count;
+
+        document.getElementById('stat-repos').textContent = data.repos_count || 0;
+        document.getElementById('stat-symbols').textContent = data.symbols_count || 0;
+        document.getElementById('stat-files').textContent = data.files_count || 0;
+        document.getElementById('stat-vectors').textContent = data.points_count || 0;
         document.getElementById('stat-last-indexed').textContent = data.last_indexed || 'Never';
-        
-        if (data.embedding_provider && data.embedding_model) {
-            const providerEl = document.getElementById('stat-embedding-provider');
-            if (providerEl) {
-                providerEl.textContent = `${data.embedding_provider} (${data.embedding_model})`;
+
+        if (data.dense_model) document.getElementById('spec-dense').textContent = data.dense_model;
+        if (data.sparse_model) document.getElementById('spec-sparse').textContent = `${data.sparse_model} (FastEmbed)`;
+
+        // Rate Limit Pill
+        const ratePill = document.getElementById('rate-limit-text');
+        if (data.rate_limit && data.rate_limit.limit) {
+            ratePill.textContent = `${data.rate_limit.remaining} / ${data.rate_limit.limit} reqs`;
+        } else {
+            ratePill.textContent = 'Active';
+        }
+
+        // Tag cloud
+        const cloud = document.getElementById('topics-tag-cloud');
+        if (cloud && data.top_keywords) {
+            if (data.top_keywords.length === 0) {
+                cloud.innerHTML = '<span class="text-muted">No topics extracted yet. Sync repositories to populate.</span>';
+            } else {
+                cloud.innerHTML = data.top_keywords.map(kw => `<span class="topic-tag">${escapeHtml(kw)}</span>`).join('');
             }
         }
-        
-        if (data.top_keywords && Array.isArray(data.top_keywords)) {
-            const cloud = document.getElementById('topics-tag-cloud');
-            if (cloud) {
-                if (data.top_keywords.length === 0) {
-                    cloud.innerHTML = '<span style="font-size: 0.85rem; color: rgba(255,255,255,0.4);">No topics extracted yet. Trigger reindex to populate.</span>';
-                } else {
-                    cloud.innerHTML = data.top_keywords.map(kw => 
-                        `<span style="background: rgba(20, 184, 166, 0.15); border: 1px solid rgba(20, 184, 166, 0.3); color: #2dd4bf; padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; font-family: 'JetBrains Mono', monospace;">${kw}</span>`
-                    ).join('');
-                }
-            }
-        }
-        
+
+        // Indexing indicator
         const indicator = document.getElementById('indexing-indicator');
+        const reindexBtn = document.getElementById('btn-reindex');
         if (data.is_indexing) {
-            indicator.innerHTML = '<span class="indicator indexing"></span> Indexing...';
-            document.getElementById('btn-reindex').disabled = true;
-            document.getElementById('btn-reindex').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Indexing...';
+            indicator.innerHTML = '<span class="indicator indexing"></span> Syncing...';
+            if (reindexBtn) {
+                reindexBtn.disabled = true;
+                reindexBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Syncing...';
+            }
         } else {
             indicator.innerHTML = '<span class="indicator online"></span> Idle';
-            document.getElementById('btn-reindex').disabled = false;
-            document.getElementById('btn-reindex').innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Reindex Source Files';
+            if (reindexBtn) {
+                reindexBtn.disabled = false;
+                reindexBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Reindex All Sources';
+            }
         }
-
-    } catch (error) {
-        console.error('Error loading stats:', error);
+    } catch (e) {
+        console.error('Error loading stats:', e);
     }
 }
 
-async function loadPaths() {
+// ----------------------------------------------------
+// GIT REPOSITORIES
+// ----------------------------------------------------
+
+async function loadRepos() {
     try {
-        const response = await fetch('/admin/api/paths');
-        if (!response.ok) throw new Error('Failed to fetch paths');
-        const paths = await response.json();
-        window.allPaths = paths;
-        
-        renderPaths(paths);
-    } catch (error) {
-        console.error('Error loading paths:', error);
+        const response = await fetch('/admin/api/repos');
+        if (!response.ok) return;
+        const repos = await response.json();
+        window.allRepos = repos;
+        renderRepos(repos);
+    } catch (e) {
+        console.error('Error loading repos:', e);
     }
 }
 
-function renderPaths(paths) {
-    const tbody = document.getElementById('paths-list-body');
-    if (paths.length === 0) {
+function renderRepos(repos) {
+    const tbody = document.getElementById('repos-list-body');
+    if (!tbody) return;
+
+    if (!repos || repos.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" class="empty-state">No source paths configured. Defaulting to vault directory scan.</td>
+                <td colspan="8" class="empty-state">No Git repositories registered. Click "Add Repository" to index a remote repo.</td>
             </tr>
         `;
         return;
     }
-    
-    tbody.innerHTML = paths.map(path => {
-        const pathClass = path.enabled ? 'code' : 'code text-muted';
-        const typeBadge = path.type === 'directory' 
-            ? `<span class="server-badge"><i class="fa-solid fa-folder"></i> Directory</span>`
-            : `<span class="server-badge"><i class="fa-solid fa-file"></i> File</span>`;
-            
-        const categoryVal = path.category && path.category !== 'default' 
-            ? `<span class="server-badge" style="background: rgba(20,184,166,0.15); color: var(--accent);">${escapeHtml(path.category)}</span>`
-            : '<span class="text-muted" style="font-size:11px;">Default</span>';
-            
-        const recursiveVal = path.type === 'directory'
-            ? (path.recursive ? 'Yes' : 'No (Top-level)')
-            : '<span class="text-muted">-</span>';
-            
+
+    tbody.innerHTML = repos.map(r => {
+        let statusBadge = `<span class="badge badge-success"><i class="fa-solid fa-check"></i> Synced</span>`;
+        if (r.status === 'syncing') {
+            statusBadge = `<span class="badge badge-warning"><i class="fa-solid fa-spinner fa-spin"></i> Syncing</span>`;
+        } else if (r.status === 'error') {
+            statusBadge = `<span class="badge badge-danger"><i class="fa-solid fa-circle-exclamation"></i> Error</span>`;
+        } else if (r.status === 'pending') {
+            statusBadge = `<span class="badge badge-primary"><i class="fa-solid fa-clock"></i> Pending</span>`;
+        }
+
+        const shaDisplay = r.commit_sha ? `<code>${r.commit_sha.substring(0, 8)}</code>` : '<span class="text-muted">-</span>';
+
         return `
             <tr>
-                <td><code class="${pathClass}">${escapeHtml(path.path)}</code></td>
-                <td>${typeBadge}</td>
-                <td>${recursiveVal}</td>
-                <td>${categoryVal}</td>
+                <td><strong>${escapeHtml(r.name)}</strong></td>
+                <td><a href="${escapeHtml(r.url)}" target="_blank" style="color: var(--primary); text-decoration: none; font-size: 0.85rem;"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${escapeHtml(r.url)}</a></td>
+                <td><code>${escapeHtml(r.branch)}</code></td>
+                <td>${shaDisplay}</td>
+                <td>${statusBadge}</td>
+                <td>${r.file_count || 0} files</td>
+                <td style="font-size: 0.8rem; color: var(--text-muted);">${r.last_synced || 'Never'}</td>
                 <td>
-                    <label class="switch">
-                        <input type="checkbox" ${path.enabled ? 'checked' : ''} onchange="togglePathEnabled('${path.id}', this.checked)">
-                        <span class="slider"></span>
-                    </label>
-                </td>
-                <td>
-                    <div class="server-actions" style="gap: 5px; justify-content: flex-start;">
-                        <button class="btn-icon btn-edit" title="Edit Settings" onclick="openEditModal('${path.id}')">
-                            <i class="fa-solid fa-pen-to-square"></i>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick="syncRepo(${r.id})" title="Trigger Sync">
+                            <i class="fa-solid fa-arrows-rotate"></i> Sync
                         </button>
-                        <button class="btn-icon btn-delete" title="Delete Path" onclick="deletePath('${path.id}', '${escapeHtml(path.path)}')">
+                        <button class="btn-icon btn-delete" onclick="deleteRepo(${r.id}, '${escapeHtml(r.name)}')" title="Delete Repo">
                             <i class="fa-solid fa-trash-can"></i>
                         </button>
                     </div>
@@ -126,358 +150,353 @@ function renderPaths(paths) {
     }).join('');
 }
 
-async function triggerReindex() {
-    try {
-        const btn = document.getElementById('btn-reindex');
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Triggering...';
-        
-        const response = await fetch('/admin/api/reindex', { method: 'POST' });
-        if (!response.ok) throw new Error('Failed to trigger reindexing');
-        
-        loadStats();
-    } catch (error) {
-        alert(`Error triggering reindex: ${error.message}`);
-        loadStats();
-    }
+function openAddRepoModal() {
+    document.getElementById('repo-form').reset();
+    document.getElementById('repo-modal').style.display = 'flex';
 }
 
-async function togglePathEnabled(id, enabled) {
+function closeRepoModal() {
+    document.getElementById('repo-modal').style.display = 'none';
+}
+
+async function saveGitRepo(event) {
+    event.preventDefault();
+    const name = document.getElementById('repo-alias').value.trim();
+    const url = document.getElementById('repo-url').value.trim();
+    const branch = document.getElementById('repo-branch').value.trim() || 'main';
+    const token = document.getElementById('repo-token').value.trim() || null;
+
+    const btn = document.getElementById('btn-save-repo');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Adding & Syncing...';
+
     try {
-        const path = window.allPaths.find(p => p.id == id);
-        if (!path) return;
-        
-        const body = {
-            enabled: enabled ? 1 : 0,
-            recursive: path.recursive,
-            category: path.category
-        };
-        
-        const response = await fetch(`/admin/api/paths/${id}`, {
-            method: 'PUT',
+        const res = await fetch('/admin/api/repos', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify({ name, url, branch, auth_token: token })
         });
-        
-        if (!response.ok) throw new Error('Failed to update path settings');
-        loadPaths();
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to add repository');
+
+        closeRepoModal();
+        loadRepos();
         loadStats();
-    } catch (error) {
-        alert(`Error: ${error.message}`);
-        loadPaths();
+    } catch (err) {
+        alert(`Error: ${err.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Add & Start Sync';
     }
 }
 
-function openAddModal() {
-    document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-folder-open"></i> Add RAG Search Path';
-    document.getElementById('path-id').value = '';
+async function syncRepo(id) {
+    try {
+        await fetch(`/admin/api/repos/sync/${id}`, { method: 'POST' });
+        loadRepos();
+        loadStats();
+    } catch (e) {
+        alert('Failed to trigger sync: ' + e.message);
+    }
+}
+
+async function deleteRepo(id, name) {
+    if (!confirm(`Are you sure you want to delete repository '${name}'? All vectors and indexed symbols for this repo will be permanently purged.`)) {
+        return;
+    }
+    try {
+        await fetch(`/admin/api/repos/${id}`, { method: 'DELETE' });
+        loadRepos();
+        loadStats();
+    } catch (e) {
+        alert('Failed to delete repo: ' + e.message);
+    }
+}
+
+// ----------------------------------------------------
+// LOCAL PATHS
+// ----------------------------------------------------
+
+async function loadPaths() {
+    try {
+        const response = await fetch('/admin/api/paths');
+        if (!response.ok) return;
+        const paths = await response.json();
+        window.allPaths = paths;
+        renderPaths(paths);
+    } catch (e) {
+        console.error('Error loading paths:', e);
+    }
+}
+
+function renderPaths(paths) {
+    const tbody = document.getElementById('paths-list-body');
+    if (!tbody) return;
+
+    if (!paths || paths.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="empty-state">No local paths configured. Defaulting to standard vault.</td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = paths.map(p => `
+        <tr>
+            <td><code>${escapeHtml(p.path)}</code></td>
+            <td><strong>${escapeHtml(p.repo || 'local')}</strong></td>
+            <td><span class="badge badge-primary">${p.type}</span></td>
+            <td>${p.recursive ? 'Yes' : 'No'}</td>
+            <td>${p.category ? `<span class="badge badge-accent">${escapeHtml(p.category)}</span>` : '<span class="text-muted">-</span>'}</td>
+            <td>${p.enabled ? '<span class="badge badge-success">Enabled</span>' : '<span class="badge badge-danger">Disabled</span>'}</td>
+            <td>
+                <button class="btn-icon btn-delete" onclick="deletePath(${p.id})">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openAddPathModal() {
     document.getElementById('path-form').reset();
-    document.getElementById('path-enabled').checked = true;
-    toggleRecursiveField();
     document.getElementById('path-modal').style.display = 'flex';
 }
 
-function openEditModal(id) {
-    const path = window.allPaths.find(p => p.id == id);
-    if (!path) return;
-    
-    document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-pen-to-square"></i> Edit RAG Search Path';
-    document.getElementById('path-id').value = path.id;
-    document.getElementById('selected-path').value = path.path;
-    document.getElementById('path-type').value = path.type;
-    document.getElementById('path-recursive').value = path.recursive ? "1" : "0";
-    document.getElementById('path-category').value = path.category || '';
-    document.getElementById('path-enabled').checked = path.enabled ? true : false;
-    
-    toggleRecursiveField();
-    document.getElementById('path-modal').style.display = 'flex';
-}
-
-function closeModal() {
+function closePathModal() {
     document.getElementById('path-modal').style.display = 'none';
 }
 
-function toggleRecursiveField() {
-    const type = document.getElementById('path-type').value;
-    const group = document.getElementById('recursive-group');
-    if (type === 'file') {
-        group.style.display = 'none';
-    } else {
-        group.style.display = 'flex';
-    }
-}
-
-async function savePath(event) {
+async function saveLocalPath(event) {
     event.preventDefault();
-    const id = document.getElementById('path-id').value;
-    const pathVal = document.getElementById('selected-path').value;
-    const typeVal = document.getElementById('path-type').value;
-    const recVal = typeVal === 'directory' ? parseInt(document.getElementById('path-recursive').value) : 0;
-    const catVal = document.getElementById('path-category').value.trim() || null;
-    const enabledVal = document.getElementById('path-enabled').checked ? 1 : 0;
-    
-    const body = {
-        path: pathVal,
-        type: typeVal,
-        recursive: recVal,
-        category: catVal,
-        enabled: enabledVal
-    };
-    
+    const path = document.getElementById('selected-path').value.trim();
+    const repo = document.getElementById('path-repo-alias').value.trim() || 'local';
+    const category = document.getElementById('path-category').value.trim() || null;
+    const type = document.getElementById('path-type').value;
+    const recursive = parseInt(document.getElementById('path-recursive').value, 10);
+
     try {
-        let response;
-        if (id) {
-            response = await fetch(`/admin/api/paths/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-        } else {
-            response = await fetch('/admin/api/paths', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-        }
-        
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to save search path');
-        }
-        
-        closeModal();
+        const res = await fetch('/admin/api/paths', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, repo, category, type, recursive, enabled: 1 })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to add path');
+
+        closePathModal();
         loadPaths();
         loadStats();
-    } catch (error) {
-        alert(`Error: ${error.message}`);
+    } catch (e) {
+        alert('Error: ' + e.message);
     }
 }
 
-async function deletePath(id, path) {
-    if (!confirm(`Are you sure you want to delete the path '${path}'?\nThis will remove all associated files and vectors from the RAG index.`)) return;
+async function deletePath(id) {
+    if (!confirm('Are you sure you want to delete this local search path?')) return;
     try {
-        const response = await fetch(`/admin/api/paths/${id}`, { method: 'DELETE' });
-        if (!response.ok) throw new Error('Failed to delete path');
+        await fetch(`/admin/api/paths/${id}`, { method: 'DELETE' });
         loadPaths();
         loadStats();
-    } catch (error) {
-        alert(`Error deleting path: ${error.message}`);
+    } catch (e) {
+        alert('Failed to delete path: ' + e.message);
     }
 }
 
 // ----------------------------------------------------
-// DIRECTORY BROWSER STATE MACHINE
+// DIRECTORY BROWSER
 // ----------------------------------------------------
 
 function openBrowser() {
-    const existingPath = document.getElementById('selected-path').value;
-    // Start at currently configured path, or default /containers
-    let startPath = "/containers";
-    if (existingPath && existingPath.startsWith("/")) {
-        startPath = existingPath;
-    }
-    
     document.getElementById('browser-modal').style.display = 'flex';
-    browseTo(startPath);
+    browseDir(window.currentBrowserPath || '/');
 }
 
 function closeBrowser() {
     document.getElementById('browser-modal').style.display = 'none';
 }
 
-async function browseTo(path) {
+async function browseDir(path) {
     try {
-        const list = document.getElementById('browser-list');
-        list.innerHTML = '<div class="loading-state" style="padding: 20px;"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</div>';
-        
-        const response = await fetch(`/admin/api/browse?path=${encodeURIComponent(path)}`);
-        if (!response.ok) throw new Error('Failed to read directory');
-        const data = await response.json();
-        
+        const res = await fetch(`/admin/api/browse?path=${encodeURIComponent(path)}`);
+        const data = await res.json();
+        if (!res.ok) return;
+
         window.currentBrowserPath = data.current_path;
         document.getElementById('current-browser-path').textContent = data.current_path;
-        
-        renderBrowserList(data);
-    } catch (error) {
-        alert(`Failed to browse path: ${error.message}`);
-    }
-}
 
-function renderBrowserList(data) {
-    const list = document.getElementById('browser-list');
-    let items = [];
-    
-    // Add Go Up item if parent path exists
-    if (data.parent_path) {
-        items.push(`
-            <li class="browser-item parent-link" onclick="browseTo('${escapeHtml(data.parent_path)}')">
-                <i class="fa-solid fa-arrow-turn-up icon-dir"></i>
-                <span class="name">.. (Go Up)</span>
-            </li>
-        `);
-    }
-    
-    // Add directories
-    data.directories.forEach(dir => {
-        items.push(`
-            <li class="browser-item dir-item">
-                <div class="item-click-target" onclick="browseTo('${escapeHtml(dir.path)}')">
-                    <i class="fa-solid fa-folder icon-dir"></i>
-                    <span class="name">${escapeHtml(dir.name)}</span>
-                </div>
-                <button type="button" class="btn btn-secondary btn-select-inline" onclick="selectInlinePath('${escapeHtml(dir.path)}', 'directory')">
-                    Select
-                </button>
-            </li>
-        `);
-    });
-    
-    // Add files
-    data.files.forEach(file => {
-        items.push(`
-            <li class="browser-item file-item">
-                <div class="item-click-target">
-                    <i class="fa-solid fa-file-lines icon-file"></i>
-                    <span class="name">${escapeHtml(file.name)}</span>
-                </div>
-                <button type="button" class="btn btn-secondary btn-select-inline" onclick="selectInlinePath('${escapeHtml(file.path)}', 'file')">
-                    Select
-                </button>
-            </li>
-        `);
-    });
-    
-    if (items.length === 0) {
-        list.innerHTML = '<div class="empty-state" style="padding: 20px;">Directory is empty.</div>';
-    } else {
-        list.innerHTML = items.join('');
-    }
-}
+        const list = document.getElementById('browser-list');
+        list.innerHTML = '';
 
-function selectInlinePath(path, type) {
-    document.getElementById('selected-path').value = path;
-    document.getElementById('path-type').value = type;
-    toggleRecursiveField();
-    closeBrowser();
+        if (data.parent_path) {
+            const li = document.createElement('li');
+            li.className = 'browser-item';
+            li.innerHTML = `<i class="fa-solid fa-level-up-alt" style="color: var(--accent);"></i> <span>.. (Parent Directory)</span>`;
+            li.onclick = () => browseDir(data.parent_path);
+            list.appendChild(li);
+        }
+
+        data.directories.forEach(d => {
+            const li = document.createElement('li');
+            li.className = 'browser-item';
+            li.innerHTML = `<i class="fa-solid fa-folder" style="color: #fbbf24;"></i> <span>${escapeHtml(d.name)}</span>`;
+            li.onclick = () => browseDir(d.path);
+            list.appendChild(li);
+        });
+
+        data.files.forEach(f => {
+            const li = document.createElement('li');
+            li.className = 'browser-item';
+            li.innerHTML = `<i class="fa-solid fa-file-code" style="color: var(--text-muted);"></i> <span>${escapeHtml(f.name)}</span>`;
+            li.onclick = () => {
+                document.getElementById('selected-path').value = f.path;
+                document.getElementById('path-type').value = 'file';
+                closeBrowser();
+            };
+            list.appendChild(li);
+        });
+    } catch (e) {
+        console.error('Browse error:', e);
+    }
 }
 
 function selectBrowserPath() {
     document.getElementById('selected-path').value = window.currentBrowserPath;
     document.getElementById('path-type').value = 'directory';
-    toggleRecursiveField();
     closeBrowser();
 }
 
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, "&amp;")
-              .replace(/</g, "&lt;")
-              .replace(/>/g, "&gt;")
-              .replace(/"/g, "&quot;")
-              .replace(/'/g, "&#039;");
-}
-
 // ----------------------------------------------------
-// CUSTOM PROMPTS UI LOGIC
+// SEARCH & INSPECTOR
 // ----------------------------------------------------
 
-async function loadPrompts() {
-    try {
-        const response = await fetch('/admin/api/prompts');
-        if (!response.ok) throw new Error('Failed to fetch prompts');
-        const prompts = await response.json();
-        renderPrompts(prompts);
-    } catch (error) {
-        console.error('Error loading prompts:', error);
-    }
-}
-
-function renderPrompts(prompts) {
-    const tbody = document.getElementById('prompts-list-body');
-    if (!tbody) return;
-    if (prompts.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="4" class="empty-state">No custom MCP prompts configured. Click "Add Prompt" to create one.</td>
-            </tr>
-        `;
-        return;
-    }
-    
-    tbody.innerHTML = prompts.map(p => {
-        const argsStr = p.arguments && p.arguments.length > 0 
-            ? p.arguments.map(a => `<code style="font-size:0.75rem; background:rgba(255,255,255,0.1); padding:2px 4px; border-radius:3px;">{${escapeHtml(a.name)}}</code>`).join(' ') 
-            : '<span style="color:rgba(255,255,255,0.3)">None</span>';
-            
-        const previewText = p.template.length > 70 ? p.template.substring(0, 70) + '...' : p.template;
-
-        return `
-            <tr>
-                <td>
-                    <div style="font-weight:600; font-family:'JetBrains Mono', monospace; color:#2dd4bf;">${escapeHtml(p.name)}</div>
-                    <div style="font-size:0.75rem; margin-top:2px; color:rgba(255,255,255,0.5);">Args: ${argsStr}</div>
-                </td>
-                <td style="font-size:0.85rem; color:rgba(255,255,255,0.85);">${escapeHtml(p.description)}</td>
-                <td style="font-size:0.8rem; font-family:'JetBrains Mono', monospace; color:rgba(255,255,255,0.6);">${escapeHtml(previewText)}</td>
-                <td>
-                    <button class="btn btn-danger btn-sm" onclick="deletePrompt(${p.id})">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-}
-
-function openAddPromptModal() {
-    document.getElementById('prompt-name').value = '';
-    document.getElementById('prompt-desc').value = '';
-    document.getElementById('prompt-template').value = '';
-    document.getElementById('prompt-modal').style.display = 'flex';
-}
-
-function closePromptModal() {
-    document.getElementById('prompt-modal').style.display = 'none';
-}
-
-async function savePrompt(event) {
+async function runSearchTest(event) {
     event.preventDefault();
-    const name = document.getElementById('prompt-name').value.trim();
-    const description = document.getElementById('prompt-desc').value.trim();
-    const template = document.getElementById('prompt-template').value.trim();
+    const query = document.getElementById('test-query').value.trim();
+    const type = document.getElementById('test-type').value;
+    const repo = document.getElementById('test-repo').value.trim() || null;
 
-    // Extract placeholders like {topic} from template to auto-populate arguments
-    const matches = template.match(/\{([a-zA-Z0-9_\-]+)\}/g) || [];
-    const args = Array.from(new Set(matches.map(m => m.slice(1, -1)))).map(argName => ({
-        name: argName,
-        description: `Argument '${argName}' for prompt ${name}`,
-        required: true
-    }));
+    const area = document.getElementById('search-results-area');
+    const btn = document.getElementById('btn-run-search');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Searching...';
+    area.innerHTML = '<div class="empty-state">Running hybrid retrieval with Reciprocal Rank Fusion (RRF)...</div>';
 
     try {
-        const response = await fetch('/admin/api/prompts', {
+        const res = await fetch('/admin/api/search/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, description, arguments: args, template })
+            body: JSON.stringify({ query, type, repo })
         });
-        const res = await response.json();
-        if (!response.ok) throw new Error(res.error || 'Failed to save prompt');
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Search failed');
 
-        closePromptModal();
-        loadPrompts();
-    } catch (err) {
-        alert('Error saving prompt: ' + err.message);
+        if (!data.results || data.results.length === 0) {
+            area.innerHTML = '<div class="empty-state">No matching results found in index.</div>';
+            return;
+        }
+
+        area.innerHTML = data.results.map((hit, idx) => {
+            const p = hit.payload;
+            const link = p.github_url ? `<a href="${escapeHtml(p.github_url)}" target="_blank" style="color: var(--primary); font-size: 0.8rem; margin-left: 8px;"><i class="fa-solid fa-arrow-up-right-from-square"></i> View on GitHub</a>` : '';
+            const symbolBadge = p.symbol ? `<span class="badge badge-accent" style="margin-left: 6px;">${escapeHtml(p.symbol)}</span>` : '';
+
+            return `
+                <div class="search-hit-card">
+                    <div class="search-hit-header">
+                        <div>
+                            <span class="badge badge-primary">${escapeHtml(p.repo)}</span>
+                            <strong style="margin-left: 6px;">${escapeHtml(p.rel_path)}</strong>
+                            ${symbolBadge}
+                            <span class="text-muted" style="font-size: 0.8rem; margin-left: 6px;">(Lines ${p.start_line}-${p.end_line})</span>
+                            ${link}
+                        </div>
+                        <div>
+                            <span class="badge badge-success">RRF Score: ${hit.score}</span>
+                        </div>
+                    </div>
+                    <pre class="search-hit-code">${escapeHtml(p.content)}</pre>
+                </div>
+            `;
+        }).join('');
+
+    } catch (e) {
+        area.innerHTML = `<div class="empty-state" style="color: var(--danger);">Search error: ${escapeHtml(e.message)}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-play"></i> Search';
     }
 }
 
-async function deletePrompt(id) {
-    if (!confirm('Are you sure you want to delete this prompt?')) return;
+// ----------------------------------------------------
+// SETTINGS
+// ----------------------------------------------------
+
+async function loadSettings() {
     try {
-        const response = await fetch(`/admin/api/prompts/${id}`, { method: 'DELETE' });
-        if (!response.ok) throw new Error('Failed to delete prompt');
-        loadPrompts();
-    } catch (err) {
-        alert('Error deleting prompt: ' + err.message);
+        const res = await fetch('/admin/api/stats');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        document.getElementById('settings-token-source').textContent = data.token_source || 'None';
+        document.getElementById('settings-masked-token').textContent = data.masked_token || 'None';
+    } catch (e) {
+        console.error('Failed loading settings:', e);
     }
 }
 
+async function saveGitHubToken(event) {
+    event.preventDefault();
+    const token = document.getElementById('github-token-input').value.trim();
+    if (!token) return;
+
+    try {
+        const res = await fetch('/admin/api/settings/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ github_token: token })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to save token');
+
+        alert('GitHub Token saved successfully.');
+        document.getElementById('github-token-input').value = '';
+        loadSettings();
+        loadStats();
+    } catch (e) {
+        alert('Error saving token: ' + e.message);
+    }
+}
+
+async function clearGitHubToken() {
+    if (!confirm('Clear the stored GitHub token from database?')) return;
+    try {
+        await fetch('/admin/api/settings/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ github_token: '' })
+        });
+        loadSettings();
+        loadStats();
+    } catch (e) {
+        alert('Failed to clear token: ' + e.message);
+    }
+}
+
+function triggerReindex() {
+    fetch('/admin/api/reindex', { method: 'POST' })
+        .then(() => { loadStats(); loadRepos(); loadPaths(); })
+        .catch(e => alert('Reindex error: ' + e.message));
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
