@@ -24,6 +24,8 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - `list_repositories`: Summary of all indexed Git repos and local paths.
   - `sync_repository`: On-demand re-sync for a specific repo or all sources.
   - `index_status`: Global vector stats and GitHub rate limits.
+- **Modular Architecture & Strict Validation**: Refactored backend (`app/`) with strict `Pydantic` validation for API schemas and MCP tools.
+- **MCP 2.0.0 Compatible**: Built natively against the newest Model Context Protocol SDK 2.0.0.
 - **Modern Tabbed Web Dashboard (`/admin/`)**:
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, and topic tag cloud.
   - **Git Repositories**: Register repos, trigger shallow clone syncs, inspect commit SHAs, and manage sources.

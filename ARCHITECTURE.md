@@ -1,4 +1,4 @@
-# Architecture: Notes & Code RAG MCP Server (v2.0.0)
+# Architecture: Notes & Code RAG MCP Server (v3.0.0)
 
 The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation.
 
@@ -29,7 +29,7 @@ The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and 
   - `indexed_files` & `file_summaries`: File metadata, mtime change detection, and topic tags.
   - `system_metadata`: Key-value storage for tokens and timestamps.
 
-### 5. Specialized MCP Agent Tools (`server.py`)
+### 5. Specialized MCP Agent Tools (`app/mcp/mcp_server.py`)
 - `search_code`: Hybrid semantic + BM25 search over code blocks with line numbers and GitHub links.
 - `search_docs`: Dedicated search across markdown notes and architecture runbooks.
 - `find_symbol`: Instant exact/fuzzy symbol lookup from AST index.
