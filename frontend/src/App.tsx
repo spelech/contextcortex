@@ -41,7 +41,7 @@ function App() {
             <i className="fa-solid fa-layer-group logo-icon"></i>
             <div className="header-title">
               <h1>Code & Docs RAG Server</h1>
-              <span className="badge badge-primary">v2.0.0 Hybrid</span>
+              <span className="badge badge-primary">v3.0.0 Hybrid</span>
             </div>
           </div>
           <div className="header-status">
