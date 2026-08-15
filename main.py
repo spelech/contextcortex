@@ -52,6 +52,7 @@ async def root_redirect():
     return RedirectResponse(url="/admin/")
 
 app.mount("/admin", StaticFiles(directory="www", html=True), name="admin")
+app.mount("/assets", StaticFiles(directory="www/assets"), name="assets")
 
 @app.get("/sse")
 async def sse_endpoint(request: Request):
