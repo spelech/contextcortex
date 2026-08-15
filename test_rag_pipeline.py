@@ -123,16 +123,19 @@ if __name__ == "__main__":
     unittest.main()
 
 import pytest
-from app.models.schemas import SearchRequest, RepoConfig
-from app.api.routes import api_add_repo, api_test_search
+from fastapi.testclient import TestClient
+from main import app
 from app.mcp.tools import execute_tool
 import anyio
 
-@pytest.mark.asyncio
-async def test_api_routes_pydantic():
-    req = RepoConfig(name="pytest_repo", url="https://github.com/pytest/repo")
-    res = await api_add_repo(req)
-    assert res.get("status") in ["success", "error"]
+client = TestClient(app)
+
+def test_api_routes_pydantic():
+    req = {"name": "pytest_repo", "url": "https://github.com/pytest/repo"}
+    res = client.post("/admin/api/repos", json=req)
+    assert res.status_code in [200, 400]
+    data = res.json()
+    assert data.get("status") == "success" or "error" in data
 
 @pytest.mark.asyncio
 async def test_mcp_tools_pydantic():

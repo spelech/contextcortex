@@ -1,6 +1,14 @@
 import { test, expect } from '@playwright/test';
 
 test('has title and basic UI elements', async ({ page }) => {
+  await page.route('**/admin/api/*', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    });
+  });
+
   // We mock a successful load of the app, we can just check if it renders locally
   // However, we don't necessarily have the backend running for this basic test,
   // so let's just make a very basic test that can pass even if the app fails to fetch stats.
@@ -14,3 +22,4 @@ test('has title and basic UI elements', async ({ page }) => {
   await expect(page.locator('button.nav-tab', { hasText: 'Git Repositories' })).toBeVisible();
   await expect(page.locator('button.nav-tab', { hasText: 'Settings' })).toBeVisible();
 });
+

@@ -15,10 +15,10 @@ from app.api.routes import router as admin_router
 from app.mcp.mcp_server import mcp_server, sse_transport
 
 # Assuming init_db and VAULT_PATH are moved to app.services.db
-from app.services.db import init_db, VAULT_PATH
+from app.services.db import init_db
 
 # Assuming run_full_indexing is extracted to app.services.indexer
-from app.services.indexer import run_full_indexing
+from app.services.indexer import run_full_indexing, VAULT_PATH
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
