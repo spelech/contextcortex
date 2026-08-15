@@ -14,4 +14,4 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["python", "server.py"]
+CMD ["python", "main.py"]
