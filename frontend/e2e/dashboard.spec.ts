@@ -6,7 +6,11 @@ test('has title and basic UI elements', async ({ page }) => {
   // so let's just make a very basic test that can pass even if the app fails to fetch stats.
   await page.goto('/');
 
-  // Expect a title "to contain" a substring.
-  // We don't know the exact title, but let's check for the body being attached.
-  await expect(page.locator('body')).toBeAttached();
+  // Expect the main header title to be visible
+  await expect(page.locator('h1', { hasText: 'Code & Docs RAG Server' })).toBeVisible();
+
+  // Expect the navigation tabs to be present
+  await expect(page.locator('button.nav-tab', { hasText: 'Overview' })).toBeVisible();
+  await expect(page.locator('button.nav-tab', { hasText: 'Git Repositories' })).toBeVisible();
+  await expect(page.locator('button.nav-tab', { hasText: 'Settings' })).toBeVisible();
 });
