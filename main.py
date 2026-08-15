@@ -9,8 +9,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from mcp.server.session import ServerSession
-
 from app.api.routes import router as admin_router
 from app.mcp.mcp_server import mcp_server, sse_transport
 
@@ -30,25 +28,12 @@ try:
 except Exception as e:
     logger.error(f"Failed to init DB: {e}")
 
-# Application state for MCP SSE
-active_sessions = set()
 main_event_loop = None
 
-async def notify_list_changed():
-    if not active_sessions:
-        return
-    logger.info(f"Sending list_changed notifications to {len(active_sessions)} active sessions...")
-    for session in list(active_sessions):
-        try:
-            await session.send_tool_list_changed()
-            await session.send_prompt_list_changed()
-            await session.send_resource_list_changed()
-        except Exception as e:
-            logger.warning(f"Failed to send list_changed notification to session: {e}")
-
 def trigger_list_changed_notification():
-    if main_event_loop and main_event_loop.is_running():
-        asyncio.run_coroutine_threadsafe(notify_list_changed(), main_event_loop)
+    # In MCP v2.0.0, to notify clients we would use mcp_server.session_manager.
+    # However since we are not using streamable_http_app we skip broadcasting for now.
+    pass
 
 # Try patching the indexer so it can notify when done
 try:
@@ -73,22 +58,9 @@ async def sse_endpoint(request: Request):
     logger.info("New SSE client connection requested.")
     async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
         initialization_options = mcp_server.create_initialization_options()
-        async with AsyncExitStack() as stack:
-            lifespan_context = await stack.enter_async_context(mcp_server.lifespan(mcp_server))
-            session = await stack.enter_async_context(ServerSession(read_stream, write_stream, initialization_options))
-            active_sessions.add(session)
-            logger.info(f"Registered active session {session}. Total active: {len(active_sessions)}")
-            try:
-                async with anyio.create_task_group() as tg:
-                    try:
-                        async for message in session.incoming_messages:
-                            tg.start_soon(mcp_server._handle_message, message, session, lifespan_context, False)
-                    finally:
-                        tg.cancel_scope.cancel()
-            finally:
-                active_sessions.discard(session)
-                logger.info(f"Unregistered session {session}. Remaining active: {len(active_sessions)}")
-
+        # the run() method internally handles lifespan, session initialization and the message loop
+        await mcp_server.run(read_stream, write_stream, initialization_options)
+        
 app.mount("/messages", sse_transport.handle_post_message)
 
 @app.get("/health")
