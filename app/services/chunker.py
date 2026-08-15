@@ -1,6 +1,7 @@
 import os
 import re
 from typing import List, Dict, Any, Optional
+from app.models.schemas import CodeChunk, MarkdownChunk, CodeSymbol, ExtractionResult
 
 # Supported language mappings to tree-sitter language names
 EXTENSION_TO_LANGUAGE = {
@@ -103,7 +104,7 @@ def split_by_length(text: str, heading: str, max_chars: int = 1500, overlap: int
         })
     return chunks
 
-def chunk_markdown(text: str, max_chars: int = 1500, overlap: int = 200) -> List[Dict[str, Any]]:
+def chunk_markdown(text: str, max_chars: int = 1500, overlap: int = 200) -> List[MarkdownChunk]:
     """Chunks markdown documents by header hierarchies (# ## ###)."""
     lines = text.split("\n")
     chunks = []
@@ -138,7 +139,7 @@ def chunk_markdown(text: str, max_chars: int = 1500, overlap: int = 200) -> List
             sc["end_line"] = section_start_line + sc.get("end_line", len(current_section)) - 1
         chunks.extend(sub_chunks)
 
-    return chunks
+    return [MarkdownChunk(**c) for c in chunks]
 
 # Tree-sitter node type queries per language for AST chunking & outline
 CODE_CONTAINER_TYPES = {
@@ -172,7 +173,7 @@ def extract_symbols_and_chunks(
     filepath: str, 
     repo: str = "default",
     max_chunk_chars: int = 1500
-) -> Dict[str, Any]:
+) -> ExtractionResult:
     """
     Parses code using Tree-sitter AST, extracting:
     1. Structural code chunks (classes, methods, functions, module-level blocks).
@@ -188,22 +189,22 @@ def extract_symbols_and_chunks(
     if not parser:
         # Fallback to line-based chunking for unsupported languages
         raw_chunks = split_by_length(code, heading=os.path.basename(filepath), max_chars=max_chunk_chars)
-        return {
-            "chunks": raw_chunks,
-            "symbols": [],
-            "outline": []
-        }
+        return ExtractionResult(
+            chunks=[CodeChunk(**c) for c in raw_chunks],
+            symbols=[],
+            outline=[]
+        )
         
     try:
         tree = parser.parse(source_bytes)
         root = tree.root_node
     except Exception:
         raw_chunks = split_by_length(code, heading=os.path.basename(filepath), max_chars=max_chunk_chars)
-        return {
-            "chunks": raw_chunks,
-            "symbols": [],
-            "outline": []
-        }
+        return ExtractionResult(
+            chunks=[CodeChunk(**c) for c in raw_chunks],
+            symbols=[],
+            outline=[]
+        )
 
     symbols = []
     chunks = []
@@ -278,13 +279,13 @@ def extract_symbols_and_chunks(
             c["symbol"] = None
             c["kind"] = "module"
 
-    return {
-        "chunks": chunks,
-        "symbols": symbols,
-        "outline": outline
-    }
+    return ExtractionResult(
+        chunks=[CodeChunk(**c) for c in chunks],
+        symbols=[CodeSymbol(**s) for s in symbols],
+        outline=[f"{o['name']} ({o['kind']}) lines {o['start_line']}-{o['end_line']}" for o in outline]
+    )
 
-def get_file_outline(code: str, filepath: str) -> List[Dict[str, Any]]:
+def get_file_outline(code: str, filepath: str) -> List[str]:
     """Returns a structured AST outline of classes, methods, and functions in a file."""
     res = extract_symbols_and_chunks(code, filepath)
-    return res.get("outline", [])
+    return res.outline

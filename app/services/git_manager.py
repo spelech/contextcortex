@@ -6,6 +6,7 @@ import logging
 import subprocess
 from typing import Optional, Dict, Any, Tuple
 import requests
+from app.models.schemas import CloneResult
 
 logger = logging.getLogger("notes-rag-mcp.git")
 
@@ -62,11 +63,12 @@ def shallow_clone_repo(
     branch: str = "main", 
     token: Optional[str] = None,
     repo_id: Optional[str] = None
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+) -> CloneResult:
     """
     Shallow clones a git repository to a temporary directory.
-    Returns: (temp_dir_path, commit_sha, error_message)
+    Returns: CloneResult
     """
+    from app.models.schemas import CloneResult
     os.makedirs(TMP_BASE_DIR, exist_ok=True)
     repo_dir = tempfile.mkdtemp(prefix=f"repo_{repo_id or 'temp'}_", dir=TMP_BASE_DIR)
     auth_url = build_authenticated_url(git_url, token)
@@ -91,16 +93,16 @@ def shallow_clone_repo(
             if res.returncode != 0:
                 err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
                 cleanup_repo_dir(repo_dir)
-                return None, None, f"Clone failed: {err_msg}"
+                return CloneResult(temp_dir=None, commit_sha=None, error=f"Clone failed: {err_msg}")
 
         # Get Commit SHA
         sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10)
         commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else "unknown"
 
-        return repo_dir, commit_sha, None
+        return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)
     except Exception as e:
         cleanup_repo_dir(repo_dir)
-        return None, None, f"Exception during git clone: {str(e)}"
+        return CloneResult(temp_dir=None, commit_sha=None, error=f"Exception during git clone: {str(e)}")
 
 def cleanup_repo_dir(repo_dir: Optional[str]):
     """Safely removes cloned temporary directory from disk."""

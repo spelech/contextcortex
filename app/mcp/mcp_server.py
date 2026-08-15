@@ -1,0 +1,33 @@
+from mcp.server import Server
+from mcp.server.sse import SseServerTransport
+from typing import List, Dict, Any
+from mcp.types import Tool, TextContent, Resource, Prompt, PromptMessage, PromptArgument
+
+from app.mcp.tools import get_tools, execute_tool, get_resources, read_resource, get_prompts, get_prompt
+
+mcp_server = Server("notes-rag-mcp", version="2.0.0")
+sse_transport = SseServerTransport("/messages/")
+
+@mcp_server.list_tools()
+async def list_tools_handler() -> List[Tool]:
+    return await get_tools()
+
+@mcp_server.call_tool()
+async def call_tool_handler(name: str, arguments: dict) -> List[TextContent]:
+    return await execute_tool(name, arguments)
+
+@mcp_server.list_resources()
+async def list_resources_handler() -> List[Resource]:
+    return await get_resources()
+
+@mcp_server.read_resource()
+async def read_resource_handler(uri: str) -> str:
+    return await read_resource(uri)
+
+@mcp_server.list_prompts()
+async def list_prompts_handler() -> List[Prompt]:
+    return await get_prompts()
+
+@mcp_server.get_prompt()
+async def get_prompt_handler(name: str, arguments: dict = None) -> List[PromptMessage]:
+    return await get_prompt(name, arguments)

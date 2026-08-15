@@ -3,13 +3,13 @@ import shutil
 import tempfile
 import unittest
 
-from chunker import extract_symbols_and_chunks, chunk_markdown, get_file_outline
-from embeddings import get_dense_embedding, get_sparse_embedding, get_hybrid_embeddings
-from git_manager import (
+from app.services.chunker import extract_symbols_and_chunks, chunk_markdown, get_file_outline
+from app.services.embeddings import get_dense_embedding, get_sparse_embedding, get_hybrid_embeddings
+from app.services.git_manager import (
     shallow_clone_repo, cleanup_repo_dir, format_github_permalink, 
     check_github_rate_limit
 )
-from db import init_db, get_db_connection, set_metadata, get_metadata
+from app.services.db import init_db, get_db_connection, set_metadata, get_metadata
 
 class TestNotesAndCodeRAG(unittest.TestCase):
 
@@ -33,19 +33,19 @@ def standalone_helper(x: int) -> int:
     return x * 2
 """
         res = extract_symbols_and_chunks(sample_code, "src/processor.py", repo="test_repo")
-        chunks = res["chunks"]
-        symbols = res["symbols"]
-        outline = res["outline"]
+        chunks = res.chunks
+        symbols = res.symbols
+        outline = res.outline
 
-        symbol_names = [s["name"] for s in symbols]
+        symbol_names = [s.name for s in symbols]
         self.assertIn("DataProcessor", symbol_names)
         self.assertIn("__init__", symbol_names)
         self.assertIn("process_records", symbol_names)
         self.assertIn("standalone_helper", symbol_names)
 
         # Verify start/end line numbers
-        proc_sym = next(s for s in symbols if s["name"] == "process_records")
-        self.assertEqual(proc_sym["start_line"], 6)
+        proc_sym = next(s for s in symbols if s.name == "process_records")
+        self.assertEqual(proc_sym.start_line, 6)
 
         # Check outline
         self.assertTrue(len(outline) >= 4)
@@ -62,7 +62,7 @@ The database uses SQLite and Qdrant.
 - POST /admin/api/repos
 """
         chunks = chunk_markdown(sample_md)
-        headings = [c["heading"] for c in chunks]
+        headings = [c.heading for c in chunks]
         self.assertIn("Architecture Overview", headings)
         self.assertIn("Database Schema", headings)
         self.assertIn("API Endpoints", headings)
@@ -92,7 +92,10 @@ The database uses SQLite and Qdrant.
     def test_ephemeral_clone_and_cleanup(self):
         # Test shallow clone on a small public repo
         url = "https://github.com/octocat/Hello-World"
-        temp_dir, sha, err = shallow_clone_repo(url, branch="master")
+        res = shallow_clone_repo(url, branch="master")
+        temp_dir = res.temp_dir
+        sha = res.commit_sha
+        err = res.error
         if not err and temp_dir:
             self.assertTrue(os.path.exists(temp_dir))
             self.assertTrue(len(sha) > 0)
