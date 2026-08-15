@@ -29,6 +29,7 @@ body {
     justify-content: center;
     position: relative;
     overflow-x: hidden;
+    overflow-y: scroll;
 }
 
 /* Background Glowing Orbs */
@@ -69,7 +70,7 @@ body {
 /* Dashboard Container */
 .dashboard-container {
     width: 100%;
-    max-width: 100%;
+    max-width: 1400px;
     padding: 30px 48px;
     display: flex;
     flex-direction: column;
@@ -618,4 +619,31 @@ input:focus, select:focus, textarea:focus {
     color: var(--text-muted);
     font-size: 0.8rem;
     padding: 20px 0;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .dashboard-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 16px;
+    }
+    
+    .header-status {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+    
+    .dashboard-nav {
+        overflow-x: auto;
+        white-space: nowrap;
+        padding-bottom: 8px;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .dashboard-container {
+        padding: 16px 12px;
+    }
 }
