@@ -1,4 +1,4 @@
-# Developer Documentation (v2.0.0)
+# Developer Documentation (v3.0.0)
 
 This document provides instructions for developing, testing, and running the Notes & Code RAG MCP Server locally.
 
@@ -48,7 +48,7 @@ This document provides instructions for developing, testing, and running the Not
 
 6. **Run the server:**
    ```bash
-   python server.py
+   python main.py
    ```
    The server starts on port `3000`, initializes SQLite tables, configures Qdrant named multi-vectors (Dense + BM25 Sparse), and serves `/admin/` and `/sse`.
 
@@ -56,10 +56,18 @@ This document provides instructions for developing, testing, and running the Not
 
 ## 🧪 Running Automated Tests
 
-Run the test suite to verify AST parsing, embedding generation, ephemeral Git cloning, and database indexing:
+We now use `pytest` for the Python backend and `vitest`/`playwright` for the frontend.
 
+**Backend (Python):**
 ```bash
-python -m unittest test_rag_pipeline.py
+pytest
+```
+
+**Frontend (React/Vite):**
+```bash
+cd frontend
+npm run test        # Unit tests (Vitest)
+npx playwright test # E2E tests (Playwright)
 ```
 
 ---
@@ -68,16 +76,16 @@ python -m unittest test_rag_pipeline.py
 
 ```
 notes-rag-mcp/
-├── server.py              # Main FastAPI app, MCP tool definitions, and REST endpoints
-├── chunker.py             # Tree-sitter AST parser (code) & Markdown header chunker (docs)
-├── embeddings.py          # FastEmbed Dense (bge-small) & Sparse (BM25) multi-vector engine
-├── git_manager.py         # Ephemeral shallow clone, commit SHA tracking, GitHub permalinks
-├── db.py                  # SQLite database manager (WAL mode, repos, files, AST symbols)
-├── test_rag_pipeline.py   # Unit & integration test suite
-├── www/                   # Web Admin Dashboard
-│   ├── index.html         # Tabbed dashboard layout (Overview, Git Repos, Search Tester)
-│   ├── app.js             # Client-side state, live sync triggers, and search inspector
-│   └── styles.css         # Modern glassmorphic dark-mode design system
+├── main.py                # Main FastAPI entry point and lifecycle hooks
+├── app/                   # Modular backend
+│   ├── api/               # FastAPI REST routes (Pydantic validated)
+│   ├── mcp/               # MCP tools and SSE endpoint
+│   ├── models/            # Pydantic schema models
+│   └── services/          # Core services (chunker, embeddings, db, git_manager)
+├── tests/                 # Backend pytest suite
+├── frontend/              # Web Admin Dashboard (React, TypeScript, Vite)
+│   ├── src/               # React components and styles
+│   └── e2e/               # Playwright E2E tests
 ├── requirements.txt       # Python dependencies
 ├── Dockerfile             # Container definition with Python 3.11 & Git
 └── ARCHITECTURE.md        # Deep architectural design specification
