@@ -6,6 +6,7 @@ from mcp.types import Tool, TextContent, Resource, Prompt, PromptMessage, Prompt
 from app.services.db import get_db_connection
 from app.services.search import execute_hybrid_search
 from app.services.indexer import get_dynamic_catalog_description
+from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
 
 logger = logging.getLogger("notes-rag-mcp")
 
@@ -91,10 +92,11 @@ async def get_tools() -> List[Tool]:
 
 async def execute_tool(name: str, arguments: dict) -> List[TextContent]:
     if name == "search_code":
-        query = arguments.get("query", "").strip()
-        repo = arguments.get("repo")
-        language = arguments.get("language")
-        limit = arguments.get("limit", 5)
+        req = SearchRequest(**arguments)
+        query = req.query.strip()
+        repo = req.repo
+        language = req.language
+        limit = req.limit
 
         if not query:
             return [TextContent(type="text", text="Error: search query cannot be empty.")]
@@ -124,11 +126,12 @@ async def execute_tool(name: str, arguments: dict) -> List[TextContent]:
             return [TextContent(type="text", text=f"Error executing code search: {str(e)}")]
 
     elif name == "search_docs":
-        query = arguments.get("query", "").strip()
-        repo = arguments.get("repo")
-        category = arguments.get("category")
-        tag = arguments.get("tag")
-        limit = arguments.get("limit", 5)
+        req = SearchRequest(**arguments)
+        query = req.query.strip()
+        repo = req.repo
+        category = req.category
+        tag = req.tag
+        limit = req.limit
 
         if not query:
             return [TextContent(type="text", text="Error: search query cannot be empty.")]
@@ -160,10 +163,11 @@ async def execute_tool(name: str, arguments: dict) -> List[TextContent]:
             return [TextContent(type="text", text=f"Error executing doc search: {str(e)}")]
 
     elif name == "find_symbol":
-        sym_name = arguments.get("name", "").strip()
-        repo = arguments.get("repo")
-        exact = arguments.get("exact", True)
-        limit = arguments.get("limit", 10)
+        req = FindSymbolRequest(**arguments)
+        sym_name = req.name.strip()
+        repo = req.repo
+        exact = req.exact
+        limit = req.limit
 
         if not sym_name:
             return [TextContent(type="text", text="Error: symbol name cannot be empty.")]
@@ -201,8 +205,9 @@ async def execute_tool(name: str, arguments: dict) -> List[TextContent]:
             return [TextContent(type="text", text=f"Error finding symbol: {str(e)}")]
 
     elif name == "get_file_outline":
-        filepath = arguments.get("filepath", "").strip()
-        repo = arguments.get("repo")
+        req = GetFileOutlineRequest(**arguments)
+        filepath = req.filepath.strip()
+        repo = req.repo
 
         try:
             with get_db_connection() as conn:
@@ -255,7 +260,8 @@ async def execute_tool(name: str, arguments: dict) -> List[TextContent]:
             return [TextContent(type="text", text=f"Error listing repositories: {str(e)}")]
 
     elif name == "sync_repository":
-        target_repo = arguments.get("repo")
+        req = SyncRequest(**arguments)
+        target_repo = req.repo
         try:
             from app.services.indexer import sync_single_git_repo, run_full_indexing
             import threading
@@ -275,7 +281,8 @@ async def execute_tool(name: str, arguments: dict) -> List[TextContent]:
         try:
             from app.services.git_manager import check_github_rate_limit, mask_token
             from app.services.db import get_effective_github_token, get_token_source
-            from app.services.embeddings import COLLECTION_NAME, EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME, qdrant
+            from app.services.embeddings import EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
+            from app.services.indexer import COLLECTION_NAME, qdrant
             
             with get_db_connection() as conn:
                 files_count = conn.execute("SELECT count(*) FROM indexed_files").fetchone()[0]

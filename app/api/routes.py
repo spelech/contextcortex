@@ -5,6 +5,7 @@ import sqlite3
 import threading
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from app.models.schemas import RepoConfig, LocalPathConfig, SearchRequest, TokenRequest
 
 from app.services.db import (
     get_db_connection, get_metadata, set_metadata, 
@@ -14,11 +15,11 @@ from app.services.git_manager import check_github_rate_limit, mask_token
 
 # Assuming the other agent extracts these to app.services.indexer and app.services.embeddings
 from app.services.indexer import (
-    sync_single_git_repo, run_full_indexing, is_indexing
+    sync_single_git_repo, run_full_indexing, is_indexing,
+    qdrant, COLLECTION_NAME
 )
 from app.services.embeddings import (
-    EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME,
-    qdrant, COLLECTION_NAME
+    EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
 )
 
 router = APIRouter()
@@ -81,13 +82,12 @@ async def api_get_repos():
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.post("/admin/api/repos")
-async def api_add_repo(request: Request):
+async def api_add_repo(payload: RepoConfig):
     try:
-        data = await request.json()
-        name = data.get("name", "").strip()
-        url = data.get("url", "").strip()
-        branch = data.get("branch", "main").strip() or "main"
-        token = data.get("auth_token", "").strip() or None
+        name = payload.name.strip() if payload.name else ""
+        url = payload.url.strip() if payload.url else ""
+        branch = payload.branch.strip() if payload.branch else "main"
+        token = payload.auth_token.strip() if payload.auth_token else None
 
         if not name or not url:
             return JSONResponse(status_code=400, content={"error": "Repository name and Git URL are required."})
@@ -157,15 +157,14 @@ async def api_get_paths():
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.post("/admin/api/paths")
-async def api_add_path(request: Request):
+async def api_add_path(payload: LocalPathConfig):
     try:
-        data = await request.json()
-        path = data.get("path")
-        ptype = data.get("type", "directory")
-        recursive = int(data.get("recursive", 1))
-        enabled = int(data.get("enabled", 1))
-        category = data.get("category")
-        repo = data.get("repo", "local") or "local"
+        path = payload.path
+        ptype = payload.type if payload.type else "directory"
+        recursive = 1 if payload.recursive else 0
+        enabled = 1 if payload.enabled else 0
+        category = payload.category
+        repo = payload.repo if payload.repo else "local"
 
         if not path or not os.path.exists(path):
             return JSONResponse(status_code=400, content={"error": f"Valid local path is required: {path}"})
@@ -195,10 +194,9 @@ async def api_delete_path(path_id: int):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.post("/admin/api/settings/token")
-async def api_set_token(request: Request):
+async def api_set_token(payload: TokenRequest):
     try:
-        data = await request.json()
-        token = data.get("github_token", "").strip()
+        token = payload.github_token.strip()
         set_metadata("github_token", token)
         eff_token = get_effective_github_token()
         rate_info = check_github_rate_limit(eff_token)
@@ -213,12 +211,11 @@ async def api_set_token(request: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.post("/admin/api/search/test")
-async def api_test_search(request: Request):
+async def api_test_search(payload: SearchRequest):
     try:
-        data = await request.json()
-        query = data.get("query", "").strip()
-        search_type = data.get("type", "code") # "code" or "doc"
-        repo = data.get("repo") or None
+        query = payload.query.strip()
+        search_type = payload.type
+        repo = payload.repo
 
         if not query:
             return JSONResponse(status_code=400, content={"error": "Query required"})

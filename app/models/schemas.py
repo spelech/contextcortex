@@ -60,6 +60,7 @@ class CloneResult(BaseModel):
 # API Request/Response Models
 class SearchRequest(BaseModel):
     query: str
+    type: str = "code"
     repo: Optional[str] = None
     language: Optional[str] = None
     category: Optional[str] = None
@@ -68,4 +69,17 @@ class SearchRequest(BaseModel):
     exact: bool = True
 
 class SyncRequest(BaseModel):
+    repo: Optional[str] = None
+
+class TokenRequest(BaseModel):
+    github_token: str
+
+class FindSymbolRequest(BaseModel):
+    name: str
+    repo: Optional[str] = None
+    exact: bool = True
+    limit: int = 10
+
+class GetFileOutlineRequest(BaseModel):
+    filepath: str
     repo: Optional[str] = None

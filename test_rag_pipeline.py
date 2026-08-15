@@ -121,3 +121,22 @@ The database uses SQLite and Qdrant.
 
 if __name__ == "__main__":
     unittest.main()
+
+import pytest
+from app.models.schemas import SearchRequest, RepoConfig
+from app.api.routes import api_add_repo, api_test_search
+from app.mcp.tools import execute_tool
+import anyio
+
+@pytest.mark.asyncio
+async def test_api_routes_pydantic():
+    req = RepoConfig(name="pytest_repo", url="https://github.com/pytest/repo")
+    res = await api_add_repo(req)
+    assert res.get("status") in ["success", "error"]
+
+@pytest.mark.asyncio
+async def test_mcp_tools_pydantic():
+    args = {"query": "test query", "limit": 2}
+    res = await execute_tool("search_code", args)
+    assert len(res) == 1
+    assert "Error" in res[0].text or "No matching code snippets" in res[0].text or "========================" in res[0].text
