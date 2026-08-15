@@ -18,28 +18,28 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
         <div className="glass-card stat-metric">
           <div className="metric-icon"><i className="fa-brands fa-github"></i></div>
           <div className="metric-info">
-            <span className="stat-number">{stats.repos_count || 0}</span>
+            <span className="stat-number">{(stats.repos_count || 0).toLocaleString()}</span>
             <span className="stat-label">Git Repositories</span>
           </div>
         </div>
         <div className="glass-card stat-metric">
           <div className="metric-icon"><i className="fa-solid fa-code"></i></div>
           <div className="metric-info">
-            <span className="stat-number">{stats.symbols_count || 0}</span>
+            <span className="stat-number">{(stats.symbols_count || 0).toLocaleString()}</span>
             <span className="stat-label">AST Code Symbols</span>
           </div>
         </div>
         <div className="glass-card stat-metric">
           <div className="metric-icon"><i className="fa-solid fa-file-code"></i></div>
           <div className="metric-info">
-            <span className="stat-number">{stats.files_count || 0}</span>
+            <span className="stat-number">{(stats.files_count || 0).toLocaleString()}</span>
             <span className="stat-label">Indexed Files</span>
           </div>
         </div>
         <div className="glass-card stat-metric">
           <div className="metric-icon"><i className="fa-solid fa-network-wired"></i></div>
           <div className="metric-info">
-            <span className="stat-number">{stats.points_count || 0}</span>
+            <span className="stat-number">{(stats.points_count || 0).toLocaleString()}</span>
             <span className="stat-label">Hybrid Vectors</span>
           </div>
         </div>

@@ -128,7 +128,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
                        r.status === 'pending' ? <span className="badge badge-primary"><i className="fa-solid fa-clock"></i> Pending</span> :
                        <span className="badge badge-success"><i className="fa-solid fa-check"></i> Synced</span>}
                     </td>
-                    <td>{r.file_count || 0} files</td>
+                    <td>{(r.file_count || 0).toLocaleString()} files</td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{r.last_synced || 'Never'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: '6px' }}>

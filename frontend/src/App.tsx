@@ -60,7 +60,7 @@ function App() {
               <span className="value">
                 <i className="fa-brands fa-github"></i> 
                 <span>
-                  {stats?.rate_limit ? `${stats.rate_limit.remaining} / ${stats.rate_limit.limit} reqs` : 'Checking...'}
+                  {stats?.rate_limit ? `${stats.rate_limit.remaining.toLocaleString()} / ${stats.rate_limit.limit.toLocaleString()} reqs` : 'Checking...'}
                 </span>
               </span>
             </div>
