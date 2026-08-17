@@ -1,9 +1,8 @@
 # Software Requirements Specification (v2.4.1)
 
-This document is the authoritative **Software Requirements Specification (SRS)** for the **Notes & Code RAG MCP Server**. It is systematically derived from, verified by, and traceable to the entire test suite and codebase:
-- **132 Pytest Backend Tests** across 14 test modules in `tests/backend/` (97% statement coverage).
-- **47 Vitest Frontend Unit & Component Tests** across 8 test suites in `frontend/src/tests/` (93.3% line coverage).
-- **13 Playwright End-to-End User Journey Tests** in `frontend/e2e/dashboard.spec.ts`.
+> **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
+
+**Test Verification Baseline:** **187 Automated Tests** (127 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -186,182 +185,79 @@ classDiagram
 ## 3. Comprehensive Functional Requirements (FR)
 
 ### FR-1: Model Context Protocol (FastMCP 2.0.0+) Architecture
-- **FR-1.1 (Dual Transports)**: The server MUST support dual MCP transports simultaneously:
-  - Server-Sent Events (SSE) mounted at `/sse` with POST message routing at `/messages/`.
-  - Streamable HTTP bidirectional JSON-RPC transport endpoint at `/mcp`.
-  - *Verification*: `test_mcp_v2.py::test_fastmcp_streamable_http_transport`, `test_mcp_v2.py::test_fastmcp_sse_transport`
+- **FR-1.1 (Dual Transports)**: The server MUST support dual MCP transports simultaneously: Server-Sent Events (SSE) mounted at `/sse` with POST message routing at `/messages/`, and Streamable HTTP bidirectional JSON-RPC transport endpoint at `/mcp`.
 - **FR-1.2 (Lifespan & Session Registry)**: The server MUST maintain an active session registry to dispatch list change notifications (`send_tool_list_changed`, `send_resource_list_changed`, `send_prompt_list_changed`) to connected clients when indexing updates occur.
-  - *Verification*: `test_indexer_sync.py::test_notify_list_changed`
 - **FR-1.3 (JSON-RPC Schema Compliance)**: All tool definitions, parameter schemas, resource templates, and prompt descriptions MUST adhere strictly to the Model Context Protocol 2024-11-05 / 2025 specification.
-  - *Verification*: `test_mcp_v2.py::test_fastmcp_tool_listing`
-
----
 
 ### FR-2: FastMCP Agent Tools Contract
 - **FR-2.1 (`search_code`)**: MUST execute hybrid (Dense + BM25) code searches with Reciprocal Rank Fusion (RRF), returning code chunks, line ranges, matching symbol metadata, and clickable Git permalinks.
-  - Parameters: `query: str` (required), `repo: Optional[str]`, `limit: int = 5`, `min_score: float = 0.0`.
-  - *Verification*: `test_db_and_tools.py::test_execute_tool_search_code`
 - **FR-2.2 (`search_docs`)**: MUST execute hybrid searches across markdown notes and documentation, with category and tag filtering.
-  - Parameters: `query: str` (required), `category: Optional[str]`, `tags: Optional[List[str]]`, `limit: int = 5`, `min_score: float = 0.0`.
-  - *Verification*: `test_db_and_tools.py::test_execute_tool_search_docs`
 - **FR-2.3 (`find_symbol`)**: MUST perform sub-50ms exact and prefix symbol lookups against SQLite `ast_symbols` without vector search overhead.
-  - Parameters: `name: str` (required), `repo: Optional[str]`, `exact_match: bool = False`.
-  - *Verification*: `test_db_and_tools.py::test_execute_tool_find_symbol`
 - **FR-2.4 (`get_file_outline`)**: MUST return the structural AST outline (classes, methods, signatures, start/end lines) for a specified file path.
-  - Parameters: `filepath: str` (required), `repo: Optional[str]`.
-  - *Verification*: `test_db_and_tools.py::test_execute_tool_get_file_outline`
 - **FR-2.5 (`list_repositories`)**: MUST return all registered Git repositories (with provider tags e.g. `[GITHUB]`, `[GITLAB]`, commit SHAs, and sync status) and local paths.
-  - *Verification*: `test_db_and_tools.py::test_execute_tool_list_repositories`
 - **FR-2.6 (`sync_repository`)**: MUST trigger background incremental or shallow sync for a single repo or all sources.
-  - Parameters: `repo: Optional[str]` (None = all repositories).
-  - *Verification*: `test_db_and_tools.py::test_execute_tool_sync_repository`
 - **FR-2.7 (`index_status`)**: MUST report vector count, active embedding models, collection name, and provider rate limit status.
-  - *Verification*: `test_db_and_tools.py::test_execute_tool_index_status`
-
----
 
 ### FR-3: Dynamic Resources & Prompt Templates
 - **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `notes://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.
-  - *Verification*: `test_mcp_v2.py::test_fastmcp_resource_read`
 - **FR-3.2 (Prompt: `search_infrastructure_docs`)**: MUST provide a prompt template guiding agents to explore system architecture, networking, Docker setups, and container guides.
-  - *Verification*: `test_mcp_v2.py::test_fastmcp_prompt_get`
 - **FR-3.3 (Prompt: `find_implementation_symbol`)**: MUST provide a prompt template assisting agents in locating symbol declarations, methods, and interface signatures across repositories.
-  - *Verification*: `test_mcp_v2.py::test_fastmcp_prompt_get`
-
----
 
 ### FR-4: Universal Multi-Provider Git Ingestion Engine
-- **FR-4.1 (Multi-Provider Detection & Support)**: MUST detect and support repositories from:
-  - GitHub (`github.com` or custom enterprise domains).
-  - GitLab (`gitlab.com` or self-hosted GitLab Enterprise).
-  - Gitea / Forgejo (`gitea.com`, `codeberg.org`, or self-hosted).
-  - Bitbucket (`bitbucket.org` or Bitbucket Server).
-  - Generic Git HTTP/HTTPS with custom ports (e.g. `http://git.lan:3000/user/repo.git`).
-  - *Verification*: `test_multi_git_providers.py::test_detect_git_provider`
+- **FR-4.1 (Multi-Provider Detection & Support)**: MUST detect and support repositories from GitHub, GitLab (Cloud & Self-Hosted), Gitea/Forgejo, Bitbucket, and Generic Git HTTP/HTTPS with custom ports.
 - **FR-4.2 (Ephemeral Shallow Cloning & Zero Disk Bloat)**: MUST clone via `--depth 1 --branch <branch> --single-branch` into temporary directories and delete the cloned files immediately after AST extraction and vector upserts.
-  - *Verification*: `test_git_manager.py::TestGitManager::test_shallow_clone_repo_success`
 - **FR-4.3 (Remote SHA Change Tracking)**: MUST query remote commit SHAs via `git ls-remote` and skip redundant cloning when the remote SHA matches the local SQLite database.
-  - *Verification*: `test_indexer_edge_cases.py::test_sync_single_git_repo_unchanged_sha`
-- **FR-4.4 (Provider-Exact Permalinks)**: MUST construct valid deep links to specific lines of code across all providers:
-  - GitHub: `{base}/blob/{sha}/{path}#L{start}-L{end}`
-  - GitLab: `{base}/-/blob/{sha}/{path}#L{start}-{end}`
-  - Gitea / Forgejo: `{base}/src/commit/{sha}/{path}#L{start}-L{end}`
-  - Bitbucket: `{base}/src/{sha}/{path}#lines-{start}:{end}`
-  - *Verification*: `test_git_manager.py::TestGitManager::test_format_github_permalink`, `test_multi_git_providers.py::test_format_multi_provider_permalinks`
+- **FR-4.4 (Provider-Exact Permalinks)**: MUST construct valid deep links to specific lines of code across all providers (GitHub, GitLab, Gitea, Bitbucket).
 - **FR-4.5 (Credential Masking & URL Sanitization)**: MUST redact all access tokens and passwords from log files, console output, and API responses (e.g. `https://***github.com/...`).
-  - *Verification*: `test_multi_git_providers.py::test_sanitize_url_for_logging_multi_scheme`
-
----
 
 ### FR-5: Multi-Tier Authentication & Credential Vault Hierarchy
-- **FR-5.1 (Resolution Hierarchy)**: Ingestion MUST resolve credentials in strict priority order:
-  1. Per-repository override token & user (`auth_token`, `auth_user`).
-  2. Domain-level Custom Git Host Vault (`git_host_credentials` matching host domain/port).
-  3. Global DB provider tokens (`github_token`, `gitlab_token`, `gitea_token` in `system_metadata`).
-  4. Container environment variables (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `GITEA_TOKEN`).
-  - *Verification*: `test_multi_git_providers.py::test_effective_git_token_hierarchy`
+- **FR-5.1 (Resolution Hierarchy)**: Ingestion MUST resolve credentials in strict priority order: 1. Repo Override $\rightarrow$ 2. Host Vault $\rightarrow$ 3. Global DB Tokens $\rightarrow$ 4. Environment Variables.
 - **FR-5.2 (Host Credential Vault CRUD)**: MUST provide REST APIs (`GET/POST/DELETE /admin/api/settings/hosts`) to manage self-hosted domain credentials with provider types, auth users, and masked tokens.
-  - *Verification*: `test_multi_git_providers.py::test_host_credentials_api_endpoints`
-
----
 
 ### FR-6: Multi-Language Tree-sitter AST Syntax Chunking
-- **FR-6.1 (10-Language AST Parsing)**: MUST parse code across 10 major programming languages using Tree-sitter grammars:
-  - Python: Classes, functions, async functions, decorators.
-  - TypeScript & JavaScript: Classes, methods, functions, arrow functions, interfaces, type aliases.
-  - Go: Functions, methods, type declarations, struct definitions.
-  - Rust: Structs, enums, impl blocks, functions, traits.
-  - C# & Java: Classes, methods, interfaces, record types.
-  - C++: Classes, structs, namespaces, function definitions.
-  - Ruby: Classes, modules, methods, singleton methods.
-  - PHP: Classes, interfaces, methods, functions.
-  - *Verification*: `test_chunker_languages.py` (16 language test suites)
+- **FR-6.1 (10-Language AST Parsing)**: MUST parse code across 10 major programming languages (Python, TS/JS, Go, Rust, C#, C++, Java, Ruby, PHP) using Tree-sitter grammars along structural node boundaries.
 - **FR-6.2 (1-Indexed Line Ranges & Exact Signatures)**: Chunks MUST preserve exact 1-indexed start and end line ranges, signatures, and parent scope identifiers.
-  - *Verification*: `test_chunker.py::test_chunk_python_ast`, `test_chunker_languages.py`
-
----
 
 ### FR-7: Contextual Markdown & Fallback Chunking
 - **FR-7.1 (Hierarchical Markdown Breadcrumbs)**: Markdown chunks MUST preserve heading hierarchies (`# Title > ## Section > ### Subsection`) in chunk payloads to maintain semantic context during vector retrieval.
-  - *Verification*: `test_chunker.py::test_chunk_markdown_structure`
 - **FR-7.2 (Frontmatter Extraction)**: MUST extract YAML frontmatter metadata (title, category, tags) and index them in `file_summaries` and Qdrant payloads.
-  - *Verification*: `test_chunker.py::test_extract_frontmatter`
 - **FR-7.3 (Line-Based Fallback)**: Plain text, configuration, or unsupported file formats MUST be chunked using sliding line windows with configurable overlap.
-  - *Verification*: `test_chunker.py::test_chunk_text_fallback`
-
----
 
 ### FR-8: Hybrid Vector Retrieval Engine
-- **FR-8.1 (Named Multi-Vectors)**: Qdrant collection `notes_rag_v2` MUST be configured with named multi-vectors:
-  - Dense Vector: 384 dimensions, Cosine distance (`BAAI/bge-small-en-v1.5`).
-  - Sparse Vector: BM25 lexical vector weights (`Qdrant/bm25`).
-  - *Verification*: `test_indexer_and_embeddings.py::test_ensure_collection`
+- **FR-8.1 (Named Multi-Vectors)**: Qdrant collection `notes_rag_v2` MUST be configured with named multi-vectors: Dense Vector (384d, Cosine, `BAAI/bge-small-en-v1.5`) and Sparse Vector (BM25 lexical weights, `Qdrant/bm25`).
 - **FR-8.2 (Reciprocal Rank Fusion)**: Hybrid search queries MUST fuse dense semantic vectors and sparse lexical search rankings using RRF ($k=60$).
-  - *Verification*: `test_search.py::test_execute_hybrid_search_with_sparse`
 - **FR-8.3 (Deterministic UUID5 Point Identification)**: MUST generate deterministic chunk UUIDs from `{repo}:{filepath}#{index}` for atomic, idempotent upserts and updates.
-  - *Verification*: `test_indexer_and_embeddings.py::test_chunk_uuid_consistency`
 - **FR-8.4 (In-Process CPU Execution)**: FastEmbed embedding models MUST execute locally via ONNX Runtime without external API keys or cloud dependencies.
-  - *Verification*: `test_indexer_and_embeddings.py::test_local_embedding_generation`
-
----
 
 ### FR-9: REST Administration API
 - **FR-9.1 (Stats & Metadata)**: `GET /admin/api/stats` MUST return repository counts, file counts, symbol counts, vector point counts, active embedding models, keyword cloud, provider auth statuses, and rate limits.
-  - *Verification*: `test_api_routes.py::test_api_get_stats`
 - **FR-9.2 (Repository Management)**: `GET /admin/api/repos`, `POST /admin/api/repos`, `DELETE /admin/api/repos/{id}`, `POST /admin/api/repos/{id}/sync` MUST provide complete repository lifecycle management.
-  - *Verification*: `test_api_routes.py::test_api_repos_crud`, `test_api_repo_sync`
 - **FR-9.3 (Local Path Management & Directory Browser)**: `GET /admin/api/paths`, `POST /admin/api/paths`, `DELETE /admin/api/paths/{id}`, `GET /admin/api/browse` MUST manage local paths and support interactive directory exploration.
-  - *Verification*: `test_api_routes.py::test_api_paths_crud`, `test_api_browse`
 - **FR-9.4 (Live Hybrid Search Tester)**: `POST /admin/api/search/test` MUST execute hybrid searches with target type toggles (`all`, `code`, `doc`) and repository filters.
-  - *Verification*: `test_api_routes.py::test_api_search_test`
 - **FR-9.5 (Global Token Management)**: `POST /admin/api/settings/token` MUST store and clear GitHub, GitLab, and Gitea tokens.
-  - *Verification*: `test_api_routes.py::test_api_settings_token`
 - **FR-9.6 (Diagnostic Ring Buffer Logs)**: `GET /admin/api/logs` and `DELETE /admin/api/logs` MUST provide in-memory log entries (500-event ring buffer) with level filtering (ALL, INFO, WARNING, ERROR, DEBUG), keyword search, and exception tracebacks.
-  - *Verification*: `test_diagnostic_logger.py::test_logs_api_routes`
 - **FR-9.7 (Full System Re-indexing)**: `POST /admin/api/reindex` MUST trigger concurrent background indexing of all configured Git repositories and local paths.
-  - *Verification*: `test_api_routes.py::test_api_reindex_trigger`
-
----
 
 ### FR-10: React 19 Single Page Administrative Dashboard
 - **FR-10.1 (Tab Navigation)**: The UI MUST provide seamless client-side tab navigation between Overview, Git Repositories, Local Paths, Search & Inspector, Settings, and Diagnostics & Logs.
-  - *Verification*: `App.test.tsx`, Playwright E2E Spec 1
-- **FR-10.2 (Repository Management UI)**: Modal workflow for registering repositories with provider badges (GitHub, GitLab, Gitea, Bitbucket, Generic Git), single-repo sync buttons, and deletion confirmation dialogs.
-  - *Verification*: `GitRepoManager.test.tsx`, Playwright E2E Specs 2, 3, 4, 5
+- **FR-10.2 (Repository Management UI)**: Modal workflow for registering repositories with provider badges, single-repo sync buttons, and deletion confirmation dialogs.
 - **FR-10.3 (Local Path Management UI & Filesystem Browser)**: Interactive directory navigation modal, path registration, and recursive scanning toggles.
-  - *Verification*: `LocalPathManager.test.tsx`, Playwright E2E Specs 6, 7
 - **FR-10.4 (Interactive Search Inspector UI)**: Real-time query tester with code vs doc toggle, repo filters, RRF score display, and syntax-highlighted code chunks.
-  - *Verification*: `SearchInspector.test.tsx`, Playwright E2E Specs 8, 9
 - **FR-10.5 (Multi-Provider Settings & Host Vault UI)**: Multi-provider token cards (GitHub, GitLab, Gitea), rate limit indicators, and Custom Git Host Vault CRUD table/modal.
-  - *Verification*: `Settings.test.tsx`, Playwright E2E Specs 10, 11
 - **FR-10.6 (Diagnostics & Real-time Logs UI)**: Log level filtering pills (ALL, INFO, WARNING, ERROR, DEBUG), live search input, traceback drawer modal, and log buffer clear action.
-  - *Verification*: `DiagnosticsViewer.test.tsx`, Playwright E2E Spec 13
 - **FR-10.7 (Toast Notifications System)**: Global toast notification system with auto-dismiss timers, custom icons, and manual dismiss buttons.
-  - *Verification*: `ToastContext.test.tsx`
 
 ---
 
 ## 4. Non-Functional Requirements (NFR)
 
-- **NFR-1 (Performance & Response Budgets)**:
-  - AST symbol lookup (`find_symbol`, `get_file_outline`) response latency MUST be $<50\text{ms}$.
-  - Hybrid vector search query latency MUST be $<150\text{ms}$ on CPU.
-- **NFR-2 (Zero Disk Bloat & Memory Efficiency)**:
-  - Ephemeral shallow cloning MUST leave 0 MB residual cloned files on disk.
-  - In-process ONNX FastEmbed model memory usage MUST remain $\le 1.2\text{ GB}$ RAM.
-- **NFR-3 (Security & Credential Sanitization)**:
-  - Personal access tokens, OAuth tokens, and passwords MUST NEVER appear in cleartext in logs, console output, URLs, or client API payloads.
-- **NFR-4 (Reliability & Concurrency)**:
-  - SQLite database MUST operate with WAL (Write-Ahead Logging) mode to guarantee non-blocking concurrent reads during indexing writes.
-  - Qdrant collection schemas MUST automatically upgrade on startup if dimension or sparse vector mismatches are detected.
-- **NFR-5 (Failure Isolation)**:
-  - Failure to sync or index an individual repository MUST NOT abort indexing of other repositories or destabilize the MCP server.
-- **NFR-6 (Test Quality & Coverage Floor)**:
-  - Backend statement coverage MUST remain $\ge 95\%$.
-  - Frontend line coverage MUST remain $\ge 90\%$.
-  - 100% of automated Playwright E2E user journeys MUST pass.
-- **NFR-7 (Container Portability & Health Monitoring)**:
-  - The application MUST run as a standalone Docker container with healthcheck monitoring via `GET /health`.
+- **NFR-1 (Performance & Latency Budgets)**: AST symbol lookup response latency $<50\text{ms}$; Hybrid vector search query latency $<150\text{ms}$ on CPU.
+- **NFR-2 (Zero Disk Bloat & Memory Efficiency)**: Ephemeral shallow cloning MUST leave 0 MB residual cloned files on disk; FastEmbed model memory $\le 1.2\text{ GB}$ RAM.
+- **NFR-3 (Security & Credential Sanitization)**: Personal access tokens, OAuth tokens, and passwords MUST NEVER appear in cleartext in logs, console output, URLs, or client API payloads.
+- **NFR-4 (Reliability & Concurrency)**: SQLite database MUST operate in WAL mode; Qdrant collection schemas MUST automatically auto-heal/upgrade on startup.
+- **NFR-5 (Failure Isolation)**: Failure to sync an individual repository MUST NOT abort other repositories or crash the server.
+- **NFR-6 (Test Quality & Coverage Floor)**: Backend statement coverage $\ge 95\%$; Frontend line coverage $\ge 90\%$; 100% Playwright E2E pass rate.
+- **NFR-7 (Container Portability & Health Monitoring)**: Standalone Docker container with healthcheck monitoring via `GET /health`.
 
 ---
 
@@ -386,3 +282,245 @@ classDiagram
 | **NFR-5** | Sync Failure Isolation | `app/services/indexer.py` | `test_indexer_edge_cases.py`, `test_indexer_sync.py` | `GitRepoManager.test.tsx`, E2E Spec 5 |
 | **NFR-6** | Test Quality & Coverage Floors | Entire Test Suite | `pytest` (132 tests, 97% cov) | `vitest` (47 tests, 93% cov), `playwright` (13 tests) |
 | **NFR-7** | Container Portability & Health | `Dockerfile`, `main.py` | `test_api_routes.py` | Docker healthcheck |
+
+---
+
+## 6. Parsed Test Suite Inventory
+
+### 6.1 Backend Python Tests (`tests/backend/`)
+
+#### `test_api_routes.py` (15 tests)
+- `test_api_get_stats_with_keywords`
+- `test_api_get_stats_error`
+- `test_api_repos_crud`
+- `test_api_repos_error_handlers`
+- `test_api_paths_crud`
+- `test_api_paths_error_handlers`
+- `test_api_settings_token`
+- `test_api_settings_token_error`
+- `test_api_search_test`
+- `test_api_search_test_error`
+- `test_api_reindex`
+- `test_api_browse_dir`
+- `test_api_browse_dir_error`
+- `test_api_logs_endpoints`
+- `test_api_logs_error_handlers`
+
+#### `test_chunker.py` (3 tests)
+- `test_detect_language`
+- `test_split_by_length`
+- `test_chunk_markdown`
+
+#### `test_chunker_languages.py` (16 tests)
+- `test_language_detection`
+- `test_get_tree_sitter_parser_caching_and_fallbacks`
+- `test_extract_symbols_unsupported_language`
+- `test_extract_symbols_parser_parse_exception`
+- `test_go_ast_extraction`
+- `test_rust_ast_extraction`
+- `test_typescript_and_tsx_ast_extraction`
+- `test_java_ast_extraction`
+- `test_csharp_ast_extraction`
+- `test_cpp_and_c_ast_extraction`
+- `test_ruby_and_php_ast_extraction`
+- `test_large_function_subchunking`
+- `test_code_without_ast_symbols`
+- `test_get_file_outline_helper`
+- `test_markdown_chunking_with_subchunks`
+- `test_markdown_chunking_with_nested_headings_and_empty`
+
+#### `test_db_and_tools.py` (8 tests)
+- `test_db_path_and_init`
+- `test_db_init_seeding_vault`
+- `test_db_init_seeding_errors`
+- `test_db_metadata_errors`
+- `test_db_init_and_metadata`
+- `test_token_sources`
+- `test_custom_prompt_handlers`
+- `test_register_mcp_tools`
+
+#### `test_diagnostic_logger.py` (4 tests)
+- `test_ring_buffer_logging`
+- `test_ring_buffer_exception_traceback`
+- `test_ring_buffer_emit_exception_handling`
+- `test_logs_api_routes`
+
+#### `test_git_manager.py` (34 tests)
+- `TestGitManager::test_get_env_token`
+- `TestGitManager::test_normalize_git_url`
+- `TestGitManager::test_build_authenticated_url`
+- `TestGitManager::test_sanitize_url_for_logging`
+- `TestGitManager::test_mask_token`
+- `TestGitManager::test_format_github_permalink`
+- `TestGitManager::test_get_remote_head_sha_success`
+- `TestGitManager::test_get_remote_head_sha_fallback_head`
+- `TestGitManager::test_get_remote_head_sha_failure`
+- `TestGitManager::test_get_remote_head_sha_exception`
+- `TestGitManager::test_shallow_clone_repo_success`
+- `TestGitManager::test_shallow_clone_repo_failure`
+- `TestGitManager::test_shallow_clone_repo_exception`
+- `TestGitManager::test_cleanup_repo_dir_exception`
+- `TestGitManager::test_check_github_rate_limit_success`
+- `TestGitManager::test_check_github_rate_limit_non_200`
+- `TestGitManager::test_check_github_rate_limit_exception`
+- `test_get_env_token`
+- `test_normalize_git_url`
+- `test_build_authenticated_url`
+- `test_sanitize_url_for_logging`
+- `test_mask_token`
+- `test_format_github_permalink`
+- `test_get_remote_head_sha_success`
+- `test_get_remote_head_sha_fallback_head`
+- `test_get_remote_head_sha_failure`
+- `test_get_remote_head_sha_exception`
+- `test_shallow_clone_repo_success`
+- `test_shallow_clone_repo_failure`
+- `test_shallow_clone_repo_exception`
+- `test_cleanup_repo_dir_exception`
+- `test_check_github_rate_limit_success`
+- `test_check_github_rate_limit_non_200`
+- `test_check_github_rate_limit_exception`
+
+#### `test_indexer_and_embeddings.py` (20 tests)
+- `test_embeddings_generation`
+- `test_empty_embeddings_batches`
+- `test_api_embeddings_mode`
+- `test_sparse_embeddings_failures`
+- `test_init_embeddings_fallbacks`
+- `test_chunk_uuid_consistency`
+- `test_extract_keywords`
+- `test_ensure_collection`
+- `test_ensure_collection_recreate_schemas`
+- `test_dynamic_catalog_description`
+- `test_dynamic_catalog_description_error`
+- `test_process_file_content_doc`
+- `test_process_file_content_doc_corrupt_frontmatter`
+- `test_process_file_content_code`
+- `test_sync_local_paths`
+- `test_sync_local_paths_default_vault_fallback`
+- `test_sync_local_paths_exceptions`
+- `test_run_full_indexing`
+- `test_run_full_indexing_concurrency`
+- `test_trigger_list_changed_notification`
+
+#### `test_indexer_edge_cases.py` (9 tests)
+- `test_sync_single_git_repo_not_found`
+- `test_sync_single_git_repo_unchanged_sha`
+- `test_sync_single_git_repo_clone_error`
+- `test_sync_single_git_repo_full_success`
+- `test_sync_single_git_repo_file_parse_error`
+- `test_sync_single_git_repo_qdrant_purge_error`
+- `test_sync_single_git_repo_unexpected_exception`
+- `test_ensure_collection_recreate_on_mismatch`
+- `test_ensure_collection_already_matching`
+
+#### `test_indexer_sync.py` (4 tests)
+- `TestIndexerSync::test_sync_single_git_repo_success`
+- `TestIndexerSync::test_sync_single_git_repo_failure`
+- `test_sync_single_git_repo_success`
+- `test_sync_single_git_repo_failure`
+
+#### `test_mcp_v2.py` (0 tests)
+
+#### `test_multi_git_providers.py` (7 tests)
+- `test_detect_git_provider`
+- `test_build_authenticated_url_multi_provider`
+- `test_sanitize_url_for_logging_multi_scheme`
+- `test_git_host_credentials_vault_crud`
+- `test_effective_git_token_hierarchy`
+- `test_host_credentials_api_endpoints`
+- `test_multi_token_settings_api`
+
+#### `test_schemas.py` (2 tests)
+- `test_code_symbol_creation`
+- `test_search_request_defaults`
+
+#### `test_search.py` (5 tests)
+- `test_execute_hybrid_search_empty_query`
+- `test_execute_hybrid_search_collection_missing`
+- `test_execute_hybrid_search_collection_exception`
+- `test_execute_hybrid_search_with_sparse`
+- `test_execute_hybrid_search_without_sparse`
+
+#### `test_tools.py` (0 tests)
+
+### 6.2 Frontend Vitest Tests (`frontend/src/tests/`)
+
+#### `App.test.tsx` (3 tests)
+- renders header, status indicators, and default Overview tab
+- switches between tabs on navigation click
+- renders Syncing... engine state badge when is_indexing is true
+
+#### `DiagnosticsViewer.test.tsx` (9 tests)
+- renders log records, badges, and controls
+- filters logs by log level buttons
+- filters logs by search input
+- expands and collapses traceback details
+- toggles auto-scroll option
+- refreshes logs on refresh button click
+- clears logs on button click after confirmation
+- does not clear logs if confirmation is cancelled
+- displays error toast when log fetching fails
+
+#### `GitRepoManager.test.tsx` (6 tests)
+- renders repository list with status badges and details
+- shows empty state when no repositories are registered
+- opens modal, handles cancel, and submits new repository registration
+- triggers repo sync, refreshes stats, and updates status optimistically
+- triggers repo deletion, calls refreshStats, and removes repo optimistically
+- handles errors when loading repos, adding repo, syncing repo, and deleting repo
+
+#### `LocalPathManager.test.tsx` (6 tests)
+- renders configured paths correctly
+- supports folder navigation drilling and parent directory climbing in browser
+- selects a single file directly from browser and sets file path type
+- customizes repo alias, category, and recursive options before saving and refreshes stats
+- deletes path when delete button is confirmed and refreshes stats
+- handles errors when loading paths, adding path, deleting path, and browsing
+
+#### `Overview.test.tsx` (4 tests)
+- renders loading state when stats is null
+- renders metrics, specs, and top keywords accurately
+- triggers reindex and calls refreshStats on success
+- handles reindex API error gracefully
+
+#### `SearchInspector.test.tsx` (5 tests)
+- renders initial prompt and inputs
+- performs search and renders matching hit cards
+- displays empty results message when no hits found
+- handles search API failure with error display
+- performs doc search with repo filter and renders documentation hits
+
+#### `Settings.test.tsx` (9 tests)
+- renders multi-provider token boxes, rate limits, and host vault list
+- handles empty stats or fallback provider auth structure
+- saves new tokens for GitHub, GitLab, and Gitea
+- handles error saving token
+- clears tokens with confirmation and handles cancellation / clear errors
+- manages Custom Git Host Credential modal and saves new credentials
+- handles host credential modal cancel and validation error
+- deletes host credential and handles cancellation / delete error
+- handles loadHostCredentials network failure gracefully
+
+#### `ToastContext.test.tsx` (5 tests)
+- throws error when useToast is called outside of ToastProvider
+- displays success toast and auto-dismisses after timeout
+- displays error, info, and warning toasts with appropriate CSS classes and icons
+- supports showToast method with customizable toast types
+- dismisses toast immediately when clicking dismiss button
+
+### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/dashboard.spec.ts`)
+
+- 1. navigates through all tabs including Diagnostics & Logs
+- 2. adds a new Git repository via modal and verifies table update + toast
+- 3. triggers single-repo sync and verifies status feedback
+- 4. deletes a repository with window.confirm dialog verification
+- 5. renders repository error status with last_error diagnostic message
+- 6. opens filesystem browser, navigates directories, and selects folder for local path
+- 7. adds local path and deletes local path with confirmation
+- 8. executes hybrid search with target type toggle (code vs doc) and repo filter
+- 9. handles empty search query and error response states
+- 10. saves GitHub personal access token and verifies rate limit update
+- 11. clears GitHub token with confirmation dialog
+- 12. triggers Reindex All Sources on Overview tab
+- 13. filters, searches, and clears logs in Diagnostics & Logs tab
