@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
         yield
 
     logger.info("Knowledge RAG Server shutting down...")
+    try:
+        from app.services.vector_store.manager import VectorStoreManager
+        VectorStoreManager.reset_instance()
+    except Exception:
+        pass
 
 app = FastAPI(title="Knowledge RAG MCP Server", version="2.4.2", lifespan=lifespan)
 

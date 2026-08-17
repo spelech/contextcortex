@@ -118,15 +118,16 @@ class QdrantVectorStore(VectorStore):
                         "sparse": qmodels.SparseVectorParams()
                     }
                 )
-                for field in ["repo", "doc_type", "language", "path"]:
-                    try:
-                        self.client.create_payload_index(
-                            collection_name=self.collection_name,
-                            field_name=field,
-                            field_schema=qmodels.PayloadSchemaType.KEYWORD
-                        )
-                    except Exception as ie:
-                        logger.debug(f"Payload index creation for '{field}' info: {ie}")
+                if self.mode == "remote":
+                    for field in ["repo", "doc_type", "language", "path"]:
+                        try:
+                            self.client.create_payload_index(
+                                collection_name=self.collection_name,
+                                field_name=field,
+                                field_schema=qmodels.PayloadSchemaType.KEYWORD
+                            )
+                        except Exception as ie:
+                            logger.debug(f"Payload index creation for '{field}' info: {ie}")
             else:
                 logger.info(f"Collection '{self.collection_name}' verified with Named Multi-Vectors.")
             return True
