@@ -120,4 +120,16 @@ describe('Overview Component', () => {
       expect(screen.getByText(/Reindex error: Cluster busy/i)).toBeInTheDocument();
     });
   });
+
+  it('renders system specs with responsive word wrapping and badge elements', () => {
+    render(
+      <ToastProvider>
+        <Overview stats={sampleStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+    expect(screen.getByText('System & Embedding Specs')).toBeInTheDocument();
+    expect(screen.getByText(/Dense \+ BM25 Reciprocal Rank Fusion/i)).toBeInTheDocument();
+    const specRows = document.querySelectorAll('.spec-row');
+    expect(specRows.length).toBeGreaterThan(0);
+  });
 });

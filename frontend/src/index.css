@@ -254,7 +254,7 @@ body {
 /* Overview Layout */
 .overview-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
     gap: 16px;
 }
 
@@ -319,9 +319,38 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
     font-size: 0.9rem;
-    padding-bottom: 8px;
+    padding: 10px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.spec-row span:first-child {
+    color: var(--text-muted);
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.spec-row span:last-child,
+.spec-row code {
+    text-align: right;
+    word-break: break-word;
+    max-width: 100%;
+}
+
+@media (max-width: 576px) {
+    .spec-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    .spec-row span:last-child,
+    .spec-row code {
+        text-align: left;
+    }
+    .stat-metric {
+        padding: 16px;
+    }
 }
 
 .tag-cloud {
