@@ -1,14 +1,22 @@
 import type { Stats } from './types';
+import { useToast } from './ToastContext';
 
 export default function Overview({ stats, refreshStats }: { stats: Stats | null, refreshStats: () => void }) {
+  const toast = useToast();
+
   if (!stats) return <div className="tab-content active"><p>Loading...</p></div>;
 
   const triggerReindex = async () => {
     try {
-      await fetch('/admin/api/reindex', { method: 'POST' });
+      const res = await fetch('/admin/api/reindex', { method: 'POST' });
+      if (!res.ok) {
+         const data = await res.json().catch(() => ({}));
+         throw new Error(data.error || 'Failed to trigger reindex');
+      }
+      toast.success('Re-indexing triggered successfully');
       refreshStats();
     } catch (e: any) {
-      alert('Reindex error: ' + e.message);
+      toast.error('Reindex error: ' + e.message);
     }
   };
 

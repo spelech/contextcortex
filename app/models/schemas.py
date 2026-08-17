@@ -9,6 +9,7 @@ class RepoConfig(BaseModel):
     branch: Optional[str] = "main"
     commit_sha: Optional[str] = None
     status: Optional[str] = "pending"
+    last_error: Optional[str] = None
     last_synced: Optional[str] = None
     auth_token: Optional[str] = None
     enabled: bool = True

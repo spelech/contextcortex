@@ -1,10 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import App from '../App';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 describe('App', () => {
   beforeEach(() => {
-    global.fetch = vi.fn().mockResolvedValue({
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({})
     } as Response);

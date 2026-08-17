@@ -42,7 +42,21 @@ try:
 except Exception:
     pass
 
-app = FastAPI(title="Notes & Code RAG MCP Server")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global main_event_loop
+    main_event_loop = asyncio.get_running_loop()
+    logger.info("Notes & Code RAG Server starting up...")
+    try:
+        threading.Thread(target=run_full_indexing, daemon=True).start()
+    except Exception as e:
+        logger.error(f"Startup indexing error: {e}")
+    yield
+    logger.info("Notes & Code RAG Server shutting down...")
+
+app = FastAPI(title="Notes & Code RAG MCP Server", lifespan=lifespan)
 
 # Include API routes
 app.include_router(admin_router)
@@ -67,16 +81,6 @@ app.mount("/messages", sse_transport.handle_post_message)
 @app.get("/health")
 async def health():
     return JSONResponse(content={"status": "healthy"})
-
-@app.on_event("startup")
-async def startup_event():
-    global main_event_loop
-    main_event_loop = asyncio.get_running_loop()
-    logger.info("Notes & Code RAG Server starting up...")
-    try:
-        threading.Thread(target=run_full_indexing, daemon=True).start()
-    except Exception as e:
-        logger.error(f"Startup indexing error: {e}")
 
 if __name__ == "__main__":
     import uvicorn

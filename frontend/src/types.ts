@@ -23,6 +23,7 @@ export interface Repo {
   branch: string;
   commit_sha?: string;
   status: 'syncing' | 'error' | 'pending' | 'synced';
+  last_error?: string;
   file_count?: number;
   last_synced?: string;
 }

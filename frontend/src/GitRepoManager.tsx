@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import type { Repo } from './types';
+import { useToast } from './ToastContext';
 
 export default function GitRepoManager({ refreshStats }: { refreshStats: () => void }) {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const toast = useToast();
   
   // Modal state
   const [alias, setAlias] = useState('');
@@ -16,10 +18,14 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
   const loadRepos = async () => {
     try {
       const response = await fetch('/admin/api/repos');
-      if (!response.ok) return;
+      if (!response.ok) {
+        toast.error('Failed to load repositories');
+        return;
+      }
       const data = await response.json();
       setRepos(data);
-    } catch (e) {
+    } catch (e: any) {
+      toast.error('Error loading repos: ' + e.message);
       console.error('Error loading repos:', e);
     }
   };
@@ -49,8 +55,9 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       setToken('');
       loadRepos();
       refreshStats();
+      toast.success(`Repository '${alias.trim()}' added successfully`);
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      toast.error(`Error: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -58,11 +65,16 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
 
   const syncRepo = async (id: number) => {
     try {
-      await fetch(`/admin/api/repos/sync/${id}`, { method: 'POST' });
+      const res = await fetch(`/admin/api/repos/sync/${id}`, { method: 'POST' });
+      if (!res.ok) {
+         const data = await res.json().catch(() => ({}));
+         throw new Error(data.error || 'Failed to trigger sync');
+      }
       loadRepos();
       refreshStats();
+      toast.info('Sync triggered successfully');
     } catch (e: any) {
-      alert('Failed to trigger sync: ' + e.message);
+      toast.error('Failed to trigger sync: ' + e.message);
     }
   };
 
@@ -71,11 +83,16 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       return;
     }
     try {
-      await fetch(`/admin/api/repos/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/admin/api/repos/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+         const data = await res.json().catch(() => ({}));
+         throw new Error(data.error || 'Failed to delete repo');
+      }
       loadRepos();
       refreshStats();
+      toast.success(`Repository '${name}' deleted successfully`);
     } catch (e: any) {
-      alert('Failed to delete repo: ' + e.message);
+      toast.error('Failed to delete repo: ' + e.message);
     }
   };
 
@@ -124,7 +141,18 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
                     <td>{r.commit_sha ? <code>{r.commit_sha.substring(0, 8)}</code> : <span className="text-muted">-</span>}</td>
                     <td>
                       {r.status === 'syncing' ? <span className="badge badge-warning"><i className="fa-solid fa-spinner fa-spin"></i> Syncing</span> :
-                       r.status === 'error' ? <span className="badge badge-danger"><i className="fa-solid fa-circle-exclamation"></i> Error</span> :
+                       r.status === 'error' ? (
+                         <div>
+                           <span className="badge badge-danger" title={r.last_error || 'Sync failed'}>
+                             <i className="fa-solid fa-circle-exclamation"></i> Error
+                           </span>
+                           {r.last_error && (
+                             <div style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '4px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.last_error}>
+                               {r.last_error}
+                             </div>
+                           )}
+                         </div>
+                       ) :
                        r.status === 'pending' ? <span className="badge badge-primary"><i className="fa-solid fa-clock"></i> Pending</span> :
                        <span className="badge badge-success"><i className="fa-solid fa-check"></i> Synced</span>}
                     </td>

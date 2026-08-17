@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import type { LocalPath, BrowseData } from './types';
+import { useToast } from './ToastContext';
 
 export default function LocalPathManager({ refreshStats }: { refreshStats: () => void }) {
   const [paths, setPaths] = useState<LocalPath[]>([]);
+  const toast = useToast();
   const [isPathModalOpen, setIsPathModalOpen] = useState(false);
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
   
@@ -20,10 +22,14 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
   const loadPaths = async () => {
     try {
       const response = await fetch('/admin/api/paths');
-      if (!response.ok) return;
+      if (!response.ok) {
+        toast.error('Failed to load local paths');
+        return;
+      }
       const data = await response.json();
       setPaths(data);
-    } catch (e) {
+    } catch (e: any) {
+      toast.error('Error loading paths: ' + e.message);
       console.error('Error loading paths:', e);
     }
   };
@@ -61,19 +67,25 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
       
       loadPaths();
       refreshStats();
+      toast.success('Path added successfully');
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      toast.error(`Error: ${err.message}`);
     }
   };
 
   const deletePath = async (id: number) => {
     if (!window.confirm('Are you sure you want to delete this local search path?')) return;
     try {
-      await fetch(`/admin/api/paths/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/admin/api/paths/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+         const data = await res.json().catch(() => ({}));
+         throw new Error(data.error || 'Failed to delete path');
+      }
+      toast.success('Path deleted successfully');
       loadPaths();
       refreshStats();
     } catch (e: any) {
-      alert('Failed to delete path: ' + e.message);
+      toast.error('Failed to delete path: ' + e.message);
     }
   };
 
@@ -86,9 +98,13 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
     try {
       const res = await fetch(`/admin/api/browse?path=${encodeURIComponent(path)}`);
       const data = await res.json();
-      if (!res.ok) return;
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to browse directory');
+        return;
+      }
       setBrowseData(data);
-    } catch (e) {
+    } catch (e: any) {
+      toast.error('Browse error: ' + e.message);
       console.error('Browse error:', e);
     }
   };

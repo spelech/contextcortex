@@ -16,6 +16,17 @@ def execute_hybrid_search(
     limit: int = 5
 ) -> List[Any]:
     """Executes Dense + BM25 Sparse hybrid search with Reciprocal Rank Fusion in Qdrant."""
+    if not query_text or not query_text.strip():
+        return []
+
+    try:
+        if not qdrant.collection_exists(COLLECTION_NAME):
+            logger.warning(f"Collection '{COLLECTION_NAME}' does not exist in Qdrant.")
+            return []
+    except Exception as e:
+        logger.error(f"Error checking Qdrant collection: {e}")
+        return []
+
     dense_vec = get_dense_embedding(query_text.strip())
     sparse_vec = get_sparse_embedding(query_text.strip())
 

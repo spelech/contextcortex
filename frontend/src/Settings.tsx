@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Stats } from './types';
+import { useToast } from './ToastContext';
 
 export default function Settings({ stats, refreshStats }: { stats: Stats | null, refreshStats: () => void }) {
   const [token, setToken] = useState('');
+  const toast = useToast();
 
   const saveGitHubToken = async (e: FormEvent) => {
     e.preventDefault();
@@ -18,25 +20,30 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save token');
 
-      alert('GitHub Token saved successfully.');
+      toast.success('GitHub Token saved successfully.');
       setToken('');
       refreshStats();
     } catch (e: any) {
-      alert('Error saving token: ' + e.message);
+      toast.error('Error saving token: ' + e.message);
     }
   };
 
   const clearGitHubToken = async () => {
     if (!window.confirm('Clear the stored GitHub token from database?')) return;
     try {
-      await fetch('/admin/api/settings/token', {
+      const res = await fetch('/admin/api/settings/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ github_token: '' })
       });
+      if (!res.ok) {
+         const data = await res.json().catch(() => ({}));
+         throw new Error(data.error || 'Failed to clear token');
+      }
+      toast.success('GitHub token cleared');
       refreshStats();
     } catch (e: any) {
-      alert('Failed to clear token: ' + e.message);
+      toast.error('Failed to clear token: ' + e.message);
     }
   };
 

@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { SearchHit } from './types';
+import { useToast } from './ToastContext';
 
 export default function SearchInspector() {
+  const toast = useToast();
   const [query, setQuery] = useState('');
   const [type, setType] = useState('code');
   const [repo, setRepo] = useState('');
@@ -29,6 +31,7 @@ export default function SearchInspector() {
       setResults(data.results || []);
     } catch (err: any) {
       setError(err.message);
+      toast.error('Search failed: ' + err.message);
     } finally {
       setIsSearching(false);
     }

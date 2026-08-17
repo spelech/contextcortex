@@ -37,6 +37,13 @@ def sanitize_url_for_logging(url: str) -> str:
     """Removes tokens from URL before logging."""
     return re.sub(r"https://x-access-token:[^@]+@", "https://***", url)
 
+GIT_ENV = {
+    **os.environ,
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ASKPASS": "",
+    "SSH_ASKPASS": ""
+}
+
 def get_remote_head_sha(git_url: str, branch: str = "main", token: Optional[str] = None) -> Optional[str]:
     """
     Checks remote repository commit SHA for a branch without cloning using git ls-remote.
@@ -44,14 +51,14 @@ def get_remote_head_sha(git_url: str, branch: str = "main", token: Optional[str]
     auth_url = build_authenticated_url(git_url, token)
     try:
         cmd = ["git", "ls-remote", auth_url, f"refs/heads/{branch}", f"refs/tags/{branch}", branch]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=GIT_ENV)
         if result.returncode == 0 and result.stdout.strip():
             first_line = result.stdout.strip().splitlines()[0]
             sha = first_line.split()[0]
             return sha
         # If specific ref not matched, try HEAD
         cmd_head = ["git", "ls-remote", auth_url, "HEAD"]
-        res_head = subprocess.run(cmd_head, capture_output=True, text=True, timeout=20)
+        res_head = subprocess.run(cmd_head, capture_output=True, text=True, timeout=20, env=GIT_ENV)
         if res_head.returncode == 0 and res_head.stdout.strip():
             return res_head.stdout.strip().splitlines()[0].split()[0]
     except Exception as e:
@@ -85,18 +92,18 @@ def shallow_clone_repo(
             auth_url,
             repo_dir
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=GIT_ENV)
         if res.returncode != 0:
             # Fallback to default clone if branch failed (e.g. branch is default)
             cmd_fallback = ["git", "clone", "--depth", "1", auth_url, repo_dir]
-            res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120)
+            res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120, env=GIT_ENV)
             if res.returncode != 0:
                 err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
                 cleanup_repo_dir(repo_dir)
                 return CloneResult(temp_dir=None, commit_sha=None, error=f"Clone failed: {err_msg}")
 
         # Get Commit SHA
-        sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10)
+        sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10, env=GIT_ENV)
         commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else "unknown"
 
         return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)

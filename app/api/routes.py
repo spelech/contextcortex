@@ -76,7 +76,7 @@ async def api_get_stats():
 async def api_get_repos():
     try:
         with get_db_connection() as conn:
-            rows = conn.execute("SELECT id, name, url, branch, commit_sha, enabled, status, last_synced, added_at, (SELECT count(*) FROM indexed_files WHERE repo = git_repositories.name) as file_count FROM git_repositories ORDER BY added_at DESC").fetchall()
+            rows = conn.execute("SELECT id, name, url, branch, commit_sha, enabled, status, last_error, last_synced, added_at, (SELECT count(*) FROM indexed_files WHERE repo = git_repositories.name) as file_count FROM git_repositories ORDER BY added_at DESC").fetchall()
             return [dict(r) for r in rows]
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -112,6 +112,10 @@ async def api_add_repo(payload: RepoConfig):
 @router.post("/admin/api/repos/sync/{repo_id}")
 async def api_sync_repo(repo_id: int):
     try:
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT id FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+            if not row:
+                return JSONResponse(status_code=404, content={"error": f"Repository ID {repo_id} not found."})
         threading.Thread(target=sync_single_git_repo, args=(repo_id,), daemon=True).start()
         return {"status": "success", "message": f"Sync triggered for repository ID {repo_id}"}
     except Exception as e:
@@ -179,6 +183,8 @@ async def api_add_path(payload: LocalPathConfig):
 
         threading.Thread(target=run_full_indexing, daemon=True).start()
         return {"status": "success", "message": f"Added local path: {path}"}
+    except sqlite3.IntegrityError:
+        return JSONResponse(status_code=400, content={"error": f"Local path '{payload.path}' is already registered."})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -186,6 +192,9 @@ async def api_add_path(payload: LocalPathConfig):
 async def api_delete_path(path_id: int):
     try:
         with get_db_connection() as conn:
+            row = conn.execute("SELECT path FROM indexed_paths WHERE id = ?", (path_id,)).fetchone()
+            if not row:
+                return JSONResponse(status_code=404, content={"error": f"Path ID {path_id} not found."})
             conn.execute("DELETE FROM indexed_paths WHERE id = ?", (path_id,))
             conn.commit()
         threading.Thread(target=run_full_indexing, daemon=True).start()

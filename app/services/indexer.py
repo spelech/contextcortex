@@ -189,7 +189,8 @@ def process_file_content(
             except Exception:
                 pass
         
-        chunks = chunk_markdown(content, max_chars=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
+        chunks_models = chunk_markdown(content, max_chars=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
+        chunks = [c.model_dump() for c in chunks_models]
         valid_chunks = [c for c in chunks if c.get("content", "").strip()]
         headings = [c["heading"] for c in valid_chunks if c.get("heading") and c["heading"] != "Root"]
         keywords = extract_keywords_from_text(content, title, headings, tags)
@@ -231,8 +232,8 @@ def process_file_content(
 
     else: # Code file
         ast_result = extract_symbols_and_chunks(content, filepath, repo=repo, max_chunk_chars=CHUNK_SIZE)
-        chunks = ast_result["chunks"]
-        ast_symbols = ast_result["symbols"]
+        chunks = [c.model_dump() for c in ast_result.chunks]
+        ast_symbols = [s.model_dump() for s in ast_result.symbols]
         valid_chunks = [c for c in chunks if c.get("content", "").strip()]
         headings = [s["name"] for s in ast_symbols]
         keywords = extract_keywords_from_text(content, title, headings, [language])
@@ -467,11 +468,15 @@ def sync_single_git_repo(repo_id: int):
 
     temp_dir = None
     try:
-        temp_dir, commit_sha, err = shallow_clone_repo(git_url, branch, token=effective_token, repo_id=str(repo_id))
+        clone_res = shallow_clone_repo(git_url, branch, token=effective_token, repo_id=str(repo_id))
+        temp_dir = clone_res.temp_dir
+        commit_sha = clone_res.commit_sha
+        err = clone_res.error
+        
         if err or not temp_dir:
             logger.error(f"Failed to clone repo '{repo_name}': {err}")
             with get_db_connection() as conn:
-                conn.execute("UPDATE git_repositories SET status = 'error' WHERE id = ?", (repo_id,))
+                conn.execute("UPDATE git_repositories SET status = 'error', last_error = ? WHERE id = ?", (err or "Unknown clone error", repo_id))
                 conn.commit()
             return
 
@@ -564,13 +569,21 @@ def sync_single_git_repo(repo_id: int):
                 )
 
             conn.execute(
-                "UPDATE git_repositories SET status = 'synced', commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
+                "UPDATE git_repositories SET status = 'synced', last_error = NULL, commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
                 (commit_sha, repo_id)
             )
             conn.commit()
 
         logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Vectors: {len(all_points)}, Symbols: {len(all_symbols)}")
 
+    except Exception as e:
+        logger.error(f"Unexpected error during repo sync for '{repo_name}': {e}")
+        try:
+            with get_db_connection() as conn:
+                conn.execute("UPDATE git_repositories SET status = 'error', last_error = ? WHERE id = ?", (str(e), repo_id))
+                conn.commit()
+        except Exception:
+            pass
     finally:
         # Crucial: Ephemeral disk cleanup!
         cleanup_repo_dir(temp_dir)

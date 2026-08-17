@@ -57,10 +57,16 @@ def init_db(vault_path: str = "/docs"):
                 auth_token TEXT,
                 enabled INTEGER DEFAULT 1,
                 status TEXT DEFAULT 'pending',
+                last_error TEXT,
                 last_synced TIMESTAMP,
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        try:
+            conn.execute("ALTER TABLE git_repositories ADD COLUMN last_error TEXT")
+        except Exception:
+            pass
 
         # Indexed files
         conn.execute("""
