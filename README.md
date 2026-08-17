@@ -134,6 +134,15 @@ Connect any MCP client (VS Code, Cursor, Antigravity CLI, Claude Desktop, or Win
 
 ---
 
+## 📚 Documentation & Specifications
+
+- [**Software Requirements Specification (`REQUIREMENTS.md`)**](REQUIREMENTS.md): Authoritative functional and non-functional requirements with test-traceability matrix and Mermaid ERD data models.
+- [**System Architecture (`ARCHITECTURE.md`)**](ARCHITECTURE.md): FastMCP 2.0 transport topologies, component interaction diagrams, SQLite schema ERD, and Qdrant hybrid vector data model.
+- [**Developer Documentation (`DEVELOPER_DOCS.md`)**](DEVELOPER_DOCS.md): Setup, configuration, development workflow, and testing guidelines.
+- [**Test Coverage Reports (`docs/TEST_COVERAGE.md`)**](docs/TEST_COVERAGE.md): Pytest, Vitest, and Playwright verification metrics.
+
+---
+
 ## 🧪 Testing & Verification
 
 Run the full automated test suites across backend and frontend:
