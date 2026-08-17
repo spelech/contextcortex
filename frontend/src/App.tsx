@@ -10,6 +10,7 @@ import type { Stats } from './types';
 
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
 
   const loadStats = async () => {
@@ -38,13 +39,21 @@ function App() {
       
       <div className="dashboard-container">
         <header className="dashboard-header">
-          <div className="header-logo">
-            <i className="fa-solid fa-layer-group logo-icon"></i>
-            <div className="header-title">
-              <h1>Knowledge RAG Hub</h1>
-              <span className="badge badge-primary">v2.5.0</span>
-
+          <div className="header-top-row">
+            <div className="header-logo">
+              <i className="fa-solid fa-layer-group logo-icon"></i>
+              <div className="header-title">
+                <h1>Knowledge RAG Hub</h1>
+                <span className="badge badge-primary">v2.5.0</span>
+              </div>
             </div>
+            <button
+              className="menu-toggle-btn"
+              aria-label="Toggle navigation"
+              onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+            >
+              <i className={`fa-solid ${isMobileNavOpen ? 'fa-xmark' : 'fa-bars'}`}></i>
+            </button>
           </div>
           <div className="header-status">
             <div className="status-item">
@@ -71,16 +80,15 @@ function App() {
               <span className="value code">{stats?.vector_store_collection || 'knowledge_rag_v1'}</span>
             </div>
           </div>
-
         </header>
 
-        <nav className="dashboard-nav">
-          <button className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}><i className="fa-solid fa-chart-pie"></i> Overview</button>
-          <button className={`nav-tab ${activeTab === 'git-repos' ? 'active' : ''}`} onClick={() => setActiveTab('git-repos')}><i className="fa-brands fa-github"></i> Git Repositories</button>
-          <button className={`nav-tab ${activeTab === 'local-paths' ? 'active' : ''}`} onClick={() => setActiveTab('local-paths')}><i className="fa-solid fa-folder-tree"></i> Local Paths</button>
-          <button className={`nav-tab ${activeTab === 'search-inspector' ? 'active' : ''}`} onClick={() => setActiveTab('search-inspector')}><i className="fa-solid fa-magnifying-glass"></i> Search & Inspector</button>
-          <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}><i className="fa-solid fa-gear"></i> Settings</button>
-          <button className={`nav-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => setActiveTab('diagnostics')}><i className="fa-solid fa-terminal"></i> Diagnostics & Logs</button>
+        <nav className={`dashboard-nav ${isMobileNavOpen ? 'drawer-open' : ''}`}>
+          <button className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => { setActiveTab('overview'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-chart-pie"></i> Overview</button>
+          <button className={`nav-tab ${activeTab === 'git-repos' ? 'active' : ''}`} onClick={() => { setActiveTab('git-repos'); setIsMobileNavOpen(false); }}><i className="fa-brands fa-github"></i> Git Repositories</button>
+          <button className={`nav-tab ${activeTab === 'local-paths' ? 'active' : ''}`} onClick={() => { setActiveTab('local-paths'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-folder-tree"></i> Local Paths</button>
+          <button className={`nav-tab ${activeTab === 'search-inspector' ? 'active' : ''}`} onClick={() => { setActiveTab('search-inspector'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-magnifying-glass"></i> Search & Inspector</button>
+          <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-gear"></i> Settings</button>
+          <button className={`nav-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => { setActiveTab('diagnostics'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-terminal"></i> Diagnostics & Logs</button>
         </nav>
 
         <main className="dashboard-main">

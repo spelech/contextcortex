@@ -137,4 +137,28 @@ describe('App Component', () => {
       expect(screen.getAllByText(/Syncing\.\.\./).length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  it('toggles mobile navigation drawer and closes upon tab selection', async () => {
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+    const menuToggle = screen.getByRole('button', { name: /toggle navigation/i });
+    expect(menuToggle).toBeInTheDocument();
+    
+    // Drawer should initially be closed
+    const nav = screen.getByRole('navigation');
+    expect(nav).not.toHaveClass('drawer-open');
+    
+    // Click toggle to open drawer
+    fireEvent.click(menuToggle);
+    expect(nav).toHaveClass('drawer-open');
+    
+    // Click a navigation tab to select and auto-close drawer
+    const settingsTab = screen.getByRole('button', { name: /settings/i });
+    fireEvent.click(settingsTab);
+    expect(nav).not.toHaveClass('drawer-open');
+  });
 });
+
