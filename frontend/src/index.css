@@ -351,6 +351,12 @@ body {
     .stat-metric {
         padding: 16px;
     }
+    .path-input-row {
+        flex-direction: column;
+    }
+    .browser-breadcrumbs {
+        word-break: break-all;
+    }
 }
 
 .tag-cloud {

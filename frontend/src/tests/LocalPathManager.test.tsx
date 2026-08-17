@@ -48,11 +48,48 @@ describe('LocalPathManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('/containers/dev/workspace/docs')).toBeInTheDocument();
-      expect(screen.getByText('docs-vault')).toBeInTheDocument();
-      expect(screen.getByText('architecture')).toBeInTheDocument();
+      expect(screen.getAllByText('/containers/dev/workspace/docs')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('docs-vault')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('architecture')[0]).toBeInTheDocument();
       expect(screen.getByRole('cell', { name: 'Enabled' })).toBeInTheDocument();
     });
+  });
+
+  it('renders mobile cards for local search paths with delete button', async () => {
+    const refreshStats = vi.fn();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url.includes('/admin/api/paths/1') && opts?.method === 'DELETE') {
+        return Promise.resolve({ ok: true, json: async () => ({ status: 'deleted' }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => mockPaths });
+    });
+
+    render(
+      <ToastProvider>
+        <LocalPathManager refreshStats={refreshStats} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('docs-vault')[0]).toBeInTheDocument();
+    });
+
+    const pathCards = document.querySelectorAll('.data-mobile-card');
+    expect(pathCards.length).toBeGreaterThan(0);
+
+    // Test delete from mobile card
+    const mobileDeleteBtn = pathCards[0].querySelector('.btn-delete');
+    expect(mobileDeleteBtn).toBeInTheDocument();
+    if (mobileDeleteBtn) {
+      fireEvent.click(mobileDeleteBtn);
+      await waitFor(() => {
+        expect(window.confirm).toHaveBeenCalled();
+        expect(globalThis.fetch).toHaveBeenCalledWith('/admin/api/paths/1', { method: 'DELETE' });
+        expect(refreshStats).toHaveBeenCalled();
+      });
+    }
   });
 
   it('supports folder navigation drilling and parent directory climbing in browser', async () => {
@@ -197,10 +234,10 @@ describe('LocalPathManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('/containers/dev/workspace/docs')).toBeInTheDocument();
+      expect(screen.getAllByText('/containers/dev/workspace/docs')[0]).toBeInTheDocument();
     });
 
-    const deleteBtn = screen.getByTitle('Delete Path');
+    const deleteBtn = screen.getAllByTitle('Delete Path')[0];
     fireEvent.click(deleteBtn);
 
     await waitFor(() => {
@@ -233,11 +270,11 @@ describe('LocalPathManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('/containers/dev/workspace/docs')).toBeInTheDocument();
+      expect(screen.getAllByText('/containers/dev/workspace/docs')[0]).toBeInTheDocument();
     });
 
     vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
-    const deleteBtn = screen.getByTitle('Delete Path');
+    const deleteBtn = screen.getAllByTitle('Delete Path')[0];
     fireEvent.click(deleteBtn);
     expect(window.confirm).toHaveBeenCalled();
 

@@ -133,7 +133,7 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
           </button>
         </div>
 
-        <div className="table-container">
+        <div className="table-container desktop-table-view">
           <table>
             <thead>
               <tr>
@@ -170,6 +170,53 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="mobile-card-list">
+          {paths.length === 0 ? (
+            <div className="empty-state">No local search paths configured.</div>
+          ) : (
+            paths.map(p => (
+              <div key={`card-${p.id}`} className="data-mobile-card">
+                <div className="data-mobile-card-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                    <i className="fa-solid fa-folder-tree" style={{ color: 'var(--accent)' }}></i>
+                    <strong style={{ fontSize: '1rem' }}>{p.repo || 'local'}</strong>
+                  </div>
+                  {p.enabled ? <span className="badge badge-success">Enabled</span> : <span className="badge badge-danger">Disabled</span>}
+                </div>
+
+                <div className="data-mobile-card-body">
+                  <div>
+                    <span className="text-muted">Path: </span>
+                    <code style={{ wordBreak: 'break-all' }}>{p.path}</code>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span>
+                      <span className="text-muted">Type: </span>
+                      <span className="badge badge-primary">{p.type}</span>
+                    </span>
+                    <span>
+                      <span className="text-muted">Recursive: </span>
+                      <span>{p.recursive ? 'Yes' : 'No'}</span>
+                    </span>
+                  </div>
+                  {p.category && (
+                    <div>
+                      <span className="text-muted">Category: </span>
+                      <span className="badge badge-accent">{p.category}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="data-mobile-card-actions">
+                  <button className="btn btn-secondary btn-delete" onClick={() => deletePath(p.id)} title="Delete Path" aria-label="Delete Path">
+                    <i className="fa-solid fa-trash-can"></i> Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -237,8 +284,8 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
             
             <div className="browser-body">
               <div className="browser-breadcrumbs">
-                <span className="label">Current:</span>
-                <span className="code">{browseData.current_path}</span>
+                <span className="label">Current: </span>
+                <span className="code" style={{ wordBreak: 'break-all' }}>{browseData.current_path}</span>
               </div>
               <div className="browser-list-container">
                 <ul className="browser-list">
@@ -249,7 +296,7 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
                   )}
                   {browseData.directories.map(d => (
                     <li key={d.path} className="browser-item" onClick={() => browseDir(d.path)}>
-                      <i className="fa-solid fa-folder" style={{ color: '#fbbf24' }}></i> <span>{d.name}</span>
+                      <i className="fa-solid fa-folder" style={{ color: '#fbbf24' }}></i> <span style={{ wordBreak: 'break-all' }}>{d.name}</span>
                     </li>
                   ))}
                   {browseData.files.map(f => (
@@ -258,7 +305,7 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
                       setPathType('file');
                       setIsBrowserOpen(false);
                     }}>
-                      <i className="fa-solid fa-file-code" style={{ color: 'var(--text-muted)' }}></i> <span>{f.name}</span>
+                      <i className="fa-solid fa-file-code" style={{ color: 'var(--text-muted)' }}></i> <span style={{ wordBreak: 'break-all' }}>{f.name}</span>
                     </li>
                   ))}
                 </ul>
