@@ -30,6 +30,25 @@ def normalize_git_url(url: str) -> str:
         return f"https://{host}/{path}"
     return url
 
+def detect_git_provider(url: str, explicit_provider: Optional[str] = None) -> str:
+    """Detects git provider type (github, gitlab, gitea, bitbucket, generic)."""
+    if explicit_provider and explicit_provider.strip():
+        ep = explicit_provider.strip().lower()
+        if ep in ("github", "gitlab", "gitea", "bitbucket", "generic"):
+            return ep
+    if not url:
+        return "generic"
+    norm = normalize_git_url(url).lower()
+    if "gitlab" in norm:
+        return "gitlab"
+    if "gitea" in norm or "forgejo" in norm:
+        return "gitea"
+    if "bitbucket" in norm:
+        return "bitbucket"
+    if "github" in norm:
+        return "github"
+    return "generic"
+
 def mask_token(token: Optional[str]) -> str:
     """Mask token for secure UI and logging display."""
     if not token:
@@ -38,19 +57,57 @@ def mask_token(token: Optional[str]) -> str:
         return "****"
     return f"{token[:4]}...{token[-4:]}"
 
-def build_authenticated_url(git_url: str, token: Optional[str]) -> str:
-    """Injects token into HTTPS git URL for private repo access."""
+def build_authenticated_url(
+    git_url: str, 
+    token: Optional[str], 
+    username: Optional[str] = None, 
+    provider: Optional[str] = None
+) -> str:
+    """Injects token/credentials into HTTP(S) git URL based on provider type."""
     clean_url = normalize_git_url(git_url)
-    if not token or not clean_url.startswith("https://"):
+    if not token and not username:
         return clean_url
+    if not (clean_url.startswith("https://") or clean_url.startswith("http://")):
+        return clean_url
+
     # Strip existing credentials if present
-    clean_url = re.sub(r"https://[^@]+@", "https://", clean_url)
-    encoded_token = urllib.parse.quote(token.strip(), safe='')
-    return clean_url.replace("https://", f"https://x-access-token:{encoded_token}@")
+    scheme = "https://" if clean_url.startswith("https://") else "http://"
+    no_scheme = clean_url[len(scheme):]
+    clean_no_cred = re.sub(r"^[^@]+@", "", no_scheme)
+
+    prov = detect_git_provider(clean_url, provider)
+    encoded_token = urllib.parse.quote(token.strip(), safe='') if token else ""
+    encoded_user = urllib.parse.quote(username.strip(), safe='') if username else ""
+
+    if prov == "github":
+        auth_part = f"x-access-token:{encoded_token}@" if encoded_token else f"{encoded_user}@"
+    elif prov == "gitlab":
+        user_part = encoded_user or "oauth2"
+        auth_part = f"{user_part}:{encoded_token}@" if encoded_token else f"{encoded_user}@"
+    elif prov == "gitea":
+        user_part = encoded_user or "oauth2"
+        auth_part = f"{user_part}:{encoded_token}@" if (encoded_user and encoded_token) else (f"{encoded_token}@" if encoded_token else f"{encoded_user}@")
+    elif prov == "bitbucket":
+        user_part = encoded_user or "x-token-auth"
+        auth_part = f"{user_part}:{encoded_token}@" if encoded_token else f"{encoded_user}@"
+    else:  # Generic Git
+        if encoded_user and encoded_token:
+            auth_part = f"{encoded_user}:{encoded_token}@"
+        elif encoded_token:
+            auth_part = f"{encoded_token}@"
+        elif encoded_user:
+            auth_part = f"{encoded_user}@"
+        else:
+            auth_part = ""
+
+    return f"{scheme}{auth_part}{clean_no_cred}"
 
 def sanitize_url_for_logging(url: str) -> str:
-    """Removes tokens from URL before logging."""
-    return re.sub(r"https://x-access-token:[^@]+@", "https://***", url)
+    """Removes tokens/passwords from URL before logging."""
+    if not url:
+        return ""
+    # Matches http(s)://user:pass@host or http(s)://token@host -> http(s)://***host
+    return re.sub(r"(https?://)[^/@]+@", r"\1***", url)
 
 GIT_ENV = {
     **os.environ,
@@ -59,12 +116,25 @@ GIT_ENV = {
     "SSH_ASKPASS": ""
 }
 
-def get_remote_head_sha(git_url: str, branch: str = "main", token: Optional[str] = None) -> Optional[str]:
+def get_remote_head_sha(
+    git_url: str, 
+    branch: str = "main", 
+    token: Optional[str] = None,
+    username: Optional[str] = None,
+    provider: Optional[str] = None
+) -> Optional[str]:
     """
     Checks remote repository commit SHA for a branch without cloning using git ls-remote.
     """
+    from app.services.db import get_effective_git_token
     norm_url = normalize_git_url(git_url)
-    auth_url = build_authenticated_url(norm_url, token)
+    
+    if not token and not username:
+        eff_token, eff_user, _ = get_effective_git_token(norm_url, provider=provider)
+        token = token or eff_token
+        username = username or eff_user
+
+    auth_url = build_authenticated_url(norm_url, token, username=username, provider=provider)
     try:
         cmd = ["git", "ls-remote", auth_url, f"refs/heads/{branch}", f"refs/tags/{branch}", branch]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=GIT_ENV)
@@ -85,17 +155,25 @@ def shallow_clone_repo(
     git_url: str, 
     branch: str = "main", 
     token: Optional[str] = None,
+    username: Optional[str] = None,
+    provider: Optional[str] = None,
     repo_id: Optional[str] = None
 ) -> CloneResult:
     """
     Shallow clones a git repository to a temporary directory.
     Returns: CloneResult
     """
-    from app.models.schemas import CloneResult
+    from app.services.db import get_effective_git_token
     norm_url = normalize_git_url(git_url)
     os.makedirs(TMP_BASE_DIR, exist_ok=True)
     repo_dir = tempfile.mkdtemp(prefix=f"repo_{repo_id or 'temp'}_", dir=TMP_BASE_DIR)
-    auth_url = build_authenticated_url(norm_url, token)
+
+    if not token and not username:
+        eff_token, eff_user, _ = get_effective_git_token(norm_url, provider=provider)
+        token = token or eff_token
+        username = username or eff_user
+
+    auth_url = build_authenticated_url(norm_url, token, username=username, provider=provider)
     safe_url = sanitize_url_for_logging(auth_url)
 
     logger.info(f"Cloning {safe_url} (branch: {branch}) shallowly to {repo_dir}...")
@@ -137,34 +215,65 @@ def cleanup_repo_dir(repo_dir: Optional[str]):
         except Exception as e:
             logger.warning(f"Failed to cleanup temp directory {repo_dir}: {e}")
 
-def format_github_permalink(
+def format_git_permalink(
     git_url: str, 
     commit_sha: Optional[str], 
     rel_path: str, 
     start_line: Optional[int] = None, 
-    end_line: Optional[int] = None
+    end_line: Optional[int] = None,
+    provider: Optional[str] = None
 ) -> Optional[str]:
-    """Constructs a clickable GitHub blob permalink."""
+    """Constructs a clickable web permalink for any git provider (GitHub, GitLab, Gitea, Bitbucket, Generic)."""
     if not git_url:
         return None
-    # Normalize github url (strip .git)
-    base = git_url.rstrip("/")
+    # Normalize git url (strip .git)
+    base = normalize_git_url(git_url).rstrip("/")
     if base.endswith(".git"):
         base = base[:-4]
     
-    if "github.com" not in base and "gitlab.com" not in base:
-        return None
-
+    prov = detect_git_provider(base, provider)
     ref = commit_sha or "main"
     clean_rel = rel_path.lstrip("/")
-    
-    url = f"{base}/blob/{ref}/{clean_rel}"
-    if start_line is not None:
-        if end_line is not None and end_line > start_line:
-            url += f"#L{start_line}-L{end_line}"
-        else:
-            url += f"#L{start_line}"
-    return url
+
+    if prov == "gitlab":
+        # GitLab format: base/-/blob/{ref}/{path}#L{start}-L{end}
+        url = f"{base}/-/blob/{ref}/{clean_rel}"
+        if start_line is not None:
+            if end_line is not None and end_line > start_line:
+                url += f"#L{start_line}-{end_line}"
+            else:
+                url += f"#L{start_line}"
+        return url
+    elif prov == "gitea":
+        # Gitea/Forgejo format: base/src/branch/{ref}/{path}#L{start}-L{end}
+        url = f"{base}/src/commit/{ref}/{clean_rel}" if commit_sha else f"{base}/src/branch/{ref}/{clean_rel}"
+        if start_line is not None:
+            if end_line is not None and end_line > start_line:
+                url += f"#L{start_line}-L{end_line}"
+            else:
+                url += f"#L{start_line}"
+        return url
+    elif prov == "bitbucket":
+        # Bitbucket format: base/src/{ref}/{path}#lines-{start}:{end}
+        url = f"{base}/src/{ref}/{clean_rel}"
+        if start_line is not None:
+            if end_line is not None and end_line > start_line:
+                url += f"#lines-{start_line}:{end_line}"
+            else:
+                url += f"#lines-{start_line}"
+        return url
+    else:
+        # GitHub and standard Git format: base/blob/{ref}/{path}#L{start}-L{end}
+        url = f"{base}/blob/{ref}/{clean_rel}"
+        if start_line is not None:
+            if end_line is not None and end_line > start_line:
+                url += f"#L{start_line}-L{end_line}"
+            else:
+                url += f"#L{start_line}"
+        return url
+
+# Backwards compatible alias
+format_github_permalink = format_git_permalink
 
 def check_github_rate_limit(token: Optional[str] = None) -> Dict[str, Any]:
     """Queries GitHub API for rate limit status."""
@@ -186,3 +295,4 @@ def check_github_rate_limit(token: Optional[str] = None) -> Dict[str, Any]:
         return {"authenticated": bool(token), "status": f"HTTP {resp.status_code}"}
     except Exception as e:
         return {"authenticated": bool(token), "error": str(e)}
+

@@ -14,6 +14,11 @@ export interface Stats {
   is_indexing: boolean;
   token_source?: string;
   masked_token?: string;
+  providers_auth?: {
+    github?: { token_source: string; masked_token: string };
+    gitlab?: { token_source: string; masked_token: string };
+    gitea?: { token_source: string; masked_token: string };
+  };
 }
 
 export interface Repo {
@@ -22,10 +27,21 @@ export interface Repo {
   url: string;
   branch: string;
   commit_sha?: string;
+  provider?: string;
+  auth_user?: string;
   status: 'syncing' | 'error' | 'pending' | 'synced';
   last_error?: string;
   file_count?: number;
   last_synced?: string;
+}
+
+export interface GitHostCredential {
+  id: number;
+  host: string;
+  provider: 'github' | 'gitlab' | 'gitea' | 'bitbucket' | 'generic';
+  auth_user?: string;
+  masked_token: string;
+  added_at: string;
 }
 
 export interface LocalPath {

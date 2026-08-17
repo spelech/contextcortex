@@ -12,6 +12,8 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
   const [alias, setAlias] = useState('');
   const [url, setUrl] = useState('');
   const [branch, setBranch] = useState('main');
+  const [provider, setProvider] = useState('auto');
+  const [authUser, setAuthUser] = useState('');
   const [token, setToken] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -43,7 +45,14 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       const res = await fetch('/admin/api/repos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: alias.trim(), url: url.trim(), branch: branch.trim() || 'main', auth_token: token.trim() || null })
+        body: JSON.stringify({ 
+          name: alias.trim(), 
+          url: url.trim(), 
+          branch: branch.trim() || 'main', 
+          provider: provider === 'auto' ? undefined : provider,
+          auth_user: authUser.trim() || null,
+          auth_token: token.trim() || null 
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to add repository');
@@ -52,6 +61,8 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       setAlias('');
       setUrl('');
       setBranch('main');
+      setProvider('auto');
+      setAuthUser('');
       setToken('');
       loadRepos();
       refreshStats();
@@ -102,13 +113,22 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
     }
   };
 
+  const getProviderIcon = (prov?: string) => {
+    const p = (prov || 'github').toLowerCase();
+    if (p === 'gitlab') return <i className="fa-brands fa-gitlab" style={{ color: '#fc6d26', marginRight: '6px' }} title="GitLab" />;
+    if (p === 'gitea' || p === 'forgejo') return <i className="fa-solid fa-mug-hot" style={{ color: '#609926', marginRight: '6px' }} title="Gitea / Forgejo" />;
+    if (p === 'bitbucket') return <i className="fa-brands fa-bitbucket" style={{ color: '#2684ff', marginRight: '6px' }} title="Bitbucket" />;
+    if (p === 'generic') return <i className="fa-solid fa-code-branch" style={{ color: 'var(--accent)', marginRight: '6px' }} title="Generic Git" />;
+    return <i className="fa-brands fa-github" style={{ marginRight: '6px' }} title="GitHub" />;
+  };
+
   return (
     <div className="tab-content active">
       <div className="glass-card">
         <div className="card-header-btn">
           <div>
-            <h2><i className="fa-brands fa-github"></i> Registered Git Repositories</h2>
-            <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>Repositories are shallow-cloned, parsed into AST chunks, and immediately pruned from disk.</p>
+            <h2><i className="fa-solid fa-code-branch"></i> Registered Git Repositories</h2>
+            <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>Supports GitHub, GitLab, Gitea, Bitbucket, and custom self-hosted Git repositories over HTTP/HTTPS.</p>
           </div>
           <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
             <i className="fa-solid fa-plus"></i> Add Repository
@@ -137,7 +157,10 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
               ) : (
                 repos.map(r => (
                   <tr key={r.id}>
-                    <td><strong>{r.name}</strong></td>
+                    <td>
+                      {getProviderIcon(r.provider)}
+                      <strong>{r.name}</strong>
+                    </td>
                     <td>
                       <a href={r.url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.85rem' }}>
                         <i className="fa-solid fa-arrow-up-right-from-square"></i> {r.url}
@@ -186,29 +209,46 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
         <div className="modal-backdrop">
           <div className="glass-card modal-card">
             <div className="modal-header">
-              <h2><i className="fa-brands fa-github"></i> Register Git Repository</h2>
+              <h2><i className="fa-solid fa-code-branch"></i> Register Git Repository</h2>
               <button className="btn-close" onClick={() => setIsModalOpen(false)}>&times;</button>
             </div>
             
             <form onSubmit={handleSave}>
-              <div className="form-group">
-                <label htmlFor="repo-alias">Repository Alias / Identifier</label>
-                <input type="text" id="repo-alias" required placeholder="e.g. backend-api or notes-rag-mcp" value={alias} onChange={e => setAlias(e.target.value)} />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="repo-url">Git Clone URL (HTTPS)</label>
-                <input type="url" id="repo-url" required placeholder="https://github.com/owner/repository.git" value={url} onChange={e => setUrl(e.target.value)} />
-              </div>
-
               <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="repo-alias">Repository Alias / Identifier</label>
+                  <input type="text" id="repo-alias" required placeholder="e.g. backend-api or notes-rag-mcp" value={alias} onChange={e => setAlias(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="repo-provider">Git Provider</label>
+                  <select id="repo-provider" value={provider} onChange={e => setProvider(e.target.value)}>
+                    <option value="auto">Auto-Detect</option>
+                    <option value="github">GitHub / GitHub Enterprise</option>
+                    <option value="gitlab">GitLab (Cloud / Self-Hosted)</option>
+                    <option value="gitea">Gitea / Forgejo</option>
+                    <option value="bitbucket">Bitbucket</option>
+                    <option value="generic">Generic Git (HTTP / HTTPS)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="repo-url">Git Clone URL (HTTP / HTTPS)</label>
+                <input type="text" id="repo-url" required placeholder="https://github.com/owner/repo.git or http://git.lan:3000/repo.git" value={url} onChange={e => setUrl(e.target.value)} />
+              </div>
+
+              <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div className="form-group">
                   <label htmlFor="repo-branch">Branch / Tag</label>
                   <input type="text" id="repo-branch" placeholder="main" value={branch} onChange={e => setBranch(e.target.value)} />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="repo-token">Per-Repo Auth Token (Optional)</label>
-                  <input type="password" id="repo-token" placeholder="Optional token override" value={token} onChange={e => setToken(e.target.value)} />
+                  <label htmlFor="repo-user">Auth User (Optional)</label>
+                  <input type="text" id="repo-user" placeholder="e.g. oauth2" value={authUser} onChange={e => setAuthUser(e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="repo-token">Auth Token (Optional)</label>
+                  <input type="password" id="repo-token" placeholder="Token override" value={token} onChange={e => setToken(e.target.value)} />
                 </div>
               </div>
 

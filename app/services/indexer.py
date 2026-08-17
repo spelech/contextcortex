@@ -442,7 +442,7 @@ def sync_local_paths():
 def sync_single_git_repo(repo_id: int):
     """Ephemeral shallow clone, AST parse, hybrid vector upsert, and immediate disk cleanup."""
     with get_db_connection() as conn:
-        repo_row = conn.execute("SELECT id, name, url, branch, commit_sha, auth_token FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+        repo_row = conn.execute("SELECT * FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
     if not repo_row:
         return
 
@@ -450,10 +450,19 @@ def sync_single_git_repo(repo_id: int):
     git_url = repo_row["url"]
     branch = repo_row["branch"] or "main"
     per_repo_token = repo_row["auth_token"]
-    effective_token = get_effective_github_token(per_repo_token)
+    per_repo_user = repo_row["auth_user"] if "auth_user" in repo_row.keys() else None
+    provider = repo_row["provider"] if "provider" in repo_row.keys() else None
 
-    logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url})...")
-    remote_sha = get_remote_head_sha(git_url, branch, token=effective_token)
+    from app.services.db import get_effective_git_token
+    effective_token, effective_user, token_source = get_effective_git_token(
+        git_url, 
+        override_token=per_repo_token, 
+        override_user=per_repo_user, 
+        provider=provider
+    )
+
+    logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url}, provider: {provider or 'auto'}, auth: {token_source})...")
+    remote_sha = get_remote_head_sha(git_url, branch, token=effective_token, username=effective_user, provider=provider)
     if remote_sha and repo_row["commit_sha"] == remote_sha:
         logger.info(f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone.")
         with get_db_connection() as conn:
@@ -468,7 +477,14 @@ def sync_single_git_repo(repo_id: int):
 
     temp_dir = None
     try:
-        clone_res = shallow_clone_repo(git_url, branch, token=effective_token, repo_id=str(repo_id))
+        clone_res = shallow_clone_repo(
+            git_url, 
+            branch, 
+            token=effective_token, 
+            username=effective_user, 
+            provider=provider, 
+            repo_id=str(repo_id)
+        )
         temp_dir = clone_res.temp_dir
         commit_sha = clone_res.commit_sha
         err = clone_res.error

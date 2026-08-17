@@ -119,18 +119,31 @@ flowchart TD
 
 ---
 
-### 5. Ephemeral Git Repository Ingestion (`app/services/git_manager.py`)
+### 5. Universal Git Repository Ingestion (`app/services/git_manager.py`)
+- **Universal Provider Support**:
+  - Automatically identifies or configures providers: **GitHub**, **GitLab (Cloud, Enterprise & Self-Hosted)**, **Gitea & Forgejo**, **Bitbucket (Cloud & Server)**, and **Generic Git HTTP/HTTPS**.
+  - Custom ports, local IPs, and self-hosted instances supported (e.g. `http://git.lan:3000/user/repo.git`).
 - **Shallow Cloning**: Authenticated shallow clones (`git clone --depth 1 --branch <branch> --single-branch`) into temporary directories.
 - **Remote SHA Tracking**: Queries remote commit SHAs via `git ls-remote` to skip redundant clones.
 - **Zero Disk Bloat**: Prunes cloned directories immediately after AST extraction and vector upserts.
-- **GitHub Permalinks**: Generates clickable GitHub line range links (`https://github.com/owner/repo/blob/<sha>/path#L10-L30`).
-- **Token Management**: Resolves tokens from per-repo overrides, internal SQLite database, or `GITHUB_TOKEN` environment variable.
+- **Provider-Exact Permalinks**:
+  - GitHub: `{base}/blob/{sha}/{path}#L{start}-L{end}`
+  - GitLab: `{base}/-/blob/{sha}/{path}#L{start}-{end}`
+  - Gitea / Forgejo: `{base}/src/commit/{sha}/{path}#L{start}-L{end}`
+  - Bitbucket: `{base}/src/{sha}/{path}#lines-{start}:{end}`
+- **Multi-Tier Git Authentication Hierarchy**:
+  1. Per-repository override token & optional username (`auth_token`, `auth_user`).
+  2. Domain-level Custom Git Host Vault (`git_host_credentials`).
+  3. Global provider tokens (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `GITEA_TOKEN` in DB or Settings UI).
+  4. Environment variable fallback.
+- **Credential Masking & URL Sanitization**: Complete redaction of all passwords and tokens from log messages and UI payloads.
 
 ---
 
 ### 6. Database & Symbol Index (`app/services/db.py`)
 - **SQLite Database (`index_cache.db`) with WAL mode**:
-  - `git_repositories`: Registered remote Git repos, branches, commit SHAs, status, and last synced timestamps.
+  - `git_repositories`: Registered remote Git repos, provider type, auth usernames, branches, commit SHAs, status, and last synced timestamps.
+  - `git_host_credentials`: Host domain credential vault for self-hosted instances.
   - `indexed_paths`: Monitored local directories and files.
   - `ast_symbols`: Indexed symbol table (classes, functions, methods, line numbers, signatures) for instantaneous `find_symbol` and `get_file_outline`.
   - `indexed_files` & `file_summaries`: File metadata, mtime change detection, and topic tags.

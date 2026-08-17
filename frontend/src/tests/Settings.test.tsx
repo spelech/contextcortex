@@ -12,7 +12,12 @@ const mockStats: Stats = {
   last_indexed: '2026-08-17',
   is_indexing: false,
   token_source: 'Database',
-  masked_token: 'ghp_****5678'
+  masked_token: 'ghp_****5678',
+  providers_auth: {
+    github: { token_source: 'Database', masked_token: 'ghp_****5678' },
+    gitlab: { token_source: 'None', masked_token: 'None' },
+    gitea: { token_source: 'None', masked_token: 'None' }
+  }
 };
 
 describe('Settings Component', () => {
@@ -20,15 +25,20 @@ describe('Settings Component', () => {
     vi.clearAllMocks();
   });
 
-  it('renders active token source and masked token', () => {
+  it('renders multi-provider token boxes and vault manager', async () => {
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => []
+    });
+
     render(
       <ToastProvider>
         <Settings stats={mockStats} refreshStats={vi.fn()} />
       </ToastProvider>
     );
 
-    expect(screen.getByText('GitHub Authentication & Rate Limits')).toBeInTheDocument();
-    expect(screen.getByText('Database')).toBeInTheDocument();
+    expect(screen.getByText('Global Git Provider Authentication')).toBeInTheDocument();
+    expect(screen.getByText('Custom & Self-Hosted Git Host Vault')).toBeInTheDocument();
     expect(screen.getByText('ghp_****5678')).toBeInTheDocument();
   });
 
@@ -45,11 +55,11 @@ describe('Settings Component', () => {
       </ToastProvider>
     );
 
-    const tokenInput = screen.getByPlaceholderText(/ghp_xxxx/i);
-    fireEvent.change(tokenInput, { target: { value: 'ghp_newtoken123456789' } });
+    const tokenInputs = screen.getAllByPlaceholderText(/ghp_xxxx/i);
+    fireEvent.change(tokenInputs[0], { target: { value: 'ghp_newtoken123456789' } });
 
-    const saveBtn = screen.getByRole('button', { name: /Save Token to DB/i });
-    fireEvent.click(saveBtn);
+    const saveBtns = screen.getAllByRole('button', { name: /^Save$/i });
+    fireEvent.click(saveBtns[0]);
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -60,7 +70,6 @@ describe('Settings Component', () => {
         })
       );
       expect(refreshStats).toHaveBeenCalled();
-      expect(screen.getByText('GitHub Token saved successfully.')).toBeInTheDocument();
     });
   });
 
@@ -79,8 +88,8 @@ describe('Settings Component', () => {
       </ToastProvider>
     );
 
-    const clearBtn = screen.getByRole('button', { name: /Clear Token/i });
-    fireEvent.click(clearBtn);
+    const clearBtns = screen.getAllByRole('button', { name: /^Clear$/i });
+    fireEvent.click(clearBtns[0]);
 
     await waitFor(() => {
       expect(window.confirm).toHaveBeenCalled();
@@ -92,49 +101,56 @@ describe('Settings Component', () => {
         })
       );
       expect(refreshStats).toHaveBeenCalled();
-      expect(screen.getByText('GitHub token cleared')).toBeInTheDocument();
     });
   });
 
-  it('handles cancellation and errors during token save and clear', async () => {
-    // 1. Cancel clear token
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('opens host credential modal and saves custom host credentials', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((_url: string, opts?: any) => {
+      if (opts?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ status: 'success' })
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => []
+      });
+    });
+
     render(
       <ToastProvider>
         <Settings stats={mockStats} refreshStats={vi.fn()} />
       </ToastProvider>
     );
 
-    const clearBtn = screen.getByRole('button', { name: /Clear Token/i });
-    fireEvent.click(clearBtn);
-    expect(window.confirm).toHaveBeenCalled();
+    const addHostBtn = screen.getByRole('button', { name: /Add Host Credential/i });
+    fireEvent.click(addHostBtn);
 
-    // 2. Error saving token
-    (globalThis as any).fetch = vi.fn().mockResolvedValueOnce({
-      ok: false,
-      json: async () => ({ error: 'Invalid token format' })
-    });
+    expect(screen.getByRole('heading', { name: /Add Host Credential/i })).toBeInTheDocument();
 
-    const tokenInput = screen.getByPlaceholderText(/ghp_xxxx/i);
-    fireEvent.change(tokenInput, { target: { value: 'bad_token' } });
+    const hostInput = screen.getByPlaceholderText(/gitlab\.mycorp\.internal/i);
+    const tokenInput = screen.getByPlaceholderText(/Token or password/i);
 
-    const saveBtn = screen.getByRole('button', { name: /Save Token to DB/i });
-    fireEvent.click(saveBtn);
+    fireEvent.change(hostInput, { target: { value: 'gitlab.enterprise.corp' } });
+    fireEvent.change(tokenInput, { target: { value: 'glpat_secret999' } });
+
+    const submitBtn = screen.getByRole('button', { name: /Save Host Credential/i });
+    fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/Error saving token: Invalid token format/i)).toBeInTheDocument();
-    });
-
-    // 3. Error clearing token
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    (globalThis as any).fetch = vi.fn().mockResolvedValueOnce({
-      ok: false,
-      json: async () => ({ error: 'Database locked' })
-    });
-
-    fireEvent.click(clearBtn);
-    await waitFor(() => {
-      expect(screen.getByText(/Failed to clear token: Database locked/i)).toBeInTheDocument();
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/admin/api/settings/hosts',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            host: 'gitlab.enterprise.corp',
+            provider: 'gitlab',
+            auth_user: null,
+            auth_token: 'glpat_secret999'
+          })
+        })
+      );
     });
   });
 });

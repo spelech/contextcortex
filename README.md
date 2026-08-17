@@ -15,18 +15,26 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 - **Dual MCP Transports**:
   - **Server-Sent Events (SSE)**: Full streaming events at `/sse` with POST message routing at `/messages/`.
   - **Streamable HTTP**: Bidirectional JSON-RPC transport endpoint at `/mcp`.
+- **Universal Git Provider Support**:
+  - Ingest repositories from **any source where Git lives**: **GitHub**, **GitLab (Cloud, Enterprise & Self-Hosted)**, **Gitea & Forgejo**, **Bitbucket (Cloud & Server)**, and **Generic Git HTTP/HTTPS**.
+  - **Provider-Aware Permalinks**: Automatically generates exact deep-links for code results (`/blob/`, `/-/blob/`, `/src/branch/`, `/src/commit/`, `/src/#lines-`).
+  - **Custom Git Host Credential Vault**: Register per-host tokens and authentication types for private internal domains (e.g. `gitlab.company.internal` or `http://git.lan:3000`).
 - **AST-Aware Code Chunking (Tree-sitter)**: Understands syntax structures across Python, TypeScript/JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more. Chunks along class, method, and function boundaries with exact line numbers and symbol names.
 - **Native Qdrant Hybrid Retrieval (Dense + Sparse BM25)**: Uses Qdrant named multi-vectors combining CPU-optimized dense embeddings (`BAAI/bge-small-en-v1.5`, 384d) with sparse BM25 vectors (`Qdrant/bm25` via FastEmbed) fused with **Reciprocal Rank Fusion (RRF)**.
-- **Ephemeral GitHub Repository Ingestion**: Register GitHub repositories and branches in the Admin UI. The server performs authenticated shallow clones (`--depth 1`), extracts AST symbols and hybrid vectors, and **immediately removes the cloned repository from disk** to save container storage.
-- **GitHub Token & Rate Limit Management**: Configure a GitHub Personal Access Token via `GITHUB_TOKEN` environment variable or directly in the Admin UI settings to boost rate limits to 5,000 req/hr and access private repositories.
+- **Ephemeral Repository Ingestion**: The server performs authenticated shallow clones (`--depth 1`), extracts AST symbols and hybrid vectors, and **immediately removes the cloned repository from disk** to conserve storage.
+- **Multi-Tier Git Authentication Hierarchy**:
+  1. Per-repository override token & optional username.
+  2. Domain-level Custom Git Host Vault (`git_host_credentials`).
+  3. Global provider tokens (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `GITEA_TOKEN` in DB or Settings UI).
+  4. Environment variable fallback.
 - **Fast Deterministic Symbol Lookup**: Built-in SQLite symbol table (`ast_symbols`) powers instantaneous symbol searches (`find_symbol`) and file outlines (`get_file_outline`) without token bloat.
 - **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
 - **Modern Tabbed Web Dashboard (`/admin/`)**:
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
-  - **Git Repositories**: Register repos, trigger shallow clone syncs, inspect commit SHAs, and manage sources.
+  - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, trigger shallow clone syncs, inspect commit SHAs, and manage sources.
   - **Local Paths**: Monitor local workspaces and notes vaults with recursive directory scanning and filesystem browser modal.
   - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews, target type toggle (Code vs Docs), and syntax highlighted results.
-  - **Settings**: GitHub token configuration and rate limit status monitor.
+  - **Settings**: Multi-provider token cards (GitHub, GitLab, Gitea), GitHub rate limit monitor, and interactive Custom Git Host Credential Vault table/modal.
   - **Diagnostics & Logs**: Real-time log viewer with level filtering (ALL, INFO, WARNING, ERROR, DEBUG), keyword search, traceback modal/drawer, and buffer clearing.
 
 ---

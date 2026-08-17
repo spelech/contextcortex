@@ -248,6 +248,28 @@ test.beforeEach(async ({ page }) => {
     });
   });
 
+  await page.route('**/admin/api/settings/hosts*', async route => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success' })
+      });
+    } else if (route.request().method() === 'DELETE') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success' })
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([])
+      });
+    }
+  });
+
   await page.route('**/admin/api/reindex', async route => {
     await route.fulfill({
       status: 200,
@@ -311,7 +333,7 @@ test('1. navigates through all tabs including Diagnostics & Logs', async ({ page
   const settingsTab = page.locator('button.nav-tab', { hasText: 'Settings' });
   await settingsTab.click();
   await expect(settingsTab).toHaveClass(/active/);
-  await expect(page.getByText('GitHub Authentication & Rate Limits')).toBeVisible();
+  await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
 
   // Diagnostics & Logs tab
   const diagTab = page.locator('button.nav-tab', { hasText: 'Diagnostics & Logs' });
@@ -368,9 +390,9 @@ test('2. adds a new Git repository via modal and verifies table update + toast',
   await page.getByRole('button', { name: 'Add & Start Sync' }).click();
 
   // Verify modal closed, toast displayed, and new repository row visible
-  await expect(page.getByText('Register Git Repository')).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Register Git Repository' })).not.toBeVisible();
   await expect(page.locator('.toast-success', { hasText: "Repository 'fastapi-service' added successfully" })).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'fastapi-service', exact: true })).toBeVisible();
+  await expect(page.locator('table').getByText('fastapi-service', { exact: true })).toBeVisible();
 });
 
 test('3. triggers single-repo sync and verifies status feedback', async ({ page }) => {
@@ -687,14 +709,13 @@ test('10. saves GitHub personal access token and verifies rate limit update', as
   });
 
   await page.locator('button.nav-tab', { hasText: 'Settings' }).click();
-  await expect(page.getByText('GitHub Authentication & Rate Limits')).toBeVisible();
+  await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
 
   // Verify initial token display
   await expect(page.getByText('ghp_****1234')).toBeVisible();
-  await expect(page.getByText('Database', { exact: true })).toBeVisible();
 
   // Update token
-  const tokenInput = page.locator('#github-token-input');
+  const tokenInput = page.locator('input[placeholder="ghp_xxxxxxxxxxxx"]');
   await tokenInput.fill('ghp_updated_super_secret_pat_9999');
 
   // When saved, refreshStats fetches /admin/api/stats
@@ -705,15 +726,18 @@ test('10. saves GitHub personal access token and verifies rate limit update', as
       body: JSON.stringify({
         ...mockStats,
         masked_token: 'ghp_****9999',
+        providers_auth: {
+          github: { token_source: 'Database', masked_token: 'ghp_****9999' }
+        },
         rate_limit: { remaining: 5000, limit: 5000 }
       })
     });
   });
 
-  await page.getByRole('button', { name: 'Save Token to DB' }).click();
+  await page.locator('.settings-provider-box').filter({ hasText: 'GitHub' }).getByRole('button', { name: 'Save' }).click();
 
   expect(savedToken).toBe('ghp_updated_super_secret_pat_9999');
-  await expect(page.locator('.toast-success', { hasText: 'GitHub Token saved successfully.' })).toBeVisible();
+  await expect(page.locator('.toast-success', { hasText: 'GitHub token saved successfully.' })).toBeVisible();
   await expect(tokenInput).toHaveValue('');
   await expect(page.getByText('ghp_****9999')).toBeVisible();
 });
@@ -741,9 +765,9 @@ test('11. clears GitHub token with confirmation dialog', async ({ page }) => {
   });
 
   await page.locator('button.nav-tab', { hasText: 'Settings' }).click();
-  await expect(page.getByText('GitHub Authentication & Rate Limits')).toBeVisible();
+  await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Clear Token' }).click();
+  await page.locator('.settings-provider-box').filter({ hasText: 'GitHub' }).getByRole('button', { name: 'Clear' }).click();
 
   expect(dialogMessage).toContain('Clear the stored GitHub token from database?');
   expect(clearCalled).toBe(true);
@@ -769,7 +793,7 @@ test('12. triggers Reindex All Sources on Overview tab', async ({ page }) => {
   await expect(reindexBtn).toBeVisible();
   await reindexBtn.click();
 
-  expect(reindexTriggered).toBe(true);
+  await expect.poll(() => reindexTriggered).toBe(true);
   await expect(page.locator('.toast-success', { hasText: 'Re-indexing triggered successfully' })).toBeVisible();
 });
 

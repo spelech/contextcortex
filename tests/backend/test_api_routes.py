@@ -20,7 +20,8 @@ def mock_db(tmp_path):
         CREATE TABLE system_metadata (key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE indexed_files (id INTEGER PRIMARY KEY, filepath TEXT, repo TEXT, doc_type TEXT, language TEXT, hash TEXT, size INTEGER, last_modified REAL, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE indexed_paths (id INTEGER PRIMARY KEY, path TEXT UNIQUE, type TEXT, recursive INTEGER, enabled INTEGER, category TEXT, repo TEXT, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
-        CREATE TABLE git_repositories (id INTEGER PRIMARY KEY, name TEXT UNIQUE, url TEXT, branch TEXT, auth_token TEXT, commit_sha TEXT, status TEXT DEFAULT 'pending', last_error TEXT, last_synced TEXT, enabled INTEGER DEFAULT 1, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE git_repositories (id INTEGER PRIMARY KEY, name TEXT UNIQUE, url TEXT, branch TEXT, auth_token TEXT, provider TEXT DEFAULT 'github', auth_user TEXT, commit_sha TEXT, status TEXT DEFAULT 'pending', last_error TEXT, last_synced TEXT, enabled INTEGER DEFAULT 1, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE git_host_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, host TEXT UNIQUE NOT NULL, provider TEXT NOT NULL, auth_user TEXT, auth_token TEXT NOT NULL, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE ast_symbols (id INTEGER PRIMARY KEY, repo TEXT, filepath TEXT, kind TEXT, name TEXT, full_symbol TEXT, signature TEXT, start_line INTEGER, end_line INTEGER, language TEXT);
         CREATE TABLE file_summaries (filepath TEXT PRIMARY KEY, repo TEXT, title TEXT, folder TEXT, category TEXT, tags TEXT, headings TEXT, keywords TEXT, mtime REAL);
     """)

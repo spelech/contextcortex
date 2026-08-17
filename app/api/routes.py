@@ -6,11 +6,11 @@ import threading
 from typing import Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from app.models.schemas import RepoConfig, LocalPathConfig, SearchRequest, TokenRequest
+from app.models.schemas import RepoConfig, LocalPathConfig, SearchRequest, TokenRequest, HostCredentialRequest
 
 from app.services.db import (
     get_db_connection, get_metadata, set_metadata, 
-    get_effective_github_token, get_token_source, CACHE_DB_PATH
+    get_effective_github_token, get_effective_git_token, get_token_source, CACHE_DB_PATH
 )
 from app.services.git_manager import check_github_rate_limit, mask_token
 from app.services.logger import get_diagnostic_logs, clear_diagnostic_logs
@@ -52,8 +52,10 @@ async def api_get_stats():
             info = qdrant.get_collection(COLLECTION_NAME)
             points_count = info.points_count
 
-        eff_token = get_effective_github_token()
-        rate_info = check_github_rate_limit(eff_token)
+        gh_token, _, gh_src = get_effective_git_token("https://github.com", provider="github")
+        gl_token, _, gl_src = get_effective_git_token("https://gitlab.com", provider="gitlab")
+        gt_token, _, gt_src = get_effective_git_token("https://gitea.com", provider="gitea")
+        rate_info = check_github_rate_limit(gh_token)
 
         return {
             "files_count": files_count,
@@ -67,8 +69,13 @@ async def api_get_stats():
             "dense_model": DENSE_MODEL_NAME,
             "sparse_model": SPARSE_MODEL_NAME,
             "top_keywords": top_keywords,
-            "token_source": get_token_source(),
-            "masked_token": mask_token(eff_token),
+            "token_source": gh_src,
+            "masked_token": mask_token(gh_token),
+            "providers_auth": {
+                "github": {"token_source": gh_src, "masked_token": mask_token(gh_token)},
+                "gitlab": {"token_source": gl_src, "masked_token": mask_token(gl_token)},
+                "gitea": {"token_source": gt_src, "masked_token": mask_token(gt_token)},
+            },
             "rate_limit": rate_info
         }
     except Exception as e:
@@ -78,7 +85,13 @@ async def api_get_stats():
 async def api_get_repos():
     try:
         with get_db_connection() as conn:
-            rows = conn.execute("SELECT id, name, url, branch, commit_sha, enabled, status, last_error, last_synced, added_at, (SELECT count(*) FROM indexed_files WHERE repo = git_repositories.name) as file_count FROM git_repositories ORDER BY added_at DESC").fetchall()
+            rows = conn.execute(
+                """SELECT id, name, url, branch, commit_sha, provider, auth_user, enabled, status, 
+                          last_error, last_synced, added_at, 
+                          (SELECT count(*) FROM indexed_files WHERE repo = git_repositories.name) as file_count 
+                   FROM git_repositories 
+                   ORDER BY added_at DESC"""
+            ).fetchall()
             return [dict(r) for r in rows]
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -90,22 +103,25 @@ async def api_add_repo(payload: RepoConfig):
         url = payload.url.strip() if payload.url else ""
         branch = payload.branch.strip() if payload.branch else "main"
         token = payload.auth_token.strip() if payload.auth_token else None
+        auth_user = payload.auth_user.strip() if payload.auth_user else None
 
         if not name or not url:
             return JSONResponse(status_code=400, content={"error": "Repository name and Git URL are required."})
 
+        from app.services.git_manager import detect_git_provider
+        provider = detect_git_provider(url, payload.provider)
         name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).lower()
 
         with get_db_connection() as conn:
             conn.execute(
-                "INSERT INTO git_repositories (name, url, branch, auth_token) VALUES (?, ?, ?, ?)",
-                (name, url, branch, token)
+                "INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user) VALUES (?, ?, ?, ?, ?, ?)",
+                (name, url, branch, token, provider, auth_user)
             )
             conn.commit()
             repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
         threading.Thread(target=sync_single_git_repo, args=(repo_id,), daemon=True).start()
-        return {"status": "success", "message": f"Added repo '{name}' and started background sync."}
+        return {"status": "success", "message": f"Added repo '{name}' ({provider}) and started background sync."}
     except sqlite3.IntegrityError:
         return JSONResponse(status_code=400, content={"error": f"Repository '{name}' is already registered."})
     except Exception as e:
@@ -204,18 +220,77 @@ async def api_delete_path(path_id: int):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+@router.get("/admin/api/settings/hosts")
+async def api_get_host_credentials():
+    try:
+        from app.services.db import list_git_host_credentials
+        from app.services.git_manager import mask_token
+        rows = list_git_host_credentials()
+        results = []
+        for r in rows:
+            results.append({
+                "id": r["id"],
+                "host": r["host"],
+                "provider": r["provider"],
+                "auth_user": r.get("auth_user"),
+                "masked_token": mask_token(r.get("auth_token")),
+                "added_at": r.get("added_at")
+            })
+        return results
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.post("/admin/api/settings/hosts")
+async def api_save_host_credential(payload: HostCredentialRequest):
+    try:
+        from app.services.db import save_git_host_credential
+        host = payload.host.strip()
+        token = payload.auth_token.strip()
+        provider = payload.provider.strip().lower()
+        auth_user = payload.auth_user.strip() if payload.auth_user else None
+
+        if not host or not token:
+            return JSONResponse(status_code=400, content={"error": "Host domain and auth token are required."})
+
+        save_git_host_credential(host=host, provider=provider, auth_token=token, auth_user=auth_user)
+        return {"status": "success", "message": f"Saved credential for host '{host}'"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.delete("/admin/api/settings/hosts/{host_id}")
+async def api_delete_host_credential(host_id: str):
+    try:
+        from app.services.db import delete_git_host_credential
+        delete_git_host_credential(host_id)
+        return {"status": "success", "message": f"Deleted host credential '{host_id}'"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 @router.post("/admin/api/settings/token")
 async def api_set_token(payload: TokenRequest):
     try:
-        token = payload.github_token.strip()
-        set_metadata("github_token", token)
-        eff_token = get_effective_github_token()
-        rate_info = check_github_rate_limit(eff_token)
+        if payload.github_token is not None:
+            set_metadata("github_token", payload.github_token.strip())
+        if payload.gitlab_token is not None:
+            set_metadata("gitlab_token", payload.gitlab_token.strip())
+        if payload.gitea_token is not None:
+            set_metadata("gitea_token", payload.gitea_token.strip())
+
+        gh_token, _, gh_src = get_effective_git_token("https://github.com", provider="github")
+        gl_token, _, gl_src = get_effective_git_token("https://gitlab.com", provider="gitlab")
+        gt_token, _, gt_src = get_effective_git_token("https://gitea.com", provider="gitea")
+        rate_info = check_github_rate_limit(gh_token)
+
         return {
             "status": "success",
-            "message": "GitHub token updated",
-            "token_source": get_token_source(),
-            "masked_token": mask_token(eff_token),
+            "message": "Tokens updated successfully",
+            "token_source": gh_src,
+            "masked_token": mask_token(gh_token),
+            "providers_auth": {
+                "github": {"token_source": gh_src, "masked_token": mask_token(gh_token)},
+                "gitlab": {"token_source": gl_src, "masked_token": mask_token(gl_token)},
+                "gitea": {"token_source": gt_src, "masked_token": mask_token(gt_token)},
+            },
             "rate_limit": rate_info
         }
     except Exception as e:

@@ -102,7 +102,7 @@ describe('App Component', () => {
     const settingsTab = screen.getByRole('button', { name: /Settings/i });
     fireEvent.click(settingsTab);
     await waitFor(() => {
-      expect(screen.getByText('GitHub Authentication & Rate Limits')).toBeInTheDocument();
+      expect(screen.getByText('Global Git Provider Authentication')).toBeInTheDocument();
     });
 
     // Switch to Diagnostics & Logs

@@ -94,11 +94,11 @@ describe('GitRepoManager Component', () => {
     // Open and close via Cancel button
     const addBtn = screen.getByRole('button', { name: /Add Repository/i });
     fireEvent.click(addBtn);
-    expect(screen.getByText('Register Git Repository')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Register Git Repository/i })).toBeInTheDocument();
 
     const cancelBtn = screen.getByRole('button', { name: /Cancel/i });
     fireEvent.click(cancelBtn);
-    expect(screen.queryByText('Register Git Repository')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Register Git Repository/i })).not.toBeInTheDocument();
 
     // Reopen modal and submit
     fireEvent.click(addBtn);
@@ -122,6 +122,7 @@ describe('GitRepoManager Component', () => {
             name: 'new-repo',
             url: 'https://github.com/example/new-repo.git',
             branch: 'develop',
+            auth_user: null,
             auth_token: null
           })
         })

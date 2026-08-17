@@ -167,7 +167,7 @@ async def handle_list_repositories() -> str:
     """Lists all indexed local paths and remote Git repositories, including active branches, commit SHAs, and file counts."""
     try:
         with get_db_connection() as conn:
-            git_repos = conn.execute("SELECT id, name, url, branch, commit_sha, status, last_synced FROM git_repositories").fetchall()
+            git_repos = conn.execute("SELECT id, name, url, branch, commit_sha, provider, auth_user, status, last_synced FROM git_repositories").fetchall()
             local_paths = conn.execute("SELECT path, repo, category FROM indexed_paths WHERE enabled = 1").fetchall()
             counts = conn.execute("SELECT repo, count(*) as cnt FROM indexed_files GROUP BY repo").fetchall()
             file_count_map = {c["repo"]: c["cnt"] for c in counts}
@@ -178,7 +178,8 @@ async def handle_list_repositories() -> str:
             for gr in git_repos:
                 fc = file_count_map.get(gr["name"], 0)
                 sha = gr["commit_sha"][:8] if gr["commit_sha"] else "None"
-                out += f"- **{gr['name']}** ({gr['url']} @ `{gr['branch']}` | SHA: `{sha}`) - Status: `{gr['status']}` | Files: {fc} | Last Synced: {gr['last_synced'] or 'Never'}\n"
+                prov = (gr["provider"] or "git").upper()
+                out += f"- **{gr['name']}** [{prov}] ({gr['url']} @ `{gr['branch']}` | SHA: `{sha}`) - Status: `{gr['status']}` | Files: {fc} | Last Synced: {gr['last_synced'] or 'Never'}\n"
             out += "\n"
 
         if local_paths:

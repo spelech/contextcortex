@@ -12,6 +12,8 @@ class RepoConfig(BaseModel):
     last_error: Optional[str] = None
     last_synced: Optional[str] = None
     auth_token: Optional[str] = None
+    provider: Optional[str] = "github"
+    auth_user: Optional[str] = None
     enabled: bool = True
 
 class LocalPathConfig(BaseModel):
@@ -73,7 +75,16 @@ class SyncRequest(BaseModel):
     repo: Optional[str] = None
 
 class TokenRequest(BaseModel):
-    github_token: str
+    github_token: Optional[str] = None
+    gitlab_token: Optional[str] = None
+    gitea_token: Optional[str] = None
+
+class HostCredentialRequest(BaseModel):
+    id: Optional[int] = None
+    host: str
+    provider: str = "generic"
+    auth_user: Optional[str] = None
+    auth_token: str
 
 class FindSymbolRequest(BaseModel):
     name: str
