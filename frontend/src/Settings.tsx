@@ -432,18 +432,18 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
           Default tokens are automatically applied to repositories matching these providers when no per-repo or host-specific override exists.
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginTop: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: '20px', marginTop: '20px' }}>
           
           {/* GitHub Token Box */}
-          <div className="settings-provider-box" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+          <div className="settings-provider-box" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-card)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
                 <i className="fa-brands fa-github fa-lg"></i> GitHub
               </div>
               <span className="badge badge-accent">{ghAuth.token_source}</span>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
-              Active Token: <code>{ghAuth.masked_token}</code>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px', wordBreak: 'break-all' }}>
+              Active Token: <code style={{ wordBreak: 'break-all' }}>{ghAuth.masked_token}</code>
             </div>
             {stats?.rate_limit && (
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
@@ -462,15 +462,15 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
           </div>
 
           {/* GitLab Token Box */}
-          <div className="settings-provider-box" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+          <div className="settings-provider-box" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-card)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
                 <i className="fa-brands fa-gitlab fa-lg" style={{ color: '#fc6d26' }}></i> GitLab (Global)
               </div>
               <span className="badge badge-accent">{glAuth.token_source}</span>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Active Token: <code>{glAuth.masked_token}</code>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px', wordBreak: 'break-all' }}>
+              Active Token: <code style={{ wordBreak: 'break-all' }}>{glAuth.masked_token}</code>
             </div>
             <form onSubmit={e => { e.preventDefault(); saveToken('gitlab_token', glToken, 'GitLab'); }}>
               <div className="form-group" style={{ marginBottom: '10px' }}>
@@ -484,15 +484,15 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
           </div>
 
           {/* Gitea Token Box */}
-          <div className="settings-provider-box" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+          <div className="settings-provider-box" style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-card)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
                 <i className="fa-solid fa-mug-hot fa-lg" style={{ color: '#609926' }}></i> Gitea / Forgejo
               </div>
               <span className="badge badge-accent">{gtAuth.token_source}</span>
             </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Active Token: <code>{gtAuth.masked_token}</code>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '16px', wordBreak: 'break-all' }}>
+              Active Token: <code style={{ wordBreak: 'break-all' }}>{gtAuth.masked_token}</code>
             </div>
             <form onSubmit={e => { e.preventDefault(); saveToken('gitea_token', gtToken, 'Gitea'); }}>
               <div className="form-group" style={{ marginBottom: '10px' }}>
@@ -522,7 +522,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
           </button>
         </div>
 
-        <div className="table-container" style={{ marginTop: '16px' }}>
+        <div className="table-container desktop-table-view" style={{ marginTop: '16px' }}>
           <table>
             <thead>
               <tr>
@@ -549,7 +549,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
                       </span>
                     </td>
                     <td>{hc.auth_user ? <code>{hc.auth_user}</code> : <span className="text-muted">Default</span>}</td>
-                    <td><code>{hc.masked_token}</code></td>
+                    <td><code style={{ wordBreak: 'break-all' }}>{hc.masked_token}</code></td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{hc.added_at}</td>
                     <td>
                       <button className="btn-icon btn-delete" onClick={() => deleteHostCredential(hc.id, hc.host)} title="Delete Credential">
@@ -561,6 +561,46 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="mobile-card-list">
+          {hostCredentials.length === 0 ? (
+            <div className="empty-state">No custom host credentials configured. Add a host domain to authenticate self-hosted instances.</div>
+          ) : (
+            hostCredentials.map(hc => (
+              <div key={`card-${hc.id}`} className="data-mobile-card">
+                <div className="data-mobile-card-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <code style={{ fontSize: '0.95rem' }}>{hc.host}</code>
+                  </div>
+                  <span className="badge badge-accent">
+                    {hc.provider.toUpperCase()}
+                  </span>
+                </div>
+
+                <div className="data-mobile-card-body">
+                  <div>
+                    <span className="text-muted">Auth User: </span>
+                    {hc.auth_user ? <code>{hc.auth_user}</code> : <span className="text-muted">Default</span>}
+                  </div>
+                  <div>
+                    <span className="text-muted">Masked Token: </span>
+                    <code style={{ wordBreak: 'break-all' }}>{hc.masked_token}</code>
+                  </div>
+                  <div>
+                    <span className="text-muted">Added At: </span>
+                    <span style={{ color: 'var(--text-muted)' }}>{hc.added_at}</span>
+                  </div>
+                </div>
+
+                <div className="data-mobile-card-actions">
+                  <button className="btn btn-secondary btn-delete" onClick={() => deleteHostCredential(hc.id, hc.host)} title="Delete Credential">
+                    <i className="fa-solid fa-trash-can"></i> Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

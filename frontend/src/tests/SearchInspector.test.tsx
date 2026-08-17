@@ -158,5 +158,33 @@ describe('SearchInspector Component', () => {
       expect(screen.getByText(/System Architecture/)).toBeInTheDocument();
     });
   });
+
+  it('renders search query form and hit card headers with responsive classes', async () => {
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: mockHits })
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <SearchInspector />
+      </ToastProvider>
+    );
+
+    const formRow = container.querySelector('.form-row');
+    expect(formRow).toBeInTheDocument();
+
+    const queryInput = screen.getByPlaceholderText(/e.g. JWT token/i);
+    fireEvent.change(queryInput, { target: { value: 'IndexerService' } });
+    fireEvent.click(screen.getByRole('button', { name: /Search/i }));
+
+    await waitFor(() => {
+      const hitCard = container.querySelector('.search-hit-card');
+      expect(hitCard).toBeInTheDocument();
+      expect(container.querySelector('.search-hit-header')).toBeInTheDocument();
+      expect(container.querySelector('.search-hit-code')).toBeInTheDocument();
+    });
+  });
 });
+
 

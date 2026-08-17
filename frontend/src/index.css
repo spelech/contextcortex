@@ -717,6 +717,8 @@ input:focus, select:focus, textarea:focus {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .search-hit-code {
@@ -728,6 +730,7 @@ input:focus, select:focus, textarea:focus {
     font-size: 0.85rem;
     overflow-x: auto;
     white-space: pre-wrap;
+    word-break: break-all;
     color: #e2e8f0;
 }
 
@@ -808,6 +811,47 @@ input:focus, select:focus, textarea:focus {
     flex-direction: column;
     display: flex !important;
     gap: 12px;
+  }
+  .search-hit-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .search-form-btn-group {
+    align-self: stretch !important;
+  }
+  .search-form-btn-group .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .log-viewer-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .log-viewer-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .log-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .log-filter-pills {
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .log-search-wrapper {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
+  .log-entry-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
 }
 

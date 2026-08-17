@@ -60,7 +60,7 @@ export default function SearchInspector() {
               <label>Repo Filter (Optional)</label>
               <input type="text" placeholder="All Repos" value={repo} onChange={e => setRepo(e.target.value)} />
             </div>
-            <div className="form-group" style={{ alignSelf: 'flex-end' }}>
+            <div className="form-group search-form-btn-group" style={{ alignSelf: 'flex-end' }}>
               <button type="submit" className="btn btn-primary" disabled={isSearching}>
                 {isSearching ? <><i className="fa-solid fa-spinner fa-spin"></i> Searching...</> : <><i className="fa-solid fa-play"></i> Search</>}
               </button>
@@ -83,11 +83,11 @@ export default function SearchInspector() {
               return (
                 <div className="search-hit-card" key={idx}>
                   <div className="search-hit-header">
-                    <div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
                       <span className="badge badge-primary">{p.repo}</span>
-                      <strong style={{ marginLeft: '6px' }}>{p.rel_path}</strong>
-                      {p.symbol && <span className="badge badge-accent" style={{ marginLeft: '6px' }}>{p.symbol}</span>}
-                      <span className="text-muted" style={{ fontSize: '0.8rem', marginLeft: '6px' }}>(Lines {p.start_line}-{p.end_line})</span>
+                      <strong>{p.rel_path}</strong>
+                      {p.symbol && <span className="badge badge-accent">{p.symbol}</span>}
+                      <span className="text-muted" style={{ fontSize: '0.8rem' }}>(Lines {p.start_line}-{p.end_line})</span>
                       {p.github_url && (() => {
                         const u = p.github_url.toLowerCase();
                         let label = 'View Source';
@@ -106,7 +106,7 @@ export default function SearchInspector() {
                           icon = 'fa-brands fa-github';
                         }
                         return (
-                          <a href={p.github_url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontSize: '0.8rem', marginLeft: '8px' }}>
+                          <a href={p.github_url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontSize: '0.8rem' }}>
                             <i className={icon} style={{ marginRight: '4px' }}></i>{label}
                           </a>
                         );

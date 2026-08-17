@@ -220,4 +220,25 @@ describe('DiagnosticsViewer', () => {
       expect(screen.getByText(/Failed to load diagnostics logs/i)).toBeInTheDocument();
     });
   });
+
+  it('renders responsive layout elements for toolbar, search input, and log entry stream', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <DiagnosticsViewer />
+      </ToastProvider>
+    );
+
+    expect(await screen.findByText('Server startup complete')).toBeInTheDocument();
+
+    expect(container.querySelector('.log-viewer-header')).toBeInTheDocument();
+    expect(container.querySelector('.log-viewer-actions')).toBeInTheDocument();
+    expect(container.querySelector('.log-toolbar')).toBeInTheDocument();
+    expect(container.querySelector('.log-filter-pills')).toBeInTheDocument();
+    expect(container.querySelector('.log-search-wrapper')).toBeInTheDocument();
+    expect(container.querySelector('.log-stream-container')).toBeInTheDocument();
+
+    const logEntries = container.querySelectorAll('.log-entry-main');
+    expect(logEntries.length).toBe(3);
+  });
 });
+

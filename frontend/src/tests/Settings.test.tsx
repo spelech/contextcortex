@@ -93,10 +93,10 @@ describe('Settings Component', () => {
     await waitFor(() => {
       expect(screen.getByText('1,250')).toBeInTheDocument();
       expect(screen.getByText('Healthy')).toBeInTheDocument();
-      expect(screen.getByText('gitlab.enterprise.internal')).toBeInTheDocument();
-      expect(screen.getByText('http://git.lan:3000')).toBeInTheDocument();
-      expect(screen.getByText('gitlab-ci-token')).toBeInTheDocument();
-      expect(screen.getByText('Default')).toBeInTheDocument();
+      expect(screen.getAllByText('gitlab.enterprise.internal')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('http://git.lan:3000')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('gitlab-ci-token')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('Default')[0]).toBeInTheDocument();
     });
   });
 
@@ -560,7 +560,7 @@ describe('Settings Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('gitlab.enterprise.internal')).toBeInTheDocument();
+      expect(screen.getAllByText('gitlab.enterprise.internal')[0]).toBeInTheDocument();
     });
 
     const deleteBtns = screen.getAllByTitle(/Delete Credential/i);
@@ -594,7 +594,7 @@ describe('Settings Component', () => {
       return Promise.resolve({ ok: true, json: async () => [mockHostCreds[1]] });
     });
 
-    const remainingDeleteBtn = screen.getByTitle(/Delete Credential/i);
+    const remainingDeleteBtn = screen.getAllByTitle(/Delete Credential/i)[0];
     fireEvent.click(remainingDeleteBtn);
 
     await waitFor(() => {
@@ -614,8 +614,49 @@ describe('Settings Component', () => {
 
     await waitFor(() => {
       expect(consoleSpy).toHaveBeenCalledWith('Failed to load host credentials:', expect.any(Error));
-      expect(screen.getByText(/No custom host credentials configured/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/No custom host credentials configured/i)[0]).toBeInTheDocument();
     });
     consoleSpy.mockRestore();
   });
+
+  it('renders responsive mobile card list for host credentials and handles mobile deletion', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url === '/admin/api/settings/hosts' && opts?.method === 'DELETE') {
+        return Promise.resolve({ ok: true, json: async () => ({ status: 'success' }) });
+      }
+      if (url === '/admin/api/settings/hosts') {
+        return Promise.resolve({ ok: true, json: async () => mockHostCreds });
+      }
+      if (url === '/admin/api/vector-store') {
+        return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('gitlab.enterprise.internal')[0]).toBeInTheDocument();
+    });
+
+    const vsLayout = container.querySelector('.vs-config-layout');
+    expect(vsLayout).toBeInTheDocument();
+
+    const mobileCards = container.querySelectorAll('.mobile-card-list .data-mobile-card');
+    expect(mobileCards.length).toBe(2);
+
+    const deleteBtn = mobileCards[0].querySelector('.btn-delete') as HTMLElement;
+    expect(deleteBtn).toBeInTheDocument();
+    fireEvent.click(deleteBtn);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith('/admin/api/settings/hosts/1', { method: 'DELETE' });
+    });
+  });
 });
+
