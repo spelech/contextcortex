@@ -70,14 +70,16 @@ def test_sync_single_git_repo_full_success(temp_edge_db, tmp_path):
 
     with patch("app.services.indexer.get_remote_head_sha", return_value="newsha123"), \
          patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="newsha123", error=None)), \
-         patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.get_vector_store") as mock_get_store, \
          patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": {"indices": [1], "values": [1.0]}}]), \
          patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
         
         sync_single_git_repo(repo_id)
 
-        mock_qdrant.delete.assert_called_once()
-        mock_qdrant.upsert.assert_called_once()
+        mock_store.delete_by_repo.assert_called_once_with("success-repo")
+        mock_store.upsert_documents.assert_called_once()
         mock_cleanup.assert_called_once()
 
         with get_db_connection() as conn:
@@ -102,8 +104,10 @@ def test_sync_single_git_repo_file_parse_error(temp_edge_db, tmp_path):
     with patch("app.services.indexer.get_remote_head_sha", return_value="sha_parse_err"), \
          patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_parse_err", error=None)), \
          patch("app.services.indexer.process_file_content", side_effect=Exception("AST corrupt")), \
-         patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.get_vector_store") as mock_get_store, \
          patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
         
         sync_single_git_repo(repo_id)
         mock_cleanup.assert_called_once()
@@ -121,11 +125,13 @@ def test_sync_single_git_repo_qdrant_purge_error(temp_edge_db, tmp_path):
 
     with patch("app.services.indexer.get_remote_head_sha", return_value="sha_qd_err"), \
          patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_qd_err", error=None)), \
-         patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.get_vector_store") as mock_get_store, \
          patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]), \
          patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+        mock_store = MagicMock()
+        mock_store.delete_by_repo.side_effect = Exception("Purge vectors failed")
+        mock_get_store.return_value = mock_store
         
-        mock_qdrant.delete.side_effect = Exception("Purge vectors failed")
         sync_single_git_repo(repo_id)
         mock_cleanup.assert_called_once()
 
@@ -161,40 +167,15 @@ async def test_notify_list_changed():
     finally:
         active_sessions.clear()
 
-def test_ensure_collection_recreate_on_mismatch():
-    with patch("app.services.indexer.qdrant") as mock_qdrant, \
-         patch("app.services.indexer.get_dense_dim", return_value=384):
-        
-        mock_qdrant.collection_exists.return_value = True
-        mock_info = MagicMock()
-        mock_dense = MagicMock()
-        mock_dense.size = 768 # Mismatched dimension (768 vs 384)
-        mock_info.config.params.vectors = {"dense": mock_dense}
-        mock_info.config.params.sparse_vectors = {"sparse": MagicMock()}
-        mock_qdrant.get_collection.return_value = mock_info
+def test_ensure_collection_delegation():
+    with patch("app.services.indexer.get_vector_store") as mock_get_store:
+        mock_store = MagicMock()
+        mock_store.ensure_collection.return_value = True
+        mock_get_store.return_value = mock_store
 
-        # After delete, collection_exists returns False so it creates new one
-        mock_qdrant.collection_exists.side_effect = [True, False]
+        assert ensure_collection() is True
+        mock_store.ensure_collection.assert_called_once()
 
-        ensure_collection()
-        mock_qdrant.delete_collection.assert_called_once()
-        mock_qdrant.create_collection.assert_called_once()
-
-def test_ensure_collection_already_matching():
-    with patch("app.services.indexer.qdrant") as mock_qdrant, \
-         patch("app.services.indexer.get_dense_dim", return_value=384):
-        
-        mock_qdrant.collection_exists.return_value = True
-        mock_info = MagicMock()
-        mock_dense = MagicMock()
-        mock_dense.size = 384
-        mock_info.config.params.vectors = {"dense": mock_dense}
-        mock_info.config.params.sparse_vectors = {"sparse": MagicMock()}
-        mock_qdrant.get_collection.return_value = mock_info
-
-        ensure_collection()
-        mock_qdrant.delete_collection.assert_not_called()
-        mock_qdrant.create_collection.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_catalog_summary_truncation(temp_edge_db):

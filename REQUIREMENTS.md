@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **280 Automated Tests** (220 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **277 Automated Tests** (217 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -390,7 +390,7 @@ classDiagram
 - `test_chunk_uuid_consistency`
 - `test_extract_keywords`
 - `test_ensure_collection`
-- `test_ensure_collection_recreate_schemas`
+- `test_ensure_collection_failure`
 - `test_dynamic_catalog_description`
 - `test_dynamic_catalog_description_error`
 - `test_process_file_content_doc`
@@ -403,7 +403,7 @@ classDiagram
 - `test_run_full_indexing_concurrency`
 - `test_trigger_list_changed_notification`
 
-#### `test_indexer_edge_cases.py` (9 tests)
+#### `test_indexer_edge_cases.py` (8 tests)
 - `test_sync_single_git_repo_not_found`
 - `test_sync_single_git_repo_unchanged_sha`
 - `test_sync_single_git_repo_clone_error`
@@ -411,8 +411,7 @@ classDiagram
 - `test_sync_single_git_repo_file_parse_error`
 - `test_sync_single_git_repo_qdrant_purge_error`
 - `test_sync_single_git_repo_unexpected_exception`
-- `test_ensure_collection_recreate_on_mismatch`
-- `test_ensure_collection_already_matching`
+- `test_ensure_collection_delegation`
 
 #### `test_indexer_sync.py` (4 tests)
 - `TestIndexerSync::test_sync_single_git_repo_success`
@@ -435,12 +434,10 @@ classDiagram
 - `test_code_symbol_creation`
 - `test_search_request_defaults`
 
-#### `test_search.py` (5 tests)
+#### `test_search.py` (3 tests)
 - `test_execute_hybrid_search_empty_query`
-- `test_execute_hybrid_search_collection_missing`
-- `test_execute_hybrid_search_collection_exception`
-- `test_execute_hybrid_search_with_sparse`
-- `test_execute_hybrid_search_without_sparse`
+- `test_execute_hybrid_search_delegation`
+- `test_execute_hybrid_search_exception`
 
 #### `test_tools.py` (0 tests)
 

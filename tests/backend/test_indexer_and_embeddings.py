@@ -129,45 +129,22 @@ def test_extract_keywords():
     assert "tokens" in keywords
 
 def test_ensure_collection():
-    # When collection does not exist
-    with patch("app.services.indexer.qdrant") as mock_qdrant:
-        mock_qdrant.collection_exists.return_value = False
-        ensure_collection()
-        mock_qdrant.create_collection.assert_called_once()
-        mock_qdrant.create_payload_index.assert_called()
+    with patch("app.services.indexer.get_vector_store") as mock_get_store:
+        mock_store = MagicMock()
+        mock_store.ensure_collection.return_value = True
+        mock_get_store.return_value = mock_store
+        res = ensure_collection()
+        assert res is True
+        mock_store.ensure_collection.assert_called_once()
 
-def test_ensure_collection_recreate_schemas():
-    # Legacy single vector schema
-    with patch("app.services.indexer.qdrant") as mock_qdrant:
-        mock_info = MagicMock()
-        mock_info.config.params.vectors = "legacy_single_vector"
-        mock_info.config.params.sparse_vectors = None
-        mock_qdrant.collection_exists.side_effect = [True, False]
-        mock_qdrant.get_collection.return_value = mock_info
+def test_ensure_collection_failure():
+    with patch("app.services.indexer.get_vector_store") as mock_get_store:
+        mock_store = MagicMock()
+        mock_store.ensure_collection.side_effect = Exception("Vector store connection error")
+        mock_get_store.return_value = mock_store
+        res = ensure_collection()
+        assert res is False
 
-        ensure_collection()
-        mock_qdrant.delete_collection.assert_called_once()
-        mock_qdrant.create_collection.assert_called_once()
-
-    # Missing sparse vector schema
-    with patch("app.services.indexer.qdrant") as mock_qdrant, \
-         patch("app.services.indexer.get_dense_dim", return_value=384):
-        mock_info = MagicMock()
-        mock_dense = MagicMock()
-        mock_dense.size = 384
-        mock_info.config.params.vectors = {"dense": mock_dense}
-        mock_info.config.params.sparse_vectors = None
-        mock_qdrant.collection_exists.side_effect = [True, False]
-        mock_qdrant.get_collection.return_value = mock_info
-
-        ensure_collection()
-        mock_qdrant.delete_collection.assert_called_once()
-
-    # Exception during ensure_collection
-    with patch("app.services.indexer.qdrant") as mock_qdrant:
-        mock_qdrant.collection_exists.side_effect = Exception("Qdrant unavailable")
-        # Should not raise exception
-        ensure_collection()
 
 def test_dynamic_catalog_description(temp_indexer_db):
     with get_db_connection() as conn:
@@ -251,13 +228,14 @@ def test_sync_local_paths(temp_indexer_db, tmp_path):
         conn.execute("INSERT INTO indexed_paths (path, type, recursive, enabled, repo, category) VALUES ('/nonexistent/path', 'directory', 1, 1, 'ghost', 'none')")
         conn.commit()
 
-    with patch("app.services.indexer.qdrant") as mock_qdrant, \
+    with patch("app.services.indexer.get_vector_store") as mock_get_store, \
          patch("app.services.indexer.get_hybrid_embeddings_batch") as mock_embed:
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
         mock_embed.return_value = [{"dense": [0.1] * 384, "sparse": {"indices": [1], "values": [1.0]}}] * 5
-        mock_qdrant.collection_exists.return_value = True
 
         sync_local_paths()
-        mock_qdrant.upsert.assert_called()
+        mock_store.upsert_documents.assert_called()
 
         with get_db_connection() as conn:
             files = conn.execute("SELECT filepath, repo FROM indexed_files").fetchall()
@@ -273,10 +251,12 @@ def test_sync_local_paths_default_vault_fallback(temp_indexer_db, tmp_path):
     doc.write_text("# Default Note")
 
     with patch("app.services.indexer.VAULT_PATH", str(vault_dir)), \
-         patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.get_vector_store") as mock_get_store, \
          patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]):
-        mock_qdrant.collection_exists.return_value = True
+        mock_store = MagicMock()
+        mock_get_store.return_value = mock_store
         sync_local_paths()
+        mock_store.upsert_documents.assert_called()
 
 def test_sync_local_paths_exceptions(temp_indexer_db, tmp_path):
     sub = tmp_path / "err_vault"
@@ -288,11 +268,13 @@ def test_sync_local_paths_exceptions(temp_indexer_db, tmp_path):
         conn.execute("INSERT INTO indexed_paths (path, type, recursive, enabled, repo, category) VALUES (?, 'directory', 1, 1, 'err-vault', 'notes')", (str(sub),))
         conn.commit()
 
-    # Process file exception, qdrant delete exception, qdrant upsert exception, sqlite exception
+    # Process file exception, store delete exception, store upsert exception, sqlite exception
     with patch("app.services.indexer.process_file_content", side_effect=Exception("Process error")), \
-         patch("app.services.indexer.qdrant") as mock_qdrant:
-        mock_qdrant.delete.side_effect = Exception("Delete error")
-        mock_qdrant.upsert.side_effect = Exception("Upsert error")
+         patch("app.services.indexer.get_vector_store") as mock_get_store:
+        mock_store = MagicMock()
+        mock_store.delete_by_path.side_effect = Exception("Delete error")
+        mock_store.upsert_documents.side_effect = Exception("Upsert error")
+        mock_get_store.return_value = mock_store
         sync_local_paths()
 
 def test_run_full_indexing(temp_indexer_db):

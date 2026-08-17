@@ -49,6 +49,12 @@ class VectorDocument(BaseModel):
             payload.update(self.metadata)
         return payload
 
+    @property
+    def payload(self) -> Dict[str, Any]:
+        """Convenience property to access payload dictionary."""
+        return self.to_payload()
+
+
 
 class VectorSearchResult(BaseModel):
     """Represents a ranked search result item returned from a vector store."""

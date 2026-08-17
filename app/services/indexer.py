@@ -12,8 +12,10 @@ from app.services.db import *
 from app.services.chunker import *
 from app.services.embeddings import *
 from app.services.git_manager import *
-from qdrant_client.http import models as qmodels
-from qdrant_client import QdrantClient
+from app.services.vector_store import (
+    VectorStore, VectorDocument, VectorSearchResult,
+    VectorStoreManager, get_vector_store
+)
 
 logger = logging.getLogger('notes-rag-mcp')
 
@@ -22,7 +24,6 @@ CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1500"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "notes_rag_v2")
-
 
 active_sessions = set()
 main_event_loop = None
@@ -49,53 +50,25 @@ is_indexing = False
 # Initialize database
 init_db(VAULT_PATH)
 
-# Initialize Qdrant Client
-logger.info(f"Connecting to Qdrant at {QDRANT_URL}")
-qdrant = QdrantClient(url=QDRANT_URL, timeout=5.0, check_compatibility=False)
+# Legacy Qdrant proxy for backward compatibility
+class _QdrantCompatProxy:
+    def __getattr__(self, item):
+        store = get_vector_store()
+        client = getattr(store, "client", None)
+        if client is not None:
+            return getattr(client, item)
+        raise AttributeError(f"Active vector store has no direct qdrant client attribute: '{item}'")
 
-def ensure_collection():
-    """Initializes or validates named multi-vector (Dense + Sparse) Qdrant collection."""
-    dim = get_dense_dim()
+qdrant = _QdrantCompatProxy()
+
+def ensure_collection() -> bool:
+    """Initializes or validates collection on the active VectorStore backend."""
     try:
-        if qdrant.collection_exists(COLLECTION_NAME):
-            info = qdrant.get_collection(COLLECTION_NAME)
-            vectors_config = info.config.params.vectors
-            sparse_config = info.config.params.sparse_vectors
-            
-            needs_recreate = False
-            if not isinstance(vectors_config, dict) or "dense" not in vectors_config:
-                logger.warning("Existing collection uses legacy single-vector schema. Upgrading to Named Multi-Vectors (Dense + Sparse)...")
-                needs_recreate = True
-            elif sparse_config is None or "sparse" not in sparse_config:
-                logger.warning("Collection missing sparse vector index. Upgrading to Hybrid collection...")
-                needs_recreate = True
-            elif vectors_config["dense"].size != dim:
-                logger.warning(f"Dense vector dimension mismatch: expected {dim}, found {vectors_config['dense'].size}. Recreating...")
-                needs_recreate = True
-                
-            if needs_recreate:
-                qdrant.delete_collection(COLLECTION_NAME)
-
-        if not qdrant.collection_exists(COLLECTION_NAME):
-            logger.info(f"Creating Hybrid Qdrant collection: {COLLECTION_NAME} (Dense: {dim}d, Sparse: BM25)")
-            qdrant.create_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config={
-                    "dense": qmodels.VectorParams(size=dim, distance=qmodels.Distance.COSINE)
-                },
-                sparse_vectors_config={
-                    "sparse": qmodels.SparseVectorParams()
-                }
-            )
-            # Create payload indexes for fast filtering
-            qdrant.create_payload_index(COLLECTION_NAME, "repo", qmodels.PayloadSchemaType.KEYWORD)
-            qdrant.create_payload_index(COLLECTION_NAME, "doc_type", qmodels.PayloadSchemaType.KEYWORD)
-            qdrant.create_payload_index(COLLECTION_NAME, "language", qmodels.PayloadSchemaType.KEYWORD)
-            qdrant.create_payload_index(COLLECTION_NAME, "path", qmodels.PayloadSchemaType.KEYWORD)
-        else:
-            logger.info(f"Collection {COLLECTION_NAME} verified with Named Multi-Vectors.")
+        store = get_vector_store()
+        return store.ensure_collection()
     except Exception as e:
-        logger.error(f"Error initializing Qdrant collection: {e}")
+        logger.error(f"Error initializing vector store collection: {e}")
+        return False
 
 def get_chunk_uuid(repo: str, rel_path: str, index: int) -> str:
     namespace = uuid.uuid5(uuid.NAMESPACE_DNS, "notes-rag-mcp.lan")
@@ -162,8 +135,8 @@ def process_file_content(
     git_url: Optional[str] = None, 
     commit_sha: Optional[str] = None,
     category_override: Optional[str] = None
-) -> Tuple[List[qmodels.PointStruct], List[Dict[str, Any]], Tuple]:
-    """Processes a single file into hybrid vector points, AST symbols, and summary metadata."""
+) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple]:
+    """Processes a single file into vector documents, AST symbols, and summary metadata."""
     language = detect_language(filepath)
     title = os.path.basename(filepath)
     folder = os.path.dirname(rel_path) or "root"
@@ -171,7 +144,7 @@ def process_file_content(
     tags = []
     meta = {}
 
-    points = []
+    points: List[VectorDocument] = []
     ast_symbols = []
     headings = []
 
@@ -210,24 +183,38 @@ def process_file_content(
             for idx, chunk in enumerate(valid_chunks):
                 point_id = get_chunk_uuid(repo, rel_path, idx)
                 github_url = format_github_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"))
-                points.append(qmodels.PointStruct(
+                
+                bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
+                dense_v = bv.get("dense")
+                sparse_obj = bv.get("sparse")
+                s_indices = None
+                s_values = None
+                if sparse_obj is not None:
+                    if hasattr(sparse_obj, "indices") and hasattr(sparse_obj, "values"):
+                        s_indices = list(sparse_obj.indices)
+                        s_values = list(sparse_obj.values)
+                    elif isinstance(sparse_obj, dict):
+                        s_indices = list(sparse_obj.get("indices", []))
+                        s_values = list(sparse_obj.get("values", []))
+
+                points.append(VectorDocument(
                     id=point_id,
-                    vector=batch_vecs[idx],
-                    payload={
-                        "repo": repo,
-                        "doc_type": "doc",
-                        "path": filepath,
-                        "rel_path": rel_path,
-                        "title": title,
-                        "folder": folder,
-                        "category": category,
-                        "tags": tags,
-                        "heading": chunk.get("heading", "Root"),
-                        "start_line": chunk.get("start_line", 1),
-                        "end_line": chunk.get("end_line", 1),
-                        "github_url": github_url,
-                        "content": chunk["content"].strip()
-                    }
+                    text=chunk["content"].strip(),
+                    dense_vector=dense_v,
+                    sparse_indices=s_indices,
+                    sparse_values=s_values,
+                    repo=repo,
+                    doc_type="doc",
+                    path=filepath,
+                    rel_path=rel_path,
+                    title=title,
+                    folder=folder,
+                    category=category,
+                    tags=tags,
+                    heading=chunk.get("heading", "Root"),
+                    start_line=chunk.get("start_line", 1),
+                    end_line=chunk.get("end_line", 1),
+                    github_url=github_url,
                 ))
 
     else: # Code file
@@ -256,25 +243,39 @@ def process_file_content(
                 point_id = get_chunk_uuid(repo, rel_path, idx)
                 github_url = format_github_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"))
                 symbol_label = chunk.get("symbol") or title
-                points.append(qmodels.PointStruct(
+
+                bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
+                dense_v = bv.get("dense")
+                sparse_obj = bv.get("sparse")
+                s_indices = None
+                s_values = None
+                if sparse_obj is not None:
+                    if hasattr(sparse_obj, "indices") and hasattr(sparse_obj, "values"):
+                        s_indices = list(sparse_obj.indices)
+                        s_values = list(sparse_obj.values)
+                    elif isinstance(sparse_obj, dict):
+                        s_indices = list(sparse_obj.get("indices", []))
+                        s_values = list(sparse_obj.get("values", []))
+
+                points.append(VectorDocument(
                     id=point_id,
-                    vector=batch_vecs[idx],
-                    payload={
-                        "repo": repo,
-                        "doc_type": "code",
-                        "language": language,
-                        "path": filepath,
-                        "rel_path": rel_path,
-                        "title": title,
-                        "folder": folder,
-                        "category": language,
-                        "symbol": symbol_label,
-                        "kind": chunk.get("kind", "code"),
-                        "start_line": chunk.get("start_line", 1),
-                        "end_line": chunk.get("end_line", 1),
-                        "github_url": github_url,
-                        "content": chunk["content"].strip()
-                    }
+                    text=chunk["content"].strip(),
+                    dense_vector=dense_v,
+                    sparse_indices=s_indices,
+                    sparse_values=s_values,
+                    repo=repo,
+                    doc_type="code",
+                    language=language,
+                    path=filepath,
+                    rel_path=rel_path,
+                    title=title,
+                    folder=folder,
+                    category=language,
+                    symbol=symbol_label,
+                    start_line=chunk.get("start_line", 1),
+                    end_line=chunk.get("end_line", 1),
+                    github_url=github_url,
+                    metadata={"kind": chunk.get("kind", "code")}
                 ))
 
     mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
@@ -389,29 +390,23 @@ def sync_local_paths():
             logger.error(f"Error processing local file {filepath}: {e}")
 
     # Purge old points for modified files
+    store = get_vector_store()
     for (fpath, repo) in files_to_delete:
         try:
-            qdrant.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=qmodels.Filter(
-                    must=[
-                        qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=fpath))
-                    ]
-                )
-            )
+            store.delete_by_path(fpath)
             with get_db_connection() as conn:
                 conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to delete old points for {fpath}: {e}")
 
-    # Bulk upsert to Qdrant
+    # Bulk upsert to vector store
     if all_points:
-        logger.info(f"Upserting {len(all_points)} hybrid vector points to Qdrant...")
+        logger.info(f"Upserting {len(all_points)} vector documents to vector store...")
         try:
-            qdrant.upsert(collection_name=COLLECTION_NAME, points=all_points)
+            store.upsert_documents(all_points)
         except Exception as e:
-            logger.error(f"Failed to upsert points to Qdrant: {e}")
+            logger.error(f"Failed to upsert points to vector store: {e}")
 
     # Batch update SQLite tables
     try:
@@ -540,23 +535,17 @@ def sync_single_git_repo(repo_id: int):
                 except Exception as fe:
                     logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
 
-        # Purge previous vectors for this repo in Qdrant
+        # Purge previous vectors for this repo in vector store
+        store = get_vector_store()
         try:
-            qdrant.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=qmodels.Filter(
-                    must=[
-                        qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo_name))
-                    ]
-                )
-            )
+            store.delete_by_repo(repo_name)
         except Exception as qe:
             logger.error(f"Error purging old vectors for repo '{repo_name}': {qe}")
 
-        # Bulk upsert new points to Qdrant
+        # Bulk upsert new points to vector store
         if all_points:
             logger.info(f"Upserting {len(all_points)} vectors for repo '{repo_name}'...")
-            qdrant.upsert(collection_name=COLLECTION_NAME, points=all_points)
+            store.upsert_documents(all_points)
 
         # Update SQLite
         with get_db_connection() as conn:
@@ -624,7 +613,15 @@ def run_full_indexing():
         set_metadata("last_indexed", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         trigger_list_changed_notification()
         return True
+    except Exception as e:
+        logger.error(f"Error during full indexing: {e}")
+        return False
     finally:
         is_indexing = False
         indexing_lock.release()
+
+# Register re-index callback with VectorStoreManager
+VectorStoreManager.register_reindex_callback(run_full_indexing)
+
+
 
