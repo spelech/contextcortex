@@ -65,8 +65,11 @@ app.include_router(admin_router)
 async def root_redirect():
     return RedirectResponse(url="/admin/")
 
-app.mount("/admin", StaticFiles(directory="www", html=True), name="admin")
-app.mount("/assets", StaticFiles(directory="www/assets"), name="assets")
+www_dir = "frontend/dist" if os.path.exists("frontend/dist/index.html") else "www"
+assets_dir = os.path.join(www_dir, "assets") if os.path.exists(os.path.join(www_dir, "assets")) else "www/assets"
+
+app.mount("/admin", StaticFiles(directory=www_dir, html=True), name="admin")
+app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 @app.get("/sse")
 async def sse_endpoint(request: Request):

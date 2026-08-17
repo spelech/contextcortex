@@ -6,8 +6,8 @@ export default defineConfig({
   cacheDir: './.vite',
   plugins: [react()],
   build: {
-    outDir: '../www',
-    emptyOutDir: false
+    outDir: 'dist',
+    emptyOutDir: true
   },
   test: {
     globals: true,

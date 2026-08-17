@@ -17,6 +17,19 @@ def get_env_token() -> Optional[str]:
     token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
     return token.strip() if token else None
 
+import urllib.parse
+
+def normalize_git_url(url: str) -> str:
+    """Normalizes SSH git URLs (e.g. git@github.com:owner/repo.git) to standard HTTPS URLs."""
+    if not url:
+        return ""
+    url = url.strip()
+    ssh_match = re.match(r"^git@([^:]+):(.+)$", url)
+    if ssh_match:
+        host, path = ssh_match.groups()
+        return f"https://{host}/{path}"
+    return url
+
 def mask_token(token: Optional[str]) -> str:
     """Mask token for secure UI and logging display."""
     if not token:
@@ -27,11 +40,13 @@ def mask_token(token: Optional[str]) -> str:
 
 def build_authenticated_url(git_url: str, token: Optional[str]) -> str:
     """Injects token into HTTPS git URL for private repo access."""
-    if not token or not git_url.startswith("https://"):
-        return git_url
+    clean_url = normalize_git_url(git_url)
+    if not token or not clean_url.startswith("https://"):
+        return clean_url
     # Strip existing credentials if present
-    clean_url = re.sub(r"https://[^@]+@", "https://", git_url)
-    return clean_url.replace("https://", f"https://x-access-token:{token}@")
+    clean_url = re.sub(r"https://[^@]+@", "https://", clean_url)
+    encoded_token = urllib.parse.quote(token.strip(), safe='')
+    return clean_url.replace("https://", f"https://x-access-token:{encoded_token}@")
 
 def sanitize_url_for_logging(url: str) -> str:
     """Removes tokens from URL before logging."""
@@ -48,7 +63,8 @@ def get_remote_head_sha(git_url: str, branch: str = "main", token: Optional[str]
     """
     Checks remote repository commit SHA for a branch without cloning using git ls-remote.
     """
-    auth_url = build_authenticated_url(git_url, token)
+    norm_url = normalize_git_url(git_url)
+    auth_url = build_authenticated_url(norm_url, token)
     try:
         cmd = ["git", "ls-remote", auth_url, f"refs/heads/{branch}", f"refs/tags/{branch}", branch]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=GIT_ENV)
@@ -62,7 +78,7 @@ def get_remote_head_sha(git_url: str, branch: str = "main", token: Optional[str]
         if res_head.returncode == 0 and res_head.stdout.strip():
             return res_head.stdout.strip().splitlines()[0].split()[0]
     except Exception as e:
-        logger.error(f"Error checking remote SHA for {sanitize_url_for_logging(git_url)}: {e}")
+        logger.error(f"Error checking remote SHA for {sanitize_url_for_logging(norm_url)}: {e}")
     return None
 
 def shallow_clone_repo(
@@ -76,9 +92,10 @@ def shallow_clone_repo(
     Returns: CloneResult
     """
     from app.models.schemas import CloneResult
+    norm_url = normalize_git_url(git_url)
     os.makedirs(TMP_BASE_DIR, exist_ok=True)
     repo_dir = tempfile.mkdtemp(prefix=f"repo_{repo_id or 'temp'}_", dir=TMP_BASE_DIR)
-    auth_url = build_authenticated_url(git_url, token)
+    auth_url = build_authenticated_url(norm_url, token)
     safe_url = sanitize_url_for_logging(auth_url)
 
     logger.info(f"Cloning {safe_url} (branch: {branch}) shallowly to {repo_dir}...")
