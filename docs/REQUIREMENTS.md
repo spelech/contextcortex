@@ -17,7 +17,7 @@ The complete specification is maintained and continuously verified by automated 
 3. [**Functional Requirements (FR-1 to FR-10)**](../REQUIREMENTS.md#3-comprehensive-functional-requirements-fr)
    - **FR-1**: FastMCP 2.0 Dual Transport Architecture (SSE & Streamable HTTP).
    - **FR-2**: FastMCP 7 Agent Tools Contract (`search_code`, `search_docs`, `find_symbol`, `get_file_outline`, `list_repositories`, `sync_repository`, `index_status`).
-   - **FR-3**: Dynamic Resources & Prompt Templates (`notes://catalog/summary`).
+   - **FR-3**: Dynamic Resources & Prompt Templates (`knowledge://catalog/summary`).
    - **FR-4**: Universal Multi-Provider Git Ingestion (GitHub, GitLab, Gitea, Bitbucket, Generic Git).
    - **FR-5**: Multi-Tier Credential Vault & Hierarchy.
    - **FR-6**: 10-Language Tree-sitter AST Syntax Chunking.

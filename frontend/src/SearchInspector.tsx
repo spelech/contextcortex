@@ -88,11 +88,29 @@ export default function SearchInspector() {
                       <strong style={{ marginLeft: '6px' }}>{p.rel_path}</strong>
                       {p.symbol && <span className="badge badge-accent" style={{ marginLeft: '6px' }}>{p.symbol}</span>}
                       <span className="text-muted" style={{ fontSize: '0.8rem', marginLeft: '6px' }}>(Lines {p.start_line}-{p.end_line})</span>
-                      {p.github_url && (
-                        <a href={p.github_url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontSize: '0.8rem', marginLeft: '8px' }}>
-                          <i className="fa-solid fa-arrow-up-right-from-square"></i> View on GitHub
-                        </a>
-                      )}
+                      {p.github_url && (() => {
+                        const u = p.github_url.toLowerCase();
+                        let label = 'View Source';
+                        let icon = 'fa-solid fa-code-branch';
+                        if (u.includes('gitlab') || u.includes('/-/blob/')) {
+                          label = 'View on GitLab';
+                          icon = 'fa-brands fa-gitlab';
+                        } else if (u.includes('gitea') || u.includes('forgejo')) {
+                          label = 'View on Gitea';
+                          icon = 'fa-solid fa-mug-hot';
+                        } else if (u.includes('bitbucket')) {
+                          label = 'View on Bitbucket';
+                          icon = 'fa-brands fa-bitbucket';
+                        } else if (u.includes('github.com')) {
+                          label = 'View on GitHub';
+                          icon = 'fa-brands fa-github';
+                        }
+                        return (
+                          <a href={p.github_url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontSize: '0.8rem', marginLeft: '8px' }}>
+                            <i className={icon} style={{ marginRight: '4px' }}></i>{label}
+                          </a>
+                        );
+                      })()}
                     </div>
                     <div>
                       <span className="badge badge-success">RRF Score: {hit.score.toFixed(4)}</span>
@@ -103,6 +121,7 @@ export default function SearchInspector() {
               );
             })
           )}
+
         </div>
       </div>
     </div>

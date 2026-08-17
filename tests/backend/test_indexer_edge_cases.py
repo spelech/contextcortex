@@ -6,8 +6,10 @@ from app.services.indexer import (
     sync_single_git_repo, notify_list_changed, trigger_list_changed_notification,
     active_sessions, ensure_collection
 )
-from app.mcp.tools import read_resource, get_prompt, get_prompts
+from app.mcp.tools import handle_catalog_summary
+from app.mcp.mcp_server import mcp_server
 from app.services.db import init_db, get_db_connection
+
 from app.models.schemas import CloneResult
 
 @pytest.fixture
@@ -184,11 +186,12 @@ async def test_catalog_summary_truncation(temp_edge_db):
             conn.execute("INSERT INTO indexed_files (filepath, repo, doc_type, language) VALUES (?, 'repo', 'doc', 'markdown')", (f"/docs/file_{i}.md",))
         conn.commit()
 
-    md = await read_resource("notes://catalog/summary")
+    md = await handle_catalog_summary()
     assert "**Total Files Indexed:** 50" in md
     assert "...and 10 more files." in md
 
 @pytest.mark.asyncio
 async def test_get_prompt_unknown_error(temp_edge_db):
-    with pytest.raises(ValueError, match="Unknown prompt: non_existent_prompt"):
-        await get_prompt("non_existent_prompt")
+    with pytest.raises(Exception):
+        await mcp_server.get_prompt("non_existent_prompt", {})
+

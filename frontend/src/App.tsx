@@ -42,7 +42,8 @@ function App() {
             <i className="fa-solid fa-layer-group logo-icon"></i>
             <div className="header-title">
               <h1>Knowledge RAG Hub</h1>
-              <span className="badge badge-primary">v2.4.2</span>
+              <span className="badge badge-primary">v2.5.0</span>
+
             </div>
           </div>
           <div className="header-status">
@@ -57,11 +58,11 @@ function App() {
               </span>
             </div>
             <div className="status-item">
-              <span className="label">GitHub API</span>
+              <span className="label">Vector Backend</span>
               <span className="value">
-                <i className="fa-brands fa-github"></i> 
+                <i className="fa-solid fa-database" style={{ marginRight: '5px' }}></i>
                 <span>
-                  {stats?.rate_limit ? `${stats.rate_limit.remaining.toLocaleString()} / ${stats.rate_limit.limit.toLocaleString()} reqs` : 'Checking...'}
+                  {stats?.vector_store_provider === 'chroma' ? 'ChromaDB' : 'Qdrant'} ({(stats?.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded' : 'Remote'})
                 </span>
               </span>
             </div>
@@ -70,6 +71,7 @@ function App() {
               <span className="value code">{stats?.vector_store_collection || 'knowledge_rag_v1'}</span>
             </div>
           </div>
+
         </header>
 
         <nav className="dashboard-nav">

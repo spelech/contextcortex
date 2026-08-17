@@ -188,15 +188,37 @@ class VectorStoreManager:
                 "collection": target_collection,
             }
 
+            # If active store is on the same embedded storage path, close it first so new_store can acquire lock
+            is_same_embedded = (
+                cls._active_store is not None
+                and cls._active_config is not None
+                and target_mode in ("embedded", "persistent")
+                and cls._active_config.get("mode") in ("embedded", "persistent")
+                and target_storage is not None
+                and cls._active_config.get("storage_path") is not None
+                and os.path.abspath(target_storage) == os.path.abspath(cls._active_config.get("storage_path", ""))
+            )
+            old_store = cls._active_store
+            if is_same_embedded and old_store is not None:
+                try:
+                    old_store.close()
+                except Exception:
+                    pass
+                cls._active_store = None
+
             try:
                 # Test creating store and ensuring collection
                 new_store = cls._create_store(new_config)
                 ok = new_store.ensure_collection()
                 if not ok:
+                    if is_same_embedded:
+                        cls._active_store = cls._create_store(current_cfg)
                     return False, f"Failed to ensure collection '{target_collection}' on {prov} ({target_mode})"
 
                 is_healthy, health_msg = new_store.health_check()
                 if not is_healthy:
+                    if is_same_embedded:
+                        cls._active_store = cls._create_store(current_cfg)
                     return False, f"Health check failed for {prov}: {health_msg}"
 
                 # Persist settings in SQLite system_metadata
@@ -208,15 +230,14 @@ class VectorStoreManager:
                     collection=target_collection,
                 )
 
-                if cls._active_store is not None:
+                if old_store is not None and not is_same_embedded:
                     try:
-                        cls._active_store.close()
+                        old_store.close()
                     except Exception:
                         pass
 
                 cls._active_store = new_store
                 cls._active_config = new_config
-
 
                 # Execute re-index callbacks if provided
                 if reindex_callback:
@@ -235,6 +256,11 @@ class VectorStoreManager:
 
             except Exception as e:
                 logger.error(f"Failed to switch vector store: {e}", exc_info=True)
+                if is_same_embedded and cls._active_store is None:
+                    try:
+                        cls._active_store = cls._create_store(current_cfg)
+                    except Exception:
+                        pass
                 return False, f"Failed to switch vector store: {str(e)}"
 
     @classmethod
@@ -249,43 +275,57 @@ class VectorStoreManager:
         """
         Tests a candidate vector store connection without applying changes or modifying state.
         """
-        prov = (provider or "").lower().strip()
-        if prov not in SUPPORTED_PROVIDERS:
-            return False, f"Unsupported provider: '{provider}'. Supported: {sorted(SUPPORTED_PROVIDERS)}"
+        with cls._instance_lock:
+            prov = (provider or "").lower().strip()
+            if prov not in SUPPORTED_PROVIDERS:
+                return False, f"Unsupported provider: '{provider}'. Supported: {sorted(SUPPORTED_PROVIDERS)}"
 
-        current_cfg = get_vector_store_db_config()
-        target_mode = (mode.lower().strip() if mode else current_cfg.get("mode", "embedded"))
-        if target_mode not in SUPPORTED_MODES:
-            return False, f"Unsupported mode: '{mode}'. Supported: {sorted(SUPPORTED_MODES)}"
+            current_cfg = get_vector_store_db_config()
+            target_mode = (mode.lower().strip() if mode else current_cfg.get("mode", "embedded"))
+            if target_mode not in SUPPORTED_MODES:
+                return False, f"Unsupported mode: '{mode}'. Supported: {sorted(SUPPORTED_MODES)}"
 
-        target_storage = storage_path if storage_path is not None else current_cfg.get("storage_path")
-        target_url = url if url is not None else current_cfg.get("url", "")
-        target_collection = collection.strip() if collection else current_cfg.get("collection", "knowledge_rag_v1")
+            target_storage = storage_path if storage_path is not None else current_cfg.get("storage_path")
+            target_url = url if url is not None else current_cfg.get("url", "")
+            target_collection = collection.strip() if collection else current_cfg.get("collection", "knowledge_rag_v1")
 
-        if target_mode == "remote" and not target_url.strip():
-            return False, "Remote mode requires a valid non-empty URL."
+            if target_mode == "remote" and not target_url.strip():
+                return False, "Remote mode requires a valid non-empty URL."
 
-        test_config = {
-            "provider": prov,
-            "mode": target_mode,
-            "storage_path": target_storage,
-            "url": target_url.strip(),
-            "collection": target_collection,
-        }
+            test_config = {
+                "provider": prov,
+                "mode": target_mode,
+                "storage_path": target_storage,
+                "url": target_url.strip(),
+                "collection": target_collection,
+            }
 
-        test_store = None
-        try:
-            test_store = cls._create_store(test_config)
-            is_healthy, health_msg = test_store.health_check()
-            return is_healthy, health_msg
-        except Exception as e:
-            return False, f"Connection test failed for {prov}: {str(e)}"
-        finally:
-            if test_store is not None:
-                try:
-                    test_store.close()
-                except Exception:
-                    pass
+            # Check if this matches active store to prevent locked embedded directory collisions
+            if cls._active_store is not None and cls._active_config is not None:
+                is_same_provider = prov == cls._active_config.get("provider")
+                is_same_mode = target_mode == cls._active_config.get("mode")
+                if is_same_provider and is_same_mode:
+                    if target_mode == "remote" and target_url.strip() == cls._active_config.get("url", "").strip():
+                        return cls._active_store.health_check()
+                    elif target_mode in ("embedded", "persistent") and target_storage:
+                        active_path = cls._active_config.get("storage_path")
+                        if active_path and os.path.abspath(target_storage) == os.path.abspath(active_path):
+                            return cls._active_store.health_check()
+
+            test_store = None
+            try:
+                test_store = cls._create_store(test_config)
+                is_healthy, health_msg = test_store.health_check()
+                return is_healthy, health_msg
+            except Exception as e:
+                return False, f"Connection test failed for {prov}: {str(e)}"
+            finally:
+                if test_store is not None:
+                    try:
+                        test_store.close()
+                    except Exception:
+                        pass
+
 
 
 # Module-level convenience functions

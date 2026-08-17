@@ -96,7 +96,8 @@ def generate_markdown() -> str:
     total_all_tests = total_py_tests + total_fe_tests + total_e2e_tests
 
     lines = [
-        "# Software Requirements Specification (v2.4.2)",
+        "# Software Requirements Specification (v2.5.0)",
+
         "",
         "> **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.",
         "",
@@ -297,7 +298,8 @@ def generate_markdown() -> str:
         "- **FR-2.7 (`index_status`)**: MUST report vector count, active embedding models, collection name, and provider rate limit status.",
         "",
         "### FR-3: Dynamic Resources & Prompt Templates",
-        "- **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `notes://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.",
+        "- **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `knowledge://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.",
+
         "- **FR-3.2 (Prompt: `search_infrastructure_docs`)**: MUST provide a prompt template guiding agents to explore system architecture, networking, Docker setups, and container guides.",
         "- **FR-3.3 (Prompt: `find_implementation_symbol`)**: MUST provide a prompt template assisting agents in locating symbol declarations, methods, and interface signatures across repositories.",
         "",
@@ -431,7 +433,7 @@ The complete specification is maintained and continuously verified by automated 
 3. [**Functional Requirements (FR-1 to FR-10)**](../REQUIREMENTS.md#3-comprehensive-functional-requirements-fr)
    - **FR-1**: FastMCP 2.0 Dual Transport Architecture (SSE & Streamable HTTP).
    - **FR-2**: FastMCP 7 Agent Tools Contract (`search_code`, `search_docs`, `find_symbol`, `get_file_outline`, `list_repositories`, `sync_repository`, `index_status`).
-   - **FR-3**: Dynamic Resources & Prompt Templates (`notes://catalog/summary`).
+   - **FR-3**: Dynamic Resources & Prompt Templates (`knowledge://catalog/summary`).
    - **FR-4**: Universal Multi-Provider Git Ingestion (GitHub, GitLab, Gitea, Bitbucket, Generic Git).
    - **FR-5**: Multi-Tier Credential Vault & Hierarchy.
    - **FR-6**: 10-Language Tree-sitter AST Syntax Chunking.

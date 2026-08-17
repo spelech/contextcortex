@@ -13,7 +13,7 @@ from app.models.schemas import (
 
 from app.services.db import (
     get_db_connection, get_metadata, set_metadata, 
-    get_effective_github_token, get_effective_git_token, get_token_source, CACHE_DB_PATH
+    get_effective_git_token, CACHE_DB_PATH
 )
 from app.services.git_manager import check_github_rate_limit, mask_token
 from app.services.logger import get_diagnostic_logs, clear_diagnostic_logs
@@ -22,10 +22,8 @@ from app.services.vector_store import (
     get_vector_store, get_vector_store_config, switch_vector_store, test_vector_store_connection
 )
 
-# Assuming the other agent extracts these to app.services.indexer and app.services.embeddings
 from app.services.indexer import (
-    sync_single_git_repo, run_full_indexing, is_indexing,
-    qdrant, COLLECTION_NAME
+    sync_single_git_repo, run_full_indexing, is_indexing, COLLECTION_NAME
 )
 from app.services.embeddings import (
     EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
@@ -61,12 +59,8 @@ async def api_get_stats():
             stats = store.get_stats()
             points_count = stats.get("points_count", 0)
         except Exception:
-            try:
-                if qdrant.collection_exists(COLLECTION_NAME):
-                    info = qdrant.get_collection(COLLECTION_NAME)
-                    points_count = info.points_count
-            except Exception:
-                points_count = 0
+            points_count = 0
+
 
         gh_token, _, gh_src = get_effective_git_token("https://github.com", provider="github")
 

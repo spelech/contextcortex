@@ -33,7 +33,7 @@ async def test_fastmcp_tools_registered():
 @pytest.mark.asyncio
 async def test_fastmcp_resources_and_prompts():
     resources = await mcp_server.list_resources()
-    assert any(str(r.uri) == "notes://catalog/summary" for r in resources)
+    assert any(str(r.uri) == "knowledge://catalog/summary" for r in resources)
 
     prompts = await mcp_server.list_prompts()
     prompt_names = [p.name for p in prompts]
@@ -65,9 +65,10 @@ async def test_fastmcp_tool_execution(temp_mcp_db):
 
 @pytest.mark.asyncio
 async def test_fastmcp_resource_read(temp_mcp_db):
-    contents = await mcp_server.read_resource(AnyUrl("notes://catalog/summary"))
+    contents = await mcp_server.read_resource(AnyUrl("knowledge://catalog/summary"))
     assert len(contents) > 0
     assert "Repository & Documentation Catalog" in contents[0].content
+
 
 
 @pytest.mark.asyncio

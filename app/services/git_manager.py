@@ -272,10 +272,9 @@ def format_git_permalink(
                 url += f"#L{start_line}"
         return url
 
-# Backwards compatible alias
-format_github_permalink = format_git_permalink
 
 def check_github_rate_limit(token: Optional[str] = None) -> Dict[str, Any]:
+
     """Queries GitHub API for rate limit status."""
     headers = {"Accept": "application/vnd.github+json"}
     if token:

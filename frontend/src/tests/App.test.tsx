@@ -61,14 +61,17 @@ describe('App Component', () => {
     );
 
     expect(screen.getByText('Knowledge RAG Hub')).toBeInTheDocument();
-    expect(screen.getByText('v2.4.2')).toBeInTheDocument();
+    expect(screen.getByText('v2.5.0')).toBeInTheDocument();
+
 
     await waitFor(() => {
-      expect(screen.getByText('4,950 / 5,000 reqs')).toBeInTheDocument();
+      expect(screen.getByText('Vector Backend')).toBeInTheDocument();
+      expect(screen.getByText(/Qdrant \(Embedded\)/)).toBeInTheDocument();
     });
 
     expect(screen.getByText('System & Embedding Specs')).toBeInTheDocument();
   });
+
 
   it('switches between tabs on navigation click', async () => {
     render(

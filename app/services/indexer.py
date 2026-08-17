@@ -50,18 +50,8 @@ is_indexing = False
 # Initialize database
 init_db(VAULT_PATH)
 
-# Legacy Qdrant proxy for backward compatibility
-class _QdrantCompatProxy:
-    def __getattr__(self, item):
-        store = get_vector_store()
-        client = getattr(store, "client", None)
-        if client is not None:
-            return getattr(client, item)
-        raise AttributeError(f"Active vector store has no direct qdrant client attribute: '{item}'")
-
-qdrant = _QdrantCompatProxy()
-
 def ensure_collection() -> bool:
+
     """Initializes or validates collection on the active VectorStore backend."""
     try:
         store = get_vector_store()
@@ -134,7 +124,8 @@ def process_file_content(
     doc_type: str, 
     git_url: Optional[str] = None, 
     commit_sha: Optional[str] = None,
-    category_override: Optional[str] = None
+    category_override: Optional[str] = None,
+    provider: Optional[str] = None
 ) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple]:
     """Processes a single file into vector documents, AST symbols, and summary metadata."""
     language = detect_language(filepath)
@@ -182,7 +173,7 @@ def process_file_content(
             batch_vecs = get_hybrid_embeddings_batch(texts_to_embed)
             for idx, chunk in enumerate(valid_chunks):
                 point_id = get_chunk_uuid(repo, rel_path, idx)
-                github_url = format_github_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"))
+                github_url = format_git_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"), provider=provider)
                 
                 bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
                 dense_v = bv.get("dense")
@@ -215,6 +206,7 @@ def process_file_content(
                     start_line=chunk.get("start_line", 1),
                     end_line=chunk.get("end_line", 1),
                     github_url=github_url,
+                    permalink_url=github_url,
                 ))
 
     else: # Code file
@@ -241,7 +233,7 @@ def process_file_content(
             batch_vecs = get_hybrid_embeddings_batch(texts_to_embed)
             for idx, chunk in enumerate(valid_chunks):
                 point_id = get_chunk_uuid(repo, rel_path, idx)
-                github_url = format_github_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"))
+                github_url = format_git_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"), provider=provider)
                 symbol_label = chunk.get("symbol") or title
 
                 bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
@@ -275,8 +267,10 @@ def process_file_content(
                     start_line=chunk.get("start_line", 1),
                     end_line=chunk.get("end_line", 1),
                     github_url=github_url,
+                    permalink_url=github_url,
                     metadata={"kind": chunk.get("kind", "code")}
                 ))
+
 
     mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
     summary_tuple = (
@@ -526,7 +520,8 @@ def sync_single_git_repo(repo_id: int):
                         repo=repo_name,
                         doc_type=doc_type,
                         git_url=git_url,
-                        commit_sha=commit_sha
+                        commit_sha=commit_sha,
+                        provider=provider
                     )
                     all_points.extend(points)
                     all_symbols.extend(symbols)
@@ -580,6 +575,7 @@ def sync_single_git_repo(repo_id: int):
             conn.commit()
 
         logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Vectors: {len(all_points)}, Symbols: {len(all_symbols)}")
+        trigger_list_changed_notification()
 
     except Exception as e:
         logger.error(f"Unexpected error during repo sync for '{repo_name}': {e}")

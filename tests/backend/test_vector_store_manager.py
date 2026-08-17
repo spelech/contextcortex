@@ -362,3 +362,54 @@ class TestVectorStoreManagerConfigAndHealth:
             assert cfg["healthy"] is False
             assert "error" in cfg["health_message"].lower()
             assert "error" in cfg["stats"]
+
+    def test_test_connection_active_embedded(self, tmp_path):
+        """Verify test_connection succeeds on active embedded Qdrant store without file lock conflict."""
+        storage_path = str(tmp_path / "qdrant_active_dir")
+        init_db()
+        set_vector_store_db_config(
+            provider="qdrant",
+            mode="embedded",
+            storage_path=storage_path,
+            url="",
+            collection="test_active_coll"
+        )
+        store = get_vector_store(force_reload=True)
+        assert store.mode == "embedded"
+
+        # Testing the same active path must succeed without RuntimeError / AlreadyLocked
+        ok, msg = VectorStoreManager.test_connection(
+            provider="qdrant",
+            mode="embedded",
+            storage_path=storage_path,
+            collection="test_active_coll"
+        )
+        assert ok is True
+        assert "healthy" in msg.lower()
+
+    def test_switch_same_embedded_directory(self, tmp_path):
+        """Verify switch_vector_store succeeds when switching collection on the same embedded Qdrant directory."""
+        storage_path = str(tmp_path / "qdrant_active_dir2")
+        init_db()
+        set_vector_store_db_config(
+            provider="qdrant",
+            mode="embedded",
+            storage_path=storage_path,
+            url="",
+            collection="coll_v1"
+        )
+        store = get_vector_store(force_reload=True)
+        assert store.collection_name == "coll_v1"
+
+        # Switch collection on the same storage path
+        ok, msg = switch_vector_store(
+            provider="qdrant",
+            mode="embedded",
+            storage_path=storage_path,
+            collection="coll_v2"
+        )
+        assert ok is True
+        assert "successfully switched" in msg.lower()
+        new_store = get_vector_store()
+        assert new_store.collection_name == "coll_v2"
+

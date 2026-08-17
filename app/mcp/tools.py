@@ -2,7 +2,6 @@ import json
 import logging
 from typing import List, Dict, Any, Optional, Annotated
 from pydantic import Field
-from mcp.types import Tool, TextContent, Resource, Prompt, PromptMessage, PromptArgument
 
 from app.services.db import get_db_connection
 from app.services.search import execute_hybrid_search
@@ -11,6 +10,7 @@ from app.services.vector_store import get_vector_store_config
 from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
 
 logger = logging.getLogger("knowledge-rag-mcp")
+
 
 
 
@@ -38,8 +38,9 @@ async def handle_search_code(
             header = f"### [{p.get('repo')}] {p.get('rel_path')} (Lines {p.get('start_line')}-{p.get('end_line')})"
             if p.get("symbol"):
                 header += f" - Symbol: `{p.get('symbol')}`"
-            if p.get("github_url"):
-                header += f"\nGitHub Link: {p.get('github_url')}"
+            link_url = p.get("permalink_url") or p.get("github_url")
+            if link_url:
+                header += f"\nSource Link: {link_url}"
             header += f"\nRRF Score: {hit.score:.4f}\n"
 
             lang = p.get("language", "")
@@ -78,12 +79,14 @@ async def handle_search_docs(
                 header += f" -> {p.get('heading')}"
             if tags_str:
                 header += f"\nTags: {tags_str}"
-            if p.get("github_url"):
-                header += f"\nGitHub Link: {p.get('github_url')}"
+            link_url = p.get("permalink_url") or p.get("github_url")
+            if link_url:
+                header += f"\nSource Link: {link_url}"
             header += f"\nRRF Score: {hit.score:.4f}\n"
 
             block = f"{header}---\n{p.get('content')}"
             formatted.append(block)
+
 
         return "\n\n========================\n\n".join(formatted)
     except Exception as e:
@@ -217,14 +220,13 @@ async def handle_sync_repository(
 
 
 async def handle_index_status() -> str:
-    """Get global index health, vector counts, GitHub rate limits, and active embedding models."""
+    """Get global index health, vector counts, Git provider auth sources, and active embedding models."""
     try:
         from app.services.git_manager import check_github_rate_limit, mask_token
-        from app.services.db import get_effective_github_token, get_token_source
+        from app.services.db import get_effective_git_token, list_git_host_credentials
         from app.services.embeddings import EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
 
         with get_db_connection() as conn:
-
             files_count = conn.execute("SELECT count(*) FROM indexed_files").fetchone()[0]
             symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
             git_count = conn.execute("SELECT count(*) FROM git_repositories").fetchone()[0]
@@ -238,25 +240,31 @@ async def handle_index_status() -> str:
         stats = vs_cfg.get("stats", {})
         points_count = stats.get("points_count", 0)
 
-        eff_token = get_effective_github_token()
-        rate_info = check_github_rate_limit(eff_token)
+        gh_tok, _, gh_src = get_effective_git_token("https://github.com", provider="github")
+        gl_tok, _, gl_src = get_effective_git_token("https://gitlab.com", provider="gitlab")
+        gt_tok, _, gt_src = get_effective_git_token("https://gitea.com", provider="gitea")
+        vault_creds = list_git_host_credentials()
+        rate_info = check_github_rate_limit(gh_tok)
 
-        status_text = (
-            f"Vector Store Provider: {provider}\n"
-            f"Storage Mode: {mode_str} ({mode_val})\n"
-            f"Storage Location: {storage_loc}\n"
-            f"Collection: {collection_name}\n"
-            f"Total Hybrid Vectors: {points_count}\n"
-            f"Embedding Provider: {EMBEDDING_PROVIDER.upper()} ({DENSE_MODEL_NAME} + {SPARSE_MODEL_NAME})\n"
-            f"Total Indexed Files: {files_count}\n"
-            f"Total AST Symbols: {symbols_count}\n"
-            f"Registered Git Repos: {git_count}\n"
-            f"GitHub Token Source: {get_token_source()} (Masked: {mask_token(eff_token)})\n"
-            f"GitHub API Rate Limit: {rate_info.get('remaining', 0)} / {rate_info.get('limit', 60)}"
-        )
-        return status_text
+        lines = [
+            f"Vector Store Provider: {provider}",
+            f"Storage Mode: {mode_str} ({mode_val})",
+            f"Storage Location: {storage_loc}",
+            f"Collection: {collection_name}",
+            f"Total Vectors: {points_count}",
+            f"Embedding Provider: {EMBEDDING_PROVIDER.upper()} ({DENSE_MODEL_NAME} + {SPARSE_MODEL_NAME})",
+            f"Total Indexed Files: {files_count}",
+            f"Total AST Symbols: {symbols_count}",
+            f"Registered Git Repos: {git_count}",
+            f"Git Auth Sources: GitHub ({gh_src}: {mask_token(gh_tok)}), GitLab ({gl_src}), Gitea ({gt_src}), Host Vaults ({len(vault_creds)})",
+        ]
+        if gh_tok:
+            lines.append(f"GitHub API Rate Limit: {rate_info.get('remaining', 0)} / {rate_info.get('limit', 60)}")
+
+        return "\n".join(lines)
     except Exception as e:
         return f"Failed to get status: {str(e)}"
+
 
 
 
@@ -356,14 +364,14 @@ def register_mcp_tools_and_resources(server=None):
     if "index_status" not in existing_tools:
         server.tool(
             name="index_status",
-            description="Get global index health, vector counts, GitHub rate limits, and active embedding models."
+            description="Get global index health, vector counts, Git provider auth sources, and active embedding models."
         )(handle_index_status)
 
     existing_resources = {str(r.uri) for r in server._resource_manager.list_resources()}
-    if "notes://catalog/summary" not in existing_resources:
+    if "knowledge://catalog/summary" not in existing_resources:
         server.resource(
-            "notes://catalog/summary",
-            name="catalog_summary",
+            "knowledge://catalog/summary",
+            name="knowledge_catalog_summary",
             description="Catalog of indexed repositories, documentation files, and AST symbol distributions.",
             mime_type="text/markdown"
         )(handle_catalog_summary)
@@ -383,167 +391,3 @@ def register_mcp_tools_and_resources(server=None):
 
     return server
 
-
-# --- Backward Compatibility Helpers ---
-
-async def execute_tool(name: str, arguments: dict) -> List[TextContent]:
-    """Backward compatibility wrapper for calling tools directly."""
-    if name == "search_code":
-        res = await handle_search_code(**arguments)
-    elif name == "search_docs":
-        res = await handle_search_docs(**arguments)
-    elif name == "find_symbol":
-        res = await handle_find_symbol(**arguments)
-    elif name == "get_file_outline":
-        res = await handle_get_file_outline(**arguments)
-    elif name == "list_repositories":
-        res = await handle_list_repositories()
-    elif name == "sync_repository":
-        res = await handle_sync_repository(**arguments)
-    elif name == "index_status":
-        res = await handle_index_status()
-    else:
-        raise ValueError(f"Unknown tool: {name}")
-
-    return [TextContent(type="text", text=res)]
-
-
-async def read_resource(uri: str) -> str:
-    """Backward compatibility wrapper for reading resources directly."""
-    if uri == "notes://catalog/summary":
-        return await handle_catalog_summary()
-    raise ValueError(f"Unknown resource URI: {uri}")
-
-
-async def get_tools() -> List[Tool]:
-    """Backward compatibility helper for listing tools as Tool objects."""
-    catalog_desc = get_dynamic_catalog_description()
-    return [
-        Tool(
-            name="search_code",
-            description=f"Hybrid semantic and BM25 search over code functions, classes, and logic snippets with line numbers and GitHub links. {catalog_desc}",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Natural language question or code concept (e.g. 'JWT token authentication handler')."},
-                    "repo": {"type": "string", "description": "Optional repository name/alias to filter by."},
-                    "language": {"type": "string", "description": "Optional language filter (e.g. 'python', 'typescript', 'go')."},
-                    "limit": {"type": "integer", "description": "Max number of code blocks to return (default 5).", "default": 5}
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="search_docs",
-            description=f"Hybrid search across system documentation, markdown notes, architectural decisions, and runbooks. {catalog_desc}",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query or documentation topic."},
-                    "repo": {"type": "string", "description": "Optional repository/vault filter."},
-                    "category": {"type": "string", "description": "Optional category filter."},
-                    "tag": {"type": "string", "description": "Optional tag filter."},
-                    "limit": {"type": "integer", "description": "Max documents to return (default 5).", "default": 5}
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="find_symbol",
-            description="Instant exact or prefix symbol lookup (functions, classes, structs, interfaces) from AST index without broad token scans.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Symbol name (e.g. 'extract_symbols_and_chunks' or 'FastAPI')."},
-                    "repo": {"type": "string", "description": "Optional repository filter."},
-                    "exact": {"type": "boolean", "description": "If true, matches exact name. If false, prefix/fuzzy matches.", "default": True},
-                    "limit": {"type": "integer", "description": "Max results (default 10).", "default": 10}
-                },
-                "required": ["name"]
-            }
-        ),
-        Tool(
-            name="get_file_outline",
-            description="Get the AST outline (classes, methods, functions, line numbers) of a file without retrieving its entire token body.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "filepath": {"type": "string", "description": "File path (e.g. 'src/server.py' or 'repo_name://src/server.py')."},
-                    "repo": {"type": "string", "description": "Repository identifier (optional)."}
-                },
-                "required": ["filepath"]
-            }
-        ),
-        Tool(
-            name="list_repositories",
-            description="Lists all indexed local paths and remote Git repositories, including active branches, commit SHAs, and file counts.",
-            inputSchema={"type": "object", "properties": {}}
-        ),
-        Tool(
-            name="sync_repository",
-            description="Trigger an immediate re-fetch and re-indexing of a registered Git repo or local path.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "repo": {"type": "string", "description": "Repository name to sync (or omit to sync all)."}
-                }
-            }
-        ),
-        Tool(
-            name="index_status",
-            description="Get global index health, vector counts, GitHub rate limits, and active embedding models.",
-            inputSchema={"type": "object", "properties": {}}
-        )
-    ]
-
-
-async def get_resources() -> List[Resource]:
-    """Backward compatibility helper for listing resources."""
-    return [
-        Resource(
-            uri="notes://catalog/summary",
-            name="Repository & Documentation Topic Catalog",
-            description="Catalog of indexed repositories, documentation files, and AST symbol distributions.",
-            mimeType="text/markdown"
-        )
-    ]
-
-
-async def get_prompts() -> List[Prompt]:
-    """Backward compatibility helper for listing prompts."""
-    prompts = []
-    try:
-        with get_db_connection() as conn:
-            rows = conn.execute("SELECT name, description, arguments_json FROM custom_prompts ORDER BY name ASC").fetchall()
-        for r in rows:
-            args_list = []
-            if r["arguments_json"]:
-                try:
-                    for a in json.loads(r["arguments_json"]):
-                        args_list.append(PromptArgument(
-                            name=a.get("name", ""),
-                            description=a.get("description", ""),
-                            required=a.get("required", False)
-                        ))
-                except Exception:
-                    pass
-            prompts.append(Prompt(name=r["name"], description=r["description"], arguments=args_list))
-    except Exception as e:
-        logger.error(f"Error listing prompts: {e}")
-    return prompts
-
-
-async def get_prompt(name: str, arguments: dict = None) -> List[PromptMessage]:
-    """Backward compatibility helper for resolving prompts."""
-    arguments = arguments or {}
-    try:
-        with get_db_connection() as conn:
-            row = conn.execute("SELECT template FROM custom_prompts WHERE name = ?", (name,)).fetchone()
-        if not row:
-            raise ValueError(f"Unknown prompt: {name}")
-        formatted = row["template"]
-        for k, v in arguments.items():
-            formatted = formatted.replace(f"{{{k}}}", str(v))
-        return [PromptMessage(role="user", content=TextContent(type="text", text=formatted))]
-    except Exception as e:
-        raise ValueError(f"Failed to get prompt '{name}': {e}")

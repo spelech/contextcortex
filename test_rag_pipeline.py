@@ -6,7 +6,7 @@ import unittest
 from app.services.chunker import extract_symbols_and_chunks, chunk_markdown, get_file_outline
 from app.services.embeddings import get_dense_embedding, get_sparse_embedding, get_hybrid_embeddings
 from app.services.git_manager import (
-    shallow_clone_repo, cleanup_repo_dir, format_github_permalink, 
+    shallow_clone_repo, cleanup_repo_dir, format_git_permalink, 
     check_github_rate_limit
 )
 from app.services.db import init_db, get_db_connection, set_metadata, get_metadata
@@ -77,7 +77,7 @@ The database uses SQLite and Qdrant.
             self.assertTrue(len(hybrid["sparse"].values) > 0)
 
     def test_github_permalink(self):
-        link = format_github_permalink(
+        link = format_git_permalink(
             "https://github.com/my-org/my-project.git",
             "a1b2c3d4e5",
             "src/utils.py",
@@ -125,7 +125,7 @@ if __name__ == "__main__":
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from app.mcp.tools import execute_tool
+from app.mcp.tools import handle_search_code
 import anyio
 
 client = TestClient(app)
@@ -139,7 +139,7 @@ def test_api_routes_pydantic():
 
 @pytest.mark.asyncio
 async def test_mcp_tools_pydantic():
-    args = {"query": "test query", "limit": 2}
-    res = await execute_tool("search_code", args)
-    assert len(res) == 1
-    assert "Error" in res[0].text or "No matching code snippets" in res[0].text or "========================" in res[0].text
+    res = await handle_search_code(query="test query", limit=2)
+    assert isinstance(res, str)
+    assert "Error" in res or "No matching code snippets" in res or "========================" in res
+

@@ -1,8 +1,8 @@
-# Software Requirements Specification (v2.4.2)
+# Software Requirements Specification (v2.5.0)
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **295 Automated Tests** (229 Pytest Backend + 53 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **301 Automated Tests** (235 Pytest Backend + 53 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -199,7 +199,7 @@ classDiagram
 - **FR-2.7 (`index_status`)**: MUST report vector count, active embedding models, collection name, and provider rate limit status.
 
 ### FR-3: Dynamic Resources & Prompt Templates
-- **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `notes://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.
+- **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `knowledge://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.
 - **FR-3.2 (Prompt: `search_infrastructure_docs`)**: MUST provide a prompt template guiding agents to explore system architecture, networking, Docker setups, and container guides.
 - **FR-3.3 (Prompt: `find_implementation_symbol`)**: MUST provide a prompt template assisting agents in locating symbol declarations, methods, and interface signatures across repositories.
 
@@ -365,7 +365,7 @@ classDiagram
 - `TestGitManager::test_build_authenticated_url`
 - `TestGitManager::test_sanitize_url_for_logging`
 - `TestGitManager::test_mask_token`
-- `TestGitManager::test_format_github_permalink`
+- `TestGitManager::test_format_git_permalink`
 - `TestGitManager::test_get_remote_head_sha_success`
 - `TestGitManager::test_get_remote_head_sha_fallback_head`
 - `TestGitManager::test_get_remote_head_sha_failure`
@@ -382,7 +382,7 @@ classDiagram
 - `test_build_authenticated_url`
 - `test_sanitize_url_for_logging`
 - `test_mask_token`
-- `test_format_github_permalink`
+- `test_format_git_permalink`
 - `test_get_remote_head_sha_success`
 - `test_get_remote_head_sha_fallback_head`
 - `test_get_remote_head_sha_failure`
@@ -435,7 +435,7 @@ classDiagram
 
 #### `test_mcp_v2.py` (0 tests)
 
-#### `test_multi_git_providers.py` (7 tests)
+#### `test_multi_git_providers.py` (9 tests)
 - `test_detect_git_provider`
 - `test_build_authenticated_url_multi_provider`
 - `test_sanitize_url_for_logging_multi_scheme`
@@ -443,6 +443,8 @@ classDiagram
 - `test_effective_git_token_hierarchy`
 - `test_host_credentials_api_endpoints`
 - `test_multi_token_settings_api`
+- `test_process_file_content_with_custom_provider`
+- `test_sync_single_git_repo_triggers_notification`
 
 #### `test_schemas.py` (2 tests)
 - `test_code_symbol_creation`
@@ -496,7 +498,7 @@ classDiagram
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
 
-#### `test_vector_store_manager.py` (34 tests)
+#### `test_vector_store_manager.py` (38 tests)
 - `TestDBVectorStoreSeeding::test_seed_defaults_when_env_empty`
 - `TestDBVectorStoreSeeding::test_seed_from_environment_variables`
 - `TestDBVectorStoreSeeding::test_seed_with_alt_env_vars`
@@ -514,6 +516,8 @@ classDiagram
 - `TestVectorStoreManagerSwitching::test_switch_failure_when_ensure_collection_fails`
 - `TestVectorStoreManagerConfigAndHealth::test_get_vector_store_config`
 - `TestVectorStoreManagerConfigAndHealth::test_get_vector_store_config_on_error`
+- `TestVectorStoreManagerConfigAndHealth::test_test_connection_active_embedded` - _Verify test_connection succeeds on active embedded Qdrant store without file lock conflict._
+- `TestVectorStoreManagerConfigAndHealth::test_switch_same_embedded_directory` - _Verify switch_vector_store succeeds when switching collection on the same embedded Qdrant directory._
 - `test_seed_defaults_when_env_empty`
 - `test_seed_from_environment_variables`
 - `test_seed_with_alt_env_vars`
@@ -531,6 +535,8 @@ classDiagram
 - `test_switch_failure_when_ensure_collection_fails`
 - `test_get_vector_store_config`
 - `test_get_vector_store_config_on_error`
+- `test_test_connection_active_embedded` - _Verify test_connection succeeds on active embedded Qdrant store without file lock conflict._
+- `test_switch_same_embedded_directory` - _Verify switch_vector_store succeeds when switching collection on the same embedded Qdrant directory._
 
 #### `test_vector_store_qdrant.py` (22 tests)
 - `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`

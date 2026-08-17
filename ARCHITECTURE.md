@@ -1,4 +1,5 @@
-# Architecture: Knowledge RAG MCP Server (v2.4.2)
+# Architecture: Knowledge RAG MCP Server (v2.5.0)
+
 
 The Knowledge RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, and a React 19 administrative dashboard (Knowledge RAG Hub).
 
@@ -85,7 +86,8 @@ flowchart TD
   - `sync_repository`: On-demand re-sync for a specific repo or all sources.
   - `index_status`: Global vector stats, model metadata, and GitHub rate limits.
 - **Dynamic Resource Providers**:
-  - `notes://catalog/summary`: Markdown catalog summarizing indexed repositories, file counts, and AST symbol distributions.
+  - `knowledge://catalog/summary`: Markdown catalog summarizing indexed repositories, file counts, and AST symbol distributions.
+
 - **Custom Agent Prompt Templates**:
   - `search_infrastructure_docs`: Parameterized workflow for infrastructure and deployment queries.
   - `find_implementation_symbol`: Parameterized workflow for locating implementation symbols.

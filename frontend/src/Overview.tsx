@@ -75,8 +75,13 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
             </div>
             <div className="spec-row">
               <span>Retrieval Strategy:</span>
-              <span className="badge badge-accent">Dense + BM25 Reciprocal Rank Fusion (RRF)</span>
+              <span className="badge badge-accent">
+                {stats.vector_store_provider === 'chroma'
+                  ? 'Dense Vector Cosine Similarity'
+                  : 'Dense + BM25 Reciprocal Rank Fusion (RRF)'}
+              </span>
             </div>
+
             <div className="spec-row">
               <span>AST Chunker:</span>
               <span>Tree-sitter AST (Classes, Functions, Methods)</span>

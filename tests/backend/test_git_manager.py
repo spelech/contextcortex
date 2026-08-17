@@ -10,11 +10,12 @@ from app.services.git_manager import (
     get_remote_head_sha,
     shallow_clone_repo,
     cleanup_repo_dir,
-    format_github_permalink,
+    format_git_permalink,
     check_github_rate_limit
 )
 
 class TestGitManager(unittest.TestCase):
+
 
     def test_get_env_token(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -82,12 +83,12 @@ class TestGitManager(unittest.TestCase):
         self.assertEqual(mask_token("short"), "****")
         self.assertEqual(mask_token("ghp_1234567890abcdef"), "ghp_...cdef")
 
-    def test_format_github_permalink(self):
+    def test_format_git_permalink(self):
         # Empty url
-        self.assertIsNone(format_github_permalink("", "commit123", "src/index.ts"))
+        self.assertIsNone(format_git_permalink("", "commit123", "src/index.ts"))
 
         # GitHub single line
-        link1 = format_github_permalink(
+        link1 = format_git_permalink(
             "https://github.com/org/repo.git",
             "commit123",
             "src/index.ts",
@@ -96,7 +97,7 @@ class TestGitManager(unittest.TestCase):
         self.assertEqual(link1, "https://github.com/org/repo/blob/commit123/src/index.ts#L10")
 
         # GitHub range lines
-        link2 = format_github_permalink(
+        link2 = format_git_permalink(
             "https://github.com/org/repo",
             "commit123",
             "src/index.ts",
@@ -106,16 +107,17 @@ class TestGitManager(unittest.TestCase):
         self.assertEqual(link2, "https://github.com/org/repo/blob/commit123/src/index.ts#L10-L25")
 
         # GitLab format
-        link_gl = format_github_permalink("https://gitlab.example.com/org/repo", "sha123", "src/app.py", 5, 15)
+        link_gl = format_git_permalink("https://gitlab.example.com/org/repo", "sha123", "src/app.py", 5, 15)
         self.assertEqual(link_gl, "https://gitlab.example.com/org/repo/-/blob/sha123/src/app.py#L5-15")
 
         # Gitea format
-        link_gt = format_github_permalink("https://gitea.example.com/org/repo", "sha123", "src/app.py", 5, 15)
+        link_gt = format_git_permalink("https://gitea.example.com/org/repo", "sha123", "src/app.py", 5, 15)
         self.assertEqual(link_gt, "https://gitea.example.com/org/repo/src/commit/sha123/src/app.py#L5-L15")
 
         # Bitbucket format
-        link_bb = format_github_permalink("https://bitbucket.org/org/repo", "sha123", "src/app.py", 5, 15)
+        link_bb = format_git_permalink("https://bitbucket.org/org/repo", "sha123", "src/app.py", 5, 15)
         self.assertEqual(link_bb, "https://bitbucket.org/org/repo/src/sha123/src/app.py#lines-5:15")
+
 
     @patch("subprocess.run")
     def test_get_remote_head_sha_success(self, mock_run):

@@ -1,4 +1,5 @@
-# Developer Documentation (v2.4.2)
+# Developer Documentation (v2.5.0)
+
 
 This document provides instructions for developing, testing, configuring, and running the Knowledge RAG MCP Server locally.
 
@@ -182,7 +183,8 @@ Example configuration:
 - `index_status()`
 
 ### Available MCP Resources:
-- `notes://catalog/summary`
+- `knowledge://catalog/summary`
+
 
 ### Available MCP Prompts:
 - `search_infrastructure_docs(topic="docker-compose network topology")`

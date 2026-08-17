@@ -156,3 +156,53 @@ def test_multi_token_settings_api(temp_db):
     assert data["providers_auth"]["github"]["token_source"] == "Database (Github)"
     assert data["providers_auth"]["gitlab"]["token_source"] == "Database (Gitlab)"
     assert data["providers_auth"]["gitea"]["token_source"] == "Database (Gitea)"
+
+def test_process_file_content_with_custom_provider():
+    from app.services.indexer import process_file_content
+    content = "# My Document\n\nSome important notes."
+    points, symbols, summary = process_file_content(
+        filepath="custom_repo://docs/README.md",
+        rel_path="docs/README.md",
+        content=content,
+        repo="custom_repo",
+        doc_type="doc",
+        git_url="https://git.corp.internal/team/custom_repo.git",
+        commit_sha="abcd1234ef",
+        provider="gitlab"
+    )
+    assert len(points) > 0
+    # Must use GitLab permalink format with /-/blob/
+    assert "https://git.corp.internal/team/custom_repo/-/blob/abcd1234ef/docs/README.md" in points[0].github_url
+    assert points[0].permalink_url == points[0].github_url
+
+def test_sync_single_git_repo_triggers_notification(temp_db):
+    from app.services.indexer import sync_single_git_repo
+    from app.services.db import get_db_connection
+    from unittest.mock import patch, MagicMock
+
+    with get_db_connection() as conn:
+        conn.execute(
+            "INSERT INTO git_repositories (name, url, branch, provider, status) VALUES (?, ?, ?, ?, ?)",
+            ("test_notif_repo", "https://github.com/owner/repo.git", "main", "github", "pending")
+        )
+        conn.commit()
+        repo_id = conn.execute("SELECT id FROM git_repositories WHERE name = 'test_notif_repo'").fetchone()[0]
+
+    with patch("app.services.indexer.get_remote_head_sha", return_value="sha123"), \
+         patch("app.services.indexer.shallow_clone_repo", return_value=MagicMock(temp_dir=None, commit_sha="sha123", error=None)), \
+         patch("app.services.indexer.trigger_list_changed_notification") as mock_notify:
+        sync_single_git_repo(repo_id)
+        # Even if clone failed or succeeded, test on success
+    
+    # Now with valid temp_dir
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        with open(os.path.join(td, "doc.md"), "w") as f:
+            f.write("# Hello\nWorld")
+        with patch("app.services.indexer.get_remote_head_sha", return_value="sha456"), \
+             patch("app.services.indexer.shallow_clone_repo", return_value=MagicMock(temp_dir=td, commit_sha="sha456", error=None)), \
+             patch("app.services.indexer.cleanup_repo_dir"), \
+             patch("app.services.indexer.trigger_list_changed_notification") as mock_notify:
+            sync_single_git_repo(repo_id)
+            mock_notify.assert_called_once()
+

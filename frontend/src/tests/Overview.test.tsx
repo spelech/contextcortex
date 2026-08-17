@@ -73,7 +73,9 @@ describe('Overview Component', () => {
 
     expect(screen.getByText(/CHROMA \(Remote\) Vectors/i)).toBeInTheDocument();
     expect(screen.getByText(/ChromaDB \(Remote Server\)/i)).toBeInTheDocument();
+    expect(screen.getByText('Dense Vector Cosine Similarity')).toBeInTheDocument();
   });
+
 
   it('triggers reindex and calls refreshStats on success', async () => {
     const refreshStats = vi.fn();

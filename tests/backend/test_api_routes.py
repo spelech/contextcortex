@@ -99,15 +99,16 @@ def test_api_repos_crud(mock_db):
         res_sync_404 = client.post("/admin/api/repos/sync/999")
         assert res_sync_404.status_code == 404
 
-    # Delete repo (with Qdrant error handled gracefully)
-    with patch("app.api.routes.qdrant") as mock_qdrant:
-        mock_qdrant.delete.side_effect = Exception("Qdrant connection down")
+    # Delete repo (with vector store error handled gracefully)
+    with patch("app.api.routes.get_vector_store") as mock_get_store:
+        mock_get_store.return_value.delete_by_repo.side_effect = Exception("Vector store connection down")
         res_del = client.delete(f"/admin/api/repos/{repo_id}")
         assert res_del.status_code == 200
         assert res_del.json()["status"] == "success"
 
         res_del_404 = client.delete("/admin/api/repos/999")
         assert res_del_404.status_code == 404
+
 
 def test_api_repos_error_handlers():
     with patch("app.api.routes.get_db_connection", side_effect=RuntimeError("DB error on repos")):

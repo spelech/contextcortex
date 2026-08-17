@@ -24,10 +24,18 @@ class VectorDocument(BaseModel):
     start_line: Optional[int] = None
     end_line: Optional[int] = None
     github_url: Optional[str] = None
+    permalink_url: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.permalink_url is None and self.github_url is not None:
+            self.permalink_url = self.github_url
+        elif self.github_url is None and self.permalink_url is not None:
+            self.github_url = self.permalink_url
 
     def to_payload(self) -> Dict[str, Any]:
         """Converts the document to a standard dictionary payload."""
+        effective_url = self.permalink_url or self.github_url
         payload: Dict[str, Any] = {
             "repo": self.repo,
             "doc_type": self.doc_type,
@@ -42,7 +50,8 @@ class VectorDocument(BaseModel):
             "language": self.language,
             "start_line": self.start_line,
             "end_line": self.end_line,
-            "github_url": self.github_url,
+            "github_url": effective_url,
+            "permalink_url": effective_url,
             "content": self.text,
         }
         if self.metadata:
@@ -53,6 +62,7 @@ class VectorDocument(BaseModel):
     def payload(self) -> Dict[str, Any]:
         """Convenience property to access payload dictionary."""
         return self.to_payload()
+
 
 
 

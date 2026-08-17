@@ -13,7 +13,8 @@ from app.services.vector_store import (
     get_vector_store_config,
 )
 from app.services.db import init_db, set_vector_store_db_config, get_vector_store_db_config
-from app.mcp.tools import handle_index_status, execute_tool
+from app.mcp.tools import handle_index_status
+
 
 app = FastAPI()
 app.include_router(router)
@@ -241,7 +242,7 @@ async def test_mcp_handle_index_status_details(setup_test_environment):
         assert "Vector Store Provider: QDRANT" in res
         assert "Storage Mode:" in res
         assert "Collection:" in res
-        assert "Total Hybrid Vectors:" in res
+        assert "Total Vectors:" in res
         assert "Embedding Provider:" in res
 
 

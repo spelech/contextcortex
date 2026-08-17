@@ -344,21 +344,8 @@ def set_vector_store_db_config(
     if collection is not None:
         set_metadata("vector_store_collection", collection.strip())
 
-# Global GitHub token resolution (Backwards compatible helper)
-def get_effective_github_token(override_token: Optional[str] = None) -> Optional[str]:
-    token, _, _ = get_effective_git_token("https://github.com", override_token=override_token, provider="github")
-    return token
-
-def get_token_source() -> str:
-    db_token = get_metadata("github_token")
-    if db_token and db_token.strip():
-        return "Database"
-    env_token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
-    if env_token and env_token.strip():
-        return "Environment Variable"
-    return "None"
-
 # Multi-Provider & Git Host Credential Management
+
 def list_git_host_credentials() -> List[Dict[str, Any]]:
     try:
         with get_db_connection() as conn:

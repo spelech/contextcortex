@@ -1,4 +1,5 @@
-# Knowledge RAG MCP Server (v2.4.2)
+# Knowledge RAG MCP Server (v2.5.0)
+
 
 [![Build and Publish Docker Image](https://github.com/spelech/knowledge-rag-mcp/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/knowledge-rag-mcp/actions/workflows/docker-publish.yml)
 [![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fknowledge--rag--mcp-blue?logo=docker)](https://github.com/spelech/knowledge-rag-mcp/pkgs/container/knowledge-rag-mcp)
@@ -58,7 +59,8 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 ### Resources
 | Resource URI | MIME Type | Description |
 | :--- | :--- | :--- |
-| `notes://catalog/summary` | `text/markdown` | Dynamic catalog of all indexed repositories, document distributions, and AST symbol totals. |
+| `knowledge://catalog/summary` | `text/markdown` | Dynamic catalog of all indexed repositories, document distributions, and AST symbol totals. |
+
 
 ### Prompts
 | Prompt Name | Arguments | Description |
