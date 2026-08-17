@@ -135,7 +135,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
           </button>
         </div>
 
-        <div className="table-container">
+        <div className="table-container desktop-table-view">
           <table>
             <thead>
               <tr>
@@ -203,6 +203,72 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
             </tbody>
           </table>
         </div>
+
+        <div className="mobile-card-list">
+          {repos.length === 0 ? (
+            <div className="empty-state">No Git repositories registered. Click "Add Repository" to index a remote repo.</div>
+          ) : (
+            repos.map(r => (
+              <div key={`card-${r.id}`} className="data-mobile-card">
+                <div className="data-mobile-card-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {getProviderIcon(r.provider)}
+                    <strong style={{ fontSize: '1rem' }}>{r.name}</strong>
+                  </div>
+                  {r.status === 'syncing' ? <span className="badge badge-warning"><i className="fa-solid fa-spinner fa-spin"></i> Syncing</span> :
+                   r.status === 'error' ? (
+                     <span className="badge badge-danger" title={r.last_error || 'Sync failed'}>
+                       <i className="fa-solid fa-circle-exclamation"></i> Error
+                     </span>
+                   ) :
+                   r.status === 'pending' ? <span className="badge badge-primary"><i className="fa-solid fa-clock"></i> Pending</span> :
+                   <span className="badge badge-success"><i className="fa-solid fa-check"></i> Synced</span>}
+                </div>
+
+                <div className="data-mobile-card-body">
+                  <div>
+                    <span className="text-muted">URL: </span>
+                    <a href={r.url} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.85rem' }}>
+                      <i className="fa-solid fa-arrow-up-right-from-square"></i> {r.url}
+                    </a>
+                  </div>
+                  <div>
+                    <span className="text-muted">Branch: </span>
+                    <code>{r.branch}</code>
+                  </div>
+                  <div>
+                    <span className="text-muted">Commit: </span>
+                    {r.commit_sha ? <code>{r.commit_sha.substring(0, 8)}</code> : <span className="text-muted">-</span>}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>
+                      <span className="text-muted">Files: </span>
+                      {(r.file_count || 0).toLocaleString()} files
+                    </span>
+                    <span>
+                      <span className="text-muted">Last Synced: </span>
+                      <span style={{ color: 'var(--text-muted)' }}>{r.last_synced || 'Never'}</span>
+                    </span>
+                  </div>
+                  {r.status === 'error' && r.last_error && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '2px' }}>
+                      {r.last_error}
+                    </div>
+                  )}
+                </div>
+
+                <div className="data-mobile-card-actions">
+                  <button className="btn btn-secondary" onClick={() => syncRepo(r.id)} title="Trigger Sync">
+                    <i className="fa-solid fa-arrows-rotate"></i> Sync
+                  </button>
+                  <button className="btn btn-secondary btn-delete" onClick={() => deleteRepo(r.id, r.name)} title="Delete Repo">
+                    <i className="fa-solid fa-trash-can"></i> Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {isModalOpen && (
@@ -237,7 +303,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
                 <input type="text" id="repo-url" required placeholder="https://github.com/owner/repo.git or http://git.lan:3000/repo.git" value={url} onChange={e => setUrl(e.target.value)} />
               </div>
 
-              <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div className="form-row form-row-3col">
                 <div className="form-group">
                   <label htmlFor="repo-branch">Branch / Tag</label>
                   <input type="text" id="repo-branch" placeholder="main" value={branch} onChange={e => setBranch(e.target.value)} />

@@ -418,7 +418,54 @@ code, .code {
     font-size: 0.85rem;
 }
 
-/* Tables */
+/* Tables & Mobile Cards */
+.desktop-table-view {
+    display: block;
+}
+
+.mobile-card-list {
+    display: none;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.data-mobile-card {
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid var(--border-card);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.data-mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.data-mobile-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.85rem;
+}
+
+.data-mobile-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.data-mobile-card-actions .btn {
+    flex: 1;
+    justify-content: center;
+}
+
 .card-header-btn {
     display: flex;
     justify-content: space-between;
@@ -530,6 +577,12 @@ tr:hover td {
 .form-row {
     display: flex;
     gap: 14px;
+}
+
+.form-row-3col {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
 }
 
 input[type="text"], input[type="url"], input[type="password"], select, textarea {
@@ -733,6 +786,22 @@ input:focus, select:focus, textarea:focus {
   }
   .dashboard-container {
     padding: 16px 12px;
+  }
+  .desktop-table-view {
+    display: none;
+  }
+  .mobile-card-list {
+    display: flex;
+  }
+  .card-header-btn {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .form-row, .form-row-3col {
+    flex-direction: column;
+    display: flex !important;
+    gap: 12px;
   }
 }
 

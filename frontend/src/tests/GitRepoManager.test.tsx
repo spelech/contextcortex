@@ -44,12 +44,12 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
-      expect(screen.getByText('Synced')).toBeInTheDocument();
-      expect(screen.getByText('687f7b1a')).toBeInTheDocument();
-      expect(screen.getByText('failed-repo')).toBeInTheDocument();
-      expect(screen.getByText('Error')).toBeInTheDocument();
-      expect(screen.getByText('Authentication failed for repository')).toBeInTheDocument();
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('Synced')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('687f7b1a')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('failed-repo')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('Error')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('Authentication failed for repository')[0]).toBeInTheDocument();
     });
   });
 
@@ -66,7 +66,7 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/No Git repositories registered/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/No Git repositories registered/i)[0]).toBeInTheDocument();
     });
   });
 
@@ -149,7 +149,7 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
     });
 
     // Trigger sync
@@ -181,7 +181,7 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
     });
 
     // Trigger delete
@@ -224,7 +224,7 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
     });
 
     const syncButtons = screen.getAllByTitle('Trigger Sync');
@@ -250,4 +250,29 @@ describe('GitRepoManager Component', () => {
       expect(screen.getByText(/Failed to delete repo: Delete forbidden/i)).toBeInTheDocument();
     });
   });
+
+  it('renders mobile cards for repositories with action buttons', async () => {
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockRepos
+    });
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
+    });
+
+    // Verify mobile cards exist in DOM alongside desktop table
+    const mobileCards = document.querySelectorAll('.data-mobile-card');
+    expect(mobileCards.length).toBeGreaterThan(0);
+
+    // Verify action buttons inside mobile cards
+    const mobileSyncBtns = screen.getAllByRole('button', { name: /sync/i });
+    expect(mobileSyncBtns.length).toBeGreaterThan(0);
+  });
 });
+
