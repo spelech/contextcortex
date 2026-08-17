@@ -25,11 +25,13 @@ export function useToast() {
   return context.toast;
 }
 
+let toastCounter = 0;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const addToast = useCallback((message: string, type: ToastType) => {
-    const id = Date.now();
+    const id = ++toastCounter;
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));

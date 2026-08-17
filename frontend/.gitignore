@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 *.tsbuildinfo
 .vite
+coverage
+playwright-report
+test-results

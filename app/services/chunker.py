@@ -43,7 +43,12 @@ def get_tree_sitter_parser(lang_name: str):
         return _PARSERS[lang_name]
     try:
         import tree_sitter_language_pack as tslp
-        parser = tslp.get_parser(lang_name)
+        try:
+            parser = tslp.get_parser(lang_name)
+        except Exception:
+            # Fallback for naming variants like c_sharp <-> csharp
+            alt_name = "csharp" if lang_name == "c_sharp" else "c_sharp" if lang_name == "csharp" else lang_name
+            parser = tslp.get_parser(alt_name)
         _PARSERS[lang_name] = parser
         return parser
     except Exception:
@@ -150,6 +155,7 @@ CODE_CONTAINER_TYPES = {
     "go": {"function_declaration", "method_declaration", "type_declaration"},
     "rust": {"function_item", "impl_item", "struct_item", "trait_item", "enum_item"},
     "c_sharp": {"class_declaration", "interface_declaration", "method_declaration", "struct_declaration", "enum_declaration"},
+    "csharp": {"class_declaration", "interface_declaration", "method_declaration", "struct_declaration", "enum_declaration"},
     "cpp": {"class_specifier", "function_definition", "struct_specifier", "namespace_definition"},
     "c": {"function_definition", "struct_specifier"},
     "java": {"class_declaration", "method_declaration", "interface_declaration"},

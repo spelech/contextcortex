@@ -1,0 +1,128 @@
+import os
+import sqlite3
+import pytest
+from unittest.mock import patch, MagicMock, AsyncMock
+from app.services.indexer import (
+    sync_single_git_repo, notify_list_changed, trigger_list_changed_notification,
+    active_sessions, ensure_collection
+)
+from app.mcp.tools import read_resource, get_prompt, get_prompts
+from app.services.db import init_db, get_db_connection
+from app.models.schemas import CloneResult
+
+@pytest.fixture
+def temp_edge_db(tmp_path):
+    db_file = str(tmp_path / "test_edge.db")
+    with patch("app.services.db.CACHE_DB_PATH", db_file):
+        init_db()
+        yield db_file
+
+def test_sync_single_git_repo_unchanged_sha(temp_edge_db):
+    with get_db_connection() as conn:
+        conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('cached-repo', 'https://github.com/example/repo.git', 'main', 'abcdef123456', 'synced')")
+        conn.commit()
+        repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    with patch("app.services.indexer.get_remote_head_sha", return_value="abcdef123456"), \
+         patch("app.services.indexer.shallow_clone_repo") as mock_clone:
+        sync_single_git_repo(repo_id)
+        mock_clone.assert_not_called()
+
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT status, last_synced FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+            assert row["status"] == "synced"
+            assert row["last_synced"] is not None
+
+def test_sync_single_git_repo_clone_error(temp_edge_db):
+    with get_db_connection() as conn:
+        conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('fail-repo', 'https://github.com/example/fail.git', 'main', 'oldsha', 'pending')")
+        conn.commit()
+        repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    with patch("app.services.indexer.get_remote_head_sha", return_value="newsha"), \
+         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=None, commit_sha=None, error="Authentication failed")):
+        sync_single_git_repo(repo_id)
+
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT status, last_error FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+            assert row["status"] == "error"
+            assert "Authentication failed" in row["last_error"]
+
+def test_sync_single_git_repo_full_success(temp_edge_db, tmp_path):
+    repo_dir = tmp_path / "cloned_repo"
+    repo_dir.mkdir()
+    code_file = repo_dir / "app.py"
+    code_file.write_text("def run():\n    print('run')\n")
+
+    with get_db_connection() as conn:
+        conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('success-repo', 'https://github.com/example/success.git', 'main', 'oldsha', 'pending')")
+        conn.commit()
+        repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    with patch("app.services.indexer.get_remote_head_sha", return_value="newsha123"), \
+         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="newsha123", error=None)), \
+         patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": {"indices": [1], "values": [1.0]}}]), \
+         patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+        
+        sync_single_git_repo(repo_id)
+
+        mock_qdrant.delete.assert_called_once()
+        mock_qdrant.upsert.assert_called_once()
+        mock_cleanup.assert_called_once()
+
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT status, commit_sha FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+            assert row["status"] == "synced"
+            assert row["commit_sha"] == "newsha123"
+
+            files = conn.execute("SELECT filepath FROM indexed_files WHERE repo = 'success-repo'").fetchall()
+            assert len(files) == 1
+
+@pytest.mark.asyncio
+async def test_notify_list_changed():
+    mock_session = AsyncMock()
+    active_sessions.add(mock_session)
+
+    try:
+        await notify_list_changed()
+        mock_session.send_tool_list_changed.assert_called_once()
+        mock_session.send_prompt_list_changed.assert_called_once()
+        mock_session.send_resource_list_changed.assert_called_once()
+    finally:
+        active_sessions.clear()
+
+def test_ensure_collection_recreate_on_mismatch():
+    with patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.get_dense_dim", return_value=384):
+        
+        mock_qdrant.collection_exists.return_value = True
+        mock_info = MagicMock()
+        mock_dense = MagicMock()
+        mock_dense.size = 768 # Mismatched dimension (768 vs 384)
+        mock_info.config.params.vectors = {"dense": mock_dense}
+        mock_info.config.params.sparse_vectors = {"sparse": MagicMock()}
+        mock_qdrant.get_collection.return_value = mock_info
+
+        # After delete, collection_exists returns False so it creates new one
+        mock_qdrant.collection_exists.side_effect = [True, False]
+
+        ensure_collection()
+        mock_qdrant.delete_collection.assert_called_once()
+        mock_qdrant.create_collection.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_catalog_summary_truncation(temp_edge_db):
+    with get_db_connection() as conn:
+        for i in range(50):
+            conn.execute("INSERT INTO indexed_files (filepath, repo, doc_type, language) VALUES (?, 'repo', 'doc', 'markdown')", (f"/docs/file_{i}.md",))
+        conn.commit()
+
+    md = await read_resource("notes://catalog/summary")
+    assert "**Total Files Indexed:** 50" in md
+    assert "...and 10 more files." in md
+
+@pytest.mark.asyncio
+async def test_get_prompt_unknown_error(temp_edge_db):
+    with pytest.raises(ValueError, match="Unknown prompt: non_existent_prompt"):
+        await get_prompt("non_existent_prompt")

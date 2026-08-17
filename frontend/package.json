@@ -1,14 +1,15 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader native",
     "build": "tsc -b && vite build --configLoader native",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --configLoader native",
+    "test:coverage": "vitest run --coverage --configLoader native",
     "test:e2e": "playwright test"
   },
   "dependencies": {

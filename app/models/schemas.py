@@ -17,7 +17,7 @@ class RepoConfig(BaseModel):
 class LocalPathConfig(BaseModel):
     id: Optional[int] = None
     path: str
-    type: str
+    type: Optional[str] = "directory"
     recursive: bool = True
     category: Optional[str] = None
     repo: Optional[str] = None
