@@ -57,3 +57,12 @@ export interface SearchHit {
     content: string;
   };
 }
+
+export interface DiagnosticLog {
+  timestamp: string;
+  level: 'INFO' | 'WARNING' | 'ERROR' | 'DEBUG';
+  logger: string;
+  message: string;
+  traceback: string | null;
+}
+

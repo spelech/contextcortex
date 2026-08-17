@@ -5,6 +5,7 @@ import GitRepoManager from './GitRepoManager';
 import LocalPathManager from './LocalPathManager';
 import SearchInspector from './SearchInspector';
 import Settings from './Settings';
+import DiagnosticsViewer from './DiagnosticsViewer';
 import type { Stats } from './types';
 
 function App() {
@@ -77,6 +78,7 @@ function App() {
           <button className={`nav-tab ${activeTab === 'local-paths' ? 'active' : ''}`} onClick={() => setActiveTab('local-paths')}><i className="fa-solid fa-folder-tree"></i> Local Paths</button>
           <button className={`nav-tab ${activeTab === 'search-inspector' ? 'active' : ''}`} onClick={() => setActiveTab('search-inspector')}><i className="fa-solid fa-magnifying-glass"></i> Search & Inspector</button>
           <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}><i className="fa-solid fa-gear"></i> Settings</button>
+          <button className={`nav-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => setActiveTab('diagnostics')}><i className="fa-solid fa-terminal"></i> Diagnostics & Logs</button>
         </nav>
 
         <main className="dashboard-main">
@@ -85,7 +87,9 @@ function App() {
           {activeTab === 'local-paths' && <LocalPathManager refreshStats={loadStats} />}
           {activeTab === 'search-inspector' && <SearchInspector />}
           {activeTab === 'settings' && <Settings stats={stats} refreshStats={loadStats} />}
+          {activeTab === 'diagnostics' && <DiagnosticsViewer />}
         </main>
+
 
         <footer className="dashboard-footer">
           <p>Notes & Code RAG MCP &bull; High Precision Tree-sitter & Hybrid Qdrant &bull; 2026</p>

@@ -40,6 +40,12 @@ describe('App Component', () => {
           json: async () => []
         } as Response);
       }
+      if (url.includes('/admin/api/logs')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => []
+        } as Response);
+      }
       return Promise.resolve({
         ok: true,
         json: async () => ({})
@@ -97,6 +103,13 @@ describe('App Component', () => {
     fireEvent.click(settingsTab);
     await waitFor(() => {
       expect(screen.getByText('GitHub Authentication & Rate Limits')).toBeInTheDocument();
+    });
+
+    // Switch to Diagnostics & Logs
+    const diagnosticsTab = screen.getByRole('button', { name: /Diagnostics & Logs/i });
+    fireEvent.click(diagnosticsTab);
+    await waitFor(() => {
+      expect(screen.getByText('Diagnostics & Server Logs')).toBeInTheDocument();
     });
   });
 
