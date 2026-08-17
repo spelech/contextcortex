@@ -11,7 +11,7 @@ from app.services.git_manager import (
 )
 from app.services.db import init_db, get_db_connection, set_metadata, get_metadata
 
-class TestNotesAndCodeRAG(unittest.TestCase):
+class TestKnowledgeRAG(unittest.TestCase):
 
     def setUp(self):
         init_db()

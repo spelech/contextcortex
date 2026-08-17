@@ -7,8 +7,8 @@ import type { Repo } from '../types';
 const mockRepos: Repo[] = [
   {
     id: 1,
-    name: 'notes-rag-mcp',
-    url: 'https://github.com/example/notes-rag-mcp.git',
+    name: 'knowledge-rag-mcp',
+    url: 'https://github.com/example/knowledge-rag-mcp.git',
     branch: 'main',
     commit_sha: '687f7b1abcde12345',
     status: 'synced',
@@ -44,7 +44,7 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('notes-rag-mcp')).toBeInTheDocument();
+      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
       expect(screen.getByText('Synced')).toBeInTheDocument();
       expect(screen.getByText('687f7b1a')).toBeInTheDocument();
       expect(screen.getByText('failed-repo')).toBeInTheDocument();
@@ -149,7 +149,7 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('notes-rag-mcp')).toBeInTheDocument();
+      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
     });
 
     // Trigger sync
@@ -181,7 +181,7 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('notes-rag-mcp')).toBeInTheDocument();
+      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
     });
 
     // Trigger delete
@@ -192,7 +192,7 @@ describe('GitRepoManager Component', () => {
       expect(window.confirm).toHaveBeenCalled();
       expect(globalThis.fetch).toHaveBeenCalledWith('/admin/api/repos/1', { method: 'DELETE' });
       expect(refreshStats).toHaveBeenCalled();
-      expect(screen.getByText("Repository 'notes-rag-mcp' deleted successfully")).toBeInTheDocument();
+      expect(screen.getByText("Repository 'knowledge-rag-mcp' deleted successfully")).toBeInTheDocument();
     });
   });
 
@@ -224,7 +224,7 @@ describe('GitRepoManager Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('notes-rag-mcp')).toBeInTheDocument();
+      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
     });
 
     const syncButtons = screen.getAllByTitle('Trigger Sync');

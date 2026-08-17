@@ -28,12 +28,12 @@ for line in lines[45:]:
 with open('app/services/indexer.py', 'w') as f:
     f.write("import os\nimport uuid\nimport json\nimport threading\nimport asyncio\nimport re\nimport logging\nfrom collections import Counter\nfrom typing import Tuple, List, Dict, Any, Optional\n")
     f.write("from app.services.db import *\nfrom app.services.chunker import *\nfrom app.services.embeddings import *\nfrom app.services.git_manager import *\nfrom qdrant_client.http import models as qmodels\n\n")
-    f.write("logger = logging.getLogger('notes-rag-mcp')\n")
+    f.write("logger = logging.getLogger('knowledge-rag-mcp')\n")
     f.write("active_sessions = set()\nmain_event_loop = None\n")
     f.write(get_lines(57, 630))
 
 with open('app/services/search.py', 'w') as f:
     f.write("import logging\nfrom typing import Optional, List\nfrom qdrant_client.http import models as qmodels\nfrom app.services.embeddings import *\n")
-    f.write("logger = logging.getLogger('notes-rag-mcp')\n")
+    f.write("logger = logging.getLogger('knowledge-rag-mcp')\n")
     f.write("".join(search_lines))
 

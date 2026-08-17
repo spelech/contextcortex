@@ -25,7 +25,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
   const [vsMode, setVsMode] = useState<'embedded' | 'remote'>('embedded');
   const [vsStoragePath, setVsStoragePath] = useState('data/qdrant_db');
   const [vsUrl, setVsUrl] = useState('http://localhost:6333');
-  const [vsCollection, setVsCollection] = useState('notes_rag_v2');
+  const [vsCollection, setVsCollection] = useState('knowledge_rag_v1');
   const [isTestingVs, setIsTestingVs] = useState(false);
   const [testFeedback, setTestFeedback] = useState<{ success: boolean; message: string } | null>(null);
   const [isSwitchingVs, setIsSwitchingVs] = useState(false);
@@ -100,7 +100,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
         mode: vsMode,
         storage_path: vsMode === 'embedded' ? vsStoragePath.trim() : null,
         url: vsMode === 'remote' ? vsUrl.trim() : null,
-        collection: vsCollection.trim() || 'notes_rag_v2'
+        collection: vsCollection.trim() || 'knowledge_rag_v1'
       };
       const res = await fetch('/admin/api/vector-store/test', {
         method: 'POST',
@@ -139,7 +139,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
         mode: vsMode,
         storage_path: vsMode === 'embedded' ? vsStoragePath.trim() : null,
         url: vsMode === 'remote' ? vsUrl.trim() : null,
-        collection: vsCollection.trim() || 'notes_rag_v2'
+        collection: vsCollection.trim() || 'knowledge_rag_v1'
       };
       const res = await fetch('/admin/api/vector-store/switch', {
         method: 'POST',
@@ -294,7 +294,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
                 </div>
                 <div className="spec-row">
                   <span>Collection Name:</span>
-                  <code>{vectorStore.collection || 'notes_rag_v2'}</code>
+                  <code>{vectorStore.collection || 'knowledge_rag_v1'}</code>
                 </div>
                 <div className="spec-row">
                   <span>Points Count:</span>
@@ -389,7 +389,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
                   type="text"
                   value={vsCollection}
                   onChange={e => setVsCollection(e.target.value)}
-                  placeholder="notes_rag_v2"
+                  placeholder="knowledge_rag_v1"
                 />
               </div>
 

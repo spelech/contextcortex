@@ -1,6 +1,6 @@
 # Test Coverage Report
 
-This document outlines the current test coverage metrics for the `notes-rag-mcp` project following the major modular refactoring (v2.0.0).
+This document outlines the current test coverage metrics for the `knowledge-rag-mcp` project following the major modular refactoring (v2.0.0).
 
 ## Backend (Python)
 Overall Coverage: **29%** (1082 statements)

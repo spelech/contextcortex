@@ -10,7 +10,7 @@ from app.services.indexer import get_dynamic_catalog_description
 from app.services.vector_store import get_vector_store_config
 from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
 
-logger = logging.getLogger("notes-rag-mcp")
+logger = logging.getLogger("knowledge-rag-mcp")
 
 
 

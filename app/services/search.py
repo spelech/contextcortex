@@ -4,7 +4,7 @@ from typing import Optional, List
 from app.services.vector_store import get_vector_store, VectorSearchResult
 from app.services.indexer import qdrant, COLLECTION_NAME
 
-logger = logging.getLogger('notes-rag-mcp')
+logger = logging.getLogger('knowledge-rag-mcp')
 
 def execute_hybrid_search(
     query_text: str,

@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any, Tuple
 import requests
 from app.models.schemas import CloneResult
 
-logger = logging.getLogger("notes-rag-mcp.git")
+logger = logging.getLogger("knowledge-rag-mcp.git")
 
 TMP_BASE_DIR = os.getenv("TMP_REPOS_DIR", "/tmp/rag_repos")
 

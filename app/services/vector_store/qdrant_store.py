@@ -8,7 +8,7 @@ from qdrant_client.http import models as qmodels
 from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
 from app.services.embeddings import get_dense_embedding, get_sparse_embedding, get_dense_dim
 
-logger = logging.getLogger("notes-rag-mcp.vector_store.qdrant")
+logger = logging.getLogger("knowledge-rag-mcp.vector_store.qdrant")
 
 
 class QdrantVectorStore(VectorStore):
@@ -24,7 +24,7 @@ class QdrantVectorStore(VectorStore):
         client: Optional[QdrantClient] = None,
         auto_init: bool = True,
     ):
-        self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "notes_rag_v2")
+        self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "knowledge_rag_v1")
         self.timeout = timeout
 
         url_env = os.getenv("QDRANT_URL", "http://qdrant:6333")

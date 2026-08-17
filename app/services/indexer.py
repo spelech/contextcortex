@@ -17,13 +17,13 @@ from app.services.vector_store import (
     VectorStoreManager, get_vector_store
 )
 
-logger = logging.getLogger('notes-rag-mcp')
+logger = logging.getLogger('knowledge-rag-mcp')
 
 VAULT_PATH = os.getenv("VAULT_PATH", "/docs")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1500"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "notes_rag_v2")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "knowledge_rag_v1")
 
 active_sessions = set()
 main_event_loop = None
@@ -71,7 +71,7 @@ def ensure_collection() -> bool:
         return False
 
 def get_chunk_uuid(repo: str, rel_path: str, index: int) -> str:
-    namespace = uuid.uuid5(uuid.NAMESPACE_DNS, "notes-rag-mcp.lan")
+    namespace = uuid.uuid5(uuid.NAMESPACE_DNS, "knowledge-rag-mcp.lan")
     return str(uuid.uuid5(namespace, f"{repo}:{rel_path}#{index}"))
 
 STOPWORDS = {

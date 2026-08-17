@@ -100,4 +100,4 @@ async def test_fastmcp_streamable_http_transport():
                 headers={"accept": "application/json, text/event-stream"}
             )
             assert resp.status_code == 200
-            assert "notes-rag-mcp" in resp.text
+            assert "knowledge-rag-mcp" in resp.text

@@ -41,7 +41,7 @@ function App() {
           <div className="header-logo">
             <i className="fa-solid fa-layer-group logo-icon"></i>
             <div className="header-title">
-              <h1>Code & Docs RAG Server</h1>
+              <h1>Knowledge RAG Hub</h1>
               <span className="badge badge-primary">v2.4.2</span>
             </div>
           </div>
@@ -67,7 +67,7 @@ function App() {
             </div>
             <div className="status-item">
               <span className="label">Collection</span>
-              <span className="value code">notes_rag_v2</span>
+              <span className="value code">{stats?.vector_store_collection || 'knowledge_rag_v1'}</span>
             </div>
           </div>
         </header>
@@ -92,7 +92,7 @@ function App() {
 
 
         <footer className="dashboard-footer">
-          <p>Notes & Code RAG MCP &bull; High Precision Tree-sitter & Hybrid Qdrant &bull; 2026</p>
+          <p>Knowledge RAG MCP &bull; High Precision Tree-sitter & Hybrid Search &bull; 2026</p>
         </footer>
       </div>
     </>

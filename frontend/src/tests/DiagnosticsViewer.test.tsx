@@ -7,21 +7,21 @@ const mockLogs = [
   {
     timestamp: '2026-08-17 01:00:00',
     level: 'INFO',
-    logger: 'notes-rag-mcp.server',
+    logger: 'knowledge-rag-mcp.server',
     message: 'Server startup complete',
     traceback: null
   },
   {
     timestamp: '2026-08-17 01:01:00',
     level: 'WARNING',
-    logger: 'notes-rag-mcp.indexer',
+    logger: 'knowledge-rag-mcp.indexer',
     message: 'Rate limit threshold near 80%',
     traceback: null
   },
   {
     timestamp: '2026-08-17 01:02:00',
     level: 'ERROR',
-    logger: 'notes-rag-mcp.git',
+    logger: 'knowledge-rag-mcp.git',
     message: 'Git clone failed timeout',
     traceback: 'Traceback (most recent call last):\n  File "git.py", line 42, in clone\nTimeoutError: Connection timed out'
   }
@@ -55,9 +55,9 @@ describe('DiagnosticsViewer', () => {
     expect(screen.getByText('Rate limit threshold near 80%')).toBeInTheDocument();
     expect(screen.getByText('Git clone failed timeout')).toBeInTheDocument();
     expect(screen.getByText('Diagnostics & Server Logs')).toBeInTheDocument();
-    expect(screen.getByText('notes-rag-mcp.server')).toBeInTheDocument();
-    expect(screen.getByText('notes-rag-mcp.indexer')).toBeInTheDocument();
-    expect(screen.getByText('notes-rag-mcp.git')).toBeInTheDocument();
+    expect(screen.getByText('knowledge-rag-mcp.server')).toBeInTheDocument();
+    expect(screen.getByText('knowledge-rag-mcp.indexer')).toBeInTheDocument();
+    expect(screen.getByText('knowledge-rag-mcp.git')).toBeInTheDocument();
   });
 
   it('filters logs by log level buttons', async () => {

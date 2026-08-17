@@ -1,6 +1,6 @@
 # Developer Documentation (v2.4.2)
 
-This document provides instructions for developing, testing, configuring, and running the Notes & Code RAG MCP Server locally.
+This document provides instructions for developing, testing, configuring, and running the Knowledge RAG MCP Server locally.
 
 ---
 
@@ -9,7 +9,7 @@ This document provides instructions for developing, testing, configuring, and ru
 - **Python 3.11+**
 - **Node.js 20+** & **npm** (for the React 19 frontend)
 - **Git** (for shallow repository cloning)
-- **Qdrant** (local instance or Docker container)
+- **Vector Database**: Qdrant (local/Docker or embedded) or ChromaDB (embedded/disk or remote)
 - **FastEmbed** (included in `requirements.txt` for in-process ONNX CPU embeddings)
 
 ---
@@ -18,8 +18,8 @@ This document provides instructions for developing, testing, configuring, and ru
 
 1. **Clone the repository:**
    ```bash
-   git clone git@github.com:spelech/notes-rag-mcp.git
-   cd notes-rag-mcp
+   git clone git@github.com:spelech/knowledge-rag-mcp.git
+   cd knowledge-rag-mcp
    ```
 
 2. **Create a virtual environment:**
@@ -41,17 +41,17 @@ This document provides instructions for developing, testing, configuring, and ru
    cd ..
    ```
 
-5. **Start Qdrant Vector Database:**
+5. **Start Vector Database (Optional - defaults to embedded Qdrant/Chroma):**
    ```bash
    docker run -d --name qdrant -p 6333:6333 -p 6334:6334 \
-       -v $(pwd)/qdrant_storage:/qdrant/storage \
+       -v $(pwd)/data/qdrant_storage:/qdrant/storage \
        qdrant/qdrant:latest
    ```
 
 6. **Set Environment Variables (Optional):**
    ```bash
-   export QDRANT_URL="http://localhost:6333"
-   export COLLECTION_NAME="notes_rag_v2"
+   export VECTOR_STORE_PROVIDER="qdrant" # "qdrant" or "chroma"
+   export COLLECTION_NAME="knowledge_rag_v1"
    export EMBEDDING_PROVIDER="local"
    export EMBEDDING_MODEL="BAAI/bge-small-en-v1.5"
    export SPARSE_MODEL="Qdrant/bm25"
@@ -62,7 +62,7 @@ This document provides instructions for developing, testing, configuring, and ru
    ```bash
    python main.py
    ```
-   The server starts on port `3000`, initializes SQLite tables (`index_cache.db`), configures Qdrant named multi-vectors (Dense + BM25 Sparse), mounts `/admin/` static files, and binds both `/sse` and `/mcp` FastMCP transport endpoints.
+   The server starts on port `3000`, initializes SQLite tables (`index_cache.db`), configures vector storage (Qdrant/ChromaDB), mounts `/admin/` static files, and binds both `/sse` and `/mcp` FastMCP transport endpoints.
 
 ---
 
@@ -97,11 +97,15 @@ npx playwright test
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
+| `VECTOR_STORE_PROVIDER` | Vector database backend (`qdrant` or `chroma`) | `qdrant` |
+| `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` |
+| `COLLECTION_NAME` | Vector collection name | `knowledge_rag_v1` |
+| `QDRANT_URL` | URL to the remote Qdrant vector database | `http://localhost:6333` |
+| `QDRANT_STORAGE_PATH` | Storage directory for embedded Qdrant | `/app/data/qdrant_storage` |
+| `CHROMA_STORAGE_PATH` | Storage directory for embedded ChromaDB | `/app/data/chroma_db` |
 | `EMBEDDING_PROVIDER` | Embedding engine (`local` for in-process ONNX, `api` for LiteLLM/OpenAI) | `local` |
 | `EMBEDDING_MODEL` | FastEmbed dense model name | `BAAI/bge-small-en-v1.5` |
 | `SPARSE_MODEL` | FastEmbed sparse BM25 model name | `Qdrant/bm25` |
-| `QDRANT_URL` | URL to the Qdrant vector database | `http://localhost:6333` |
-| `COLLECTION_NAME` | Qdrant collection name | `notes_rag_v2` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for rate limits & private repos | `None` |
 | `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |
 | `CACHE_DB_PATH` | Path to persistent SQLite cache database | `/app/data/index_cache.db` |
@@ -113,21 +117,21 @@ npx playwright test
 ## 📁 Project Structure
 
 ```
-notes-rag-mcp/
+knowledge-rag-mcp/
 ├── main.py                # FastAPI entry point, lifespan manager & FastMCP route mounting
 ├── app/                   # Backend modular architecture
-│   ├── api/               # FastAPI REST routes (repos, paths, search, logs, stats)
+│   ├── api/               # FastAPI REST routes (repos, paths, search, logs, stats, vector-store)
 │   ├── mcp/               # FastMCP 2.0 server, tools, resources, and prompt templates
 │   ├── models/            # Pydantic schema validation models
-│   └── services/          # Core services (chunker, embeddings, db, git_manager, logger, search)
+│   └── services/          # Core services (chunker, embeddings, db, git_manager, logger, search, vector_store)
 ├── tests/                 # Backend pytest test suite
 │   └── backend/           # Unit and integration tests (>95% coverage)
-├── frontend/              # Web Admin Dashboard (React 19, TypeScript, Vite)
+├── frontend/              # Web Admin Dashboard - Knowledge RAG Hub (React 19, TypeScript, Vite)
 │   ├── src/               # React components, contexts, and styles
 │   │   └── tests/         # Vitest component unit tests
 │   ├── e2e/               # Playwright E2E test specs (13 full test workflows)
 │   └── dist/              # Compiled production distribution assets
-├── requirements.txt       # Python dependencies (FastMCP 2.0, FastAPI, Qdrant, FastEmbed)
+├── requirements.txt       # Python dependencies (FastMCP 2.0, FastAPI, Qdrant, ChromaDB, FastEmbed)
 ├── Dockerfile             # Container definition with Python 3.11 & Git
 ├── ARCHITECTURE.md        # Deep architectural design specification
 └── DEVELOPER_DOCS.md      # Local developer setup and test guide
@@ -147,7 +151,7 @@ Example configuration (`claude_desktop_config.json` / Cursor):
 ```json
 {
   "mcpServers": {
-    "notes-rag-sse": {
+    "knowledge-rag-sse": {
       "url": "http://localhost:3000/sse"
     }
   }
@@ -161,7 +165,7 @@ Example configuration:
 ```json
 {
   "mcpServers": {
-    "notes-rag-http": {
+    "knowledge-rag-http": {
       "url": "http://localhost:3000/mcp"
     }
   }

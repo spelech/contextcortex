@@ -16,7 +16,7 @@ from app.services.indexer import run_full_indexing, VAULT_PATH
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("notes-rag-mcp")
+logger = logging.getLogger("knowledge-rag-mcp")
 
 # Initialize database
 try:
@@ -28,7 +28,7 @@ except Exception as e:
 async def lifespan(app: FastAPI):
     import app.services.indexer as indexer
     indexer.main_event_loop = asyncio.get_running_loop()
-    logger.info("Notes & Code RAG Server starting up...")
+    logger.info("Knowledge RAG Server starting up...")
     try:
         threading.Thread(target=run_full_indexing, daemon=True).start()
     except Exception as e:
@@ -37,9 +37,9 @@ async def lifespan(app: FastAPI):
     async with mcp_server.session_manager.run():
         yield
 
-    logger.info("Notes & Code RAG Server shutting down...")
+    logger.info("Knowledge RAG Server shutting down...")
 
-app = FastAPI(title="Notes & Code RAG MCP Server", version="2.3.0", lifespan=lifespan)
+app = FastAPI(title="Knowledge RAG MCP Server", version="2.4.2", lifespan=lifespan)
 
 # Include API routes
 app.include_router(admin_router)

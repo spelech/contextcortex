@@ -18,8 +18,8 @@ const mockStats = {
 const mockRepos = [
   {
     id: 1,
-    name: 'notes-rag-mcp',
-    url: 'https://github.com/example/notes-rag-mcp.git',
+    name: 'knowledge-rag-mcp',
+    url: 'https://github.com/example/knowledge-rag-mcp.git',
     branch: 'main',
     commit_sha: '687f7b1abcde12345',
     status: 'synced',
@@ -57,7 +57,7 @@ const mockLogs = [
     timestamp: '2026-08-17 01:00:00',
     level: 'INFO',
     logger: 'server.indexer',
-    message: 'Indexing completed for repository notes-rag-mcp',
+    message: 'Indexing completed for repository knowledge-rag-mcp',
     traceback: null
   },
   {
@@ -226,13 +226,13 @@ test.beforeEach(async ({ page }) => {
           {
             score: 0.045,
             payload: {
-              repo: 'notes-rag-mcp',
+              repo: 'knowledge-rag-mcp',
               rel_path: 'app/api/auth.py',
               symbol: 'verify_token',
               start_line: 12,
               end_line: 35,
               content: 'def verify_token(token: str):\n    return True',
-              github_url: 'https://github.com/example/notes-rag-mcp/blob/main/app/api/auth.py'
+              github_url: 'https://github.com/example/knowledge-rag-mcp/blob/main/app/api/auth.py'
             }
           }
         ]
@@ -446,9 +446,9 @@ test('4. deletes a repository with window.confirm dialog verification', async ({
   const deleteBtn = page.locator('button.btn-delete[title="Delete Repo"]').first();
   await deleteBtn.click();
 
-  expect(dialogMessage).toContain("Are you sure you want to delete repository 'notes-rag-mcp'?");
+  expect(dialogMessage).toContain("Are you sure you want to delete repository 'knowledge-rag-mcp'?");
   expect(deleteCalled).toBe(true);
-  await expect(page.locator('.toast-success', { hasText: "Repository 'notes-rag-mcp' deleted successfully" })).toBeVisible();
+  await expect(page.locator('.toast-success', { hasText: "Repository 'knowledge-rag-mcp' deleted successfully" })).toBeVisible();
 });
 
 test('5. renders repository error status with last_error diagnostic message', async ({ page }) => {
@@ -608,13 +608,13 @@ test('8. executes hybrid search with target type toggle (code vs doc) and repo f
             {
               score: 0.045,
               payload: {
-                repo: 'notes-rag-mcp',
+                repo: 'knowledge-rag-mcp',
                 rel_path: 'app/api/auth.py',
                 symbol: 'verify_token',
                 start_line: 12,
                 end_line: 35,
                 content: 'def verify_token(token: str):\n    return True',
-                github_url: 'https://github.com/example/notes-rag-mcp/blob/main/app/api/auth.py'
+                github_url: 'https://github.com/example/knowledge-rag-mcp/blob/main/app/api/auth.py'
               }
             }
           ]
@@ -628,12 +628,12 @@ test('8. executes hybrid search with target type toggle (code vs doc) and repo f
 
   // Test Code Search
   await page.getByPlaceholder(/e.g. JWT token/).fill('verify_token auth');
-  await page.locator('input[placeholder="All Repos"]').fill('notes-rag-mcp');
+  await page.locator('input[placeholder="All Repos"]').fill('knowledge-rag-mcp');
   await page.locator('button[type="submit"]').click();
 
   expect(lastSearchPayload.query).toBe('verify_token auth');
   expect(lastSearchPayload.type).toBe('code');
-  expect(lastSearchPayload.repo).toBe('notes-rag-mcp');
+  expect(lastSearchPayload.repo).toBe('knowledge-rag-mcp');
 
   await expect(page.getByText('app/api/auth.py')).toBeVisible();
   await expect(page.getByText('verify_token', { exact: true })).toBeVisible();
@@ -815,7 +815,7 @@ test('13. filters, searches, and clears logs in Diagnostics & Logs tab', async (
   await expect(debugPill).toContainText('1');
 
   // Verify all 4 log entries initially visible
-  await expect(page.getByText('Indexing completed for repository notes-rag-mcp')).toBeVisible();
+  await expect(page.getByText('Indexing completed for repository knowledge-rag-mcp')).toBeVisible();
   await expect(page.getByText('High memory consumption during dense vector generation')).toBeVisible();
   await expect(page.getByText('Failed to clone repository broken-repo')).toBeVisible();
   await expect(page.getByText('Parsed 12 symbols in file app/api/auth.py')).toBeVisible();
@@ -824,7 +824,7 @@ test('13. filters, searches, and clears logs in Diagnostics & Logs tab', async (
   await errPill.click();
   await expect(errPill).toHaveClass(/active/);
   await expect(page.getByText('Failed to clone repository broken-repo')).toBeVisible();
-  await expect(page.getByText('Indexing completed for repository notes-rag-mcp')).not.toBeVisible();
+  await expect(page.getByText('Indexing completed for repository knowledge-rag-mcp')).not.toBeVisible();
   await expect(page.getByText('High memory consumption during dense vector generation')).not.toBeVisible();
 
   // Filter by WARNING
@@ -835,20 +835,20 @@ test('13. filters, searches, and clears logs in Diagnostics & Logs tab', async (
 
   // Reset to ALL
   await allPill.click();
-  await expect(page.getByText('Indexing completed for repository notes-rag-mcp')).toBeVisible();
+  await expect(page.getByText('Indexing completed for repository knowledge-rag-mcp')).toBeVisible();
   await expect(page.getByText('Failed to clone repository broken-repo')).toBeVisible();
 
   // Search logs by text query
   const searchInput = page.locator('input.log-search-input');
   await searchInput.fill('ast_parser');
   await expect(page.getByText('Parsed 12 symbols in file app/api/auth.py')).toBeVisible();
-  await expect(page.getByText('Indexing completed for repository notes-rag-mcp')).not.toBeVisible();
+  await expect(page.getByText('Indexing completed for repository knowledge-rag-mcp')).not.toBeVisible();
 
   // Clear search input using clear button
   const clearSearchBtn = page.locator('button.clear-search-btn');
   await clearSearchBtn.click();
   await expect(searchInput).toHaveValue('');
-  await expect(page.getByText('Indexing completed for repository notes-rag-mcp')).toBeVisible();
+  await expect(page.getByText('Indexing completed for repository knowledge-rag-mcp')).toBeVisible();
 
   // Toggle stack trace on error log
   const toggleTraceBtn = page.locator('button.btn-traceback-toggle');

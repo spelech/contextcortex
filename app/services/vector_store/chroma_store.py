@@ -9,7 +9,7 @@ import chromadb
 from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
 from app.services.embeddings import get_dense_embedding
 
-logger = logging.getLogger("notes-rag-mcp.vector_store.chroma")
+logger = logging.getLogger("knowledge-rag-mcp.vector_store.chroma")
 
 
 def _sanitize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
@@ -54,7 +54,7 @@ class ChromaVectorStore(VectorStore):
         client: Optional[Any] = None,
         auto_init: bool = True,
     ):
-        self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "notes_rag_v2")
+        self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "knowledge_rag_v1")
         self.collection = None
 
         if url:

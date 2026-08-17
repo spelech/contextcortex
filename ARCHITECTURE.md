@@ -1,6 +1,6 @@
-# Architecture: Notes & Code RAG MCP Server (v2.4.2)
+# Architecture: Knowledge RAG MCP Server (v2.4.2)
 
-The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, and a React 19 administrative dashboard.
+The Knowledge RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, and a React 19 administrative dashboard (Knowledge RAG Hub).
 
 ---
 
@@ -10,7 +10,7 @@ The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and 
 flowchart TD
     subgraph Clients["MCP & Web Clients"]
         Claude["AI Coding Agents / MCP Clients (Cursor, Claude Desktop, Antigravity)"]
-        Browser["Admin Dashboard (React 19 + TypeScript)"]
+        Browser["Admin Dashboard (Knowledge RAG Hub - React 19)"]
     end
 
     subgraph Server["FastAPI Core & FastMCP 2.0 Application (main.py)"]
@@ -25,14 +25,15 @@ flowchart TD
     subgraph CoreEngine["Core Engine (app/services)"]
         Chunker["Tree-sitter AST Chunker (chunker.py)"]
         Embeddings["FastEmbed Engine (embeddings.py)\nDense (384d) + Sparse BM25"]
-        GitMgr["Ephemeral Shallow Git Ingestion (git_manager.py)"]
+        GitMgr["Universal Shallow Git Ingestion (git_manager.py)"]
         Indexer["Incremental Indexer (indexer.py)"]
-        Search["RRF Hybrid Search (search.py)"]
+        Search["Hybrid & RRF Search (search.py)"]
         DB["SQLite DB & Symbol Registry (db.py)"]
+        VSMgr["Vector Store Manager (vector_store/manager.py)"]
     end
 
     subgraph PersistentStorage["Persistent Storage"]
-        Qdrant["Qdrant Vector DB (Named Vectors: dense + sparse)"]
+        VectorStore["Vector Store (Qdrant / ChromaDB)"]
         SQLite["SQLite Index Cache (index_cache.db)"]
     end
 
@@ -46,6 +47,7 @@ flowchart TD
     AdminAPI --> Indexer
     AdminAPI --> LogBuffer
     AdminAPI --> Search
+    AdminAPI --> VSMgr
 
     FastMCP --> Search
     FastMCP --> Chunker
@@ -55,12 +57,14 @@ flowchart TD
     Indexer --> Chunker
     Indexer --> Embeddings
     Indexer --> GitMgr
-    Indexer --> Qdrant
+    Indexer --> VSMgr
     Indexer --> SQLite
     Indexer --> LogBuffer
 
+    VSMgr --> VectorStore
+
     Search --> Embeddings
-    Search --> Qdrant
+    Search --> VSMgr
 ```
 
 ---
@@ -68,12 +72,12 @@ flowchart TD
 ## 🧩 Core Architecture Components
 
 ### 1. FastMCP 2.0 Server & Transport Routing (`app/mcp/`)
-- **FastMCP Foundation**: Implemented via `mcp.server.fastmcp.FastMCP` with lifespan session management (`mcp_server.session_manager.run()`).
+- **FastMCP Foundation**: Implemented via `mcp.server.fastmcp.FastMCP` (`knowledge-rag-mcp`) with lifespan session management (`mcp_server.session_manager.run()`).
 - **Dual MCP Transports**:
   - **Server-Sent Events (SSE)**: Mounted via `mcp_server.sse_app().routes`, handling streaming events at `/sse` and message exchanges at `/messages/`.
   - **Streamable HTTP**: Mounted via `mcp_server.streamable_http_app().routes` at `/mcp` for direct bidirectional JSON-RPC.
 - **Agent Tools (7 Tools)**:
-  - `search_code`: Hybrid semantic + BM25 search over code functions and logic blocks with line numbers and GitHub links.
+  - `search_code`: Hybrid semantic + BM25 search over code functions and logic blocks with line numbers and git links.
   - `search_docs`: Dedicated hybrid search across markdown notes, system architecture, and runbooks.
   - `find_symbol`: Instant exact/fuzzy symbol definitions from AST index.
   - `get_file_outline`: File symbol hierarchy without full token context costs.
@@ -90,7 +94,7 @@ flowchart TD
 
 ### 2. Diagnostic Logging & System Observability (`app/services/logger.py`)
 - **In-Memory Ring Buffer**: Implemented using `collections.deque(maxlen=500)` guarded by a `threading.Lock()`.
-- **Diagnostic Log Handler**: Captures log records across all backend modules (`notes-rag-mcp`, `server.*`, `indexer`, `git`, `ast_parser`), preserving:
+- **Diagnostic Log Handler**: Captures log records across all backend modules (`knowledge-rag-mcp`, `knowledge-rag-mcp.*`, `server.*`, `indexer`, `git`, `ast_parser`), preserving:
   - `timestamp`: ISO-8601 UTC timestamp.
   - `level`: `INFO`, `WARNING`, `ERROR`, `DEBUG`.
   - `logger`: Originating logger name.
@@ -110,12 +114,12 @@ flowchart TD
 
 ---
 
-### 4. Hybrid Embedding & Vector Engine (`app/services/embeddings.py`, `app/services/search.py`)
-- **Named Multi-Vectors**: Qdrant collections configured with dual vector spaces:
-  - **Dense Vectors**: `BAAI/bge-small-en-v1.5` (384 dimensions, Cosine distance).
-  - **Sparse Vectors**: `Qdrant/bm25` (In-process FastEmbed BM25 sparse model).
-- **Reciprocal Rank Fusion (RRF)**: Merges dense semantic similarity with sparse keyword retrieval using reciprocal rank fusion ($RRF\_score = \sum \frac{1}{60 + rank}$) for optimal search recall.
-- **Local In-Process Execution**: ONNX runtime execution on CPU with zero external API latency or cost.
+### 4. Multi-Backend Vector Database Layer (`app/services/vector_store/`)
+- **Pluggable Vector Stores**:
+  - **Qdrant**: High performance multi-vector search (Dense + Sparse BM25 with RRF) supporting embedded disk storage (`/app/data/qdrant_storage`) or remote server mode (`http://qdrant:6333`).
+  - **ChromaDB**: Embedded persistent disk (`/app/data/chroma_db`), in-memory, or remote HTTP server modes with automatic fallback.
+- **VectorStoreManager**: Dynamic backend switcher with hot reconfiguration, connection health checks, and automatic re-indexing trigger.
+- **Collection Defaults**: Default collection name `knowledge_rag_v1`.
 
 ---
 
@@ -147,7 +151,7 @@ flowchart TD
   - `indexed_paths`: Monitored local directories and files.
   - `ast_symbols`: Indexed symbol table (classes, functions, methods, line numbers, signatures) for instantaneous `find_symbol` and `get_file_outline`.
   - `indexed_files` & `file_summaries`: File metadata, mtime change detection, and topic tags.
-  - `system_metadata`: Key-value storage for tokens and timestamps.
+  - `system_metadata`: Key-value storage for tokens, timestamps, and active vector store settings.
 
 #### SQLite Relational Entity-Relationship Diagram (ERD)
 ```mermaid
@@ -236,11 +240,11 @@ erDiagram
     INDEXED_FILES ||--o| FILE_SUMMARIES : "has metadata"
 ```
 
-#### Qdrant Hybrid Vector Store Schema
+#### Vector Store Schema
 ```mermaid
 classDiagram
-    class QdrantCollection {
-        +String collection_name "notes_rag_v2"
+    class VectorCollection {
+        +String collection_name "knowledge_rag_v1"
         +DenseVectorParams dense (384d, Cosine)
         +SparseVectorParams sparse (BM25)
     }
@@ -267,20 +271,20 @@ classDiagram
         +String commit_sha "Commit SHA snapshot"
     }
 
-    QdrantCollection *-- VectorPoint : stores
+    VectorCollection *-- VectorPoint : stores
     VectorPoint *-- PointPayload : contains
 ```
 
 ---
 
-### 7. Modern Web Admin Dashboard (`frontend/`)
+### 7. Modern Web Admin Dashboard (`frontend/`) - Knowledge RAG Hub
 - **React 19 + TypeScript + Vite**: Fast, reactive dashboard served at `/admin/`.
 - **Tabs**:
   - **Overview**: System metrics, embedding model specs, keyword cloud, and full reindex trigger.
   - **Git Repositories**: Repository registration modal, single-repo sync triggers, error diagnostics, and deletion.
   - **Local Paths**: Workspace directory browser, path configuration, and recursive indexing toggles.
   - **Search & Inspector**: Live hybrid search tester with code/doc toggle, repo filters, and RRF score inspect.
-  - **Settings**: GitHub PAT configuration and rate limit status monitor.
+  - **Settings**: Vector Database switcher (Qdrant & ChromaDB), multi-provider token configurations, and rate limit status monitor.
   - **Diagnostics & Logs**: Real-time log inspector with level pills (ALL, INFO, WARNING, ERROR, DEBUG), keyword filtering, traceback view modal, and buffer clear action.
 
 ---
@@ -293,15 +297,15 @@ classDiagram
 ├──────────────────────────────┬──────────────────────────────┤
 │ Python Backend (Pytest)      │ Frontend (Vitest & Playwright)│
 ├──────────────────────────────┼──────────────────────────────┤
-│ - tests/backend/test_mcp.py  │ - Vitest Unit/Component:     │
-│ - tests/backend/test_api.py  │   * App.test.tsx             │
+│ - tests/backend/test_mcp*.py │ - Vitest Unit/Component:     │
+│ - tests/backend/test_api*.py │   * App.test.tsx             │
 │ - tests/backend/test_*.py    │   * DiagnosticsViewer.test   │
 │ - >95% statement coverage    │   * GitRepoManager.test      │
 │ - FastMCP 2.0 tools/prompts  │   * SearchInspector.test     │
-│ - Ring buffer logging tests  │ - Playwright E2E (13 specs): │
+│ - Multi-vector backend tests │   * Settings.test            │
+│ - Ring buffer logging tests  │ - Playwright E2E:            │
 │ - Ephemeral git clone tests  │   * Full UI navigation       │
-│ - Hybrid search & RRF tests  │   * Modals & confirmation    │
-│                              │   * Real-time sync feedback  │
+│ - Hybrid search & RRF tests  │   * Backend switching        │
 │                              │   * Diagnostics log viewer   │
 └──────────────────────────────┴──────────────────────────────┘
 ```

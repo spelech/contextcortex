@@ -8,12 +8,12 @@ const mockHits: SearchHit[] = [
   {
     score: 0.0325,
     payload: {
-      repo: 'notes-rag-mcp',
+      repo: 'knowledge-rag-mcp',
       rel_path: 'app/services/indexer.py',
       symbol: 'IndexerService.sync',
       start_line: 45,
       end_line: 80,
-      github_url: 'https://github.com/example/notes-rag-mcp/blob/main/app/services/indexer.py#L45-L80',
+      github_url: 'https://github.com/example/knowledge-rag-mcp/blob/main/app/services/indexer.py#L45-L80',
       content: 'async def sync(self):\n    pass'
     }
   }
@@ -61,7 +61,7 @@ describe('SearchInspector Component', () => {
           body: JSON.stringify({ query: 'IndexerService', type: 'code', repo: null })
         })
       );
-      expect(screen.getByText('notes-rag-mcp')).toBeInTheDocument();
+      expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
       expect(screen.getByText('app/services/indexer.py')).toBeInTheDocument();
       expect(screen.getByText('IndexerService.sync')).toBeInTheDocument();
       expect(screen.getByText('RRF Score: 0.0325')).toBeInTheDocument();

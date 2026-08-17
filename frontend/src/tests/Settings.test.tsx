@@ -21,7 +21,7 @@ const mockStats: Stats = {
   },
   vector_store_provider: 'qdrant',
   vector_store_mode: 'embedded',
-  vector_store_collection: 'notes_rag_v2'
+  vector_store_collection: 'knowledge_rag_v1'
 };
 
 const mockVectorStoreConfig: VectorStoreConfig = {
@@ -29,9 +29,9 @@ const mockVectorStoreConfig: VectorStoreConfig = {
   mode: 'embedded',
   storage_path: 'data/qdrant_db',
   url: 'http://localhost:6333',
-  collection: 'notes_rag_v2',
+  collection: 'knowledge_rag_v1',
   healthy: true,
-  health_message: 'Collection notes_rag_v2 is healthy and operational',
+  health_message: 'Collection knowledge_rag_v1 is healthy and operational',
   points_count: 1250,
   stats: { points_count: 1250, vector_dimension: 384 }
 };
@@ -245,7 +245,7 @@ describe('Settings Component', () => {
       mode: 'embedded',
       storage_path: 'data/chroma_db',
       url: null,
-      collection: 'notes_rag_v2',
+      collection: 'knowledge_rag_v1',
       healthy: true,
       health_message: 'ChromaDB persistent store active',
       points_count: 0
@@ -300,7 +300,7 @@ describe('Settings Component', () => {
             mode: 'embedded',
             storage_path: 'data/chroma_db',
             url: null,
-            collection: 'notes_rag_v2'
+            collection: 'knowledge_rag_v1'
           })
         })
       );
