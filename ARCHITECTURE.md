@@ -1,4 +1,4 @@
-# Architecture: Notes & Code RAG MCP Server (v3.0.0)
+# Architecture: Notes & Code RAG MCP Server (v2.1.0)
 
 The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation.
 

@@ -1,4 +1,4 @@
-# Developer Documentation (v3.0.0)
+# Developer Documentation (v2.1.0)
 
 This document provides instructions for developing, testing, and running the Notes & Code RAG MCP Server locally.
 
