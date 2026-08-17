@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run --configLoader native",
     "test:coverage": "vitest run --coverage --configLoader native",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "inspect:layout": "node --experimental-strip-types scripts/inspect_layout.ts"
   },
   "dependencies": {
     "react": "^19.2.8",

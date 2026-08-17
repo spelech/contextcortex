@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knowledge RAG Hub - LLM Layout Visual Inspector</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --bg-primary: #0b0f19;
+      --bg-secondary: #131b2e;
+      --bg-card: #1c2640;
+      --bg-hover: #253356;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-primary: #3b82f6;
+      --accent-primary-hover: #2563eb;
+      --color-success: #10b981;
+      --color-warning: #f59e0b;
+      --color-danger: #ef4444;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header.report-header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .header-branding {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      color: #fff;
+    }
+
+    .title-group h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .title-group .meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .btn:hover {
+      background: var(--bg-hover);
+    }
+
+    .btn-primary {
+      background: var(--accent-primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-primary-hover);
+    }
+
+    .btn-outline {
+      border-color: var(--border-color);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-badge.clean {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--color-success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-badge.violations {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--color-danger);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    /* Metrics Bar */
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      padding: 1rem 1.5rem;
+      background: rgba(19, 27, 46, 0.6);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .metric-card .label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .metric-card .val {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .metric-card.success .val { color: var(--color-success); }
+    .metric-card.danger .val { color: var(--color-danger); }
+    .metric-card.warning .val { color: var(--color-warning); }
+
+    /* Controls Bar */
+    .controls-bar {
+      padding: 0.85rem 1.5rem;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .control-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      margin-right: 0.25rem;
+    }
+
+    .pill-group {
+      display: flex;
+      background: var(--bg-primary);
+      padding: 0.25rem;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      gap: 0.2rem;
+    }
+
+    .pill-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      padding: 0.35rem 0.7rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.15s ease;
+    }
+
+    .pill-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .pill-btn.active {
+      background: var(--accent-primary);
+      color: #fff;
+    }
+
+    .toggle-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    /* Main Inspection Workspace */
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    @media (max-width: 1024px) {
+      .workspace-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto;
+      }
+    }
+
+    .canvas-pane {
+      padding: 2rem;
+      background: #080b12;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      position: relative;
+    }
+
+    .viewport-frame-wrapper {
+      position: relative;
+      background: #000;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+      transition: width 0.3s ease, height 0.3s ease;
+    }
+
+    .viewport-meta-badge {
+      position: absolute;
+      top: -30px;
+      left: 0;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .screenshot-image {
+      display: block;
+      width: 100%;
+      height: 100%;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .svg-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: all;
+    }
+
+    .box-rect {
+      fill: transparent;
+      stroke-width: 1.5;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .box-rect.clean {
+      stroke: rgba(16, 185, 129, 0.5);
+    }
+
+    .box-rect.clean:hover, .box-rect.clean.active {
+      stroke: #10b981;
+      stroke-width: 2.5;
+      fill: rgba(16, 185, 129, 0.2);
+    }
+
+    .box-rect.overflow {
+      stroke: #ef4444;
+      stroke-width: 2.5;
+      fill: rgba(239, 68, 68, 0.3);
+      stroke-dasharray: 4 2;
+    }
+
+    .box-rect.overflow:hover, .box-rect.overflow.active {
+      fill: rgba(239, 68, 68, 0.5);
+      stroke-width: 3.5;
+    }
+
+    .box-rect.collision, .box-rect.clipping {
+      stroke: #f59e0b;
+      stroke-width: 2;
+      fill: rgba(245, 158, 11, 0.25);
+    }
+
+    .box-rect.collision:hover, .box-rect.collision.active,
+    .box-rect.clipping:hover, .box-rect.clipping.active {
+      fill: rgba(245, 158, 11, 0.45);
+      stroke-width: 3;
+    }
+
+    /* Floating Tooltip */
+    .inspector-tooltip {
+      position: absolute;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.75rem;
+      color: var(--text-primary);
+      box-shadow: var(--shadow-lg);
+      pointer-events: none;
+      z-index: 100;
+      max-width: 320px;
+      display: none;
+      transform: translate(-50%, -120%);
+    }
+
+    .tooltip-tag {
+      font-weight: 700;
+      color: var(--accent-primary);
+      margin-bottom: 2px;
+    }
+
+    .tooltip-selector {
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+      word-break: break-all;
+    }
+
+    .tooltip-coords {
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    .tooltip-violation {
+      color: var(--color-danger);
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    /* Sidebar Pane */
+    .sidebar-pane {
+      background: var(--bg-secondary);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .sidebar-search {
+      width: 100%;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      padding: 0.45rem 0.75rem;
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-size: 0.8rem;
+    }
+
+    .sidebar-search:focus {
+      outline: none;
+      border-color: var(--accent-primary);
+    }
+
+    .element-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .element-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0.65rem 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .element-item:hover, .element-item.active {
+      border-color: var(--accent-primary);
+      background: var(--bg-hover);
+      transform: translateX(2px);
+    }
+
+    .element-item.overflow {
+      border-left: 3px solid var(--color-danger);
+    }
+
+    .element-item.collision, .element-item.clipping {
+      border-left: 3px solid var(--color-warning);
+    }
+
+    .element-item.clean {
+      border-left: 3px solid var(--color-success);
+    }
+
+    .item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .item-tag {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .item-status-pill {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .item-status-pill.clean {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--color-success);
+    }
+
+    .item-status-pill.overflow {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--color-danger);
+    }
+
+    .item-status-pill.collision, .item-status-pill.clipping {
+      background: rgba(245, 158, 11, 0.2);
+      color: var(--color-warning);
+    }
+
+    .item-selector {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .item-coords {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+
+    .item-details {
+      font-size: 0.7rem;
+      color: var(--color-danger);
+      background: rgba(239, 68, 68, 0.1);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      margin-top: 0.25rem;
+    }
+
+    /* Modal dialog for LLM summary */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1.5rem;
+    }
+
+    .modal-content {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      max-width: 750px;
+      width: 100%;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .modal-header {
+      padding: 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .markdown-box {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      max-height: 400px;
+      overflow: auto;
+    }
+
+    .toast-msg {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #10b981;
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 0.6rem 1.2rem;
+      border-radius: 6px;
+      box-shadow: var(--shadow-lg);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 2000;
+    }
+
+    .toast-msg.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <header class="report-header">
+    <div class="header-branding">
+      <div class="logo-badge"><i class="fa-solid fa-shapes"></i></div>
+      <div class="title-group">
+        <h1>Knowledge RAG Layout Inspector</h1>
+        <div class="meta" id="reportTimestamp">Generated on 2026-08-17</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="status-badge clean" id="overallStatusBadge">
+        <i class="fa-solid fa-circle-check"></i> 0 Violations
+      </span>
+      <button class="btn btn-outline" id="btnCopyLLM">
+        <i class="fa-solid fa-copy"></i> Copy LLM Context Summary
+      </button>
+      <button class="btn btn-outline" id="btnExportJSON">
+        <i class="fa-solid fa-download"></i> Export JSON Audit
+      </button>
+    </div>
+  </header>
+
+  <div class="metrics-bar">
+    <div class="metric-card" id="cardTotalElements">
+      <span class="label">Elements Inspected</span>
+      <span class="val" id="valTotalElements">0</span>
+    </div>
+    <div class="metric-card" id="cardViewports">
+      <span class="label">Viewports Evaluated</span>
+      <span class="val" id="valViewports">4</span>
+    </div>
+    <div class="metric-card" id="cardTabs">
+      <span class="label">Tabs Evaluated</span>
+      <span class="val" id="valTabs">6</span>
+    </div>
+    <div class="metric-card success" id="cardOverflow">
+      <span class="label">Overflow Violations</span>
+      <span class="val" id="valOverflow">0</span>
+    </div>
+    <div class="metric-card success" id="cardCollision">
+      <span class="label">Collisions / Clipping</span>
+      <span class="val" id="valCollisions">0</span>
+    </div>
+  </div>
+
+  <div class="controls-bar">
+    <div class="control-group">
+      <span class="control-label"><i class="fa-solid fa-mobile-screen"></i> Viewport:</span>
+      <div class="pill-group" id="viewportPills">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+
+    <div class="control-group">
+      <span class="control-label"><i class="fa-solid fa-table-columns"></i> Tab:</span>
+      <div class="pill-group" id="tabPills">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label class="toggle-label">
+        <input type="checkbox" id="chkShowAll" checked>
+        Show Clean Elements (🟩)
+      </label>
+      <label class="toggle-label">
+        <input type="checkbox" id="chkShowViolations" checked>
+        Show Violations (🟥 🟨)
+      </label>
+    </div>
+  </div>
+
+  <div class="workspace-grid">
+    <div class="canvas-pane">
+      <div class="viewport-frame-wrapper" id="viewportWrapper">
+        <div class="viewport-meta-badge" id="viewportMetaBadge">375 × 667 (mobile-small)</div>
+        <img class="screenshot-image" id="screenshotImg" alt="Screenshot">
+        <svg class="svg-overlay" id="svgOverlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div class="inspector-tooltip" id="inspectorTooltip">
+        <div class="tooltip-tag" id="ttTag">DIV</div>
+        <div class="tooltip-selector" id="ttSelector">.header-title</div>
+        <div class="tooltip-coords" id="ttCoords">x: 0, y: 0 | w: 100, h: 50</div>
+        <div class="tooltip-violation" id="ttViolation" style="display: none;"></div>
+      </div>
+    </div>
+
+    <aside class="sidebar-pane">
+      <div class="sidebar-header">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.85rem; font-weight: 700;">Inspected Elements</span>
+          <span class="status-badge clean" id="tabElementsCount" style="font-size: 0.7rem;">0 elements</span>
+        </div>
+        <input type="text" class="sidebar-search" id="sidebarSearch" placeholder="Filter by selector, tag, or text...">
+      </div>
+      <div class="element-list" id="elementList">
+        <!-- Injected via JS -->
+      </div>
+    </aside>
+  </div>
+
+  <!-- LLM Summary Modal -->
+  <div class="modal-overlay" id="llmModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 style="font-size: 1.1rem; font-weight: 700;"><i class="fa-solid fa-robot"></i> LLM Layout Audit Prompt Context</h2>
+        <button class="btn btn-outline" id="btnCloseModal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+          The summary below is formatted in markdown for direct injection into an LLM prompt for analysis or automated layout repair:
+        </p>
+        <div class="markdown-box" id="markdownContext"></div>
+      </div>
+      <div class="modal-header" style="justify-content: flex-end; gap: 0.5rem;">
+        <button class="btn btn-primary" id="btnCopyFromModal"><i class="fa-solid fa-copy"></i> Copy Markdown</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-msg" id="toastMsg">Markdown context copied to clipboard!</div>
+
+  <script>
+    // Embedded or dynamically loaded audit data
+    window.__AUDIT_DATA__ = /* __AUDIT_DATA__ */ null;
+
+    let auditData = window.__AUDIT_DATA__ || {
+      timestamp: new Date().toISOString(),
+      summary: { totalViewports: 4, totalTabs: 6, totalEvaluations: 24, totalViolations: 0, overflowViolations: 0, clippingViolations: 0, collisionViolations: 0, passed: true },
+      viewports: []
+    };
+
+    let currentViewportIndex = 0;
+    let currentTabId = 'overview';
+    let activeHoverIndex = null;
+
+    function initInspector() {
+      if (auditData.timestamp) {
+        document.getElementById('reportTimestamp').innerText = 'Generated on ' + new Date(auditData.timestamp).toLocaleString();
+      }
+
+      // Update summary cards
+      const summary = auditData.summary || {};
+      document.getElementById('valViewports').innerText = summary.totalViewports || auditData.viewports.length || 0;
+      document.getElementById('valTabs').innerText = summary.totalTabs || 6;
+      document.getElementById('valOverflow').innerText = summary.overflowViolations || 0;
+      document.getElementById('valCollisions').innerText = (summary.collisionViolations || 0) + (summary.clippingViolations || 0);
+
+      const totalViolations = (summary.overflowViolations || 0) + (summary.collisionViolations || 0) + (summary.clippingViolations || 0);
+      const overallStatusBadge = document.getElementById('overallStatusBadge');
+      if (totalViolations === 0) {
+        overallStatusBadge.className = 'status-badge clean';
+        overallStatusBadge.innerHTML = '<i class="fa-solid fa-circle-check"></i> 0 Violations (Clean)';
+      } else {
+        overallStatusBadge.className = 'status-badge violations';
+        overallStatusBadge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${totalViolations} Violations`;
+        document.getElementById('cardOverflow').className = (summary.overflowViolations || 0) > 0 ? 'metric-card danger' : 'metric-card success';
+        document.getElementById('cardCollision').className = ((summary.collisionViolations || 0) + (summary.clippingViolations || 0)) > 0 ? 'metric-card warning' : 'metric-card success';
+      }
+
+      // Render Viewport Pills
+      const vpPillsContainer = document.getElementById('viewportPills');
+      vpPillsContainer.innerHTML = '';
+      auditData.viewports.forEach((vp, idx) => {
+        const btn = document.createElement('button');
+        btn.className = `pill-btn ${idx === currentViewportIndex ? 'active' : ''}`;
+        const icon = vp.width < 500 ? 'fa-mobile-screen' : (vp.width < 1024 ? 'fa-tablet-screen-button' : 'fa-desktop');
+        btn.innerHTML = `<i class="fa-solid ${icon}"></i> ${vp.name} (${vp.width}x${vp.height})`;
+        btn.onclick = () => selectViewport(idx);
+        vpPillsContainer.appendChild(btn);
+      });
+
+      // Render Tab Pills
+      renderTabPills();
+      updateInspectionView();
+      setupEventListeners();
+    }
+
+    function renderTabPills() {
+      const currentVp = auditData.viewports[currentViewportIndex];
+      if (!currentVp) return;
+      const tabPillsContainer = document.getElementById('tabPills');
+      tabPillsContainer.innerHTML = '';
+
+      const tabLabels = {
+        'overview': 'Overview',
+        'git-repos': 'Git Repos',
+        'local-paths': 'Local Paths',
+        'search-inspector': 'Search & Inspector',
+        'settings': 'Settings',
+        'diagnostics': 'Diagnostics'
+      };
+
+      currentVp.tabs.forEach(tab => {
+        const btn = document.createElement('button');
+        btn.className = `pill-btn ${tab.tab === currentTabId ? 'active' : ''}`;
+        const label = tabLabels[tab.tab] || tab.tab;
+        const violationsCount = tab.violationsCount || (tab.violations ? tab.violations.length : 0);
+        btn.innerHTML = `${label} ${violationsCount > 0 ? `<span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 6px;font-size:0.7em;">${violationsCount}</span>` : ''}`;
+        btn.onclick = () => selectTab(tab.tab);
+        tabPillsContainer.appendChild(btn);
+      });
+    }
+
+    function selectViewport(idx) {
+      currentViewportIndex = idx;
+      document.querySelectorAll('#viewportPills .pill-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === idx);
+      });
+      renderTabPills();
+      updateInspectionView();
+    }
+
+    function selectTab(tabId) {
+      currentTabId = tabId;
+      document.querySelectorAll('#tabPills .pill-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.innerText.toLowerCase().includes(tabId.replace('-', ' ')));
+      });
+      updateInspectionView();
+    }
+
+    function updateInspectionView() {
+      const vp = auditData.viewports[currentViewportIndex];
+      if (!vp) return;
+      const tabData = vp.tabs.find(t => t.tab === currentTabId) || vp.tabs[0];
+      if (!tabData) return;
+
+      // Update frame size
+      const wrapper = document.getElementById('viewportWrapper');
+      wrapper.style.width = vp.width + 'px';
+      wrapper.style.height = vp.height + 'px';
+
+      document.getElementById('viewportMetaBadge').innerText = `${vp.width} × ${vp.height} (${vp.name}) - Tab: ${tabData.tab}`;
+
+      // Update Screenshot Image
+      const img = document.getElementById('screenshotImg');
+      img.src = tabData.screenshot || `screenshots/${vp.name}_${tabData.tab}.png`;
+
+      // Update SVG Overlay
+      const svg = document.getElementById('svgOverlay');
+      svg.setAttribute('viewBox', `0 0 ${vp.width} ${vp.height}`);
+      svg.innerHTML = '';
+
+      const showClean = document.getElementById('chkShowAll').checked;
+      const showViolations = document.getElementById('chkShowViolations').checked;
+
+      const elements = tabData.elements || [];
+      document.getElementById('valTotalElements').innerText = elements.length;
+      document.getElementById('tabElementsCount').innerText = `${elements.length} elements`;
+
+      elements.forEach((el, idx) => {
+        const isViolation = el.status !== 'clean';
+        if (!showClean && !isViolation) return;
+        if (!showViolations && isViolation) return;
+
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', el.box.x);
+        rect.setAttribute('y', el.box.y);
+        rect.setAttribute('width', Math.max(2, el.box.width));
+        rect.setAttribute('height', Math.max(2, el.box.height));
+        rect.setAttribute('class', `box-rect ${el.status}`);
+        rect.setAttribute('data-index', idx);
+
+        rect.onmouseenter = (e) => showTooltip(e, el, idx);
+        rect.onmouseleave = hideTooltip;
+        rect.onclick = () => focusElementInSidebar(idx);
+
+        svg.appendChild(rect);
+      });
+
+      renderSidebarList(elements);
+    }
+
+    function renderSidebarList(elements) {
+      const list = document.getElementById('elementList');
+      list.innerHTML = '';
+      const filterText = (document.getElementById('sidebarSearch').value || '').toLowerCase();
+
+      elements.forEach((el, idx) => {
+        if (filterText) {
+          const match = (el.selector && el.selector.toLowerCase().includes(filterText)) ||
+                        (el.tag && el.tag.toLowerCase().includes(filterText)) ||
+                        (el.text && el.text.toLowerCase().includes(filterText));
+          if (!match) return;
+        }
+
+        const div = document.createElement('div');
+        div.className = `element-item ${el.status} ${idx === activeHoverIndex ? 'active' : ''}`;
+        div.id = `sidebar-el-${idx}`;
+
+        const statusLabel = el.status === 'clean' ? 'Clean' : (el.status === 'overflow' ? 'Overflow' : el.status);
+
+        div.innerHTML = `
+          <div class="item-header">
+            <span class="item-tag">${el.tag}</span>
+            <span class="item-status-pill ${el.status}">${statusLabel}</span>
+          </div>
+          <div class="item-selector" title="${el.selector}">${el.selector}</div>
+          <div class="item-coords">x:${Math.round(el.box.x)}, y:${Math.round(el.box.y)} | ${Math.round(el.box.width)}×${Math.round(el.box.height)}px</div>
+          ${el.details ? `<div class="item-details"><i class="fa-solid fa-triangle-exclamation"></i> ${el.details}</div>` : ''}
+        `;
+
+        div.onmouseenter = () => highlightBox(idx);
+        div.onmouseleave = unhighlightBox;
+        list.appendChild(div);
+      });
+    }
+
+    function showTooltip(e, el, idx) {
+      highlightBox(idx);
+      const tt = document.getElementById('inspectorTooltip');
+      document.getElementById('ttTag').innerText = el.tag + (el.text ? ` "${el.text.slice(0, 30)}"` : '');
+      document.getElementById('ttSelector').innerText = el.selector;
+      document.getElementById('ttCoords').innerText = `x: ${Math.round(el.box.x)}, y: ${Math.round(el.box.y)} | w: ${Math.round(el.box.width)}, h: ${Math.round(el.box.height)}`;
+      
+      const ttViol = document.getElementById('ttViolation');
+      if (el.details) {
+        ttViol.style.display = 'block';
+        ttViol.innerText = el.details;
+      } else {
+        ttViol.style.display = 'none';
+      }
+
+      tt.style.display = 'block';
+      tt.style.left = (e.clientX) + 'px';
+      tt.style.top = (e.clientY - 10) + 'px';
+    }
+
+    function hideTooltip() {
+      unhighlightBox();
+      document.getElementById('inspectorTooltip').style.display = 'none';
+    }
+
+    function highlightBox(idx) {
+      activeHoverIndex = idx;
+      document.querySelectorAll('.box-rect').forEach(r => {
+        r.classList.toggle('active', parseInt(r.getAttribute('data-index')) === idx);
+      });
+      document.querySelectorAll('.element-item').forEach(it => {
+        it.classList.toggle('active', it.id === `sidebar-el-${idx}`);
+      });
+    }
+
+    function unhighlightBox() {
+      activeHoverIndex = null;
+      document.querySelectorAll('.box-rect').forEach(r => r.classList.remove('active'));
+      document.querySelectorAll('.element-item').forEach(it => it.classList.remove('active'));
+    }
+
+    function focusElementInSidebar(idx) {
+      const el = document.getElementById(`sidebar-el-${idx}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('active');
+      }
+    }
+
+    function generateLLMMarkdown() {
+      const summary = auditData.summary || {};
+      let md = `# Knowledge RAG Hub Layout Audit Report\n\n`;
+      md += `**Timestamp:** ${auditData.timestamp}\n`;
+      md += `**Status:** ${summary.passed ? 'PASSED (0 Violations)' : 'FAILED (Violations Detected)'}\n`;
+      md += `**Evaluations:** ${summary.totalViewports || 4} Viewports, ${summary.totalTabs || 6} Tabs\n\n`;
+      md += `### Summary Metrics:\n`;
+      md += `- Viewport Overflows: ${summary.overflowViolations || 0}\n`;
+      md += `- Container Clipping: ${summary.clippingViolations || 0}\n`;
+      md += `- Element Collisions: ${summary.collisionViolations || 0}\n\n`;
+
+      md += `### Violations Breakdown by Viewport & Tab:\n\n`;
+      let totalV = 0;
+      auditData.viewports.forEach(vp => {
+        vp.tabs.forEach(tab => {
+          const violations = (tab.violations || []).concat((tab.elements || []).filter(e => e.status !== 'clean' && !(tab.violations || []).some(v => v.selector === e.selector)));
+          if (violations.length > 0) {
+            totalV += violations.length;
+            md += `#### Viewport: \`${vp.name}\` (${vp.width}x${vp.height}) | Tab: \`${tab.tab}\`\n`;
+            violations.forEach(v => {
+              md += `- **[${v.violationType || v.status.toUpperCase()}]** \`${v.selector}\`\n`;
+              md += `  - Bounding Box: \`{ x: ${Math.round(v.box.x)}, y: ${Math.round(v.box.y)}, width: ${Math.round(v.box.width)}, height: ${Math.round(v.box.height)} }\`\n`;
+              md += `  - Details: ${v.details || 'Element violation detected'}\n`;
+            });
+            md += `\n`;
+          }
+        });
+      });
+
+      if (totalV === 0) {
+        md += `*No layout violations detected across any mobile, tablet, or desktop viewports. All elements are within viewport bounds and render with clean geometry.*\n`;
+      }
+
+      return md;
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toastMsg');
+      t.innerText = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    function setupEventListeners() {
+      document.getElementById('chkShowAll').onchange = updateInspectionView;
+      document.getElementById('chkShowViolations').onchange = updateInspectionView;
+      document.getElementById('sidebarSearch').oninput = () => {
+        const vp = auditData.viewports[currentViewportIndex];
+        if (vp) {
+          const tabData = vp.tabs.find(t => t.tab === currentTabId) || vp.tabs[0];
+          if (tabData) renderSidebarList(tabData.elements || []);
+        }
+      };
+
+      document.getElementById('btnCopyLLM').onclick = () => {
+        const md = generateLLMMarkdown();
+        navigator.clipboard.writeText(md).then(() => {
+          showToast('LLM Context Summary copied to clipboard!');
+        }).catch(() => {
+          document.getElementById('markdownContext').innerText = md;
+          document.getElementById('llmModal').style.display = 'flex';
+        });
+      };
+
+      document.getElementById('btnExportJSON').onclick = () => {
+        const blob = new Blob([JSON.stringify(auditData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'layout-audit.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      document.getElementById('btnCloseModal').onclick = () => {
+        document.getElementById('llmModal').style.display = 'none';
+      };
+
+      document.getElementById('btnCopyFromModal').onclick = () => {
+        const md = document.getElementById('markdownContext').innerText;
+        navigator.clipboard.writeText(md).then(() => {
+          showToast('Copied to clipboard!');
+          document.getElementById('llmModal').style.display = 'none';
+        });
+      };
+    }
+
+    window.addEventListener('DOMContentLoaded', initInspector);
+  </script>
+</body>
+</html>
