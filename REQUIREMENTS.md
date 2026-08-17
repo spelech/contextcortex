@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **216 Automated Tests** (156 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **244 Automated Tests** (184 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -452,6 +452,36 @@ classDiagram
 - `test_vector_document_full_fields` - _Verify VectorDocument with all explicit fields._
 - `test_vector_document_validation` - _Verify required field validation in VectorDocument._
 - `test_vector_search_result_creation_and_payload` - _Verify VectorSearchResult creation and payload access._
+
+#### `test_vector_store_chroma.py` (28 tests)
+- `TestChromaVectorStoreInit::test_init_in_memory`
+- `TestChromaVectorStoreInit::test_init_persistent_disk`
+- `TestChromaVectorStoreInit::test_init_remote_success`
+- `TestChromaVectorStoreInit::test_init_remote_fallback_to_persistent_on_error`
+- `TestChromaVectorStoreInit::test_custom_injected_client`
+- `TestChromaVectorStoreOperations::test_ensure_collection`
+- `TestChromaVectorStoreOperations::test_upsert_vector_documents`
+- `TestChromaVectorStoreOperations::test_upsert_dict_documents_auto_computes_vectors`
+- `TestChromaVectorStoreOperations::test_upsert_handles_complex_metadata`
+- `TestChromaVectorStoreOperations::test_search_dense`
+- `TestChromaVectorStoreOperations::test_search_metadata_filtering`
+- `TestChromaVectorStoreOperations::test_delete_by_path`
+- `TestChromaVectorStoreOperations::test_delete_by_repo`
+- `TestChromaVectorStoreOperations::test_get_stats_and_health_check`
+- `test_init_in_memory`
+- `test_init_persistent_disk`
+- `test_init_remote_success`
+- `test_init_remote_fallback_to_persistent_on_error`
+- `test_custom_injected_client`
+- `test_ensure_collection`
+- `test_upsert_vector_documents`
+- `test_upsert_dict_documents_auto_computes_vectors`
+- `test_upsert_handles_complex_metadata`
+- `test_search_dense`
+- `test_search_metadata_filtering`
+- `test_delete_by_path`
+- `test_delete_by_repo`
+- `test_get_stats_and_health_check`
 
 #### `test_vector_store_qdrant.py` (22 tests)
 - `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`
