@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **194 Automated Tests** (134 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **216 Automated Tests** (156 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -452,6 +452,30 @@ classDiagram
 - `test_vector_document_full_fields` - _Verify VectorDocument with all explicit fields._
 - `test_vector_document_validation` - _Verify required field validation in VectorDocument._
 - `test_vector_search_result_creation_and_payload` - _Verify VectorSearchResult creation and payload access._
+
+#### `test_vector_store_qdrant.py` (22 tests)
+- `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`
+- `TestQdrantVectorStoreInit::test_init_remote_success`
+- `TestQdrantVectorStoreInit::test_init_remote_fallback_to_embedded_on_connection_error`
+- `TestQdrantVectorStoreInit::test_custom_injected_client`
+- `TestQdrantVectorStoreOperations::test_ensure_collection_recreates_on_schema_mismatch`
+- `TestQdrantVectorStoreOperations::test_upsert_vector_documents`
+- `TestQdrantVectorStoreOperations::test_upsert_dict_documents_auto_computes_vectors`
+- `TestQdrantVectorStoreOperations::test_search_dense_and_hybrid_rrf`
+- `TestQdrantVectorStoreOperations::test_delete_by_path`
+- `TestQdrantVectorStoreOperations::test_delete_by_repo`
+- `TestQdrantVectorStoreOperations::test_get_stats_and_health_check`
+- `test_init_in_memory_or_embedded`
+- `test_init_remote_success`
+- `test_init_remote_fallback_to_embedded_on_connection_error`
+- `test_custom_injected_client`
+- `test_ensure_collection_recreates_on_schema_mismatch`
+- `test_upsert_vector_documents`
+- `test_upsert_dict_documents_auto_computes_vectors`
+- `test_search_dense_and_hybrid_rrf`
+- `test_delete_by_path`
+- `test_delete_by_repo`
+- `test_get_stats_and_health_check`
 
 ### 6.2 Frontend Vitest Tests (`frontend/src/tests/`)
 

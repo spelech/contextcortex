@@ -5,9 +5,13 @@ from app.services.vector_store.base import (
     VectorDocument,
     VectorSearchResult,
 )
+from app.services.vector_store.qdrant_store import (
+    QdrantVectorStore,
+)
 
 __all__ = [
     "VectorStore",
     "VectorDocument",
     "VectorSearchResult",
+    "QdrantVectorStore",
 ]
