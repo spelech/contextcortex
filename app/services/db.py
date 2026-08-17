@@ -113,6 +113,18 @@ def init_db(vault_path: str = "/docs"):
             conn.execute("ALTER TABLE indexed_files ADD COLUMN language TEXT DEFAULT 'text'")
         except Exception:
             pass
+        try:
+            conn.execute("ALTER TABLE indexed_files ADD COLUMN commit_sha TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE indexed_files ADD COLUMN mtime REAL")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE indexed_files ADD COLUMN hash TEXT")
+        except Exception:
+            pass
 
         # File summaries and topics
         conn.execute("""
