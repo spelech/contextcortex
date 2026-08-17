@@ -74,6 +74,17 @@ async def api_get_stats():
         gt_token, _, gt_src = get_effective_git_token("https://gitea.com", provider="gitea")
         rate_info = check_github_rate_limit(gh_token)
 
+        vs_provider = "qdrant"
+        vs_mode = "embedded"
+        vs_collection = COLLECTION_NAME
+        try:
+            vs_cfg = get_vector_store_config()
+            vs_provider = vs_cfg.get("provider", "qdrant")
+            vs_mode = vs_cfg.get("mode", "embedded")
+            vs_collection = vs_cfg.get("collection", COLLECTION_NAME)
+        except Exception:
+            pass
+
         return {
             "files_count": files_count,
             "paths_count": paths_count,
@@ -85,6 +96,9 @@ async def api_get_stats():
             "embedding_provider": EMBEDDING_PROVIDER.upper(),
             "dense_model": DENSE_MODEL_NAME,
             "sparse_model": SPARSE_MODEL_NAME,
+            "vector_store_provider": vs_provider,
+            "vector_store_mode": vs_mode,
+            "vector_store_collection": vs_collection,
             "top_keywords": top_keywords,
             "token_source": gh_src,
             "masked_token": mask_token(gh_token),

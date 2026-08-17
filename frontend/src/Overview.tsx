@@ -48,7 +48,9 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
           <div className="metric-icon"><i className="fa-solid fa-network-wired"></i></div>
           <div className="metric-info">
             <span className="stat-number">{(stats.points_count || 0).toLocaleString()}</span>
-            <span className="stat-label">Hybrid Vectors</span>
+            <span className="stat-label">
+              {(stats.vector_store_provider || 'Qdrant').toUpperCase()} ({(stats.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded' : 'Remote'}) Vectors
+            </span>
           </div>
         </div>
       </div>
@@ -57,6 +59,12 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
         <div className="glass-card">
           <h2><i className="fa-solid fa-server"></i> System & Embedding Specs</h2>
           <div className="specs-list">
+            <div className="spec-row">
+              <span>Vector Database:</span>
+              <span className="badge badge-accent">
+                {stats.vector_store_provider === 'chroma' ? 'ChromaDB' : 'Qdrant'} ({(stats.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded Disk' : 'Remote Server'})
+              </span>
+            </div>
             <div className="spec-row">
               <span>Dense Embedding Model:</span>
               <code>{stats.dense_model || 'bge-small-en-v1.5 (384d)'}</code>

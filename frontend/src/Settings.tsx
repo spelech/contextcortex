@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { FormEvent } from 'react';
-import type { Stats, GitHostCredential } from './types';
+import type { Stats, GitHostCredential, VectorStoreConfig } from './types';
 import { useToast } from './ToastContext';
 
 export default function Settings({ stats, refreshStats }: { stats: Stats | null, refreshStats: () => void }) {
+  // Global Git Provider Auth State
   const [ghToken, setGhToken] = useState('');
   const [glToken, setGlToken] = useState('');
   const [gtToken, setGtToken] = useState('');
@@ -16,6 +17,18 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
   const [newHostUser, setNewHostUser] = useState('');
   const [newHostToken, setNewHostToken] = useState('');
   const [isSavingHost, setIsSavingHost] = useState(false);
+
+  // Vector Store Configuration State
+  const [vectorStore, setVectorStore] = useState<VectorStoreConfig | null>(null);
+  const [isLoadingVs, setIsLoadingVs] = useState(false);
+  const [vsProvider, setVsProvider] = useState<'qdrant' | 'chroma'>('qdrant');
+  const [vsMode, setVsMode] = useState<'embedded' | 'remote'>('embedded');
+  const [vsStoragePath, setVsStoragePath] = useState('data/qdrant_db');
+  const [vsUrl, setVsUrl] = useState('http://localhost:6333');
+  const [vsCollection, setVsCollection] = useState('notes_rag_v2');
+  const [isTestingVs, setIsTestingVs] = useState(false);
+  const [testFeedback, setTestFeedback] = useState<{ success: boolean; message: string } | null>(null);
+  const [isSwitchingVs, setIsSwitchingVs] = useState(false);
 
   const toast = useToast();
 
@@ -32,9 +45,126 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
     }
   }, []);
 
+  const loadVectorStore = useCallback(async () => {
+    setIsLoadingVs(true);
+    try {
+      const res = await fetch('/admin/api/vector-store');
+      if (res.ok) {
+        const data: VectorStoreConfig = await res.json();
+        setVectorStore(data);
+        if (data.provider) setVsProvider(data.provider);
+        if (data.mode) setVsMode(data.mode);
+        if (data.storage_path) setVsStoragePath(data.storage_path);
+        if (data.url) setVsUrl(data.url);
+        if (data.collection) setVsCollection(data.collection);
+      }
+    } catch (e: any) {
+      console.error('Failed to load vector store config:', e);
+    } finally {
+      setIsLoadingVs(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadHostCredentials();
-  }, [loadHostCredentials]);
+    loadVectorStore();
+  }, [loadHostCredentials, loadVectorStore]);
+
+  const handleProviderChange = (newProvider: 'qdrant' | 'chroma') => {
+    setVsProvider(newProvider);
+    if (newProvider === 'qdrant') {
+      if (!vsStoragePath || vsStoragePath === 'data/chroma_db') setVsStoragePath('data/qdrant_db');
+      if (!vsUrl || vsUrl === 'http://localhost:8000') setVsUrl('http://localhost:6333');
+    } else {
+      if (!vsStoragePath || vsStoragePath === 'data/qdrant_db') setVsStoragePath('data/chroma_db');
+      if (!vsUrl || vsUrl === 'http://localhost:6333') setVsUrl('http://localhost:8000');
+    }
+  };
+
+  const handleModeChange = (newMode: 'embedded' | 'remote') => {
+    setVsMode(newMode);
+    if (newMode === 'embedded' && !vsStoragePath) {
+      setVsStoragePath(vsProvider === 'chroma' ? 'data/chroma_db' : 'data/qdrant_db');
+    }
+    if (newMode === 'remote' && !vsUrl) {
+      setVsUrl(vsProvider === 'chroma' ? 'http://localhost:8000' : 'http://localhost:6333');
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTestingVs(true);
+    setTestFeedback(null);
+    try {
+      const payload = {
+        provider: vsProvider,
+        mode: vsMode,
+        storage_path: vsMode === 'embedded' ? vsStoragePath.trim() : null,
+        url: vsMode === 'remote' ? vsUrl.trim() : null,
+        collection: vsCollection.trim() || 'notes_rag_v2'
+      };
+      const res = await fetch('/admin/api/vector-store/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        const msg = data.message || data.error || 'Vector store connection test failed';
+        setTestFeedback({ success: false, message: msg });
+        toast.error('Vector store test: ' + msg);
+      } else {
+        const msg = data.message || 'Vector store connection test successful';
+        setTestFeedback({ success: true, message: msg });
+        toast.success(msg);
+      }
+    } catch (e: any) {
+      const msg = e.message || 'Connection error';
+      setTestFeedback({ success: false, message: msg });
+      toast.error('Vector store test error: ' + msg);
+    } finally {
+      setIsTestingVs(false);
+    }
+  };
+
+  const handleSwitchBackend = async () => {
+    const providerName = vsProvider === 'chroma' ? 'ChromaDB' : 'Qdrant';
+    const modeName = vsMode === 'embedded' ? 'Embedded Disk' : 'Remote Server';
+    if (!window.confirm(`Switch active vector database backend to ${providerName} (${modeName})? This will update settings and trigger a full re-indexing of all sources.`)) {
+      return;
+    }
+    setIsSwitchingVs(true);
+    try {
+      const payload = {
+        provider: vsProvider,
+        mode: vsMode,
+        storage_path: vsMode === 'embedded' ? vsStoragePath.trim() : null,
+        url: vsMode === 'remote' ? vsUrl.trim() : null,
+        collection: vsCollection.trim() || 'notes_rag_v2'
+      };
+      const res = await fetch('/admin/api/vector-store/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || data.status === 'error') {
+        const msg = data.error || data.message || 'Failed to switch vector database backend';
+        setTestFeedback({ success: false, message: msg });
+        toast.error('Switch error: ' + msg);
+      } else {
+        const msg = data.message || `Switched vector backend to ${providerName}`;
+        setTestFeedback({ success: true, message: msg });
+        toast.success(msg);
+        await loadVectorStore();
+        refreshStats();
+      }
+    } catch (e: any) {
+      setTestFeedback({ success: false, message: e.message });
+      toast.error('Switch error: ' + e.message);
+    } finally {
+      setIsSwitchingVs(false);
+    }
+  };
 
   const saveToken = async (providerKey: 'github_token' | 'gitlab_token' | 'gitea_token', tokenVal: string, providerName: string) => {
     if (!tokenVal.trim()) return;
@@ -130,6 +260,171 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
   return (
     <div className="tab-content active" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
+      {/* Vector Store Engine & Backend Configuration */}
+      <div className="glass-card">
+        <h2><i className="fa-solid fa-database"></i> Vector Database Engine</h2>
+        <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>
+          Configure and switch between vector database backends (Qdrant &amp; ChromaDB). Switching backends updates system metadata and triggers full re-indexing.
+        </p>
+
+        <div className="vs-config-layout">
+          
+          {/* Active Backend Status Box */}
+          <div className="vs-box">
+            <h3><i className="fa-solid fa-circle-nodes"></i> Active Vector Backend</h3>
+            {isLoadingVs && !vectorStore ? (
+              <p className="text-muted">Loading vector store configuration...</p>
+            ) : vectorStore ? (
+              <div className="specs-list" style={{ marginTop: 0 }}>
+                <div className="spec-row">
+                  <span>Provider:</span>
+                  <span className="badge badge-accent">
+                    {vectorStore.provider === 'chroma' ? 'ChromaDB' : 'Qdrant'}
+                  </span>
+                </div>
+                <div className="spec-row">
+                  <span>Operating Mode:</span>
+                  <span className="badge badge-primary">
+                    {vectorStore.mode === 'embedded' ? 'Embedded Disk' : 'Remote Server'}
+                  </span>
+                </div>
+                <div className="spec-row">
+                  <span>{vectorStore.mode === 'embedded' ? 'Storage Path:' : 'Server URL:'}</span>
+                  <code>{vectorStore.mode === 'embedded' ? (vectorStore.storage_path || 'data/qdrant_db') : (vectorStore.url || 'http://localhost:6333')}</code>
+                </div>
+                <div className="spec-row">
+                  <span>Collection Name:</span>
+                  <code>{vectorStore.collection || 'notes_rag_v2'}</code>
+                </div>
+                <div className="spec-row">
+                  <span>Points Count:</span>
+                  <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                    {(vectorStore.points_count || 0).toLocaleString()}
+                  </span>
+                </div>
+                <div className="spec-row">
+                  <span>Health Status:</span>
+                  {vectorStore.healthy ? (
+                    <span className="badge badge-success">
+                      <i className="fa-solid fa-circle-check"></i> Healthy
+                    </span>
+                  ) : (
+                    <span className="badge badge-danger" title={vectorStore.health_message || 'Unhealthy'}>
+                      <i className="fa-solid fa-triangle-exclamation"></i> {vectorStore.health_message ? (vectorStore.health_message.length > 35 ? vectorStore.health_message.slice(0, 35) + '...' : vectorStore.health_message) : 'Unhealthy'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-muted">No vector store configuration found.</p>
+            )}
+          </div>
+
+          {/* Switch Backend Form Box */}
+          <div className="vs-box">
+            <h3><i className="fa-solid fa-sliders"></i> Configure &amp; Switch Backend</h3>
+            
+            {testFeedback && (
+              <div className={`vs-feedback-banner ${testFeedback.success ? 'feedback-success' : 'feedback-error'}`}>
+                <i className={testFeedback.success ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-exclamation'}></i>
+                <span>{testFeedback.message}</span>
+              </div>
+            )}
+
+            <form onSubmit={e => { e.preventDefault(); handleSwitchBackend(); }}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="vs-provider">Vector Store Provider</label>
+                  <select
+                    id="vs-provider"
+                    value={vsProvider}
+                    onChange={e => handleProviderChange(e.target.value as any)}
+                  >
+                    <option value="qdrant">Qdrant (Hybrid Dense + BM25)</option>
+                    <option value="chroma">ChromaDB (Dense Vectors)</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="vs-mode">Operating Mode</label>
+                  <select
+                    id="vs-mode"
+                    value={vsMode}
+                    onChange={e => handleModeChange(e.target.value as any)}
+                  >
+                    <option value="embedded">Embedded Disk Storage</option>
+                    <option value="remote">Remote Server URL</option>
+                  </select>
+                </div>
+              </div>
+
+              {vsMode === 'embedded' ? (
+                <div className="form-group">
+                  <label htmlFor="vs-storage-path">Storage Directory Path</label>
+                  <input
+                    id="vs-storage-path"
+                    type="text"
+                    value={vsStoragePath}
+                    onChange={e => setVsStoragePath(e.target.value)}
+                    placeholder={vsProvider === 'chroma' ? 'data/chroma_db' : 'data/qdrant_db'}
+                  />
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label htmlFor="vs-url">Remote Server URL</label>
+                  <input
+                    id="vs-url"
+                    type="text"
+                    value={vsUrl}
+                    onChange={e => setVsUrl(e.target.value)}
+                    placeholder={vsProvider === 'chroma' ? 'http://localhost:8000' : 'http://localhost:6333'}
+                  />
+                </div>
+              )}
+
+              <div className="form-group">
+                <label htmlFor="vs-collection">Collection Name</label>
+                <input
+                  id="vs-collection"
+                  type="text"
+                  value={vsCollection}
+                  onChange={e => setVsCollection(e.target.value)}
+                  placeholder="notes_rag_v2"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleTestConnection}
+                  disabled={isTestingVs || isSwitchingVs}
+                >
+                  {isTestingVs ? (
+                    <><i className="fa-solid fa-spinner fa-spin"></i> Testing Connection...</>
+                  ) : (
+                    <><i className="fa-solid fa-plug"></i> Test Connection</>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleSwitchBackend}
+                  disabled={isTestingVs || isSwitchingVs}
+                >
+                  {isSwitchingVs ? (
+                    <><i className="fa-solid fa-spinner fa-spin"></i> Switching Backend...</>
+                  ) : (
+                    <><i className="fa-solid fa-arrows-rotate"></i> Save &amp; Switch Backend</>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+
+        </div>
+      </div>
+
       {/* Global Provider Tokens Card */}
       <div className="glass-card">
         <h2><i className="fa-solid fa-key"></i> Global Git Provider Authentication</h2>
@@ -217,7 +512,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null,
       <div className="glass-card">
         <div className="card-header-btn">
           <div>
-            <h2><i className="fa-solid fa-shield-halved"></i> Custom & Self-Hosted Git Host Vault</h2>
+            <h2><i className="fa-solid fa-shield-halved"></i> Custom &amp; Self-Hosted Git Host Vault</h2>
             <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>
               Define credentials for self-hosted GitLab Enterprise, Gitea, or custom servers (e.g. <code>gitlab.mycorp.com</code> or <code>git.lan:3000</code>).
             </p>

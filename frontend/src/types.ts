@@ -19,6 +19,26 @@ export interface Stats {
     gitlab?: { token_source: string; masked_token: string };
     gitea?: { token_source: string; masked_token: string };
   };
+  vector_store_provider?: 'qdrant' | 'chroma' | string;
+  vector_store_mode?: 'embedded' | 'remote' | string;
+  vector_store_collection?: string;
+}
+
+export interface VectorStoreConfig {
+  provider: 'qdrant' | 'chroma';
+  mode: 'embedded' | 'remote';
+  storage_path?: string | null;
+  url?: string | null;
+  collection: string;
+  healthy?: boolean;
+  health_message?: string;
+  points_count?: number;
+  stats?: {
+    points_count?: number;
+    vector_dimension?: number;
+    error?: string;
+    [key: string]: any;
+  };
 }
 
 export interface Repo {

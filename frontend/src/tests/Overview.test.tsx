@@ -45,8 +45,10 @@ describe('Overview Component', () => {
     expect(screen.getByText('24')).toBeInTheDocument();
     expect(screen.getByText('Indexed Files')).toBeInTheDocument();
     expect(screen.getByText('1,400')).toBeInTheDocument();
-    expect(screen.getByText('Hybrid Vectors')).toBeInTheDocument();
+    expect(screen.getByText(/QDRANT \(Embedded\) Vectors/i)).toBeInTheDocument();
 
+    expect(screen.getByText('Vector Database:')).toBeInTheDocument();
+    expect(screen.getByText(/Qdrant \(Embedded Disk\)/i)).toBeInTheDocument();
     expect(screen.getByText('bge-small-en-v1.5 (384d)')).toBeInTheDocument();
     expect(screen.getByText('Qdrant/bm25 (FastEmbed)')).toBeInTheDocument();
     expect(screen.getByText('2026-08-17 01:23:45')).toBeInTheDocument();
@@ -54,6 +56,23 @@ describe('Overview Component', () => {
     expect(screen.getByText('fastapi')).toBeInTheDocument();
     expect(screen.getByText('tree-sitter')).toBeInTheDocument();
     expect(screen.getByText('qdrant')).toBeInTheDocument();
+  });
+
+  it('renders ChromaDB vector store specs correctly', () => {
+    const chromaStats: Stats = {
+      ...sampleStats,
+      vector_store_provider: 'chroma',
+      vector_store_mode: 'remote'
+    };
+
+    render(
+      <ToastProvider>
+        <Overview stats={chromaStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    expect(screen.getByText(/CHROMA \(Remote\) Vectors/i)).toBeInTheDocument();
+    expect(screen.getByText(/ChromaDB \(Remote Server\)/i)).toBeInTheDocument();
   });
 
   it('triggers reindex and calls refreshStats on success', async () => {

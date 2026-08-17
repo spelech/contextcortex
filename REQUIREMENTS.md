@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **289 Automated Tests** (229 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **295 Automated Tests** (229 Pytest Backend + 53 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -590,9 +590,10 @@ classDiagram
 - deletes path when delete button is confirmed and refreshes stats
 - handles errors when loading paths, adding path, deleting path, and browsing
 
-#### `Overview.test.tsx` (4 tests)
+#### `Overview.test.tsx` (5 tests)
 - renders loading state when stats is null
 - renders metrics, specs, and top keywords accurately
+- renders ChromaDB vector store specs correctly
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
 
@@ -603,14 +604,19 @@ classDiagram
 - handles search API failure with error display
 - performs doc search with repo filter and renders documentation hits
 
-#### `Settings.test.tsx` (9 tests)
-- renders multi-provider token boxes, rate limits, and host vault list
-- handles empty stats or fallback provider auth structure
+#### `Settings.test.tsx` (14 tests)
+- renders vector database panel, multi-provider token boxes, rate limits, and host vault list
+- handles empty stats or fallback provider auth structure and vector store load error
+- switches vector store form fields between embedded and remote modes and changes default paths/urls
+- tests vector store connection successfully and displays success feedback banner
+- handles vector store connection test failure and network error
+- executes vector store backend switch with user confirmation and refreshes stats
+- cancels vector store backend switch when confirmation is dismissed
+- handles vector store backend switch API failure
 - saves new tokens for GitHub, GitLab, and Gitea
-- handles error saving token
-- clears tokens with confirmation and handles cancellation / clear errors
-- manages Custom Git Host Credential modal and saves new credentials
-- handles host credential modal cancel and validation error
+- handles token save failures gracefully
+- clears tokens with confirmation
+- opens host modal, creates new credential, and handles cancel & duplicate error
 - deletes host credential and handles cancellation / delete error
 - handles loadHostCredentials network failure gracefully
 
