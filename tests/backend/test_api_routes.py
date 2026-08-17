@@ -45,17 +45,16 @@ def test_api_get_stats_with_keywords(mock_db):
         conn.commit()
         conn.close()
 
-    with patch("app.api.routes.qdrant") as mock_qdrant, \
-         patch("app.api.routes.check_github_rate_limit", return_value={"remaining": 4900, "limit": 5000}):
-        mock_qdrant.collection_exists.return_value = True
-        mock_info = MagicMock()
-        mock_info.points_count = 120
-        mock_qdrant.get_collection.return_value = mock_info
+    mock_store = MagicMock()
+    mock_store.get_stats.return_value = {"points_count": 120}
 
+    with patch("app.api.routes.get_vector_store", return_value=mock_store), \
+         patch("app.api.routes.check_github_rate_limit", return_value={"remaining": 4900, "limit": 5000}):
         res = client.get("/admin/api/stats")
         assert res.status_code == 200
         data = res.json()
         assert data["points_count"] == 120
+
         assert "python" in data["top_keywords"]
         assert "fastapi" in data["top_keywords"]
         assert data["rate_limit"]["remaining"] == 4900

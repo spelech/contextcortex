@@ -261,17 +261,22 @@ async def test_execute_tool_sync_repository(temp_db):
 
 @pytest.mark.asyncio
 async def test_execute_tool_index_status(temp_db):
-    with patch("app.services.indexer.qdrant") as mock_qdrant, \
+    mock_vs_cfg = {
+        "provider": "qdrant",
+        "mode": "embedded",
+        "storage_path": "/path/to/storage",
+        "collection": "knowledge_rag_v1",
+        "stats": {"points_count": 500},
+        "healthy": True,
+    }
+    with patch("app.mcp.tools.get_vector_store_config", return_value=mock_vs_cfg), \
          patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
-        mock_qdrant.collection_exists.return_value = True
-        mock_info = MagicMock()
-        mock_info.points_count = 500
-        mock_qdrant.get_collection.return_value = mock_info
-
         res = await execute_tool("index_status", {})
         assert len(res) == 1
         assert "Total Hybrid Vectors: 500" in res[0].text
+        assert "Vector Store Provider: QDRANT" in res[0].text
         assert "5000 / 5000" in res[0].text
+
 
     with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Status DB fail")):
         res_err = await handle_index_status()

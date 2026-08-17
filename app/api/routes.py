@@ -6,7 +6,10 @@ import threading
 from typing import Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from app.models.schemas import RepoConfig, LocalPathConfig, SearchRequest, TokenRequest, HostCredentialRequest
+from app.models.schemas import (
+    RepoConfig, LocalPathConfig, SearchRequest, TokenRequest, HostCredentialRequest,
+    VectorStoreTestRequest, VectorStoreSwitchRequest, VectorStoreConfigRequest
+)
 
 from app.services.db import (
     get_db_connection, get_metadata, set_metadata, 
@@ -14,6 +17,10 @@ from app.services.db import (
 )
 from app.services.git_manager import check_github_rate_limit, mask_token
 from app.services.logger import get_diagnostic_logs, clear_diagnostic_logs
+
+from app.services.vector_store import (
+    get_vector_store, get_vector_store_config, switch_vector_store, test_vector_store_connection
+)
 
 # Assuming the other agent extracts these to app.services.indexer and app.services.embeddings
 from app.services.indexer import (
@@ -25,6 +32,7 @@ from app.services.embeddings import (
 )
 
 router = APIRouter()
+
 
 @router.get("/admin/api/stats")
 async def api_get_stats():
@@ -48,11 +56,20 @@ async def api_get_stats():
             top_keywords = sorted(kw_counts.keys(), key=lambda k: kw_counts[k], reverse=True)[:25]
 
         points_count = 0
-        if qdrant.collection_exists(COLLECTION_NAME):
-            info = qdrant.get_collection(COLLECTION_NAME)
-            points_count = info.points_count
+        try:
+            store = get_vector_store()
+            stats = store.get_stats()
+            points_count = stats.get("points_count", 0)
+        except Exception:
+            try:
+                if qdrant.collection_exists(COLLECTION_NAME):
+                    info = qdrant.get_collection(COLLECTION_NAME)
+                    points_count = info.points_count
+            except Exception:
+                points_count = 0
 
         gh_token, _, gh_src = get_effective_git_token("https://github.com", provider="github")
+
         gl_token, _, gl_src = get_effective_git_token("https://gitlab.com", provider="gitlab")
         gt_token, _, gt_src = get_effective_git_token("https://gitea.com", provider="gitea")
         rate_info = check_github_rate_limit(gh_token)
@@ -153,19 +170,15 @@ async def api_delete_repo(repo_id: int):
             conn.execute("DELETE FROM ast_symbols WHERE repo = ?", (repo_name,))
             conn.commit()
 
-        # Delete from Qdrant
+        # Delete from vector store
         try:
-            from qdrant_client.http import models as qmodels
-            qdrant.delete(
-                collection_name=COLLECTION_NAME,
-                points_selector=qmodels.Filter(
-                    must=[qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo_name))]
-                )
-            )
+            store = get_vector_store()
+            store.delete_by_repo(repo_name)
         except Exception:
             pass
 
         return {"status": "success", "message": f"Deleted repository '{repo_name}'"}
+
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -366,4 +379,56 @@ async def api_clear_logs():
         return {"status": "success", "message": "Diagnostic logs cleared"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.get("/admin/api/vector-store")
+async def api_get_vector_store():
+    try:
+        cfg = get_vector_store_config()
+        cfg["points_count"] = cfg.get("stats", {}).get("points_count", 0)
+        return cfg
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@router.post("/admin/api/vector-store/test")
+async def api_test_vector_store(payload: VectorStoreTestRequest):
+    try:
+        success, message = test_vector_store_connection(
+            provider=payload.provider,
+            mode=payload.mode,
+            storage_path=payload.storage_path,
+            url=payload.url,
+            collection=payload.collection,
+        )
+        return {"success": success, "message": message}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e), "error": str(e)})
+
+
+@router.post("/admin/api/vector-store/switch")
+async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
+    try:
+        def _reindex():
+            threading.Thread(target=run_full_indexing, daemon=True).start()
+
+        success, message = switch_vector_store(
+            provider=payload.provider,
+            mode=payload.mode,
+            storage_path=payload.storage_path,
+            url=payload.url,
+            collection=payload.collection,
+            reindex_callback=_reindex,
+        )
+        if not success:
+            return JSONResponse(status_code=400, content={"status": "error", "error": message, "message": message})
+
+        return {
+            "status": "success",
+            "message": message,
+            "config": get_vector_store_config(),
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
+
 

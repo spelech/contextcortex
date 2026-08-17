@@ -7,9 +7,11 @@ from mcp.types import Tool, TextContent, Resource, Prompt, PromptMessage, Prompt
 from app.services.db import get_db_connection
 from app.services.search import execute_hybrid_search
 from app.services.indexer import get_dynamic_catalog_description
+from app.services.vector_store import get_vector_store_config
 from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
 
 logger = logging.getLogger("notes-rag-mcp")
+
 
 
 # --- Core Tool Handlers ---
@@ -220,25 +222,32 @@ async def handle_index_status() -> str:
         from app.services.git_manager import check_github_rate_limit, mask_token
         from app.services.db import get_effective_github_token, get_token_source
         from app.services.embeddings import EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
-        from app.services.indexer import COLLECTION_NAME, qdrant
 
         with get_db_connection() as conn:
+
             files_count = conn.execute("SELECT count(*) FROM indexed_files").fetchone()[0]
             symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
             git_count = conn.execute("SELECT count(*) FROM git_repositories").fetchone()[0]
 
-        points_count = 0
-        if qdrant.collection_exists(COLLECTION_NAME):
-            info = qdrant.get_collection(COLLECTION_NAME)
-            points_count = info.points_count
+        vs_cfg = get_vector_store_config()
+        provider = vs_cfg.get("provider", "qdrant").upper()
+        mode_val = vs_cfg.get("mode", "embedded")
+        mode_str = "Remote" if mode_val == "remote" else "Embedded Disk"
+        storage_loc = vs_cfg.get("url") if mode_val == "remote" else vs_cfg.get("storage_path")
+        collection_name = vs_cfg.get("collection", "knowledge_rag_v1")
+        stats = vs_cfg.get("stats", {})
+        points_count = stats.get("points_count", 0)
 
         eff_token = get_effective_github_token()
         rate_info = check_github_rate_limit(eff_token)
 
         status_text = (
-            f"Collection: {COLLECTION_NAME}\n"
-            f"Embedding Provider: {EMBEDDING_PROVIDER.upper()} ({DENSE_MODEL_NAME} + {SPARSE_MODEL_NAME})\n"
+            f"Vector Store Provider: {provider}\n"
+            f"Storage Mode: {mode_str} ({mode_val})\n"
+            f"Storage Location: {storage_loc}\n"
+            f"Collection: {collection_name}\n"
             f"Total Hybrid Vectors: {points_count}\n"
+            f"Embedding Provider: {EMBEDDING_PROVIDER.upper()} ({DENSE_MODEL_NAME} + {SPARSE_MODEL_NAME})\n"
             f"Total Indexed Files: {files_count}\n"
             f"Total AST Symbols: {symbols_count}\n"
             f"Registered Git Repos: {git_count}\n"
@@ -248,6 +257,7 @@ async def handle_index_status() -> str:
         return status_text
     except Exception as e:
         return f"Failed to get status: {str(e)}"
+
 
 
 async def handle_catalog_summary() -> str:

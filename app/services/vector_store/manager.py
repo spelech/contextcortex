@@ -237,6 +237,56 @@ class VectorStoreManager:
                 logger.error(f"Failed to switch vector store: {e}", exc_info=True)
                 return False, f"Failed to switch vector store: {str(e)}"
 
+    @classmethod
+    def test_connection(
+        cls,
+        provider: str,
+        mode: Optional[str] = None,
+        storage_path: Optional[str] = None,
+        url: Optional[str] = None,
+        collection: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        """
+        Tests a candidate vector store connection without applying changes or modifying state.
+        """
+        prov = (provider or "").lower().strip()
+        if prov not in SUPPORTED_PROVIDERS:
+            return False, f"Unsupported provider: '{provider}'. Supported: {sorted(SUPPORTED_PROVIDERS)}"
+
+        current_cfg = get_vector_store_db_config()
+        target_mode = (mode.lower().strip() if mode else current_cfg.get("mode", "embedded"))
+        if target_mode not in SUPPORTED_MODES:
+            return False, f"Unsupported mode: '{mode}'. Supported: {sorted(SUPPORTED_MODES)}"
+
+        target_storage = storage_path if storage_path is not None else current_cfg.get("storage_path")
+        target_url = url if url is not None else current_cfg.get("url", "")
+        target_collection = collection.strip() if collection else current_cfg.get("collection", "knowledge_rag_v1")
+
+        if target_mode == "remote" and not target_url.strip():
+            return False, "Remote mode requires a valid non-empty URL."
+
+        test_config = {
+            "provider": prov,
+            "mode": target_mode,
+            "storage_path": target_storage,
+            "url": target_url.strip(),
+            "collection": target_collection,
+        }
+
+        test_store = None
+        try:
+            test_store = cls._create_store(test_config)
+            is_healthy, health_msg = test_store.health_check()
+            return is_healthy, health_msg
+        except Exception as e:
+            return False, f"Connection test failed for {prov}: {str(e)}"
+        finally:
+            if test_store is not None:
+                try:
+                    test_store.close()
+                except Exception:
+                    pass
+
 
 # Module-level convenience functions
 def get_vector_store(force_reload: bool = False) -> VectorStore:
@@ -266,3 +316,21 @@ def switch_vector_store(
         collection=collection,
         reindex_callback=reindex_callback,
     )
+
+
+def test_vector_store_connection(
+    provider: str,
+    mode: Optional[str] = None,
+    storage_path: Optional[str] = None,
+    url: Optional[str] = None,
+    collection: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Tests a candidate vector store connection."""
+    return VectorStoreManager.test_connection(
+        provider=provider,
+        mode=mode,
+        storage_path=storage_path,
+        url=url,
+        collection=collection,
+    )
+

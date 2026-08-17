@@ -16,6 +16,7 @@ from app.services.vector_store.manager import (
     get_vector_store,
     get_vector_store_config,
     switch_vector_store,
+    test_vector_store_connection,
 )
 
 __all__ = [
@@ -28,5 +29,7 @@ __all__ = [
     "get_vector_store",
     "get_vector_store_config",
     "switch_vector_store",
+    "test_vector_store_connection",
 ]
+
 

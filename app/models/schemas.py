@@ -95,3 +95,25 @@ class FindSymbolRequest(BaseModel):
 class GetFileOutlineRequest(BaseModel):
     filepath: str
     repo: Optional[str] = None
+
+class VectorStoreTestRequest(BaseModel):
+    provider: str
+    mode: Optional[str] = "embedded"
+    storage_path: Optional[str] = None
+    url: Optional[str] = None
+    collection: Optional[str] = None
+
+class VectorStoreSwitchRequest(BaseModel):
+    provider: str
+    mode: Optional[str] = "embedded"
+    storage_path: Optional[str] = None
+    url: Optional[str] = None
+    collection: Optional[str] = None
+
+class VectorStoreConfigRequest(BaseModel):
+    provider: str
+    mode: Optional[str] = "embedded"
+    storage_path: Optional[str] = None
+    url: Optional[str] = None
+    collection: Optional[str] = None
+

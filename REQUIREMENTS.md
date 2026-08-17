@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **277 Automated Tests** (217 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **289 Automated Tests** (229 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -305,6 +305,20 @@ classDiagram
 - `test_api_browse_dir_error`
 - `test_api_logs_endpoints`
 - `test_api_logs_error_handlers`
+
+#### `test_api_vector_store.py` (12 tests)
+- `test_api_get_vector_store_success` - _Test retrieving active vector store configuration and stats._
+- `test_api_get_vector_store_error` - _Test GET /admin/api/vector-store error handling._
+- `test_api_test_vector_store_valid_embedded` - _Test dry-run validation with valid embedded Qdrant configuration._
+- `test_api_test_vector_store_valid_chroma` - _Test dry-run validation with valid embedded Chroma configuration._
+- `test_api_test_vector_store_invalid_provider` - _Test dry-run validation with unsupported provider._
+- `test_api_test_vector_store_remote_missing_url` - _Test dry-run validation with remote mode but missing URL._
+- `test_api_test_vector_store_exception` - _Test dry-run validation when unexpected exception occurs._
+- `test_api_switch_vector_store_success` - _Test switching vector store backend and triggering re-indexing._
+- `test_api_switch_vector_store_invalid_provider` - _Test switching to an unsupported provider returns 400._
+- `test_api_switch_vector_store_exception` - _Test handling of unexpected exception during switch._
+- `test_api_get_stats_uses_vector_store` - _Test that GET /admin/api/stats queries the vector store adapter._
+- `test_api_delete_repo_uses_vector_store` - _Test that DELETE /admin/api/repos/{id} calls delete_by_repo on the vector store._
 
 #### `test_chunker.py` (3 tests)
 - `test_detect_language`
