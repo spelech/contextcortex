@@ -61,7 +61,7 @@ describe('App Component', () => {
     );
 
     expect(screen.getByText('Knowledge RAG Hub')).toBeInTheDocument();
-    expect(screen.getByText('v2.5.0')).toBeInTheDocument();
+    expect(screen.getByText('v2.6.0')).toBeInTheDocument();
 
 
     await waitFor(() => {

@@ -44,7 +44,7 @@ function App() {
               <i className="fa-solid fa-layer-group logo-icon"></i>
               <div className="header-title">
                 <h1>Knowledge RAG Hub</h1>
-                <span className="badge badge-primary">v2.5.0</span>
+                <span className="badge badge-primary">v2.6.0</span>
               </div>
             </div>
             <button
