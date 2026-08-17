@@ -1,42 +1,172 @@
-# Architecture: Notes & Code RAG MCP Server (v2.2.0)
+# Architecture: Notes & Code RAG MCP Server (v2.3.0)
 
-The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation.
+The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, and a React 19 administrative dashboard.
 
-## Core Components
+---
 
-### 1. AST Code & Documentation Parsing Engine (`chunker.py`)
-- **Tree-sitter AST Parser**: Extracts logical functions, methods, classes, and structs across Python, TypeScript/JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more.
+## 🏗️ High-Level System Architecture
+
+```mermaid
+flowchart TD
+    subgraph Clients["MCP & Web Clients"]
+        Claude["AI Coding Agents / MCP Clients (Cursor, Claude Desktop, Antigravity)"]
+        Browser["Admin Dashboard (React 19 + TypeScript)"]
+    end
+
+    subgraph Server["FastAPI Core & FastMCP 2.0 Application (main.py)"]
+        FastAPI["FastAPI App (Lifespan Session Manager)"]
+        FastMCP["FastMCP Server (app/mcp/mcp_server.py)"]
+        SSE["SSE Transport (/sse, /messages/)"]
+        HTTP["Streamable HTTP Transport (/mcp)"]
+        AdminAPI["Admin REST API Router (app/api/routes.py)"]
+        LogBuffer["Diagnostic Ring Buffer (app/services/logger.py)"]
+    end
+
+    subgraph CoreEngine["Core Engine (app/services)"]
+        Chunker["Tree-sitter AST Chunker (chunker.py)"]
+        Embeddings["FastEmbed Engine (embeddings.py)\nDense (384d) + Sparse BM25"]
+        GitMgr["Ephemeral Shallow Git Ingestion (git_manager.py)"]
+        Indexer["Incremental Indexer (indexer.py)"]
+        Search["RRF Hybrid Search (search.py)"]
+        DB["SQLite DB & Symbol Registry (db.py)"]
+    end
+
+    subgraph PersistentStorage["Persistent Storage"]
+        Qdrant["Qdrant Vector DB (Named Vectors: dense + sparse)"]
+        SQLite["SQLite Index Cache (index_cache.db)"]
+    end
+
+    Claude -->|SSE /sse & /messages/| SSE
+    Claude -->|Streamable HTTP /mcp| HTTP
+    SSE --> FastMCP
+    HTTP --> FastMCP
+
+    Browser -->|REST API /admin/api/*| AdminAPI
+    AdminAPI --> DB
+    AdminAPI --> Indexer
+    AdminAPI --> LogBuffer
+    AdminAPI --> Search
+
+    FastMCP --> Search
+    FastMCP --> Chunker
+    FastMCP --> DB
+    FastMCP --> Indexer
+
+    Indexer --> Chunker
+    Indexer --> Embeddings
+    Indexer --> GitMgr
+    Indexer --> Qdrant
+    Indexer --> SQLite
+    Indexer --> LogBuffer
+
+    Search --> Embeddings
+    Search --> Qdrant
+```
+
+---
+
+## 🧩 Core Architecture Components
+
+### 1. FastMCP 2.0 Server & Transport Routing (`app/mcp/`)
+- **FastMCP Foundation**: Implemented via `mcp.server.fastmcp.FastMCP` with lifespan session management (`mcp_server.session_manager.run()`).
+- **Dual MCP Transports**:
+  - **Server-Sent Events (SSE)**: Mounted via `mcp_server.sse_app().routes`, handling streaming events at `/sse` and message exchanges at `/messages/`.
+  - **Streamable HTTP**: Mounted via `mcp_server.streamable_http_app().routes` at `/mcp` for direct bidirectional JSON-RPC.
+- **Agent Tools (7 Tools)**:
+  - `search_code`: Hybrid semantic + BM25 search over code functions and logic blocks with line numbers and GitHub links.
+  - `search_docs`: Dedicated hybrid search across markdown notes, system architecture, and runbooks.
+  - `find_symbol`: Instant exact/fuzzy symbol definitions from AST index.
+  - `get_file_outline`: File symbol hierarchy without full token context costs.
+  - `list_repositories`: Summary of all indexed Git repos and local paths.
+  - `sync_repository`: On-demand re-sync for a specific repo or all sources.
+  - `index_status`: Global vector stats, model metadata, and GitHub rate limits.
+- **Dynamic Resource Providers**:
+  - `notes://catalog/summary`: Markdown catalog summarizing indexed repositories, file counts, and AST symbol distributions.
+- **Custom Agent Prompt Templates**:
+  - `search_infrastructure_docs`: Parameterized workflow for infrastructure and deployment queries.
+  - `find_implementation_symbol`: Parameterized workflow for locating implementation symbols.
+
+---
+
+### 2. Diagnostic Logging & System Observability (`app/services/logger.py`)
+- **In-Memory Ring Buffer**: Implemented using `collections.deque(maxlen=500)` guarded by a `threading.Lock()`.
+- **Diagnostic Log Handler**: Captures log records across all backend modules (`notes-rag-mcp`, `server.*`, `indexer`, `git`, `ast_parser`), preserving:
+  - `timestamp`: ISO-8601 UTC timestamp.
+  - `level`: `INFO`, `WARNING`, `ERROR`, `DEBUG`.
+  - `logger`: Originating logger name.
+  - `message`: Formatted log message.
+  - `traceback`: Full exception stack trace when available.
+- **REST Endpoints**:
+  - `GET /admin/api/logs`: Retrieves formatted log records with level filtering and search query support.
+  - `DELETE /admin/api/logs`: Atomically clears the ring buffer.
+
+---
+
+### 3. AST Code & Documentation Parsing Engine (`app/services/chunker.py`)
+- **Tree-sitter AST Parser**: Parses syntactic structures across Python, TypeScript, JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more.
+- **Boundary-Aware Chunking**: Chunks along class, method, function, and struct boundaries with exact line numbers and symbol names.
 - **Contextual Markdown Chunker**: Chunks documentation files by header hierarchies (`#`, `##`, `###`) with breadcrumb enrichment.
-- **Line & Symbol Tracking**: Preserves exact start/end line numbers, symbol names, and signatures for instant navigation.
+- **Graceful Fallback**: Text-based fallback chunker for unsupported languages and malformed syntax.
 
-### 2. Hybrid Embedding & Vector Engine (`embeddings.py`)
-- **Named Multi-Vectors**: Uses Qdrant collections configured with both **Dense** vectors (`BAAI/bge-small-en-v1.5`, 384 dimensions) and **Sparse BM25** vectors (`Qdrant/bm25` via FastEmbed).
-- **Reciprocal Rank Fusion (RRF)**: Merges conceptual dense vector similarity with exact keyword matching in a single query execution.
-- **In-Process ONNX**: Zero external API costs, running locally on CPU.
+---
 
-### 3. Ephemeral Git Repository Ingestion (`git_manager.py`)
-- **Shallow Cloning**: Clones repositories with `git clone --depth 1 --branch <branch> --single-branch` into temporary storage.
-- **Commit SHA Tracking**: Records remote commit SHAs and supports `git ls-remote` checks to avoid redundant clones.
-- **Zero Disk Bloat**: Prunes cloned directories immediately after vector upserts.
-- **GitHub Permalinks**: Formats clickable GitHub line range links (`https://github.com/owner/repo/blob/<sha>/src/file.py#L10-L30`).
-- **Token Management**: Resolves tokens from per-repo overrides, internal SQLite database, or `GITHUB_TOKEN` environment variables, boosting rate limits to 5,000 req/hr.
+### 4. Hybrid Embedding & Vector Engine (`app/services/embeddings.py`, `app/services/search.py`)
+- **Named Multi-Vectors**: Qdrant collections configured with dual vector spaces:
+  - **Dense Vectors**: `BAAI/bge-small-en-v1.5` (384 dimensions, Cosine distance).
+  - **Sparse Vectors**: `Qdrant/bm25` (In-process FastEmbed BM25 sparse model).
+- **Reciprocal Rank Fusion (RRF)**: Merges dense semantic similarity with sparse keyword retrieval using reciprocal rank fusion ($RRF\_score = \sum \frac{1}{60 + rank}$) for optimal search recall.
+- **Local In-Process Execution**: ONNX runtime execution on CPU with zero external API latency or cost.
 
-### 4. Database & Symbol Index (`db.py`)
-- **SQLite Registry**:
-  - `git_repositories`: Registered remote Git repos, branches, and commit SHAs.
+---
+
+### 5. Ephemeral Git Repository Ingestion (`app/services/git_manager.py`)
+- **Shallow Cloning**: Authenticated shallow clones (`git clone --depth 1 --branch <branch> --single-branch`) into temporary directories.
+- **Remote SHA Tracking**: Queries remote commit SHAs via `git ls-remote` to skip redundant clones.
+- **Zero Disk Bloat**: Prunes cloned directories immediately after AST extraction and vector upserts.
+- **GitHub Permalinks**: Generates clickable GitHub line range links (`https://github.com/owner/repo/blob/<sha>/path#L10-L30`).
+- **Token Management**: Resolves tokens from per-repo overrides, internal SQLite database, or `GITHUB_TOKEN` environment variable.
+
+---
+
+### 6. Database & Symbol Index (`app/services/db.py`)
+- **SQLite Database (`index_cache.db`) with WAL mode**:
+  - `git_repositories`: Registered remote Git repos, branches, commit SHAs, status, and last synced timestamps.
   - `indexed_paths`: Monitored local directories and files.
-  - `ast_symbols`: Indexed symbol table (classes, functions, methods, line numbers) for instant `find_symbol` and `get_file_outline`.
+  - `ast_symbols`: Indexed symbol table (classes, functions, methods, line numbers, signatures) for instantaneous `find_symbol` and `get_file_outline`.
   - `indexed_files` & `file_summaries`: File metadata, mtime change detection, and topic tags.
   - `system_metadata`: Key-value storage for tokens and timestamps.
 
-### 5. Specialized MCP Agent Tools (`app/mcp/mcp_server.py`)
-- `search_code`: Hybrid semantic + BM25 search over code blocks with line numbers and GitHub links.
-- `search_docs`: Dedicated search across markdown notes and architecture runbooks.
-- `find_symbol`: Instant exact/fuzzy symbol lookup from AST index.
-- `get_file_outline`: File symbol hierarchy without full token context costs.
-- `list_repositories`: Summary of all indexed Git repos and local paths.
-- `sync_repository`: On-demand re-sync for a specific repo or all sources.
-- `index_status`: Global vector stats and GitHub rate limits.
+---
 
-### 6. Modern Web Admin Dashboard (`www/`)
-- Multi-tab UI for Overview, Git Repositories, Local Paths, Live Search & RRF Inspector, and Settings.
+### 7. Modern Web Admin Dashboard (`frontend/`)
+- **React 19 + TypeScript + Vite**: Fast, reactive dashboard served at `/admin/`.
+- **Tabs**:
+  - **Overview**: System metrics, embedding model specs, keyword cloud, and full reindex trigger.
+  - **Git Repositories**: Repository registration modal, single-repo sync triggers, error diagnostics, and deletion.
+  - **Local Paths**: Workspace directory browser, path configuration, and recursive indexing toggles.
+  - **Search & Inspector**: Live hybrid search tester with code/doc toggle, repo filters, and RRF score inspect.
+  - **Settings**: GitHub PAT configuration and rate limit status monitor.
+  - **Diagnostics & Logs**: Real-time log inspector with level pills (ALL, INFO, WARNING, ERROR, DEBUG), keyword filtering, traceback view modal, and buffer clear action.
+
+---
+
+## 🧪 Test Topology & Quality Assurance
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Test Suite Topology                      │
+├──────────────────────────────┬──────────────────────────────┤
+│ Python Backend (Pytest)      │ Frontend (Vitest & Playwright)│
+├──────────────────────────────┼──────────────────────────────┤
+│ - tests/backend/test_mcp.py  │ - Vitest Unit/Component:     │
+│ - tests/backend/test_api.py  │   * App.test.tsx             │
+│ - tests/backend/test_*.py    │   * DiagnosticsViewer.test   │
+│ - >95% statement coverage    │   * GitRepoManager.test      │
+│ - FastMCP 2.0 tools/prompts  │   * SearchInspector.test     │
+│ - Ring buffer logging tests  │ - Playwright E2E (13 specs): │
+│ - Ephemeral git clone tests  │   * Full UI navigation       │
+│ - Hybrid search & RRF tests  │   * Modals & confirmation    │
+│                              │   * Real-time sync feedback  │
+│                              │   * Diagnostics log viewer   │
+└──────────────────────────────┴──────────────────────────────┘
+```

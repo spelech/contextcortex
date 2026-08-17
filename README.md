@@ -1,9 +1,9 @@
-# Notes & Code RAG MCP Server (v2.2.0)
+# Notes & Code RAG MCP Server (v2.3.0)
 
 [![Build and Publish Docker Image](https://github.com/spelech/notes-rag-mcp/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/notes-rag-mcp/actions/workflows/docker-publish.yml)
 [![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fnotes--rag--mcp-blue?logo=docker)](https://github.com/spelech/notes-rag-mcp/pkgs/container/notes-rag-mcp)
 
-A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, and **Ephemeral GitHub repo indexing** with an integrated Web Admin Dashboard.
+A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, and **Ephemeral GitHub repo indexing** with an integrated Web Admin Dashboard and real-time Diagnostic Observability.
 
 ![Notes & Code RAG Admin Dashboard](docs/assets/dashboard.jpg)
 
@@ -11,45 +11,49 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 
 ## 🌟 Key Features
 
+- **FastMCP 2.0 Native Architecture**: Built on the official Model Context Protocol Python SDK 2.0.0+ (`FastMCP`), supporting modern decorator patterns, typed schemas, dynamic catalog resources, and custom agent prompts.
+- **Dual MCP Transports**:
+  - **Server-Sent Events (SSE)**: Full streaming events at `/sse` with POST message routing at `/messages/`.
+  - **Streamable HTTP**: Bidirectional JSON-RPC transport endpoint at `/mcp`.
 - **AST-Aware Code Chunking (Tree-sitter)**: Understands syntax structures across Python, TypeScript/JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more. Chunks along class, method, and function boundaries with exact line numbers and symbol names.
 - **Native Qdrant Hybrid Retrieval (Dense + Sparse BM25)**: Uses Qdrant named multi-vectors combining CPU-optimized dense embeddings (`BAAI/bge-small-en-v1.5`, 384d) with sparse BM25 vectors (`Qdrant/bm25` via FastEmbed) fused with **Reciprocal Rank Fusion (RRF)**.
 - **Ephemeral GitHub Repository Ingestion**: Register GitHub repositories and branches in the Admin UI. The server performs authenticated shallow clones (`--depth 1`), extracts AST symbols and hybrid vectors, and **immediately removes the cloned repository from disk** to save container storage.
 - **GitHub Token & Rate Limit Management**: Configure a GitHub Personal Access Token via `GITHUB_TOKEN` environment variable or directly in the Admin UI settings to boost rate limits to 5,000 req/hr and access private repositories.
 - **Fast Deterministic Symbol Lookup**: Built-in SQLite symbol table (`ast_symbols`) powers instantaneous symbol searches (`find_symbol`) and file outlines (`get_file_outline`) without token bloat.
-- **Specialized MCP Agent Tools**:
-  - `search_code`: Hybrid semantic + BM25 search over code functions and logic with line numbers and clickable GitHub links.
-  - `search_docs`: Dedicated search across markdown notes and architecture runbooks.
-  - `find_symbol`: Instant exact/fuzzy symbol definitions from AST index.
-  - `get_file_outline`: File symbol hierarchy without full token context costs.
-  - `list_repositories`: Summary of all indexed Git repos and local paths.
-  - `sync_repository`: On-demand re-sync for a specific repo or all sources.
-  - `index_status`: Global vector stats and GitHub rate limits.
-- **Modular Architecture & Strict Validation**: Refactored backend (`app/`) with strict `Pydantic` validation for API schemas and MCP tools.
-- **MCP 2.0.0 Compatible**: Built natively against the newest Model Context Protocol SDK 2.0.0.
+- **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
 - **Modern Tabbed Web Dashboard (`/admin/`)**:
-  - **Overview**: Real-time stats, vector counts, AST symbols, model specs, and topic tag cloud.
+  - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
   - **Git Repositories**: Register repos, trigger shallow clone syncs, inspect commit SHAs, and manage sources.
-  - **Local Paths**: Monitor local workspaces and notes vaults with recursive scan options.
-  - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews and syntax highlighted results.
+  - **Local Paths**: Monitor local workspaces and notes vaults with recursive directory scanning and filesystem browser modal.
+  - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews, target type toggle (Code vs Docs), and syntax highlighted results.
   - **Settings**: GitHub token configuration and rate limit status monitor.
+  - **Diagnostics & Logs**: Real-time log viewer with level filtering (ALL, INFO, WARNING, ERROR, DEBUG), keyword search, traceback modal/drawer, and buffer clearing.
 
 ---
 
 ## 🛠️ MCP Tools, Resources & Prompts
 
 ### Tools
-| Tool | Description |
-| :--- | :--- |
-| `search_code` | Hybrid code search (`query`, `repo`, `language`, `limit`). Returns code blocks with line ranges & GitHub permalinks. |
-| `search_docs` | Hybrid documentation search (`query`, `repo`, `category`, `tag`, `limit`). |
-| `find_symbol` | Instant AST symbol lookup (`name`, `repo`, `exact`, `limit`). |
-| `get_file_outline` | Returns the AST structure (classes, methods, lines) for a file (`filepath`, `repo`). |
-| `list_repositories` | Lists all registered Git repositories and local paths with commit SHAs and status. |
-| `sync_repository` | Triggers background sync for a specific repository (`repo`). |
-| `index_status` | Returns vector counts, collection status, embedding models, and GitHub rate limits. |
+| Tool | Parameters | Description |
+| :--- | :--- | :--- |
+| `search_code` | `query` (str), `repo` (str, opt), `language` (str, opt), `limit` (int, default 5) | Hybrid semantic + BM25 code search. Returns code blocks with line ranges & clickable GitHub permalinks. |
+| `search_docs` | `query` (str), `repo` (str, opt), `category` (str, opt), `tag` (str, opt), `limit` (int, default 5) | Hybrid search across markdown notes, system architecture, and runbooks. |
+| `find_symbol` | `name` (str), `repo` (str, opt), `exact` (bool, default True), `limit` (int, default 10) | Instant exact or prefix AST symbol lookup (functions, classes, structs, interfaces). |
+| `get_file_outline` | `filepath` (str), `repo` (str, opt) | Returns the AST structure (classes, methods, signatures, lines) without full file token costs. |
+| `list_repositories` | *None* | Lists all registered Git repositories and local paths with commit SHAs and indexing status. |
+| `sync_repository` | `repo` (str, opt) | Triggers background shallow clone sync for a specific repository or all sources. |
+| `index_status` | *None* | Returns vector counts, collection status, embedding models, and GitHub rate limits. |
 
 ### Resources
-- `notes://catalog/summary`: Markdown catalog of all indexed repositories, document distributions, and AST symbols.
+| Resource URI | MIME Type | Description |
+| :--- | :--- | :--- |
+| `notes://catalog/summary` | `text/markdown` | Dynamic catalog of all indexed repositories, document distributions, and AST symbol totals. |
+
+### Prompts
+| Prompt Name | Arguments | Description |
+| :--- | :--- | :--- |
+| `search_infrastructure_docs` | `topic` (str) | Guided agent workflow to retrieve system architecture, container port mappings, and reverse proxy configs. |
+| `find_implementation_symbol` | `symbol` (str), `repo` (str, opt) | Guided agent workflow to locate symbol definitions, class signatures, and implementations. |
 
 ---
 
@@ -96,15 +100,43 @@ services:
 
 ## 📡 Connecting MCP Clients
 
-Connect any MCP client (VS Code, Cursor, Antigravity CLI, or Claude Desktop) to the Server-Sent Events (SSE) endpoint:
+Connect any MCP client (VS Code, Cursor, Antigravity CLI, Claude Desktop, or Windsurf) using either Server-Sent Events (SSE) or Streamable HTTP.
 
+### Server-Sent Events (SSE) Configuration (`claude_desktop_config.json` / Cursor)
 ```json
 {
   "mcpServers": {
     "notes-rag": {
-      "url": "http://localhost:3000/sse",
-      "headers": {}
+      "url": "http://localhost:3000/sse"
     }
   }
 }
+```
+
+### Streamable HTTP Configuration
+```json
+{
+  "mcpServers": {
+    "notes-rag-http": {
+      "url": "http://localhost:3000/mcp"
+    }
+  }
+}
+```
+
+---
+
+## 🧪 Testing & Verification
+
+Run the full automated test suites across backend and frontend:
+
+```bash
+# Python Backend Tests & Code Coverage
+pytest -v --cov=app
+
+# Frontend Unit & Component Tests (Vitest)
+cd frontend && npm run test
+
+# Frontend End-to-End Tests (Playwright)
+cd frontend && npx playwright test
 ```

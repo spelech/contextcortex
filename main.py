@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Notes & Code RAG Server shutting down...")
 
-app = FastAPI(title="Notes & Code RAG MCP Server", lifespan=lifespan)
+app = FastAPI(title="Notes & Code RAG MCP Server", version="2.3.0", lifespan=lifespan)
 
 # Include API routes
 app.include_router(admin_router)
