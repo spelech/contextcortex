@@ -8,11 +8,22 @@ const mockStats = {
   last_indexed: '2026-08-17 00:00:00',
   dense_model: 'bge-small-en-v1.5 (384d)',
   sparse_model: 'Qdrant/bm25',
+  vector_store_provider: 'qdrant',
+  vector_store_mode: 'embedded',
+  vector_store_collection: 'knowledge_rag_v1',
   rate_limit: { remaining: 5000, limit: 5000 },
   top_keywords: ['fastapi', 'tree-sitter', 'qdrant'],
   is_indexing: false,
   token_source: 'Database',
   masked_token: 'ghp_****1234'
+};
+
+const mockVectorStore = {
+  provider: 'qdrant',
+  mode: 'embedded',
+  storage_path: 'data/qdrant',
+  url: '',
+  collection: 'knowledge_rag_v1'
 };
 
 const mockRepos = [
@@ -106,6 +117,18 @@ const mockBrowseDocs = {
   ]
 };
 
+async function navigateToTab(page: any, tabName: string) {
+  const menuToggle = page.locator('button.menu-toggle-btn');
+  if (await menuToggle.isVisible()) {
+    const isDrawerOpen = await page.locator('.dashboard-nav.drawer-open').isVisible();
+    if (!isDrawerOpen) {
+      await menuToggle.click();
+    }
+  }
+  const tab = page.locator('button.nav-tab', { hasText: tabName });
+  await tab.click();
+}
+
 test.beforeEach(async ({ page }) => {
   // Setup default mock API routes
   await page.route('**/admin/api/stats', async route => {
@@ -113,6 +136,14 @@ test.beforeEach(async ({ page }) => {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(mockStats)
+    });
+  });
+
+  await page.route('**/admin/api/vector-store', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockVectorStore)
     });
   });
 
@@ -299,10 +330,9 @@ test.beforeEach(async ({ page }) => {
 
 test('1. navigates through all tabs including Diagnostics & Logs', async ({ page }) => {
   // Header and engine state
-  await expect(page.locator('h1', { hasText: 'Code & Docs RAG Server' })).toBeVisible();
-  await expect(page.getByText('v2.4.2')).toBeVisible();
-  await expect(page.getByText('notes_rag_v2')).toBeVisible();
-  await expect(page.getByText('5,000 / 5,000 reqs')).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'Knowledge RAG Hub' })).toBeVisible();
+  await expect(page.getByText('v2.5.0')).toBeVisible();
+  await expect(page.getByText('knowledge_rag_v1')).toBeVisible();
 
   // Overview tab
   await expect(page.getByText('System & Embedding Specs')).toBeVisible();
@@ -312,37 +342,27 @@ test('1. navigates through all tabs including Diagnostics & Logs', async ({ page
   await expect(page.getByText('qdrant', { exact: true })).toBeVisible();
 
   // Git Repositories tab
-  const gitTab = page.locator('button.nav-tab', { hasText: 'Git Repositories' });
-  await gitTab.click();
-  await expect(gitTab).toHaveClass(/active/);
+  await navigateToTab(page, 'Git Repositories');
   await expect(page.getByText('Registered Git Repositories')).toBeVisible();
 
   // Local Paths tab
-  const pathsTab = page.locator('button.nav-tab', { hasText: 'Local Paths' });
-  await pathsTab.click();
-  await expect(pathsTab).toHaveClass(/active/);
+  await navigateToTab(page, 'Local Paths');
   await expect(page.getByText('Monitored Local Paths')).toBeVisible();
 
   // Search & Inspector tab
-  const searchTab = page.locator('button.nav-tab', { hasText: 'Search & Inspector' });
-  await searchTab.click();
-  await expect(searchTab).toHaveClass(/active/);
+  await navigateToTab(page, 'Search & Inspector');
   await expect(page.getByText('Live Hybrid Search Inspector')).toBeVisible();
 
   // Settings tab
-  const settingsTab = page.locator('button.nav-tab', { hasText: 'Settings' });
-  await settingsTab.click();
-  await expect(settingsTab).toHaveClass(/active/);
+  await navigateToTab(page, 'Settings');
   await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
 
   // Diagnostics & Logs tab
-  const diagTab = page.locator('button.nav-tab', { hasText: 'Diagnostics & Logs' });
-  await diagTab.click();
-  await expect(diagTab).toHaveClass(/active/);
+  await navigateToTab(page, 'Diagnostics & Logs');
   await expect(page.getByText('Diagnostics & Server Logs')).toBeVisible();
 });
 
-test('2. adds a new Git repository via modal and verifies table update + toast', async ({ page }) => {
+test('2. adds a new Git repository via modal and verifies table/card update + toast', async ({ page, isMobile }) => {
   let repoList = [...mockRepos];
 
   await page.route('**/admin/api/repos', async route => {
@@ -373,7 +393,7 @@ test('2. adds a new Git repository via modal and verifies table update + toast',
     }
   });
 
-  await page.locator('button.nav-tab', { hasText: 'Git Repositories' }).click();
+  await navigateToTab(page, 'Git Repositories');
   await expect(page.getByText('Registered Git Repositories')).toBeVisible();
 
   // Open modal
@@ -389,13 +409,17 @@ test('2. adds a new Git repository via modal and verifies table update + toast',
   // Submit form
   await page.getByRole('button', { name: 'Add & Start Sync' }).click();
 
-  // Verify modal closed, toast displayed, and new repository row visible
+  // Verify modal closed, toast displayed, and new repository row/card visible
   await expect(page.getByRole('heading', { name: 'Register Git Repository' })).not.toBeVisible();
   await expect(page.locator('.toast-success', { hasText: "Repository 'fastapi-service' added successfully" })).toBeVisible();
-  await expect(page.locator('table').getByText('fastapi-service', { exact: true })).toBeVisible();
+  if (isMobile) {
+    await expect(page.locator('.mobile-card-list').getByText('fastapi-service', { exact: true })).toBeVisible();
+  } else {
+    await expect(page.locator('.desktop-table-view').getByText('fastapi-service', { exact: true })).toBeVisible();
+  }
 });
 
-test('3. triggers single-repo sync and verifies status feedback', async ({ page }) => {
+test('3. triggers single-repo sync and verifies status feedback', async ({ page, isMobile }) => {
   let syncRequested = false;
 
   await page.route('**/admin/api/repos/sync/1', async route => {
@@ -407,18 +431,20 @@ test('3. triggers single-repo sync and verifies status feedback', async ({ page 
     });
   });
 
-  await page.locator('button.nav-tab', { hasText: 'Git Repositories' }).click();
+  await navigateToTab(page, 'Git Repositories');
   await expect(page.getByText('Registered Git Repositories')).toBeVisible();
 
   // Trigger sync on the first repo
-  const syncBtn = page.getByRole('button', { name: 'Sync' }).first();
+  const syncBtn = isMobile
+    ? page.locator('.mobile-card-list').getByRole('button', { name: 'Sync' }).first()
+    : page.locator('.desktop-table-view').getByRole('button', { name: 'Sync' }).first();
   await syncBtn.click();
 
   expect(syncRequested).toBe(true);
   await expect(page.locator('.toast-info', { hasText: 'Sync triggered successfully' })).toBeVisible();
 });
 
-test('4. deletes a repository with window.confirm dialog verification', async ({ page }) => {
+test('4. deletes a repository with window.confirm dialog verification', async ({ page, isMobile }) => {
   let dialogMessage = '';
   page.on('dialog', async dialog => {
     dialogMessage = dialog.message();
@@ -439,11 +465,13 @@ test('4. deletes a repository with window.confirm dialog verification', async ({
     }
   });
 
-  await page.locator('button.nav-tab', { hasText: 'Git Repositories' }).click();
+  await navigateToTab(page, 'Git Repositories');
   await expect(page.getByText('Registered Git Repositories')).toBeVisible();
 
   // Click delete button on first repo
-  const deleteBtn = page.locator('button.btn-delete[title="Delete Repo"]').first();
+  const deleteBtn = isMobile
+    ? page.locator('.mobile-card-list button.btn-delete').first()
+    : page.locator('.desktop-table-view button.btn-delete').first();
   await deleteBtn.click();
 
   expect(dialogMessage).toContain("Are you sure you want to delete repository 'knowledge-rag-mcp'?");
@@ -451,19 +479,25 @@ test('4. deletes a repository with window.confirm dialog verification', async ({
   await expect(page.locator('.toast-success', { hasText: "Repository 'knowledge-rag-mcp' deleted successfully" })).toBeVisible();
 });
 
-test('5. renders repository error status with last_error diagnostic message', async ({ page }) => {
-  await page.locator('button.nav-tab', { hasText: 'Git Repositories' }).click();
+test('5. renders repository error status with last_error diagnostic message', async ({ page, isMobile }) => {
+  await navigateToTab(page, 'Git Repositories');
   await expect(page.getByText('Registered Git Repositories')).toBeVisible();
 
-  // Check the broken repo row
-  const brokenRow = page.getByRole('row', { name: /broken-repo/ });
-  await expect(brokenRow).toBeVisible();
-  await expect(brokenRow.locator('.badge-danger', { hasText: 'Error' })).toBeVisible();
-  await expect(brokenRow.getByText('Authentication failed: Bad credentials')).toBeVisible();
+  if (isMobile) {
+    const brokenCard = page.locator('.data-mobile-card', { hasText: 'broken-repo' });
+    await expect(brokenCard).toBeVisible();
+    await expect(brokenCard.locator('.badge-danger', { hasText: 'Error' })).toBeVisible();
+    await expect(brokenCard.getByText('Authentication failed: Bad credentials')).toBeVisible();
+  } else {
+    const brokenRow = page.locator('.desktop-table-view').getByRole('row', { name: /broken-repo/ });
+    await expect(brokenRow).toBeVisible();
+    await expect(brokenRow.locator('.badge-danger', { hasText: 'Error' })).toBeVisible();
+    await expect(brokenRow.getByText('Authentication failed: Bad credentials')).toBeVisible();
+  }
 });
 
 test('6. opens filesystem browser, navigates directories, and selects folder for local path', async ({ page }) => {
-  await page.locator('button.nav-tab', { hasText: 'Local Paths' }).click();
+  await navigateToTab(page, 'Local Paths');
   await expect(page.getByText('Monitored Local Paths')).toBeVisible();
 
   // Open Add Local Path modal
@@ -490,7 +524,7 @@ test('6. opens filesystem browser, navigates directories, and selects folder for
   await expect(pathInput).toHaveValue('/containers/dev/workspace/docs');
 });
 
-test('7. adds local path and deletes local path with confirmation', async ({ page }) => {
+test('7. adds local path and deletes local path with confirmation', async ({ page, isMobile }) => {
   let pathList = [...mockPaths];
 
   await page.route('**/admin/api/paths', async route => {
@@ -520,7 +554,7 @@ test('7. adds local path and deletes local path with confirmation', async ({ pag
     }
   });
 
-  await page.locator('button.nav-tab', { hasText: 'Local Paths' }).click();
+  await navigateToTab(page, 'Local Paths');
   await expect(page.getByText('Monitored Local Paths')).toBeVisible();
 
   // Open modal and browse to select folder
@@ -535,11 +569,16 @@ test('7. adds local path and deletes local path with confirmation', async ({ pag
   // Submit modal
   await page.getByRole('button', { name: 'Save Path' }).click();
 
-  // Verify toast and added row
+  // Verify toast and added row/card
   await expect(page.getByText('Add Monitored Local Path')).not.toBeVisible();
   await expect(page.locator('.toast-success', { hasText: 'Path added successfully' })).toBeVisible();
-  await expect(page.getByText('workspace-vault')).toBeVisible();
-  await expect(page.getByText('knowledge-base')).toBeVisible();
+  if (isMobile) {
+    await expect(page.locator('.mobile-card-list').getByText('workspace-vault')).toBeVisible();
+    await expect(page.locator('.mobile-card-list').getByText('knowledge-base')).toBeVisible();
+  } else {
+    await expect(page.locator('.desktop-table-view').getByText('workspace-vault')).toBeVisible();
+    await expect(page.locator('.desktop-table-view').getByText('knowledge-base')).toBeVisible();
+  }
 
   // Now delete the existing path
   let deletePrompt = '';
@@ -563,7 +602,9 @@ test('7. adds local path and deletes local path with confirmation', async ({ pag
     }
   });
 
-  const deleteBtn = page.locator('button[aria-label="Delete Path"]').first();
+  const deleteBtn = isMobile
+    ? page.locator('.mobile-card-list button.btn-delete').first()
+    : page.locator('.desktop-table-view button.btn-delete').first();
   await deleteBtn.click();
 
   expect(deletePrompt).toContain('Are you sure you want to delete this local search path?');
@@ -623,7 +664,7 @@ test('8. executes hybrid search with target type toggle (code vs doc) and repo f
     }
   });
 
-  await page.locator('button.nav-tab', { hasText: 'Search & Inspector' }).click();
+  await navigateToTab(page, 'Search & Inspector');
   await expect(page.getByText('Live Hybrid Search Inspector')).toBeVisible();
 
   // Test Code Search
@@ -654,7 +695,7 @@ test('8. executes hybrid search with target type toggle (code vs doc) and repo f
 });
 
 test('9. handles empty search query and error response states', async ({ page }) => {
-  await page.locator('button.nav-tab', { hasText: 'Search & Inspector' }).click();
+  await navigateToTab(page, 'Search & Inspector');
   await expect(page.getByText('Live Hybrid Search Inspector')).toBeVisible();
 
   // Form input validation for empty search
@@ -708,7 +749,7 @@ test('10. saves GitHub personal access token and verifies rate limit update', as
     });
   });
 
-  await page.locator('button.nav-tab', { hasText: 'Settings' }).click();
+  await navigateToTab(page, 'Settings');
   await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
 
   // Verify initial token display
@@ -764,7 +805,7 @@ test('11. clears GitHub token with confirmation dialog', async ({ page }) => {
     }
   });
 
-  await page.locator('button.nav-tab', { hasText: 'Settings' }).click();
+  await navigateToTab(page, 'Settings');
   await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
 
   await page.locator('.settings-provider-box').filter({ hasText: 'GitHub' }).getByRole('button', { name: 'Clear' }).click();
@@ -798,7 +839,7 @@ test('12. triggers Reindex All Sources on Overview tab', async ({ page }) => {
 });
 
 test('13. filters, searches, and clears logs in Diagnostics & Logs tab', async ({ page }) => {
-  await page.locator('button.nav-tab', { hasText: 'Diagnostics & Logs' }).click();
+  await navigateToTab(page, 'Diagnostics & Logs');
   await expect(page.getByText('Diagnostics & Server Logs')).toBeVisible();
 
   // Verify filter pills and initial count
@@ -890,4 +931,232 @@ test('13. filters, searches, and clears logs in Diagnostics & Logs tab', async (
   expect(logsCleared).toBe(true);
   await expect(page.locator('.toast-success', { hasText: 'Diagnostics logs cleared.' })).toBeVisible();
   await expect(page.getByText(/No logs available/)).toBeVisible();
+});
+
+test('14. [Mobile] hamburger menu button opens and closes navigation drawer', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 851 });
+
+  const menuToggle = page.locator('button.menu-toggle-btn');
+  await expect(menuToggle).toBeVisible();
+
+  const navDrawer = page.locator('.dashboard-nav');
+  await expect(navDrawer).not.toHaveClass(/drawer-open/);
+
+  // Open drawer
+  await menuToggle.click();
+  await expect(navDrawer).toHaveClass(/drawer-open/);
+  await expect(page.locator('.nav-tab', { hasText: 'Overview' })).toBeVisible();
+  await expect(page.locator('.nav-tab', { hasText: 'Git Repositories' })).toBeVisible();
+  await expect(page.locator('.nav-tab', { hasText: 'Local Paths' })).toBeVisible();
+  await expect(page.locator('.nav-tab', { hasText: 'Search & Inspector' })).toBeVisible();
+  await expect(page.locator('.nav-tab', { hasText: 'Settings' })).toBeVisible();
+  await expect(page.locator('.nav-tab', { hasText: 'Diagnostics & Logs' })).toBeVisible();
+
+  // Close drawer
+  await menuToggle.click();
+  await expect(navDrawer).not.toHaveClass(/drawer-open/);
+});
+
+test('15. [Mobile] selecting a tab in drawer navigates to view and auto-closes drawer', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 851 });
+
+  const menuToggle = page.locator('button.menu-toggle-btn');
+  const navDrawer = page.locator('.dashboard-nav');
+
+  // Open drawer
+  await menuToggle.click();
+  await expect(navDrawer).toHaveClass(/drawer-open/);
+
+  // Click Git Repositories tab
+  await page.locator('.nav-tab', { hasText: 'Git Repositories' }).click();
+
+  // Drawer should auto-close and view should switch
+  await expect(navDrawer).not.toHaveClass(/drawer-open/);
+  await expect(page.getByText('Registered Git Repositories')).toBeVisible();
+
+  // Open drawer again and switch to Search & Inspector
+  await menuToggle.click();
+  await page.locator('.nav-tab', { hasText: 'Search & Inspector' }).click();
+  await expect(navDrawer).not.toHaveClass(/drawer-open/);
+  await expect(page.getByText('Live Hybrid Search Inspector')).toBeVisible();
+});
+
+test('16. [Mobile] renders repositories as responsive cards with sync and delete actions', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 851 });
+  await navigateToTab(page, 'Git Repositories');
+
+  // Table view should be hidden on mobile
+  await expect(page.locator('.desktop-table-view')).not.toBeVisible();
+
+  // Mobile card list should be visible
+  const cardList = page.locator('.mobile-card-list');
+  await expect(cardList).toBeVisible();
+
+  // Verify first repo card
+  const syncedCard = cardList.locator('.data-mobile-card').filter({ hasText: 'knowledge-rag-mcp' });
+  await expect(syncedCard).toBeVisible();
+  await expect(syncedCard.locator('.badge-success', { hasText: 'Synced' })).toBeVisible();
+  await expect(syncedCard.getByText('https://github.com/example/knowledge-rag-mcp.git')).toBeVisible();
+  await expect(syncedCard.getByText('main')).toBeVisible();
+  await expect(syncedCard.getByText('25 files')).toBeVisible();
+
+  // Verify error repo card
+  const errorCard = cardList.locator('.data-mobile-card').filter({ hasText: 'broken-repo' });
+  await expect(errorCard).toBeVisible();
+  await expect(errorCard.locator('.badge-danger', { hasText: 'Error' })).toBeVisible();
+  await expect(errorCard.getByText('Authentication failed: Bad credentials')).toBeVisible();
+
+  // Verify action buttons in mobile card
+  await expect(syncedCard.getByRole('button', { name: 'Sync' })).toBeVisible();
+  await expect(syncedCard.getByRole('button', { name: 'Delete' })).toBeVisible();
+});
+
+test('17. [Mobile] renders local paths as responsive cards with category badges and actions', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 851 });
+  await navigateToTab(page, 'Local Paths');
+
+  // Table view hidden, cards visible
+  await expect(page.locator('.desktop-table-view')).not.toBeVisible();
+  const cardList = page.locator('.mobile-card-list');
+  await expect(cardList).toBeVisible();
+
+  const pathCard = cardList.locator('.data-mobile-card').filter({ hasText: 'docs-vault' });
+  await expect(pathCard).toBeVisible();
+  await expect(pathCard.locator('.badge-success', { hasText: 'Enabled' })).toBeVisible();
+  await expect(pathCard.getByText('/containers/dev/workspace/docs')).toBeVisible();
+  await expect(pathCard.locator('.badge-primary', { hasText: 'directory' })).toBeVisible();
+  await expect(pathCard.locator('.badge-accent', { hasText: 'architecture' })).toBeVisible();
+  await expect(pathCard.getByRole('button', { name: 'Delete' })).toBeVisible();
+});
+
+test('18. [Mobile] Add Repository modal renders correctly on mobile viewport and registers repo', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 851 });
+  await navigateToTab(page, 'Git Repositories');
+
+  // Click Add Repository
+  await page.getByRole('button', { name: 'Add Repository' }).click();
+
+  const modal = page.locator('.modal-card');
+  await expect(modal).toBeVisible();
+  await expect(modal.getByRole('heading', { name: 'Register Git Repository' })).toBeVisible();
+
+  // Fill in form on mobile
+  await page.locator('#repo-alias').fill('mobile-ui-app');
+  await page.locator('#repo-url').fill('https://github.com/example/mobile-ui.git');
+  await page.locator('#repo-branch').fill('develop');
+
+  // Mock POST response
+  await page.route('**/admin/api/repos', async route => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 4,
+          name: 'mobile-ui-app',
+          url: 'https://github.com/example/mobile-ui.git',
+          branch: 'develop',
+          commit_sha: null,
+          status: 'pending',
+          file_count: 0,
+          last_synced: 'Never'
+        })
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          ...mockRepos,
+          {
+            id: 4,
+            name: 'mobile-ui-app',
+            url: 'https://github.com/example/mobile-ui.git',
+            branch: 'develop',
+            commit_sha: null,
+            status: 'pending',
+            file_count: 0,
+            last_synced: 'Never'
+          }
+        ])
+      });
+    }
+  });
+
+  await page.getByRole('button', { name: 'Add & Start Sync' }).click();
+
+  // Modal closes, toast appears, card is in mobile card list
+  await expect(modal).not.toBeVisible();
+  await expect(page.locator('.toast-success', { hasText: "Repository 'mobile-ui-app' added successfully" })).toBeVisible();
+  await expect(page.locator('.mobile-card-list').getByText('mobile-ui-app')).toBeVisible();
+});
+
+test('19. [Mobile] filesystem browser modal navigates and selects path on mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 851 });
+  await navigateToTab(page, 'Local Paths');
+
+  // Open Add Local Path modal
+  await page.getByRole('button', { name: 'Add Local Path' }).click();
+  await expect(page.getByText('Add Monitored Local Path')).toBeVisible();
+
+  // Open browser modal
+  await page.getByRole('button', { name: 'Browse' }).click();
+  await expect(page.getByText('Browse Workspace Files')).toBeVisible();
+
+  // Click docs item
+  await page.locator('li.browser-item', { hasText: 'docs' }).click();
+  await expect(page.locator('.browser-breadcrumbs', { hasText: '/containers/dev/workspace/docs' })).toBeVisible();
+
+  // Select current folder
+  await page.getByRole('button', { name: 'Select Current Folder' }).click();
+  await expect(page.getByText('Browse Workspace Files')).not.toBeVisible();
+
+  // Path input populated
+  const pathInput = page.locator('input[placeholder="Browse workspace directories..."]');
+  await expect(pathInput).toHaveValue('/containers/dev/workspace/docs');
+
+  // Close path modal
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByText('Add Monitored Local Path')).not.toBeVisible();
+});
+
+test('20. [Mobile] performs search and renders responsive result item on mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 851 });
+  await navigateToTab(page, 'Search & Inspector');
+
+  await page.getByPlaceholder(/e.g. JWT token/).fill('verify_token auth');
+  await page.locator('button[type="submit"]').click();
+
+  // Verify result card on mobile
+  const resultCard = page.locator('.search-hit-card');
+  await expect(resultCard).toBeVisible();
+  await expect(resultCard.getByText('app/api/auth.py')).toBeVisible();
+  await expect(resultCard.getByText('verify_token', { exact: true })).toBeVisible();
+  await expect(resultCard.getByText('RRF Score: 0.0450')).toBeVisible();
+  await expect(resultCard.getByText('View on GitHub')).toBeVisible();
+  await expect(resultCard.locator('pre.search-hit-code')).toContainText('def verify_token');
+});
+
+test('21. [Mobile] log viewer filter pills, search bar, and traceback toggle operate cleanly on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 851 });
+  await navigateToTab(page, 'Diagnostics & Logs');
+
+  // Verify pills
+  const errPill = page.locator('button.log-filter-btn', { hasText: 'ERROR' });
+  await expect(errPill).toBeVisible();
+  await errPill.click();
+
+  await expect(page.getByText('Failed to clone repository broken-repo')).toBeVisible();
+  await expect(page.getByText('Indexing completed for repository knowledge-rag-mcp')).not.toBeVisible();
+
+  // Toggle traceback on mobile
+  const toggleBtn = page.locator('button.btn-traceback-toggle');
+  await expect(toggleBtn).toBeVisible();
+  await toggleBtn.click();
+
+  await expect(page.locator('.traceback-box')).toBeVisible();
+  await expect(page.locator('.traceback-box')).toContainText('GitCommandError: auth failed');
+
+  await toggleBtn.click();
+  await expect(page.locator('.traceback-box')).not.toBeVisible();
 });
