@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import type { Repo } from './types';
 import { useToast } from './ToastContext';
@@ -15,7 +15,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
   const [token, setToken] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  const loadRepos = async () => {
+  const loadRepos = useCallback(async () => {
     try {
       const response = await fetch('/admin/api/repos');
       if (!response.ok) {
@@ -28,13 +28,13 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       toast.error('Error loading repos: ' + e.message);
       console.error('Error loading repos:', e);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     loadRepos();
     const interval = setInterval(loadRepos, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadRepos]);
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -64,16 +64,19 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
   };
 
   const syncRepo = async (id: number) => {
+    // Optimistic status update
+    setRepos((prev) => prev.map((r) => (r.id === id ? { ...r, status: 'syncing' } : r)));
     try {
       const res = await fetch(`/admin/api/repos/sync/${id}`, { method: 'POST' });
       if (!res.ok) {
-         const data = await res.json().catch(() => ({}));
-         throw new Error(data.error || 'Failed to trigger sync');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to trigger sync');
       }
       loadRepos();
       refreshStats();
       toast.info('Sync triggered successfully');
     } catch (e: any) {
+      loadRepos();
       toast.error('Failed to trigger sync: ' + e.message);
     }
   };
@@ -82,16 +85,19 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
     if (!window.confirm(`Are you sure you want to delete repository '${name}'? All vectors and indexed symbols for this repo will be permanently purged.`)) {
       return;
     }
+    // Optimistic removal from list
+    setRepos((prev) => prev.filter((r) => r.id !== id));
     try {
       const res = await fetch(`/admin/api/repos/${id}`, { method: 'DELETE' });
       if (!res.ok) {
-         const data = await res.json().catch(() => ({}));
-         throw new Error(data.error || 'Failed to delete repo');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete repo');
       }
       loadRepos();
       refreshStats();
       toast.success(`Repository '${name}' deleted successfully`);
     } catch (e: any) {
+      loadRepos();
       toast.error('Failed to delete repo: ' + e.message);
     }
   };

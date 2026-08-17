@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import type { LocalPath, BrowseData } from './types';
 import { useToast } from './ToastContext';
@@ -19,7 +19,7 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
   // Browser state
   const [browseData, setBrowseData] = useState<BrowseData | null>(null);
 
-  const loadPaths = async () => {
+  const loadPaths = useCallback(async () => {
     try {
       const response = await fetch('/admin/api/paths');
       if (!response.ok) {
@@ -32,13 +32,13 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
       toast.error('Error loading paths: ' + e.message);
       console.error('Error loading paths:', e);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     loadPaths();
     const interval = setInterval(loadPaths, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadPaths]);
 
   const handleSavePath = async (e: FormEvent) => {
     e.preventDefault();
@@ -75,16 +75,19 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
 
   const deletePath = async (id: number) => {
     if (!window.confirm('Are you sure you want to delete this local search path?')) return;
+    // Optimistic removal from list
+    setPaths((prev) => prev.filter((p) => p.id !== id));
     try {
       const res = await fetch(`/admin/api/paths/${id}`, { method: 'DELETE' });
       if (!res.ok) {
-         const data = await res.json().catch(() => ({}));
-         throw new Error(data.error || 'Failed to delete path');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete path');
       }
       toast.success('Path deleted successfully');
       loadPaths();
       refreshStats();
     } catch (e: any) {
+      loadPaths();
       toast.error('Failed to delete path: ' + e.message);
     }
   };
@@ -158,7 +161,7 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
                     <td>{p.category ? <span className="badge badge-accent">{p.category}</span> : <span className="text-muted">-</span>}</td>
                     <td>{p.enabled ? <span className="badge badge-success">Enabled</span> : <span className="badge badge-danger">Disabled</span>}</td>
                     <td>
-                      <button className="btn-icon btn-delete" onClick={() => deletePath(p.id)}>
+                      <button className="btn-icon btn-delete" onClick={() => deletePath(p.id)} title="Delete Path" aria-label="Delete Path">
                         <i className="fa-solid fa-trash-can"></i>
                       </button>
                     </td>

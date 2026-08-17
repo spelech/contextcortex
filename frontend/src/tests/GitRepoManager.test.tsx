@@ -70,7 +70,7 @@ describe('GitRepoManager Component', () => {
     });
   });
 
-  it('opens modal and submits new repository registration', async () => {
+  it('opens modal, handles cancel, and submits new repository registration', async () => {
     const refreshStats = vi.fn();
     (globalThis as any).fetch = vi.fn().mockImplementation((_url: string, opts?: any) => {
       if (opts?.method === 'POST') {
@@ -91,11 +91,17 @@ describe('GitRepoManager Component', () => {
       </ToastProvider>
     );
 
+    // Open and close via Cancel button
     const addBtn = screen.getByRole('button', { name: /Add Repository/i });
     fireEvent.click(addBtn);
-
     expect(screen.getByText('Register Git Repository')).toBeInTheDocument();
 
+    const cancelBtn = screen.getByRole('button', { name: /Cancel/i });
+    fireEvent.click(cancelBtn);
+    expect(screen.queryByText('Register Git Repository')).not.toBeInTheDocument();
+
+    // Reopen modal and submit
+    fireEvent.click(addBtn);
     const aliasInput = screen.getByLabelText(/Repository Alias/i);
     const urlInput = screen.getByLabelText(/Git Clone URL/i);
     const branchInput = screen.getByLabelText(/Branch/i);
@@ -125,16 +131,12 @@ describe('GitRepoManager Component', () => {
     });
   });
 
-  it('triggers repo sync and repo deletion', async () => {
+  it('triggers repo sync, refreshes stats, and updates status optimistically', async () => {
     const refreshStats = vi.fn();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
 
-    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/sync/1')) {
         return Promise.resolve({ ok: true, json: async () => ({ status: 'syncing' }) });
-      }
-      if (url.includes('/repos/1') && opts?.method === 'DELETE') {
-        return Promise.resolve({ ok: true, json: async () => ({ status: 'deleted' }) });
       }
       return Promise.resolve({ ok: true, json: async () => mockRepos });
     });
@@ -155,7 +157,30 @@ describe('GitRepoManager Component', () => {
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith('/admin/api/repos/sync/1', { method: 'POST' });
+      expect(refreshStats).toHaveBeenCalled();
       expect(screen.getByText('Sync triggered successfully')).toBeInTheDocument();
+    });
+  });
+
+  it('triggers repo deletion, calls refreshStats, and removes repo optimistically', async () => {
+    const refreshStats = vi.fn();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url.includes('/repos/1') && opts?.method === 'DELETE') {
+        return Promise.resolve({ ok: true, json: async () => ({ status: 'deleted' }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => mockRepos });
+    });
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={refreshStats} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('notes-rag-mcp')).toBeInTheDocument();
     });
 
     // Trigger delete
@@ -165,7 +190,63 @@ describe('GitRepoManager Component', () => {
     await waitFor(() => {
       expect(window.confirm).toHaveBeenCalled();
       expect(globalThis.fetch).toHaveBeenCalledWith('/admin/api/repos/1', { method: 'DELETE' });
+      expect(refreshStats).toHaveBeenCalled();
       expect(screen.getByText("Repository 'notes-rag-mcp' deleted successfully")).toBeInTheDocument();
+    });
+  });
+
+  it('handles errors when loading repos, adding repo, syncing repo, and deleting repo', async () => {
+    // 1. Error on loadRepos
+    (globalThis as any).fetch = vi.fn().mockRejectedValueOnce(new Error('Network offline'));
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Error loading repos: Network offline/i)).toBeInTheDocument();
+    });
+
+    // 2. Error on syncRepo
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/sync/1')) {
+        return Promise.resolve({ ok: false, json: async () => ({ error: 'Sync failed on remote' }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => mockRepos });
+    });
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('notes-rag-mcp')).toBeInTheDocument();
+    });
+
+    const syncButtons = screen.getAllByTitle('Trigger Sync');
+    fireEvent.click(syncButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to trigger sync: Sync failed on remote/i)).toBeInTheDocument();
+    });
+
+    // 3. Error on deleteRepo
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url.includes('/repos/1') && opts?.method === 'DELETE') {
+        return Promise.resolve({ ok: false, json: async () => ({ error: 'Delete forbidden' }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => mockRepos });
+    });
+
+    const deleteButtons = screen.getAllByTitle('Delete Repo');
+    fireEvent.click(deleteButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to delete repo: Delete forbidden/i)).toBeInTheDocument();
     });
   });
 });

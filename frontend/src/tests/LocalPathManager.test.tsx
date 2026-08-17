@@ -126,7 +126,7 @@ describe('LocalPathManager Component', () => {
     expect(screen.getByDisplayValue('/containers/dev/README.md')).toBeInTheDocument();
   });
 
-  it('customizes repo alias, category, and recursive options before saving', async () => {
+  it('customizes repo alias, category, and recursive options before saving and refreshes stats', async () => {
     const refreshStats = vi.fn();
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
       if (url.includes('/admin/api/browse')) {
@@ -179,7 +179,7 @@ describe('LocalPathManager Component', () => {
     });
   });
 
-  it('deletes path when delete button is confirmed', async () => {
+  it('deletes path when delete button is confirmed and refreshes stats', async () => {
     const refreshStats = vi.fn();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
 
@@ -200,13 +200,58 @@ describe('LocalPathManager Component', () => {
       expect(screen.getByText('/containers/dev/workspace/docs')).toBeInTheDocument();
     });
 
-    const deleteBtn = screen.getByRole('button', { name: '' });
+    const deleteBtn = screen.getByTitle('Delete Path');
     fireEvent.click(deleteBtn);
 
     await waitFor(() => {
       expect(window.confirm).toHaveBeenCalled();
       expect(globalThis.fetch).toHaveBeenCalledWith('/admin/api/paths/1', { method: 'DELETE' });
+      expect(refreshStats).toHaveBeenCalled();
       expect(screen.getByText('Path deleted successfully')).toBeInTheDocument();
+    });
+  });
+
+  it('handles errors when loading paths, adding path, deleting path, and browsing', async () => {
+    // 1. Error on loadPaths
+    (globalThis as any).fetch = vi.fn().mockRejectedValueOnce(new Error('Paths offline'));
+    render(
+      <ToastProvider>
+        <LocalPathManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Error loading paths: Paths offline/i)).toBeInTheDocument();
+    });
+
+    // 2. Cancel delete
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => mockPaths });
+    render(
+      <ToastProvider>
+        <LocalPathManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('/containers/dev/workspace/docs')).toBeInTheDocument();
+    });
+
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    const deleteBtn = screen.getByTitle('Delete Path');
+    fireEvent.click(deleteBtn);
+    expect(window.confirm).toHaveBeenCalled();
+
+    // 3. Error on delete
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
+    (globalThis as any).fetch = vi.fn().mockImplementation((_url: string, opts?: any) => {
+      if (opts?.method === 'DELETE') {
+        return Promise.resolve({ ok: false, json: async () => ({ error: 'Delete denied' }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => mockPaths });
+    });
+    fireEvent.click(deleteBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to delete path: Delete denied/i)).toBeInTheDocument();
     });
   });
 });

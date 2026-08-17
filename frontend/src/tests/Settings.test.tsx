@@ -95,4 +95,46 @@ describe('Settings Component', () => {
       expect(screen.getByText('GitHub token cleared')).toBeInTheDocument();
     });
   });
+
+  it('handles cancellation and errors during token save and clear', async () => {
+    // 1. Cancel clear token
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    const clearBtn = screen.getByRole('button', { name: /Clear Token/i });
+    fireEvent.click(clearBtn);
+    expect(window.confirm).toHaveBeenCalled();
+
+    // 2. Error saving token
+    (globalThis as any).fetch = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: 'Invalid token format' })
+    });
+
+    const tokenInput = screen.getByPlaceholderText(/ghp_xxxx/i);
+    fireEvent.change(tokenInput, { target: { value: 'bad_token' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Save Token to DB/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Error saving token: Invalid token format/i)).toBeInTheDocument();
+    });
+
+    // 3. Error clearing token
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    (globalThis as any).fetch = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: 'Database locked' })
+    });
+
+    fireEvent.click(clearBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to clear token: Database locked/i)).toBeInTheDocument();
+    });
+  });
 });
