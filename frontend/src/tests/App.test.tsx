@@ -61,7 +61,7 @@ describe('App Component', () => {
     );
 
     expect(screen.getByText('Code & Docs RAG Server')).toBeInTheDocument();
-    expect(screen.getByText('v2.4.1')).toBeInTheDocument();
+    expect(screen.getByText('v2.4.2')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText('4,950 / 5,000 reqs')).toBeInTheDocument();

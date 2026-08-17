@@ -1,4 +1,4 @@
-# Architecture: Notes & Code RAG MCP Server (v2.4.1)
+# Architecture: Notes & Code RAG MCP Server (v2.4.2)
 
 The Notes & Code RAG MCP Server provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, and a React 19 administrative dashboard.
 

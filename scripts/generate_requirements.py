@@ -96,7 +96,7 @@ def generate_markdown() -> str:
     total_all_tests = total_py_tests + total_fe_tests + total_e2e_tests
 
     lines = [
-        "# Software Requirements Specification (v2.4.1)",
+        "# Software Requirements Specification (v2.4.2)",
         "",
         "> **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.",
         "",
@@ -417,13 +417,17 @@ def main():
     req_file = PROJECT_ROOT / "REQUIREMENTS.md"
     docs_req_file = PROJECT_ROOT / "docs" / "REQUIREMENTS.md"
 
+    # Write authoritative single source of truth
     with open(req_file, "w", encoding="utf-8") as f:
         f.write(content)
     print(f"Generated {req_file}")
 
-    with open(docs_req_file, "w", encoding="utf-8") as f:
-        f.write(content)
-    print(f"Generated {docs_req_file}")
+    # Ensure docs/REQUIREMENTS.md is a relative symlink
+    if not docs_req_file.is_symlink():
+        if docs_req_file.exists():
+            docs_req_file.unlink()
+        docs_req_file.symlink_to("../REQUIREMENTS.md")
+        print(f"Created symlink {docs_req_file} -> ../REQUIREMENTS.md")
 
 if __name__ == "__main__":
     main()

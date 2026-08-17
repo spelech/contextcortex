@@ -300,7 +300,7 @@ test.beforeEach(async ({ page }) => {
 test('1. navigates through all tabs including Diagnostics & Logs', async ({ page }) => {
   // Header and engine state
   await expect(page.locator('h1', { hasText: 'Code & Docs RAG Server' })).toBeVisible();
-  await expect(page.getByText('v2.4.1')).toBeVisible();
+  await expect(page.getByText('v2.4.2')).toBeVisible();
   await expect(page.getByText('notes_rag_v2')).toBeVisible();
   await expect(page.getByText('5,000 / 5,000 reqs')).toBeVisible();
 

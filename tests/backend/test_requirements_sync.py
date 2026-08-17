@@ -17,13 +17,14 @@ def test_requirements_parsed_from_all_tests():
     assert len(e2e_tests) >= 13, "Should parse all 13 Playwright E2E journey specs"
 
 def test_requirements_file_up_to_date():
-    """Verify that REQUIREMENTS.md matches generated specification content."""
+    """Verify that REQUIREMENTS.md matches generated specification content and docs/ is symlinked."""
     root_dir = Path(__file__).resolve().parent.parent.parent
     req_path = root_dir / "REQUIREMENTS.md"
     docs_req_path = root_dir / "docs" / "REQUIREMENTS.md"
 
     assert req_path.exists(), "REQUIREMENTS.md must exist in repository root"
     assert docs_req_path.exists(), "docs/REQUIREMENTS.md must exist"
+    assert docs_req_path.resolve() == req_path.resolve(), "docs/REQUIREMENTS.md must resolve to root REQUIREMENTS.md (single source of truth)"
 
     expected_content = generate_markdown()
     actual_content = req_path.read_text(encoding="utf-8")
