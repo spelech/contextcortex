@@ -1,4 +1,4 @@
-# Notes & Code RAG MCP Server (v2.3.0)
+# Notes & Code RAG MCP Server (v2.4.0)
 
 [![Build and Publish Docker Image](https://github.com/spelech/notes-rag-mcp/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/notes-rag-mcp/actions/workflows/docker-publish.yml)
 [![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fnotes--rag--mcp-blue?logo=docker)](https://github.com/spelech/notes-rag-mcp/pkgs/container/notes-rag-mcp)
