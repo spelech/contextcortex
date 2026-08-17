@@ -2,6 +2,7 @@ import os
 import unittest
 from unittest.mock import patch, MagicMock
 from app.services.git_manager import (
+    get_env_token,
     normalize_git_url,
     build_authenticated_url,
     sanitize_url_for_logging,
@@ -14,6 +15,14 @@ from app.services.git_manager import (
 )
 
 class TestGitManager(unittest.TestCase):
+
+    def test_get_env_token(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(get_env_token())
+            with patch.dict(os.environ, {"GITHUB_TOKEN": "  ghp_token123  "}):
+                self.assertEqual(get_env_token(), "ghp_token123")
+            with patch.dict(os.environ, {"GH_TOKEN": "ghp_ghtoken456"}):
+                self.assertEqual(get_env_token(), "ghp_ghtoken456")
 
     def test_normalize_git_url(self):
         # SSH URLs
@@ -56,6 +65,11 @@ class TestGitManager(unittest.TestCase):
         # No token
         self.assertEqual(build_authenticated_url(url, None), url)
 
+        # Already authenticated URL stripped and replaced
+        existing_auth = "https://old-user:old-pass@github.com/owner/repo.git"
+        replaced_auth = build_authenticated_url(existing_auth, token)
+        self.assertEqual(replaced_auth, "https://x-access-token:ghp_1234567890abcdef@github.com/owner/repo.git")
+
     def test_sanitize_url_for_logging(self):
         url = "https://x-access-token:secret12345@github.com/owner/repo.git"
         sanitized = sanitize_url_for_logging(url)
@@ -69,6 +83,9 @@ class TestGitManager(unittest.TestCase):
         self.assertEqual(mask_token("ghp_1234567890abcdef"), "ghp_...cdef")
 
     def test_format_github_permalink(self):
+        # Empty url
+        self.assertIsNone(format_github_permalink("", "commit123", "src/index.ts"))
+
         # Single line
         link1 = format_github_permalink(
             "https://github.com/org/repo.git",
@@ -102,6 +119,16 @@ class TestGitManager(unittest.TestCase):
         self.assertEqual(sha, "a1b2c3d4e5f6")
 
     @patch("subprocess.run")
+    def test_get_remote_head_sha_fallback_head(self, mock_run):
+        # First call (refs/heads) returns empty stdout; second call (HEAD) returns SHA
+        proc_empty = MagicMock(returncode=0, stdout="")
+        proc_head = MagicMock(returncode=0, stdout="fedcba987654\tHEAD\n")
+        mock_run.side_effect = [proc_empty, proc_head]
+
+        sha = get_remote_head_sha("https://github.com/org/repo", "non-existent-branch")
+        self.assertEqual(sha, "fedcba987654")
+
+    @patch("subprocess.run")
     def test_get_remote_head_sha_failure(self, mock_run):
         mock_proc = MagicMock()
         mock_proc.returncode = 128
@@ -110,6 +137,12 @@ class TestGitManager(unittest.TestCase):
         mock_run.return_value = mock_proc
 
         sha = get_remote_head_sha("https://github.com/org/nonexistent", "main")
+        self.assertIsNone(sha)
+
+    @patch("subprocess.run")
+    def test_get_remote_head_sha_exception(self, mock_run):
+        mock_run.side_effect = RuntimeError("Subprocess execution error")
+        sha = get_remote_head_sha("https://github.com/org/repo", "main")
         self.assertIsNone(sha)
 
     @patch("subprocess.run")
@@ -148,8 +181,28 @@ class TestGitManager(unittest.TestCase):
         self.assertIsNone(res.commit_sha)
         self.assertIn("Clone failed", res.error)
 
+    @patch("subprocess.run")
+    def test_shallow_clone_repo_exception(self, mock_run):
+        mock_run.side_effect = RuntimeError("Git executable not found")
+        res = shallow_clone_repo("https://github.com/org/error-repo", "main")
+        self.assertIsNone(res.temp_dir)
+        self.assertIsNone(res.commit_sha)
+        self.assertIn("Exception during git clone", res.error)
+
+    @patch("shutil.rmtree")
+    def test_cleanup_repo_dir_exception(self, mock_rmtree):
+        import tempfile
+        test_dir = tempfile.mkdtemp(prefix="test_cleanup_fail_")
+        try:
+            mock_rmtree.side_effect = PermissionError("Permission denied")
+            # Should not raise exception
+            cleanup_repo_dir(test_dir)
+        finally:
+            if os.path.exists(test_dir):
+                os.rmdir(test_dir)
+
     @patch("requests.get")
-    def test_check_github_rate_limit(self, mock_get):
+    def test_check_github_rate_limit_success(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -167,6 +220,24 @@ class TestGitManager(unittest.TestCase):
         self.assertTrue(status["authenticated"])
         self.assertEqual(status["limit"], 5000)
         self.assertEqual(status["remaining"], 4990)
+
+    @patch("requests.get")
+    def test_check_github_rate_limit_non_200(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 403
+        mock_get.return_value = mock_resp
+
+        status = check_github_rate_limit(None)
+        self.assertFalse(status["authenticated"])
+        self.assertEqual(status["status"], "HTTP 403")
+
+    @patch("requests.get")
+    def test_check_github_rate_limit_exception(self, mock_get):
+        mock_get.side_effect = Exception("Network connection timeout")
+        status = check_github_rate_limit("token123")
+        self.assertTrue(status["authenticated"])
+        self.assertIn("Network connection timeout", status["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,10 @@ def temp_edge_db(tmp_path):
         init_db()
         yield db_file
 
+def test_sync_single_git_repo_not_found(temp_edge_db):
+    # Repo ID does not exist in database
+    sync_single_git_repo(99999)
+
 def test_sync_single_git_repo_unchanged_sha(temp_edge_db):
     with get_db_connection() as conn:
         conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('cached-repo', 'https://github.com/example/repo.git', 'main', 'abcdef123456', 'synced')")
@@ -53,6 +57,11 @@ def test_sync_single_git_repo_full_success(temp_edge_db, tmp_path):
     repo_dir.mkdir()
     code_file = repo_dir / "app.py"
     code_file.write_text("def run():\n    print('run')\n")
+    # File to skip (hidden and unsupported extension)
+    hidden_file = repo_dir / ".hidden.py"
+    hidden_file.write_text("hidden")
+    unsupported_file = repo_dir / "data.dat"
+    unsupported_file.write_text("data")
 
     with get_db_connection() as conn:
         conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('success-repo', 'https://github.com/example/success.git', 'main', 'oldsha', 'pending')")
@@ -78,6 +87,66 @@ def test_sync_single_git_repo_full_success(temp_edge_db, tmp_path):
 
             files = conn.execute("SELECT filepath FROM indexed_files WHERE repo = 'success-repo'").fetchall()
             assert len(files) == 1
+
+def test_sync_single_git_repo_file_parse_error(temp_edge_db, tmp_path):
+    repo_dir = tmp_path / "cloned_repo_err"
+    repo_dir.mkdir()
+    code_file = repo_dir / "bad_file.py"
+    code_file.write_text("def broken_code(): pass")
+
+    with get_db_connection() as conn:
+        conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('parse-err-repo', 'https://github.com/example/parse.git', 'main', 'oldsha', 'pending')")
+        conn.commit()
+        repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    with patch("app.services.indexer.get_remote_head_sha", return_value="sha_parse_err"), \
+         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_parse_err", error=None)), \
+         patch("app.services.indexer.process_file_content", side_effect=Exception("AST corrupt")), \
+         patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+        
+        sync_single_git_repo(repo_id)
+        mock_cleanup.assert_called_once()
+
+def test_sync_single_git_repo_qdrant_purge_error(temp_edge_db, tmp_path):
+    repo_dir = tmp_path / "cloned_repo_qdrant_err"
+    repo_dir.mkdir()
+    code_file = repo_dir / "valid.py"
+    code_file.write_text("def valid(): pass")
+
+    with get_db_connection() as conn:
+        conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('qdrant-err-repo', 'https://github.com/example/qdrant.git', 'main', 'oldsha', 'pending')")
+        conn.commit()
+        repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    with patch("app.services.indexer.get_remote_head_sha", return_value="sha_qd_err"), \
+         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_qd_err", error=None)), \
+         patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]), \
+         patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+        
+        mock_qdrant.delete.side_effect = Exception("Purge vectors failed")
+        sync_single_git_repo(repo_id)
+        mock_cleanup.assert_called_once()
+
+def test_sync_single_git_repo_unexpected_exception(temp_edge_db, tmp_path):
+    repo_dir = tmp_path / "cloned_fatal"
+    repo_dir.mkdir()
+    with get_db_connection() as conn:
+        conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('fatal-repo', 'https://github.com/example/fatal.git', 'main', 'oldsha', 'pending')")
+        conn.commit()
+        repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    with patch("app.services.indexer.get_remote_head_sha", return_value="newsha_fatal"), \
+         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="newsha_fatal", error=None)), \
+         patch("os.walk", side_effect=RuntimeError("Fatal filesystem crash")), \
+         patch("app.services.indexer.cleanup_repo_dir"):
+        sync_single_git_repo(repo_id)
+
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT status, last_error FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+            assert row["status"] == "error"
+            assert "Fatal filesystem crash" in row["last_error"]
 
 @pytest.mark.asyncio
 async def test_notify_list_changed():
@@ -110,6 +179,22 @@ def test_ensure_collection_recreate_on_mismatch():
         ensure_collection()
         mock_qdrant.delete_collection.assert_called_once()
         mock_qdrant.create_collection.assert_called_once()
+
+def test_ensure_collection_already_matching():
+    with patch("app.services.indexer.qdrant") as mock_qdrant, \
+         patch("app.services.indexer.get_dense_dim", return_value=384):
+        
+        mock_qdrant.collection_exists.return_value = True
+        mock_info = MagicMock()
+        mock_dense = MagicMock()
+        mock_dense.size = 384
+        mock_info.config.params.vectors = {"dense": mock_dense}
+        mock_info.config.params.sparse_vectors = {"sparse": MagicMock()}
+        mock_qdrant.get_collection.return_value = mock_info
+
+        ensure_collection()
+        mock_qdrant.delete_collection.assert_not_called()
+        mock_qdrant.create_collection.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_catalog_summary_truncation(temp_edge_db):

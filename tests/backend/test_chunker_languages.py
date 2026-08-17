@@ -1,7 +1,8 @@
 import pytest
+from unittest.mock import patch, MagicMock
 from app.services.chunker import (
     extract_symbols_and_chunks, get_file_outline, detect_language, is_code_file,
-    chunk_markdown, split_by_length
+    chunk_markdown, split_by_length, get_tree_sitter_parser, _PARSERS
 )
 
 def test_language_detection():
@@ -20,6 +21,52 @@ def test_language_detection():
     assert is_code_file("app.py") is True
     assert is_code_file("notes.md") is False
     assert is_code_file("config.json") is False
+
+def test_get_tree_sitter_parser_caching_and_fallbacks():
+    # Cached parser
+    p_py = get_tree_sitter_parser("python")
+    assert p_py is not None
+    assert get_tree_sitter_parser("python") is p_py
+
+    # Fallback for c_sharp / csharp
+    with patch("tree_sitter_language_pack.get_parser") as mock_get_parser:
+        # First call fails, second call succeeds with alt_name
+        mock_parser = MagicMock()
+        mock_get_parser.side_effect = [Exception("Language not found: c_sharp"), mock_parser]
+        
+        # Clear cache for key
+        if "c_sharp_test" in _PARSERS:
+            del _PARSERS["c_sharp_test"]
+            
+        parser = get_tree_sitter_parser("c_sharp_test")
+        assert parser is mock_parser
+
+    # Exception importing/getting parser returns None
+    with patch("tree_sitter_language_pack.get_parser", side_effect=Exception("Fatal parser crash")):
+        if "failing_lang" in _PARSERS:
+            del _PARSERS["failing_lang"]
+        res = get_tree_sitter_parser("failing_lang")
+        assert res is None
+
+def test_extract_symbols_unsupported_language():
+    code = "echo 'Hello world'\necho 'Line 2'\n"
+    # Plain text file or language where parser returns None
+    with patch("app.services.chunker.get_tree_sitter_parser", return_value=None):
+        result = extract_symbols_and_chunks(code, "script.custom", repo="custom-repo")
+        assert len(result.chunks) >= 1
+        assert result.symbols == []
+        assert result.outline == []
+
+def test_extract_symbols_parser_parse_exception():
+    code = "def broken(): pass"
+    mock_parser = MagicMock()
+    mock_parser.parse.side_effect = Exception("AST parser segfault")
+    
+    with patch("app.services.chunker.get_tree_sitter_parser", return_value=mock_parser):
+        result = extract_symbols_and_chunks(code, "test.py", repo="error-repo")
+        assert len(result.chunks) >= 1
+        assert result.symbols == []
+        assert result.outline == []
 
 def test_go_ast_extraction():
     code = """package main
@@ -144,8 +191,29 @@ int main() {
     symbols = [s.name for s in result.symbols]
     assert "Engine" in symbols or "start" in symbols or "main" in symbols
 
+def test_ruby_and_php_ast_extraction():
+    ruby_code = """class UserHelper
+  def format_name(name)
+    name.capitalize
+  end
+end
+"""
+    rb_result = extract_symbols_and_chunks(ruby_code, "helper.rb", repo="rails-app")
+    rb_symbols = [s.name for s in rb_result.symbols]
+    assert "UserHelper" in rb_symbols or "format_name" in rb_symbols
+
+    php_code = """<?php
+class ProductController {
+    public function listProducts() {
+        return [];
+    }
+}
+"""
+    php_result = extract_symbols_and_chunks(php_code, "ProductController.php", repo="php-app")
+    php_symbols = [s.name for s in php_result.symbols]
+    assert "ProductController" in php_symbols or "listProducts" in php_symbols
+
 def test_large_function_subchunking():
-    # Generate a function larger than max_chunk_chars (e.g. 500 chars limit)
     large_func = "def very_long_function():\n" + "\n".join([f"    x_{i} = {i} * 2" for i in range(100)]) + "\n    return x_99\n"
     result = extract_symbols_and_chunks(large_func, "large.py", max_chunk_chars=300)
     assert len(result.chunks) > 1
@@ -165,8 +233,28 @@ def test_get_file_outline_helper():
     assert any("A" in item or "b" in item for item in outline)
 
 def test_markdown_chunking_with_subchunks():
-    # Long section under one heading
     md = "# Long Heading\n\n" + "\n\n".join([f"Paragraph {i}: " + ("lorem ipsum " * 20) for i in range(20)])
     chunks = chunk_markdown(md, max_chars=400)
     assert len(chunks) > 1
     assert all(c.heading == "Long Heading" for c in chunks)
+
+def test_markdown_chunking_with_nested_headings_and_empty():
+    md = """# Top Title
+Introduction text.
+
+## Section 1
+Content 1
+
+### Subsection 1.1
+Content 1.1
+
+## Section 2
+Content 2
+"""
+    chunks = chunk_markdown(md, max_chars=500)
+    assert len(chunks) == 4
+    headings = [c.heading for c in chunks]
+    assert "Top Title" in headings
+    assert "Section 1" in headings
+    assert "Subsection 1.1" in headings
+    assert "Section 2" in headings

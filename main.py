@@ -24,23 +24,10 @@ try:
 except Exception as e:
     logger.error(f"Failed to init DB: {e}")
 
-main_event_loop = None
-
-def trigger_list_changed_notification():
-    """Notification trigger for MCP tools/resources updates."""
-    pass
-
-# Patch indexer to notify when done
-try:
-    import app.services.indexer as indexer
-    indexer.trigger_list_changed_notification = trigger_list_changed_notification
-except Exception:
-    pass
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global main_event_loop
-    main_event_loop = asyncio.get_running_loop()
+    import app.services.indexer as indexer
+    indexer.main_event_loop = asyncio.get_running_loop()
     logger.info("Notes & Code RAG Server starting up...")
     try:
         threading.Thread(target=run_full_indexing, daemon=True).start()
