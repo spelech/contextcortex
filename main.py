@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-app = FastAPI(title="Knowledge RAG MCP Server", version="2.5.0", lifespan=lifespan)
+app = FastAPI(title="Knowledge RAG MCP Server", version="2.6.0", lifespan=lifespan)
 
 
 # Include API routes

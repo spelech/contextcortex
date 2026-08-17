@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **301 Automated Tests** (235 Pytest Backend + 53 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **316 Automated Tests** (235 Pytest Backend + 60 Vitest Frontend + 21 Playwright E2E).
 
 ---
 
@@ -564,12 +564,13 @@ classDiagram
 
 ### 6.2 Frontend Vitest Tests (`frontend/src/tests/`)
 
-#### `App.test.tsx` (3 tests)
+#### `App.test.tsx` (4 tests)
 - renders header, status indicators, and default Overview tab
 - switches between tabs on navigation click
 - renders Syncing... engine state badge when is_indexing is true
+- toggles mobile navigation drawer and closes upon tab selection
 
-#### `DiagnosticsViewer.test.tsx` (9 tests)
+#### `DiagnosticsViewer.test.tsx` (10 tests)
 - renders log records, badges, and controls
 - filters logs by log level buttons
 - filters logs by search input
@@ -579,38 +580,43 @@ classDiagram
 - clears logs on button click after confirmation
 - does not clear logs if confirmation is cancelled
 - displays error toast when log fetching fails
+- renders responsive layout elements for toolbar, search input, and log entry stream
 
-#### `GitRepoManager.test.tsx` (6 tests)
+#### `GitRepoManager.test.tsx` (7 tests)
 - renders repository list with status badges and details
 - shows empty state when no repositories are registered
 - opens modal, handles cancel, and submits new repository registration
 - triggers repo sync, refreshes stats, and updates status optimistically
 - triggers repo deletion, calls refreshStats, and removes repo optimistically
 - handles errors when loading repos, adding repo, syncing repo, and deleting repo
+- renders mobile cards for repositories with action buttons
 
-#### `LocalPathManager.test.tsx` (6 tests)
+#### `LocalPathManager.test.tsx` (7 tests)
 - renders configured paths correctly
+- renders mobile cards for local search paths with delete button
 - supports folder navigation drilling and parent directory climbing in browser
 - selects a single file directly from browser and sets file path type
 - customizes repo alias, category, and recursive options before saving and refreshes stats
 - deletes path when delete button is confirmed and refreshes stats
 - handles errors when loading paths, adding path, deleting path, and browsing
 
-#### `Overview.test.tsx` (5 tests)
+#### `Overview.test.tsx` (6 tests)
 - renders loading state when stats is null
 - renders metrics, specs, and top keywords accurately
 - renders ChromaDB vector store specs correctly
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
+- renders system specs with responsive word wrapping and badge elements
 
-#### `SearchInspector.test.tsx` (5 tests)
+#### `SearchInspector.test.tsx` (6 tests)
 - renders initial prompt and inputs
 - performs search and renders matching hit cards
 - displays empty results message when no hits found
 - handles search API failure with error display
 - performs doc search with repo filter and renders documentation hits
+- renders search query form and hit card headers with responsive classes
 
-#### `Settings.test.tsx` (14 tests)
+#### `Settings.test.tsx` (15 tests)
 - renders vector database panel, multi-provider token boxes, rate limits, and host vault list
 - handles empty stats or fallback provider auth structure and vector store load error
 - switches vector store form fields between embedded and remote modes and changes default paths/urls
@@ -625,6 +631,7 @@ classDiagram
 - opens host modal, creates new credential, and handles cancel & duplicate error
 - deletes host credential and handles cancellation / delete error
 - handles loadHostCredentials network failure gracefully
+- renders responsive mobile card list for host credentials and handles mobile deletion
 
 #### `ToastContext.test.tsx` (5 tests)
 - throws error when useToast is called outside of ToastProvider
@@ -636,7 +643,7 @@ classDiagram
 ### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/dashboard.spec.ts`)
 
 - 1. navigates through all tabs including Diagnostics & Logs
-- 2. adds a new Git repository via modal and verifies table update + toast
+- 2. adds a new Git repository via modal and verifies table/card update + toast
 - 3. triggers single-repo sync and verifies status feedback
 - 4. deletes a repository with window.confirm dialog verification
 - 5. renders repository error status with last_error diagnostic message
@@ -648,3 +655,11 @@ classDiagram
 - 11. clears GitHub token with confirmation dialog
 - 12. triggers Reindex All Sources on Overview tab
 - 13. filters, searches, and clears logs in Diagnostics & Logs tab
+- 14. [Mobile] hamburger menu button opens and closes navigation drawer
+- 15. [Mobile] selecting a tab in drawer navigates to view and auto-closes drawer
+- 16. [Mobile] renders repositories as responsive cards with sync and delete actions
+- 17. [Mobile] renders local paths as responsive cards with category badges and actions
+- 18. [Mobile] Add Repository modal renders correctly on mobile viewport and registers repo
+- 19. [Mobile] filesystem browser modal navigates and selects path on mobile viewport
+- 20. [Mobile] performs search and renders responsive result item on mobile viewport
+- 21. [Mobile] log viewer filter pills, search bar, and traceback toggle operate cleanly on mobile
