@@ -51,7 +51,7 @@ init_db(VAULT_PATH)
 
 # Initialize Qdrant Client
 logger.info(f"Connecting to Qdrant at {QDRANT_URL}")
-qdrant = QdrantClient(url=QDRANT_URL)
+qdrant = QdrantClient(url=QDRANT_URL, timeout=5.0, check_compatibility=False)
 
 def ensure_collection():
     """Initializes or validates named multi-vector (Dense + Sparse) Qdrant collection."""

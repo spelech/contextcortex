@@ -3,6 +3,7 @@ import re
 import json
 import sqlite3
 import threading
+from typing import Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from app.models.schemas import RepoConfig, LocalPathConfig, SearchRequest, TokenRequest
@@ -12,6 +13,7 @@ from app.services.db import (
     get_effective_github_token, get_token_source, CACHE_DB_PATH
 )
 from app.services.git_manager import check_github_rate_limit, mask_token
+from app.services.logger import get_diagnostic_logs, clear_diagnostic_logs
 
 # Assuming the other agent extracts these to app.services.indexer and app.services.embeddings
 from app.services.indexer import (
@@ -274,3 +276,19 @@ async def api_browse_dir(path: str = "/"):
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/admin/api/logs")
+async def api_get_logs(limit: int = 200, level: Optional[str] = None, search: Optional[str] = None):
+    try:
+        return get_diagnostic_logs(limit=limit, level=level, search=search)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.delete("/admin/api/logs")
+async def api_clear_logs():
+    try:
+        clear_diagnostic_logs()
+        return {"status": "success", "message": "Diagnostic logs cleared"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
