@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **246 Automated Tests** (186 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **280 Automated Tests** (220 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -484,6 +484,42 @@ classDiagram
 - `test_delete_by_path`
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
+
+#### `test_vector_store_manager.py` (34 tests)
+- `TestDBVectorStoreSeeding::test_seed_defaults_when_env_empty`
+- `TestDBVectorStoreSeeding::test_seed_from_environment_variables`
+- `TestDBVectorStoreSeeding::test_seed_with_alt_env_vars`
+- `TestDBVectorStoreSeeding::test_init_db_does_not_overwrite_existing_db_metadata`
+- `TestDBVectorStoreSeeding::test_get_default_vector_storage_path_env_override`
+- `TestVectorStoreManagerRetrieval::test_get_vector_store_qdrant_embedded`
+- `TestVectorStoreManagerRetrieval::test_get_vector_store_chroma_embedded`
+- `TestVectorStoreManagerRetrieval::test_get_vector_store_qdrant_remote`
+- `TestVectorStoreManagerRetrieval::test_get_vector_store_chroma_remote`
+- `TestVectorStoreManagerRetrieval::test_get_vector_store_force_reload`
+- `TestVectorStoreManagerSwitching::test_switch_from_qdrant_to_chroma`
+- `TestVectorStoreManagerSwitching::test_switch_validation_invalid_provider`
+- `TestVectorStoreManagerSwitching::test_switch_validation_invalid_mode`
+- `TestVectorStoreManagerSwitching::test_switch_validation_remote_without_url`
+- `TestVectorStoreManagerSwitching::test_switch_failure_when_ensure_collection_fails`
+- `TestVectorStoreManagerConfigAndHealth::test_get_vector_store_config`
+- `TestVectorStoreManagerConfigAndHealth::test_get_vector_store_config_on_error`
+- `test_seed_defaults_when_env_empty`
+- `test_seed_from_environment_variables`
+- `test_seed_with_alt_env_vars`
+- `test_init_db_does_not_overwrite_existing_db_metadata`
+- `test_get_default_vector_storage_path_env_override`
+- `test_get_vector_store_qdrant_embedded`
+- `test_get_vector_store_chroma_embedded`
+- `test_get_vector_store_qdrant_remote`
+- `test_get_vector_store_chroma_remote`
+- `test_get_vector_store_force_reload`
+- `test_switch_from_qdrant_to_chroma`
+- `test_switch_validation_invalid_provider`
+- `test_switch_validation_invalid_mode`
+- `test_switch_validation_remote_without_url`
+- `test_switch_failure_when_ensure_collection_fails`
+- `test_get_vector_store_config`
+- `test_get_vector_store_config_on_error`
 
 #### `test_vector_store_qdrant.py` (22 tests)
 - `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`

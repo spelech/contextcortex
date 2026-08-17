@@ -374,3 +374,12 @@ class QdrantVectorStore(VectorStore):
             return True, f"Qdrant ({self.mode} @ {self.location}) is healthy; collection '{self.collection_name}' exists: {exists}"
         except Exception as e:
             return False, f"Qdrant ({self.mode}) health check failed: {e}"
+
+    def close(self):
+        """Cleanly close Qdrant client connection and release local storage lock."""
+        try:
+            if hasattr(self, "client") and self.client is not None:
+                self.client.close()
+        except Exception as e:
+            logger.debug(f"Error closing Qdrant client: {e}")
+

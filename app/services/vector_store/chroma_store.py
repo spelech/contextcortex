@@ -43,6 +43,7 @@ class ChromaVectorStore(VectorStore):
 
     def __init__(
         self,
+        url: Optional[str] = None,
         host: Optional[str] = None,
         port: Optional[int] = None,
         ssl: Optional[bool] = None,
@@ -56,10 +57,23 @@ class ChromaVectorStore(VectorStore):
         self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "notes_rag_v2")
         self.collection = None
 
+        if url:
+            from urllib.parse import urlparse
+            parsed = urlparse(url if "://" in url else f"http://{url}")
+            if parsed.hostname:
+                host = parsed.hostname
+            if parsed.port:
+                port = parsed.port
+            if parsed.scheme == "https":
+                ssl = True
+            if prefer_remote is None:
+                prefer_remote = True
+
         target_host = host or os.getenv("CHROMA_HOST", "localhost")
         target_port = int(port or os.getenv("CHROMA_PORT", "8000"))
         target_ssl = ssl if ssl is not None else os.getenv("CHROMA_SSL", "false").lower() in ("true", "1", "yes")
         target_storage = storage_path or os.getenv("CHROMA_STORAGE_PATH", "/app/data/chroma_storage")
+
 
         if prefer_remote is None:
             prefer_remote = os.getenv("CHROMA_PREFER_REMOTE", "false").lower() in ("true", "1", "yes")
@@ -317,3 +331,8 @@ class ChromaVectorStore(VectorStore):
             return True, f"Chroma ({self.mode} @ {self.location}) is healthy; heartbeat: {hb}, collection '{self.collection_name}' count: {count}"
         except Exception as e:
             return False, f"Chroma ({self.mode}) health check failed: {e}"
+
+    def close(self):
+        """Cleanly close Chroma client handle if applicable."""
+        pass
+

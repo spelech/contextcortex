@@ -216,6 +216,22 @@ def init_db(vault_path: str = "/docs"):
         except Exception as se:
             logger.error(f"Failed to seed default vault path: {se}")
 
+        # Seed default vector store settings if not already present
+        try:
+            default_cfg = _resolve_default_vector_store_config(conn)
+            for key, val in [
+                ("vector_store_provider", default_cfg["provider"]),
+                ("vector_store_mode", default_cfg["mode"]),
+                ("vector_store_storage_path", default_cfg["storage_path"]),
+                ("vector_store_url", default_cfg["url"]),
+                ("vector_store_collection", default_cfg["collection"]),
+            ]:
+                row = conn.execute("SELECT value FROM system_metadata WHERE key = ?", (key,)).fetchone()
+                if row is None:
+                    conn.execute("INSERT INTO system_metadata (key, value) VALUES (?, ?)", (key, str(val)))
+        except Exception as ve:
+            logger.error(f"Failed to seed vector store configuration: {ve}")
+
         conn.commit()
 
 # Metadata Helpers
@@ -234,6 +250,99 @@ def set_metadata(key: str, value: str):
             conn.commit()
     except Exception as e:
         logger.error(f"Failed to set metadata key {key}: {e}")
+
+def get_default_vector_storage_path() -> str:
+    env_path = os.getenv("VECTOR_STORE_STORAGE_PATH")
+    if env_path:
+        return env_path
+    if os.path.exists("/app") and os.access("/app", os.W_OK):
+        return "/app/data/vector_storage"
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "vector_storage")
+
+def _resolve_default_vector_store_config(conn: Optional[sqlite3.Connection] = None) -> Dict[str, str]:
+    """Helper to resolve default vector store config from env vars or defaults."""
+    provider = os.getenv("VECTOR_STORE") or os.getenv("VECTOR_STORE_PROVIDER") or "qdrant"
+    provider = provider.lower().strip()
+
+    mode = os.getenv("VECTOR_STORE_MODE")
+    if not mode:
+        if provider == "qdrant":
+            q_url = os.getenv("QDRANT_URL")
+            if q_url and q_url.strip() and not q_url.strip().startswith(":memory:"):
+                mode = "remote"
+            else:
+                mode = "embedded"
+        elif provider in ("chroma", "chromadb"):
+            c_url = os.getenv("CHROMA_URL")
+            if c_url and c_url.strip():
+                mode = "remote"
+            else:
+                mode = "embedded"
+        else:
+            mode = "embedded"
+    mode = mode.lower().strip()
+
+    storage_path = os.getenv("VECTOR_STORE_STORAGE_PATH") or get_default_vector_storage_path()
+
+    if provider == "qdrant":
+        url = os.getenv("VECTOR_STORE_URL") or os.getenv("QDRANT_URL") or ""
+    elif provider in ("chroma", "chromadb"):
+        url = os.getenv("VECTOR_STORE_URL") or os.getenv("CHROMA_URL") or ""
+    else:
+        url = os.getenv("VECTOR_STORE_URL") or ""
+
+
+    collection = os.getenv("VECTOR_STORE_COLLECTION") or os.getenv("COLLECTION_NAME") or "knowledge_rag_v1"
+
+    return {
+        "provider": provider,
+        "mode": mode,
+        "storage_path": storage_path,
+        "url": url.strip(),
+        "collection": collection.strip(),
+    }
+
+def get_vector_store_db_config() -> Dict[str, str]:
+    """
+    Returns the vector store configuration from system_metadata,
+    falling back to default resolution if not set in DB.
+    """
+    provider = get_metadata("vector_store_provider")
+    mode = get_metadata("vector_store_mode")
+    storage_path = get_metadata("vector_store_storage_path")
+    url = get_metadata("vector_store_url")
+    collection = get_metadata("vector_store_collection")
+
+    default_cfg = _resolve_default_vector_store_config()
+
+    return {
+        "provider": (provider or default_cfg["provider"]).lower().strip(),
+        "mode": (mode or default_cfg["mode"]).lower().strip(),
+        "storage_path": storage_path or default_cfg["storage_path"],
+        "url": (url if url is not None else default_cfg["url"]).strip(),
+        "collection": (collection or default_cfg["collection"]).strip(),
+    }
+
+def set_vector_store_db_config(
+    provider: Optional[str] = None,
+    mode: Optional[str] = None,
+    storage_path: Optional[str] = None,
+    url: Optional[str] = None,
+    collection: Optional[str] = None,
+):
+    """
+    Saves vector store configuration settings into system_metadata.
+    """
+    if provider is not None:
+        set_metadata("vector_store_provider", provider.lower().strip())
+    if mode is not None:
+        set_metadata("vector_store_mode", mode.lower().strip())
+    if storage_path is not None:
+        set_metadata("vector_store_storage_path", storage_path.strip())
+    if url is not None:
+        set_metadata("vector_store_url", url.strip())
+    if collection is not None:
+        set_metadata("vector_store_collection", collection.strip())
 
 # Global GitHub token resolution (Backwards compatible helper)
 def get_effective_github_token(override_token: Optional[str] = None) -> Optional[str]:

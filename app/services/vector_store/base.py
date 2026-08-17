@@ -111,3 +111,8 @@ class VectorStore(ABC):
     def health_check(self) -> Tuple[bool, str]:
         """Validates connection and readiness of the backend."""
         pass
+
+    def close(self):
+        """Optional hook to cleanly close underlying client/storage handles."""
+        pass
+
