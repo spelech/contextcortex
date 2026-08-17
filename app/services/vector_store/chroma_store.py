@@ -1,8 +1,10 @@
 import os
 import json
 import logging
+import uuid
 from typing import List, Dict, Any, Optional, Tuple, Union
 import chromadb
+
 
 from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
 from app.services.embeddings import get_dense_embedding

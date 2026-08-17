@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **244 Automated Tests** (184 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **246 Automated Tests** (186 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -453,7 +453,7 @@ classDiagram
 - `test_vector_document_validation` - _Verify required field validation in VectorDocument._
 - `test_vector_search_result_creation_and_payload` - _Verify VectorSearchResult creation and payload access._
 
-#### `test_vector_store_chroma.py` (28 tests)
+#### `test_vector_store_chroma.py` (30 tests)
 - `TestChromaVectorStoreInit::test_init_in_memory`
 - `TestChromaVectorStoreInit::test_init_persistent_disk`
 - `TestChromaVectorStoreInit::test_init_remote_success`
@@ -462,6 +462,7 @@ classDiagram
 - `TestChromaVectorStoreOperations::test_ensure_collection`
 - `TestChromaVectorStoreOperations::test_upsert_vector_documents`
 - `TestChromaVectorStoreOperations::test_upsert_dict_documents_auto_computes_vectors`
+- `TestChromaVectorStoreOperations::test_upsert_dict_without_id_generates_uuid`
 - `TestChromaVectorStoreOperations::test_upsert_handles_complex_metadata`
 - `TestChromaVectorStoreOperations::test_search_dense`
 - `TestChromaVectorStoreOperations::test_search_metadata_filtering`
@@ -476,6 +477,7 @@ classDiagram
 - `test_ensure_collection`
 - `test_upsert_vector_documents`
 - `test_upsert_dict_documents_auto_computes_vectors`
+- `test_upsert_dict_without_id_generates_uuid`
 - `test_upsert_handles_complex_metadata`
 - `test_search_dense`
 - `test_search_metadata_filtering`

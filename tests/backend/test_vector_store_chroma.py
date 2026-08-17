@@ -154,6 +154,25 @@ class TestChromaVectorStoreOperations:
         stats = memory_store.get_stats()
         assert stats["points_count"] == 1
 
+    def test_upsert_dict_without_id_generates_uuid(self, memory_store):
+        raw_doc = {
+            "text": "Document without explicit id should get generated UUID.",
+            "repo": "infra-repo",
+            "path": "/infra/auto_uuid.md",
+            "doc_type": "doc"
+        }
+        ok = memory_store.upsert_documents([raw_doc])
+        assert ok is True
+
+        stats = memory_store.get_stats()
+        assert stats["points_count"] == 1
+
+        results = memory_store.search("generated UUID")
+        assert len(results) > 0
+        # Verify result ID is a valid UUID string
+        uuid.UUID(results[0].id)
+
+
     def test_upsert_handles_complex_metadata(self, memory_store):
         doc = {
             "id": "complex-doc-1",
