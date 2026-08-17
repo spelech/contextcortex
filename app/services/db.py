@@ -81,6 +81,15 @@ def init_db(vault_path: str = "/docs"):
             )
         """)
 
+        try:
+            conn.execute("ALTER TABLE indexed_files ADD COLUMN doc_type TEXT DEFAULT 'doc'")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE indexed_files ADD COLUMN language TEXT DEFAULT 'text'")
+        except Exception:
+            pass
+
         # File summaries and topics
         conn.execute("""
             CREATE TABLE IF NOT EXISTS file_summaries (
