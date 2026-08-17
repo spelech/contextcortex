@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **187 Automated Tests** (127 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
+**Test Verification Baseline:** **194 Automated Tests** (134 Pytest Backend + 47 Vitest Frontend + 13 Playwright E2E).
 
 ---
 
@@ -443,6 +443,15 @@ classDiagram
 - `test_execute_hybrid_search_without_sparse`
 
 #### `test_tools.py` (0 tests)
+
+#### `test_vector_store_base.py` (7 tests)
+- `test_cannot_instantiate_abstract_vector_store` - _Verify VectorStore is an ABC and cannot be instantiated directly._
+- `test_incomplete_subclass_cannot_be_instantiated` - _Verify a subclass missing abstract methods cannot be instantiated._
+- `test_concrete_subclass_can_be_instantiated` - _Verify concrete subclass implementing all methods works properly._
+- `test_vector_document_creation_defaults` - _Verify VectorDocument creation with defaults._
+- `test_vector_document_full_fields` - _Verify VectorDocument with all explicit fields._
+- `test_vector_document_validation` - _Verify required field validation in VectorDocument._
+- `test_vector_search_result_creation_and_payload` - _Verify VectorSearchResult creation and payload access._
 
 ### 6.2 Frontend Vitest Tests (`frontend/src/tests/`)
 
