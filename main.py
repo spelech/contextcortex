@@ -1,21 +1,17 @@
 import os
 import asyncio
-import anyio
 import logging
 import threading
-from contextlib import AsyncExitStack
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router as admin_router
-from app.mcp.mcp_server import mcp_server, sse_transport
+from app.mcp.mcp_server import mcp_server
 
-# Assuming init_db and VAULT_PATH are moved to app.services.db
 from app.services.db import init_db
-
-# Assuming run_full_indexing is extracted to app.services.indexer
 from app.services.indexer import run_full_indexing, VAULT_PATH
 
 # Configure logging
@@ -31,18 +27,15 @@ except Exception as e:
 main_event_loop = None
 
 def trigger_list_changed_notification():
-    # In MCP v2.0.0, to notify clients we would use mcp_server.session_manager.
-    # However since we are not using streamable_http_app we skip broadcasting for now.
+    """Notification trigger for MCP tools/resources updates."""
     pass
 
-# Try patching the indexer so it can notify when done
+# Patch indexer to notify when done
 try:
     import app.services.indexer as indexer
     indexer.trigger_list_changed_notification = trigger_list_changed_notification
 except Exception:
     pass
-
-from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,7 +46,10 @@ async def lifespan(app: FastAPI):
         threading.Thread(target=run_full_indexing, daemon=True).start()
     except Exception as e:
         logger.error(f"Startup indexing error: {e}")
-    yield
+
+    async with mcp_server.session_manager.run():
+        yield
+
     logger.info("Notes & Code RAG Server shutting down...")
 
 app = FastAPI(title="Notes & Code RAG MCP Server", lifespan=lifespan)
@@ -71,15 +67,12 @@ assets_dir = os.path.join(www_dir, "assets") if os.path.exists(os.path.join(www_
 app.mount("/admin", StaticFiles(directory=www_dir, html=True), name="admin")
 app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-@app.get("/sse")
-async def sse_endpoint(request: Request):
-    logger.info("New SSE client connection requested.")
-    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
-        initialization_options = mcp_server.create_initialization_options()
-        # the run() method internally handles lifespan, session initialization and the message loop
-        await mcp_server.run(read_stream, write_stream, initialization_options)
-        
-app.mount("/messages", sse_transport.handle_post_message)
+# Mount FastMCP SSE and Streamable HTTP endpoints
+for route in mcp_server.sse_app().routes:
+    app.routes.append(route)
+
+for route in mcp_server.streamable_http_app().routes:
+    app.routes.append(route)
 
 @app.get("/health")
 async def health():
