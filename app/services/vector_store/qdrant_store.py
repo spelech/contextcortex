@@ -11,6 +11,15 @@ from app.services.embeddings import get_dense_embedding, get_sparse_embedding, g
 logger = logging.getLogger("knowledge-rag-mcp.vector_store.qdrant")
 
 
+def get_default_qdrant_storage_path() -> str:
+    env_path = os.getenv("QDRANT_STORAGE_PATH")
+    if env_path:
+        return env_path
+    if os.path.exists("/app") and os.access("/app", os.W_OK):
+        return "/app/data/qdrant_storage"
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "qdrant_storage")
+
+
 class QdrantVectorStore(VectorStore):
     """Qdrant vector store backend supporting embedded disk, in-memory, and remote server modes with automatic fallback."""
 
@@ -28,7 +37,7 @@ class QdrantVectorStore(VectorStore):
         self.timeout = timeout
 
         url_env = os.getenv("QDRANT_URL", "http://qdrant:6333")
-        storage_path_env = os.getenv("QDRANT_STORAGE_PATH", "/app/data/qdrant_storage")
+        storage_path_env = get_default_qdrant_storage_path()
 
         if prefer_remote is None:
             prefer_remote = os.getenv("QDRANT_PREFER_REMOTE", "true").lower() in ("true", "1", "yes")

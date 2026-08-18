@@ -28,8 +28,12 @@ class TestIndexerSync(unittest.TestCase):
     @patch("app.services.indexer.get_remote_head_sha", return_value="abc12345")
     @patch("app.services.indexer.shallow_clone_repo")
     @patch("app.services.indexer.cleanup_repo_dir")
-    def test_sync_single_git_repo_success(self, mock_cleanup, mock_clone, mock_sha):
+    @patch("app.services.indexer.get_vector_store")
+    def test_sync_single_git_repo_success(self, mock_get_store, mock_cleanup, mock_clone, mock_sha):
         mock_clone.return_value = CloneResult(temp_dir="/tmp/mock_repo_dir", commit_sha="abc12345", error=None)
+        mock_store = MagicMock()
+        mock_store.upsert_documents.return_value = True
+        mock_get_store.return_value = mock_store
 
         with patch("os.walk", return_value=[]):
             sync_single_git_repo(self.repo_id)

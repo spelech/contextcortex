@@ -3,6 +3,7 @@ import json
 import logging
 import uuid
 from typing import List, Dict, Any, Optional, Tuple, Union
+from urllib.parse import urlparse
 import chromadb
 
 
@@ -38,12 +39,20 @@ def _sanitize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     return clean
 
 
+def get_default_chroma_storage_path() -> str:
+    env_path = os.getenv("CHROMA_STORAGE_PATH")
+    if env_path:
+        return env_path
+    if os.path.exists("/app") and os.access("/app", os.W_OK):
+        return "/app/data/chroma_storage"
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "chroma_storage")
+
+
 class ChromaVectorStore(VectorStore):
     """ChromaDB vector store backend supporting persistent disk, in-memory, and remote HTTP modes with auto-fallback."""
 
     def __init__(
         self,
-        url: Optional[str] = None,
         host: Optional[str] = None,
         port: Optional[int] = None,
         ssl: Optional[bool] = None,
@@ -51,6 +60,7 @@ class ChromaVectorStore(VectorStore):
         storage_path: Optional[str] = None,
         collection_name: Optional[str] = None,
         prefer_remote: Optional[bool] = None,
+        url: Optional[str] = None,
         client: Optional[Any] = None,
         auto_init: bool = True,
     ):
@@ -58,10 +68,8 @@ class ChromaVectorStore(VectorStore):
         self.collection = None
 
         if url:
-            from urllib.parse import urlparse
             parsed = urlparse(url if "://" in url else f"http://{url}")
-            if parsed.hostname:
-                host = parsed.hostname
+            host = parsed.hostname or host
             if parsed.port:
                 port = parsed.port
             if parsed.scheme == "https":
@@ -72,7 +80,7 @@ class ChromaVectorStore(VectorStore):
         target_host = host or os.getenv("CHROMA_HOST", "localhost")
         target_port = int(port or os.getenv("CHROMA_PORT", "8000"))
         target_ssl = ssl if ssl is not None else os.getenv("CHROMA_SSL", "false").lower() in ("true", "1", "yes")
-        target_storage = storage_path or os.getenv("CHROMA_STORAGE_PATH", "/app/data/chroma_storage")
+        target_storage = storage_path or get_default_chroma_storage_path()
 
 
         if prefer_remote is None:

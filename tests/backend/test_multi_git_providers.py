@@ -196,12 +196,15 @@ def test_sync_single_git_repo_triggers_notification(temp_db):
     
     # Now with valid temp_dir
     import tempfile
+    mock_store = MagicMock()
+    mock_store.upsert_documents.return_value = True
     with tempfile.TemporaryDirectory() as td:
         with open(os.path.join(td, "doc.md"), "w") as f:
             f.write("# Hello\nWorld")
         with patch("app.services.indexer.get_remote_head_sha", return_value="sha456"), \
              patch("app.services.indexer.shallow_clone_repo", return_value=MagicMock(temp_dir=td, commit_sha="sha456", error=None)), \
              patch("app.services.indexer.cleanup_repo_dir"), \
+             patch("app.services.indexer.get_vector_store", return_value=mock_store), \
              patch("app.services.indexer.trigger_list_changed_notification") as mock_notify:
             sync_single_git_repo(repo_id)
             mock_notify.assert_called_once()
