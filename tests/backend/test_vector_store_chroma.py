@@ -139,6 +139,23 @@ class TestChromaVectorStoreOperations:
         stats = memory_store.get_stats()
         assert stats["points_count"] == 2
 
+    def test_upsert_chunked_batching(self, memory_store):
+        docs = [
+            VectorDocument(
+                id=f"batch-chroma-doc-{i}",
+                text=f"Batch document text number {i}",
+                dense_vector=[0.01 * (i % 10)] * 384,
+                repo="batch-test",
+                path=f"/path/doc_{i}.md"
+            )
+            for i in range(250)
+        ]
+        with patch.object(memory_store.collection, "upsert", wraps=memory_store.collection.upsert) as spy_upsert:
+            ok = memory_store.upsert_documents(docs, batch_size=100)
+            assert ok is True
+            assert spy_upsert.call_count == 3
+            assert memory_store.get_stats()["points_count"] == 250
+
     def test_upsert_dict_documents_auto_computes_vectors(self, memory_store):
         raw_doc = {
             "id": "dict-doc-1",

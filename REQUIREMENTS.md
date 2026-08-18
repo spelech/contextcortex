@@ -1,8 +1,8 @@
-# Software Requirements Specification (v2.6.0)
+# Software Requirements Specification (v2.6.1)
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **316 Automated Tests** (235 Pytest Backend + 60 Vitest Frontend + 21 Playwright E2E).
+**Test Verification Baseline:** **322 Automated Tests** (241 Pytest Backend + 60 Vitest Frontend + 21 Playwright E2E).
 
 ---
 
@@ -427,11 +427,13 @@ classDiagram
 - `test_sync_single_git_repo_unexpected_exception`
 - `test_ensure_collection_delegation`
 
-#### `test_indexer_sync.py` (4 tests)
+#### `test_indexer_sync.py` (6 tests)
 - `TestIndexerSync::test_sync_single_git_repo_success`
 - `TestIndexerSync::test_sync_single_git_repo_failure`
+- `TestIndexerSync::test_sync_single_git_repo_vector_upsert_failure`
 - `test_sync_single_git_repo_success`
 - `test_sync_single_git_repo_failure`
+- `test_sync_single_git_repo_vector_upsert_failure`
 
 #### `test_mcp_v2.py` (0 tests)
 
@@ -466,7 +468,7 @@ classDiagram
 - `test_vector_document_validation` - _Verify required field validation in VectorDocument._
 - `test_vector_search_result_creation_and_payload` - _Verify VectorSearchResult creation and payload access._
 
-#### `test_vector_store_chroma.py` (30 tests)
+#### `test_vector_store_chroma.py` (32 tests)
 - `TestChromaVectorStoreInit::test_init_in_memory`
 - `TestChromaVectorStoreInit::test_init_persistent_disk`
 - `TestChromaVectorStoreInit::test_init_remote_success`
@@ -474,6 +476,7 @@ classDiagram
 - `TestChromaVectorStoreInit::test_custom_injected_client`
 - `TestChromaVectorStoreOperations::test_ensure_collection`
 - `TestChromaVectorStoreOperations::test_upsert_vector_documents`
+- `TestChromaVectorStoreOperations::test_upsert_chunked_batching`
 - `TestChromaVectorStoreOperations::test_upsert_dict_documents_auto_computes_vectors`
 - `TestChromaVectorStoreOperations::test_upsert_dict_without_id_generates_uuid`
 - `TestChromaVectorStoreOperations::test_upsert_handles_complex_metadata`
@@ -489,6 +492,7 @@ classDiagram
 - `test_custom_injected_client`
 - `test_ensure_collection`
 - `test_upsert_vector_documents`
+- `test_upsert_chunked_batching`
 - `test_upsert_dict_documents_auto_computes_vectors`
 - `test_upsert_dict_without_id_generates_uuid`
 - `test_upsert_handles_complex_metadata`
@@ -538,13 +542,14 @@ classDiagram
 - `test_test_connection_active_embedded` - _Verify test_connection succeeds on active embedded Qdrant store without file lock conflict._
 - `test_switch_same_embedded_directory` - _Verify switch_vector_store succeeds when switching collection on the same embedded Qdrant directory._
 
-#### `test_vector_store_qdrant.py` (22 tests)
+#### `test_vector_store_qdrant.py` (24 tests)
 - `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`
 - `TestQdrantVectorStoreInit::test_init_remote_success`
 - `TestQdrantVectorStoreInit::test_init_remote_fallback_to_embedded_on_connection_error`
 - `TestQdrantVectorStoreInit::test_custom_injected_client`
 - `TestQdrantVectorStoreOperations::test_ensure_collection_recreates_on_schema_mismatch`
 - `TestQdrantVectorStoreOperations::test_upsert_vector_documents`
+- `TestQdrantVectorStoreOperations::test_upsert_chunked_batching`
 - `TestQdrantVectorStoreOperations::test_upsert_dict_documents_auto_computes_vectors`
 - `TestQdrantVectorStoreOperations::test_search_dense_and_hybrid_rrf`
 - `TestQdrantVectorStoreOperations::test_delete_by_path`
@@ -556,6 +561,7 @@ classDiagram
 - `test_custom_injected_client`
 - `test_ensure_collection_recreates_on_schema_mismatch`
 - `test_upsert_vector_documents`
+- `test_upsert_chunked_batching`
 - `test_upsert_dict_documents_auto_computes_vectors`
 - `test_search_dense_and_hybrid_rrf`
 - `test_delete_by_path`

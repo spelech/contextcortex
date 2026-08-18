@@ -52,5 +52,26 @@ class TestIndexerSync(unittest.TestCase):
             self.assertEqual(row["status"], "error")
             self.assertIn("Repository not found", row["last_error"])
 
+    @patch("app.services.indexer.get_remote_head_sha", return_value="abc12345")
+    @patch("app.services.indexer.shallow_clone_repo")
+    @patch("app.services.indexer.cleanup_repo_dir")
+    @patch("app.services.indexer.get_vector_store")
+    def test_sync_single_git_repo_vector_upsert_failure(self, mock_get_store, mock_cleanup, mock_clone, mock_sha):
+        mock_clone.return_value = CloneResult(temp_dir="/tmp/mock_repo_dir", commit_sha="abc12345", error=None)
+        mock_store = MagicMock()
+        mock_store.upsert_documents.return_value = False
+        mock_get_store.return_value = mock_store
+
+        mock_file_content = 'print("hello world")'
+        with patch("os.walk", return_value=[("/tmp/mock_repo_dir", [], ["test.py"])]), \
+             patch("builtins.open", unittest.mock.mock_open(read_data=mock_file_content)):
+            sync_single_git_repo(self.repo_id)
+
+        with get_db_connection() as conn:
+            row = conn.execute("SELECT * FROM git_repositories WHERE id = ?", (self.repo_id,)).fetchone()
+            self.assertEqual(row["status"], "error")
+            self.assertIsNotNone(row["last_error"])
+            self.assertIn("vector", row["last_error"].lower())
+
 if __name__ == "__main__":
     unittest.main()

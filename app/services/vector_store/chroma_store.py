@@ -137,7 +137,11 @@ class ChromaVectorStore(VectorStore):
             logger.error(f"Error initializing Chroma collection '{self.collection_name}': {e}")
             return False
 
-    def upsert_documents(self, documents: List[Union[VectorDocument, Dict[str, Any]]]) -> bool:
+    def upsert_documents(
+        self,
+        documents: List[Union[VectorDocument, Dict[str, Any]]],
+        batch_size: int = 100
+    ) -> bool:
         """Upserts a batch of document chunks with vectors and payload."""
         if not documents:
             return True
@@ -179,12 +183,14 @@ class ChromaVectorStore(VectorStore):
                 documents_text.append(text)
                 metadatas.append(clean_metadata)
 
-            self.collection.upsert(
-                ids=ids,
-                embeddings=embeddings,
-                documents=documents_text,
-                metadatas=metadatas,
-            )
+            effective_batch_size = max(1, batch_size)
+            for i in range(0, len(ids), effective_batch_size):
+                self.collection.upsert(
+                    ids=ids[i : i + effective_batch_size],
+                    embeddings=embeddings[i : i + effective_batch_size],
+                    documents=documents_text[i : i + effective_batch_size],
+                    metadatas=metadatas[i : i + effective_batch_size],
+                )
             return True
         except Exception as e:
             logger.error(f"Error upserting documents into Chroma collection '{self.collection_name}': {e}")

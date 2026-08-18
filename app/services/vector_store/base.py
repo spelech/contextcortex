@@ -90,7 +90,11 @@ class VectorStore(ABC):
         pass
 
     @abstractmethod
-    def upsert_documents(self, documents: List[Union[VectorDocument, Dict[str, Any]]]) -> bool:
+    def upsert_documents(
+        self,
+        documents: List[Union[VectorDocument, Dict[str, Any]]],
+        batch_size: int = 100
+    ) -> bool:
         """Upserts a batch of document chunks with vectors and payload."""
         pass
 

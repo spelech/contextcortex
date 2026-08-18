@@ -398,7 +398,9 @@ def sync_local_paths():
     if all_points:
         logger.info(f"Upserting {len(all_points)} vector documents to vector store...")
         try:
-            store.upsert_documents(all_points)
+            upsert_ok = store.upsert_documents(all_points)
+            if not upsert_ok:
+                logger.error("Failed to upsert points to vector store during local indexing.")
         except Exception as e:
             logger.error(f"Failed to upsert points to vector store: {e}")
 
@@ -540,7 +542,9 @@ def sync_single_git_repo(repo_id: int):
         # Bulk upsert new points to vector store
         if all_points:
             logger.info(f"Upserting {len(all_points)} vectors for repo '{repo_name}'...")
-            store.upsert_documents(all_points)
+            upsert_ok = store.upsert_documents(all_points)
+            if not upsert_ok:
+                raise RuntimeError(f"Failed to upsert {len(all_points)} documents into vector store for repo '{repo_name}'")
 
         # Update SQLite
         with get_db_connection() as conn:

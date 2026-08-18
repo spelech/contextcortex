@@ -96,7 +96,7 @@ def generate_markdown() -> str:
     total_all_tests = total_py_tests + total_fe_tests + total_e2e_tests
 
     lines = [
-        "# Software Requirements Specification (v2.6.0)",
+        "# Software Requirements Specification (v2.6.1)",
 
         "",
         "> **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.",

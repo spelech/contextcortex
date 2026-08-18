@@ -135,7 +135,11 @@ class QdrantVectorStore(VectorStore):
             logger.error(f"Error initializing Qdrant collection '{self.collection_name}': {e}")
             return False
 
-    def upsert_documents(self, documents: List[Union[VectorDocument, Dict[str, Any]]]) -> bool:
+    def upsert_documents(
+        self,
+        documents: List[Union[VectorDocument, Dict[str, Any]]],
+        batch_size: int = 100
+    ) -> bool:
         """Upserts a batch of document chunks with vectors and payload."""
         if not documents:
             return True
@@ -200,10 +204,13 @@ class QdrantVectorStore(VectorStore):
                     payload=payload
                 ))
 
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=points
-            )
+            effective_batch_size = max(1, batch_size)
+            for i in range(0, len(points), effective_batch_size):
+                chunk = points[i : i + effective_batch_size]
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=chunk
+                )
             return True
         except Exception as e:
             logger.error(f"Error upserting documents into Qdrant collection '{self.collection_name}': {e}")
