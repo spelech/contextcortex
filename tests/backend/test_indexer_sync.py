@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from app.services.db import init_db, get_db_connection
-from app.services.indexer import sync_single_git_repo
+from app.services.indexer import sync_single_git_repo, sync_local_paths
 from app.models.schemas import CloneResult
 
 class TestIndexerSync(unittest.TestCase):
@@ -10,6 +10,7 @@ class TestIndexerSync(unittest.TestCase):
         init_db()
         with get_db_connection() as conn:
             conn.execute("DELETE FROM git_repositories WHERE name = 'test_sync_repo'")
+            conn.execute("DELETE FROM indexed_paths WHERE repo = 'test_sync_vault'")
             conn.execute(
                 "INSERT INTO git_repositories (name, url, branch, status) VALUES (?, ?, ?, ?)",
                 ("test_sync_repo", "https://github.com/test/sync-repo", "main", "pending")
@@ -20,7 +21,8 @@ class TestIndexerSync(unittest.TestCase):
     def tearDown(self):
         with get_db_connection() as conn:
             conn.execute("DELETE FROM git_repositories WHERE name = 'test_sync_repo'")
-            conn.execute("DELETE FROM indexed_files WHERE repo = 'test_sync_repo'")
+            conn.execute("DELETE FROM indexed_files WHERE repo IN ('test_sync_repo', 'test_sync_vault')")
+            conn.execute("DELETE FROM indexed_paths WHERE repo = 'test_sync_vault'")
             conn.commit()
 
     @patch("app.services.indexer.get_remote_head_sha", return_value="abc12345")
@@ -72,6 +74,33 @@ class TestIndexerSync(unittest.TestCase):
             self.assertEqual(row["status"], "error")
             self.assertIsNotNone(row["last_error"])
             self.assertIn("vector", row["last_error"].lower())
+
+    @patch("app.services.indexer.get_vector_store")
+    def test_sync_local_paths_vector_upsert_failure(self, mock_get_store):
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO indexed_paths (path, type, recursive, enabled, repo, category) VALUES (?, 'directory', 1, 1, 'test_sync_vault', 'notes')",
+                ("/tmp/test_local_vault",)
+            )
+            conn.commit()
+
+        mock_store = MagicMock()
+        mock_store.upsert_documents.return_value = False
+        mock_get_store.return_value = mock_store
+
+        mock_file_content = '# Local Test Note\n\nSome important content.'
+        with patch("os.walk", return_value=[("/tmp/test_local_vault", [], ["note.md"])]), \
+             patch("os.path.exists", return_value=True), \
+             patch("os.path.isdir", return_value=True), \
+             patch("os.path.getmtime", return_value=123456789.0), \
+             patch("builtins.open", unittest.mock.mock_open(read_data=mock_file_content)), \
+             patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]):
+            res = sync_local_paths()
+            self.assertFalse(res)
+
+        with get_db_connection() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM indexed_files WHERE repo = 'test_sync_vault'").fetchone()[0]
+            self.assertEqual(count, 0)
 
 if __name__ == "__main__":
     unittest.main()

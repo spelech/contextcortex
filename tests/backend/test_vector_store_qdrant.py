@@ -148,6 +148,17 @@ class TestQdrantVectorStoreOperations:
             assert spy_upsert.call_count == 3
             assert memory_store.get_stats()["points_count"] == 250
 
+    def test_upsert_failure_handling_and_logging(self, memory_store):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Failure simulation document",
+            repo="fail-test",
+            path="/fail/doc.md"
+        )
+        with patch.object(memory_store.client, "upsert", side_effect=RuntimeError("Qdrant connection dropped")):
+            ok = memory_store.upsert_documents([doc])
+            assert ok is False
+
     def test_upsert_dict_documents_auto_computes_vectors(self, memory_store):
         raw_doc = {
             "id": "non-uuid-custom-id",

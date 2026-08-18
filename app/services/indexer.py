@@ -401,8 +401,10 @@ def sync_local_paths():
             upsert_ok = store.upsert_documents(all_points)
             if not upsert_ok:
                 logger.error("Failed to upsert points to vector store during local indexing.")
+                return False
         except Exception as e:
             logger.error(f"Failed to upsert points to vector store: {e}")
+            return False
 
     # Batch update SQLite tables
     try:
@@ -429,6 +431,9 @@ def sync_local_paths():
             conn.commit()
     except Exception as e:
         logger.error(f"Failed writing local index updates to SQLite: {e}")
+        return False
+
+    return True
 
 def sync_single_git_repo(repo_id: int):
     """Ephemeral shallow clone, AST parse, hybrid vector upsert, and immediate disk cleanup."""
