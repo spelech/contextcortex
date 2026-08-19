@@ -7,7 +7,7 @@ from app.services.git_manager import get_remote_head_sha
 import app.services.indexer as indexer
 from app.services.indexer import sync_single_git_repo
 
-logger = logging.getLogger("knowledge-rag-mcp.poller")
+logger = logging.getLogger("contextcortex.poller")
 
 _poller_thread: Optional[threading.Thread] = None
 _poller_stop_event = threading.Event()

@@ -101,4 +101,4 @@ async def test_fastmcp_streamable_http_transport():
                 headers={"accept": "application/json, text/event-stream"}
             )
             assert resp.status_code == 200
-            assert "ContextHub" in resp.text
+            assert "ContextCortex" in resp.text

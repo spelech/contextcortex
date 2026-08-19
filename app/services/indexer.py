@@ -17,7 +17,7 @@ from app.services.vector_store import (
     VectorStoreManager, get_vector_store
 )
 
-logger = logging.getLogger('knowledge-rag-mcp')
+logger = logging.getLogger('contextcortex.indexer')
 
 VAULT_PATH = os.getenv("VAULT_PATH", "/docs")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1500"))
@@ -61,7 +61,7 @@ def ensure_collection() -> bool:
         return False
 
 def get_chunk_uuid(repo: str, rel_path: str, index: int) -> str:
-    namespace = uuid.uuid5(uuid.NAMESPACE_DNS, "knowledge-rag-mcp.lan")
+    namespace = uuid.uuid5(uuid.NAMESPACE_DNS, "contextcortex.lan")
     return str(uuid.uuid5(namespace, f"{repo}:{rel_path}#{index}"))
 
 STOPWORDS = {

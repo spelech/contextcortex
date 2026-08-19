@@ -8,7 +8,7 @@ from qdrant_client.http import models as qmodels
 from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
 from app.services.embeddings import get_dense_embedding, get_sparse_embedding, get_dense_dim
 
-logger = logging.getLogger("knowledge-rag-mcp.vector_store.qdrant")
+logger = logging.getLogger("contextcortex.vector_store.qdrant")
 
 
 def get_default_qdrant_storage_path() -> str:

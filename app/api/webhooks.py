@@ -11,7 +11,7 @@ from app.services.db import get_db_connection, get_global_webhook_secret
 from app.services.git_manager import normalize_git_url
 from app.services.indexer import sync_single_git_repo
 
-logger = logging.getLogger("knowledge-rag-mcp.webhook")
+logger = logging.getLogger("contextcortex.webhook")
 router = APIRouter()
 
 def verify_hmac_sha256(raw_body: bytes, signature_header: Optional[str], secret: str, prefix: str = "sha256=") -> bool:

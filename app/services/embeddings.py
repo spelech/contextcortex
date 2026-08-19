@@ -4,7 +4,7 @@ import threading
 from typing import List, Dict, Any, Optional, Tuple
 from qdrant_client.http import models as qmodels
 
-logger = logging.getLogger("knowledge-rag-mcp.embeddings")
+logger = logging.getLogger("contextcortex.embeddings")
 
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local").lower()
 DENSE_MODEL_NAME = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")

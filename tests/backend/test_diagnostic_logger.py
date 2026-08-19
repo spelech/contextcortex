@@ -9,7 +9,7 @@ from app.api.routes import router
 
 def test_ring_buffer_logging():
     clear_diagnostic_logs()
-    test_logger = logging.getLogger("knowledge-rag-mcp.test")
+    test_logger = logging.getLogger("contextcortex.test")
     test_logger.setLevel(logging.INFO)
     test_logger.info("Test info message")
     test_logger.warning("Test warning message")
@@ -32,7 +32,7 @@ def test_ring_buffer_logging():
     assert len(search_msg_logs) == 1
     assert search_msg_logs[0]["message"] == "Test warning message"
 
-    search_logger_logs = get_diagnostic_logs(search="knowledge-rag-mcp.test")
+    search_logger_logs = get_diagnostic_logs(search="contextcortex.test")
     assert len(search_logger_logs) == 3
 
     search_nonexistent = get_diagnostic_logs(search="nonexistent_needle")
@@ -45,7 +45,7 @@ def test_ring_buffer_logging():
 
 def test_ring_buffer_exception_traceback():
     clear_diagnostic_logs()
-    test_logger = logging.getLogger("knowledge-rag-mcp.exception_test")
+    test_logger = logging.getLogger("contextcortex.exception_test")
     test_logger.setLevel(logging.INFO)
 
     try:
@@ -84,7 +84,7 @@ def test_logs_api_routes():
     api_app = FastAPI()
     api_app.include_router(router)
     client = TestClient(api_app)
-    test_logger = logging.getLogger("knowledge-rag-mcp.api_test")
+    test_logger = logging.getLogger("contextcortex.api_test")
     test_logger.setLevel(logging.INFO)
     test_logger.info("API test log event")
 

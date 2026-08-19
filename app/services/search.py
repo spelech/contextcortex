@@ -2,7 +2,7 @@ import logging
 from typing import Optional, List
 from app.services.vector_store import get_vector_store, VectorSearchResult
 
-logger = logging.getLogger('knowledge-rag-mcp')
+logger = logging.getLogger('contextcortex.search')
 
 
 def execute_hybrid_search(

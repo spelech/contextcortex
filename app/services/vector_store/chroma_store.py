@@ -10,7 +10,7 @@ import chromadb
 from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
 from app.services.embeddings import get_dense_embedding
 
-logger = logging.getLogger("knowledge-rag-mcp.vector_store.chroma")
+logger = logging.getLogger("contextcortex.vector_store.chroma")
 
 
 def _sanitize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:

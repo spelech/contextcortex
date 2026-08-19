@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Optional, List, Dict, Any, Tuple, Union
 
-logger = logging.getLogger("knowledge-rag-mcp.db")
+logger = logging.getLogger("contextcortex.db")
 
 def get_default_db_path() -> str:
     env_path = os.getenv("CACHE_DB_PATH")

@@ -10,7 +10,7 @@ from app.services.vector_store.base import VectorStore
 from app.services.vector_store.qdrant_store import QdrantVectorStore
 from app.services.vector_store.chroma_store import ChromaVectorStore
 
-logger = logging.getLogger("knowledge-rag-mcp.vector_store.manager")
+logger = logging.getLogger("contextcortex.vector_store.manager")
 
 SUPPORTED_PROVIDERS = {"qdrant", "chroma", "chromadb"}
 SUPPORTED_MODES = {"embedded", "persistent", "memory", "remote"}

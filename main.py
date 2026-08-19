@@ -16,7 +16,7 @@ from app.services.indexer import run_full_indexing, VAULT_PATH
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("contexthub")
+logger = logging.getLogger("contextcortex")
 
 # Initialize database
 try:
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     import app.services.indexer as indexer
     from app.services.poller import start_poller_daemon, stop_poller_daemon
     indexer.main_event_loop = asyncio.get_running_loop()
-    logger.info("ContextHub Server starting up...")
+    logger.info("ContextCortex Server starting up...")
     try:
         threading.Thread(target=run_full_indexing, daemon=True).start()
     except Exception as e:
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
     async with mcp_server.session_manager.run():
         yield
 
-    logger.info("ContextHub Server shutting down...")
+    logger.info("ContextCortex Server shutting down...")
     try:
         stop_poller_daemon()
     except Exception as e:
@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-app = FastAPI(title="ContextHub", version="2.7.0", lifespan=lifespan)
+app = FastAPI(title="ContextCortex", version="2.7.0", lifespan=lifespan)
 
 
 # Include API routes
