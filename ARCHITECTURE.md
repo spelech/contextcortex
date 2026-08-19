@@ -1,7 +1,7 @@
-# Architecture: ContextHub (v2.7.0)
+# Architecture: ContextCortex (v2.7.0)
 
 
-ContextHub provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, and a React 19 administrative dashboard.
+ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, and a React 19 administrative dashboard.
 
 ---
 
@@ -11,7 +11,7 @@ ContextHub provides fast, local, syntax-aware semantic and hybrid search over co
 flowchart TD
     subgraph Clients["MCP & Web Clients"]
         Claude["AI Coding Agents / MCP Clients (Cursor, Claude Desktop, Antigravity)"]
-        Browser["Admin Dashboard (Knowledge RAG Hub - React 19)"]
+        Browser["Admin Dashboard (ContextCortex Dashboard - React 19)"]
     end
 
     subgraph Server["FastAPI Core & FastMCP 2.0 Application (main.py)"]
@@ -73,7 +73,7 @@ flowchart TD
 ## 🧩 Core Architecture Components
 
 ### 1. FastMCP 2.0 Server & Transport Routing (`app/mcp/`)
-- **FastMCP Foundation**: Implemented via `mcp.server.fastmcp.FastMCP` (`knowledge-rag-mcp`) with lifespan session management (`mcp_server.session_manager.run()`).
+- **FastMCP Foundation**: Implemented via `mcp.server.fastmcp.FastMCP` (`ContextCortex`) with lifespan session management (`mcp_server.session_manager.run()`).
 - **Dual MCP Transports**:
   - **Server-Sent Events (SSE)**: Mounted via `mcp_server.sse_app().routes`, handling streaming events at `/sse` and message exchanges at `/messages/`.
   - **Streamable HTTP**: Mounted via `mcp_server.streamable_http_app().routes` at `/mcp` for direct bidirectional JSON-RPC.
@@ -96,7 +96,7 @@ flowchart TD
 
 ### 2. Diagnostic Logging & System Observability (`app/services/logger.py`)
 - **In-Memory Ring Buffer**: Implemented using `collections.deque(maxlen=500)` guarded by a `threading.Lock()`.
-- **Diagnostic Log Handler**: Captures log records across all backend modules (`knowledge-rag-mcp`, `knowledge-rag-mcp.*`, `server.*`, `indexer`, `git`, `ast_parser`), preserving:
+- **Diagnostic Log Handler**: Captures log records across all backend modules (`contextcortex`, `contextcortex.*`, `server.*`, `indexer`, `git`, `ast_parser`), preserving:
   - `timestamp`: ISO-8601 UTC timestamp.
   - `level`: `INFO`, `WARNING`, `ERROR`, `DEBUG`.
   - `logger`: Originating logger name.
@@ -279,7 +279,7 @@ classDiagram
 
 ---
 
-### 7. Modern Web Admin Dashboard (`frontend/`) - Knowledge RAG Hub
+### 7. Modern Web Admin Dashboard (`frontend/`) - ContextCortex Dashboard
 - **React 19 + TypeScript + Vite**: Fast, reactive dashboard served at `/admin/`.
 - **Tabs**:
   - **Overview**: System metrics, embedding model specs, keyword cloud, and full reindex trigger.

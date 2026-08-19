@@ -1,12 +1,12 @@
-# ContextHub (v2.7.0)
+# ContextCortex (v2.7.0)
 
 
-[![Build and Publish Docker Image](https://github.com/spelech/contexthub/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/contexthub/actions/workflows/docker-publish.yml)
-[![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fcontexthub-blue?logo=docker)](https://github.com/spelech/contexthub/pkgs/container/contexthub)
+[![Build and Publish Docker Image](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml)
+[![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fcontextcortex-blue?logo=docker)](https://github.com/spelech/contextcortex/pkgs/container/contextcortex)
 
-A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, **Multi-Vector Database Backends (Qdrant & ChromaDB)**, and **Universal Git Provider indexing** with an integrated Web Admin Dashboard (ContextHub) and real-time Diagnostic Observability.
+A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, **Multi-Vector Database Backends (Qdrant & ChromaDB)**, and **Universal Git Provider indexing** with an integrated Web Admin Dashboard (ContextCortex) and real-time Diagnostic Observability.
 
-![Knowledge RAG Admin Dashboard](docs/assets/dashboard.jpg)
+![ContextCortex Admin Dashboard](docs/assets/dashboard.jpg)
 
 ---
 
@@ -33,7 +33,7 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   4. Environment variable fallback.
 - **Fast Deterministic Symbol Lookup**: Built-in SQLite symbol table (`ast_symbols`) powers instantaneous symbol searches (`find_symbol`) and file outlines (`get_file_outline`) without token bloat.
 - **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
-- **Modern Tabbed Web Dashboard (`/admin/`) - Knowledge RAG Hub**:
+- **Modern Tabbed Web Dashboard (`/admin/`) - ContextCortex Dashboard**:
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
   - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, trigger shallow clone syncs, inspect commit SHAs, and manage sources.
   - **Local Paths**: Monitor local workspaces and notes vaults with recursive directory scanning and filesystem browser modal.
@@ -96,9 +96,9 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 ### Docker Compose
 ```yaml
 services:
-  knowledge-rag-mcp:
-    image: ghcr.io/spelech/knowledge-rag-mcp:latest
-    container_name: knowledge-rag-mcp
+  contextcortex:
+    image: ghcr.io/spelech/contextcortex:latest
+    container_name: contextcortex
     restart: unless-stopped
     ports:
       - "8021:3000"
@@ -123,7 +123,7 @@ Connect any MCP client (VS Code, Cursor, Antigravity CLI, Claude Desktop, or Win
 ```json
 {
   "mcpServers": {
-    "knowledge-rag": {
+    "contextcortex": {
       "url": "http://localhost:3000/sse"
     }
   }
@@ -134,7 +134,7 @@ Connect any MCP client (VS Code, Cursor, Antigravity CLI, Claude Desktop, or Win
 ```json
 {
   "mcpServers": {
-    "knowledge-rag-http": {
+    "contextcortex-http": {
       "url": "http://localhost:3000/mcp"
     }
   }

@@ -1,7 +1,7 @@
-# Developer Documentation: ContextHub (v2.7.0)
+# Developer Documentation: ContextCortex (v2.7.0)
 
 
-This document provides instructions for developing, testing, configuring, and running ContextHub locally.
+This document provides instructions for developing, testing, configuring, and running ContextCortex locally.
 
 ---
 
@@ -19,8 +19,8 @@ This document provides instructions for developing, testing, configuring, and ru
 
 1. **Clone the repository:**
    ```bash
-   git clone git@github.com:spelech/knowledge-rag-mcp.git
-   cd knowledge-rag-mcp
+   git clone git@github.com:spelech/contextcortex.git
+   cd contextcortex
    ```
 
 2. **Create a virtual environment:**
@@ -118,7 +118,7 @@ npx playwright test
 ## 📁 Project Structure
 
 ```
-knowledge-rag-mcp/
+contextcortex/
 ├── main.py                # FastAPI entry point, lifespan manager & FastMCP route mounting
 ├── app/                   # Backend modular architecture
 │   ├── api/               # FastAPI REST routes (repos, paths, search, logs, stats, vector-store)
@@ -127,7 +127,7 @@ knowledge-rag-mcp/
 │   └── services/          # Core services (chunker, embeddings, db, git_manager, logger, search, vector_store)
 ├── tests/                 # Backend pytest test suite
 │   └── backend/           # Unit and integration tests (>95% coverage)
-├── frontend/              # Web Admin Dashboard - Knowledge RAG Hub (React 19, TypeScript, Vite)
+├── frontend/              # Web Admin Dashboard - ContextCortex Dashboard (React 19, TypeScript, Vite)
 │   ├── src/               # React components, contexts, and styles
 │   │   └── tests/         # Vitest component unit tests
 │   ├── e2e/               # Playwright E2E test specs (13 full test workflows)
@@ -152,7 +152,7 @@ Example configuration (`claude_desktop_config.json` / Cursor):
 ```json
 {
   "mcpServers": {
-    "knowledge-rag-sse": {
+    "contextcortex-sse": {
       "url": "http://localhost:3000/sse"
     }
   }
@@ -166,7 +166,7 @@ Example configuration:
 ```json
 {
   "mcpServers": {
-    "knowledge-rag-http": {
+    "contextcortex-http": {
       "url": "http://localhost:3000/mcp"
     }
   }
