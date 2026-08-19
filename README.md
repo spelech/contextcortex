@@ -1,10 +1,10 @@
-# Knowledge RAG MCP Server (v2.7.0)
+# ContextHub (v2.7.0)
 
 
-[![Build and Publish Docker Image](https://github.com/spelech/knowledge-rag-mcp/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/knowledge-rag-mcp/actions/workflows/docker-publish.yml)
-[![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fknowledge--rag--mcp-blue?logo=docker)](https://github.com/spelech/knowledge-rag-mcp/pkgs/container/knowledge-rag-mcp)
+[![Build and Publish Docker Image](https://github.com/spelech/contexthub/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/contexthub/actions/workflows/docker-publish.yml)
+[![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fcontexthub-blue?logo=docker)](https://github.com/spelech/contexthub/pkgs/container/contexthub)
 
-A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, **Multi-Vector Database Backends (Qdrant & ChromaDB)**, and **Universal Git Provider indexing** with an integrated Web Admin Dashboard (Knowledge RAG Hub) and real-time Diagnostic Observability.
+A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, **Multi-Vector Database Backends (Qdrant & ChromaDB)**, and **Universal Git Provider indexing** with an integrated Web Admin Dashboard (ContextHub) and real-time Diagnostic Observability.
 
 ![Knowledge RAG Admin Dashboard](docs/assets/dashboard.jpg)
 

@@ -1,4 +1,4 @@
-# Software Requirements Specification (v2.6.1)
+# Software Requirements Specification: ContextHub (v2.7.0)
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
@@ -8,7 +8,7 @@
 
 ## 1. System Vision & Architecture Scope
 
-The Notes & Code RAG MCP Server provides high-precision, syntax-aware semantic and lexical retrieval over source code repositories, markdown notes, architecture documents, and system documentation.
+ContextHub provides high-precision, syntax-aware semantic and lexical retrieval over source code repositories, markdown notes, architecture documents, and system documentation.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────┐

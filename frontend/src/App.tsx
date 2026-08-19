@@ -43,8 +43,8 @@ function App() {
             <div className="header-logo">
               <i className="fa-solid fa-layer-group logo-icon"></i>
               <div className="header-title">
-                <h1>Knowledge RAG Hub</h1>
-                <span className="badge badge-primary">v2.6.0</span>
+                <h1>ContextHub</h1>
+                <span className="badge badge-primary">v2.7.0</span>
               </div>
             </div>
             <button
@@ -102,7 +102,7 @@ function App() {
 
 
         <footer className="dashboard-footer">
-          <p>Knowledge RAG MCP &bull; High Precision Tree-sitter & Hybrid Search &bull; 2026</p>
+          <p>ContextHub MCP &bull; Universal Code & Knowledge RAG &bull; 2026</p>
         </footer>
       </div>
     </>

@@ -1,7 +1,7 @@
-# Developer Documentation (v2.7.0)
+# Developer Documentation: ContextHub (v2.7.0)
 
 
-This document provides instructions for developing, testing, configuring, and running the Knowledge RAG MCP Server locally.
+This document provides instructions for developing, testing, configuring, and running ContextHub locally.
 
 ---
 

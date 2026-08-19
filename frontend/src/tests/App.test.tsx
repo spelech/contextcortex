@@ -60,8 +60,8 @@ describe('App Component', () => {
       </ToastProvider>
     );
 
-    expect(screen.getByText('Knowledge RAG Hub')).toBeInTheDocument();
-    expect(screen.getByText('v2.6.0')).toBeInTheDocument();
+    expect(screen.getByText('ContextHub')).toBeInTheDocument();
+    expect(screen.getByText('v2.7.0')).toBeInTheDocument();
 
 
     await waitFor(() => {

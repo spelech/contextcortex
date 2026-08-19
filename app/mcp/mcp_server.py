@@ -8,8 +8,8 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 mcp_server = FastMCP(
-    "knowledge-rag-mcp",
-    instructions="Hybrid search, AST code symbols, documentation retrieval and repository indexing server.",
+    "ContextHub",
+    instructions="ContextHub: Universal Code & Knowledge RAG server providing hybrid search, AST code symbols, documentation retrieval, and repository indexing.",
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
 )
 
