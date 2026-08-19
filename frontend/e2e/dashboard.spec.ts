@@ -330,8 +330,8 @@ test.beforeEach(async ({ page }) => {
 
 test('1. navigates through all tabs including Diagnostics & Logs', async ({ page }) => {
   // Header and engine state
-  await expect(page.locator('h1', { hasText: 'Knowledge RAG Hub' })).toBeVisible();
-  await expect(page.getByText('v2.5.0')).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'ContextHub' })).toBeVisible();
+  await expect(page.getByText('v2.7.0')).toBeVisible();
   await expect(page.getByText('knowledge_rag_v1')).toBeVisible();
 
   // Overview tab
@@ -436,8 +436,8 @@ test('3. triggers single-repo sync and verifies status feedback', async ({ page,
 
   // Trigger sync on the first repo
   const syncBtn = isMobile
-    ? page.locator('.mobile-card-list').getByRole('button', { name: 'Sync' }).first()
-    : page.locator('.desktop-table-view').getByRole('button', { name: 'Sync' }).first();
+    ? page.locator('.mobile-card-list').locator('button[title="Trigger Sync"]').first()
+    : page.locator('.desktop-table-view').locator('button[title="Trigger Sync"]').first();
   await syncBtn.click();
 
   expect(syncRequested).toBe(true);
@@ -682,7 +682,7 @@ test('8. executes hybrid search with target type toggle (code vs doc) and repo f
   await expect(page.getByText('View on GitHub')).toBeVisible();
 
   // Toggle to Doc Search
-  await page.locator('select').selectOption('doc');
+  await page.locator('.search-bar select, .dashboard-main select').first().selectOption('doc');
   await page.getByPlaceholder(/e.g. JWT token/).fill('architecture overview');
   await page.locator('button[type="submit"]').click();
 
@@ -1007,7 +1007,7 @@ test('16. [Mobile] renders repositories as responsive cards with sync and delete
   await expect(errorCard.getByText('Authentication failed: Bad credentials')).toBeVisible();
 
   // Verify action buttons in mobile card
-  await expect(syncedCard.getByRole('button', { name: 'Sync' })).toBeVisible();
+  await expect(syncedCard.locator('button[title="Trigger Sync"]')).toBeVisible();
   await expect(syncedCard.getByRole('button', { name: 'Delete' })).toBeVisible();
 });
 
