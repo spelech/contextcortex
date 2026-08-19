@@ -200,6 +200,8 @@ describe('DiagnosticsViewer', () => {
       </ToastProvider>
     );
 
+    await screen.findByText('Server startup complete');
+
     const clearBtn = await screen.findByRole('button', { name: /Clear Logs/i });
     fireEvent.click(clearBtn);
 
