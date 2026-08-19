@@ -386,7 +386,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="repo-alias">Repository Alias / Identifier</label>
-                  <input type="text" id="repo-alias" required placeholder="e.g. backend-api or knowledge-rag-mcp" value={alias} onChange={e => setAlias(e.target.value)} />
+                  <input type="text" id="repo-alias" required placeholder="e.g. backend-api or contextcortex" value={alias} onChange={e => setAlias(e.target.value)} />
                 </div>
                 <div className="form-group">
                   <label htmlFor="repo-provider">Git Provider</label>

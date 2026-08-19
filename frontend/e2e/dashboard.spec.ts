@@ -362,7 +362,7 @@ test.beforeEach(async ({ page }) => {
 
 test('1. navigates through all tabs including Diagnostics & Logs', async ({ page }) => {
   // Header and engine state
-  await expect(page.locator('h1', { hasText: 'ContextHub' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'ContextCortex' })).toBeVisible();
   await expect(page.getByText('v2.7.0')).toBeVisible();
   await expect(page.getByText('knowledge_rag_v1')).toBeVisible();
 

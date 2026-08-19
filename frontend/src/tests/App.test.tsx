@@ -60,7 +60,7 @@ describe('App Component', () => {
       </ToastProvider>
     );
 
-    expect(screen.getByText('ContextHub')).toBeInTheDocument();
+    expect(screen.getByText('ContextCortex')).toBeInTheDocument();
     expect(screen.getByText('v2.7.0')).toBeInTheDocument();
 
 

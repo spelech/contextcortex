@@ -43,7 +43,7 @@ function App() {
             <div className="header-logo">
               <i className="fa-solid fa-layer-group logo-icon"></i>
               <div className="header-title">
-                <h1>ContextHub</h1>
+                <h1>ContextCortex</h1>
                 <span className="badge badge-primary">v2.7.0</span>
               </div>
             </div>
@@ -102,7 +102,7 @@ function App() {
 
 
         <footer className="dashboard-footer">
-          <p>ContextHub MCP &bull; Universal Code & Knowledge RAG &bull; 2026</p>
+          <p>ContextCortex MCP &bull; Universal Code & Knowledge RAG &bull; 2026</p>
         </footer>
       </div>
     </>
