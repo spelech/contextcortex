@@ -26,6 +26,7 @@ def test_check_all_auto_sync_repos_triggers_sync(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.poller.get_remote_head_sha", mock_get_remote_sha)
     monkeypatch.setattr("app.services.poller.sync_single_git_repo", mock_sync_repo)
     monkeypatch.setattr("app.services.poller.is_indexing", False)
+    monkeypatch.setattr("app.services.indexer.is_indexing", False)
 
     checked, updated = check_all_auto_sync_repos()
     assert checked == 1
@@ -55,6 +56,7 @@ def test_check_all_auto_sync_repos_skips_up_to_date(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.poller.get_remote_head_sha", mock_get_remote_sha)
     monkeypatch.setattr("app.services.poller.sync_single_git_repo", mock_sync_repo)
     monkeypatch.setattr("app.services.poller.is_indexing", False)
+    monkeypatch.setattr("app.services.indexer.is_indexing", False)
 
     checked, updated = check_all_auto_sync_repos()
     assert checked == 1
@@ -86,6 +88,7 @@ def test_check_all_auto_sync_repos_no_repos(tmp_path, monkeypatch):
     from app.services.poller import check_all_auto_sync_repos
 
     monkeypatch.setattr("app.services.poller.is_indexing", False)
+    monkeypatch.setattr("app.services.indexer.is_indexing", False)
     checked, updated = check_all_auto_sync_repos()
     assert checked == 0
     assert updated == 0
@@ -108,6 +111,7 @@ def test_check_all_auto_sync_repos_handles_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr("app.services.poller.get_remote_head_sha", mock_get_remote_sha_error)
     monkeypatch.setattr("app.services.poller.is_indexing", False)
+    monkeypatch.setattr("app.services.indexer.is_indexing", False)
 
     checked, updated = check_all_auto_sync_repos()
     assert checked == 0
