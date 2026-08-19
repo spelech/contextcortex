@@ -14,5 +14,7 @@ mcp_server = FastMCP(
 )
 
 from app.mcp.tools import register_mcp_tools_and_resources
+from app.services.poller import start_poller_daemon, stop_poller_daemon
 
 register_mcp_tools_and_resources(mcp_server)
+

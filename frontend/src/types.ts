@@ -24,6 +24,12 @@ export interface Stats {
   vector_store_collection?: string;
 }
 
+export interface AutoSyncSettings {
+  interval_mins: number;
+  webhook_url: string;
+  has_global_secret: boolean;
+}
+
 export interface VectorStoreConfig {
   provider: 'qdrant' | 'chroma';
   mode: 'embedded' | 'remote';
@@ -53,7 +59,11 @@ export interface Repo {
   last_error?: string;
   file_count?: number;
   last_synced?: string;
+  auto_sync?: number | boolean;
+  webhook_secret?: string;
 }
+
+export type GitRepo = Repo;
 
 export interface GitHostCredential {
   id: number;

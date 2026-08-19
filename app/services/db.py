@@ -59,6 +59,8 @@ def init_db(vault_path: str = "/docs"):
                 provider TEXT DEFAULT 'github',
                 auth_user TEXT,
                 enabled INTEGER DEFAULT 1,
+                auto_sync INTEGER DEFAULT 1,
+                webhook_secret TEXT,
                 status TEXT DEFAULT 'pending',
                 last_error TEXT,
                 last_synced TIMESTAMP,
@@ -76,6 +78,14 @@ def init_db(vault_path: str = "/docs"):
             pass
         try:
             conn.execute("ALTER TABLE git_repositories ADD COLUMN auth_user TEXT")
+        except Exception:
+            pass
+        try:
+            repo_cols = [r[1] for r in conn.execute("PRAGMA table_info(git_repositories)").fetchall()]
+            if "auto_sync" not in repo_cols:
+                conn.execute("ALTER TABLE git_repositories ADD COLUMN auto_sync INTEGER DEFAULT 1")
+            if "webhook_secret" not in repo_cols:
+                conn.execute("ALTER TABLE git_repositories ADD COLUMN webhook_secret TEXT")
         except Exception:
             pass
 
@@ -459,3 +469,32 @@ def get_effective_git_token(
             return val.strip(), override_user, f"Environment Variable ({k})"
 
     return None, override_user, "None"
+
+def get_auto_sync_interval() -> int:
+    try:
+        val = get_metadata("auto_sync_interval_mins", "15")
+        return int(val)
+    except (ValueError, TypeError):
+        return 15
+
+def set_auto_sync_interval(interval_mins: int) -> None:
+    set_metadata("auto_sync_interval_mins", str(max(0, interval_mins)))
+
+def get_global_webhook_secret() -> Optional[str]:
+    sec = get_metadata("global_webhook_secret", "")
+    return sec.strip() if sec and sec.strip() else None
+
+def set_global_webhook_secret(secret: Optional[str]) -> None:
+    set_metadata("global_webhook_secret", secret.strip() if secret else "")
+
+def set_repo_auto_sync(repo_id: int, enabled: bool) -> bool:
+    with get_db_connection() as conn:
+        res = conn.execute("UPDATE git_repositories SET auto_sync = ? WHERE id = ?", (1 if enabled else 0, repo_id))
+        conn.commit()
+        return res.rowcount > 0
+
+def list_auto_sync_repos() -> List[Dict[str, Any]]:
+    with get_db_connection() as conn:
+        rows = conn.execute("SELECT id, name, url, branch, commit_sha, auth_token, auth_user, provider, auto_sync, webhook_secret FROM git_repositories WHERE auto_sync = 1").fetchall()
+        return [dict(r) for r in rows]
+

@@ -1,4 +1,4 @@
-# Developer Documentation (v2.6.1)
+# Developer Documentation (v2.7.0)
 
 
 This document provides instructions for developing, testing, configuring, and running the Knowledge RAG MCP Server locally.

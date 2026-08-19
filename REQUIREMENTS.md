@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **328 Automated Tests** (247 Pytest Backend + 60 Vitest Frontend + 21 Playwright E2E).
+**Test Verification Baseline:** **342 Automated Tests** (247 Pytest Backend + 74 Vitest Frontend + 21 Playwright E2E).
 
 ---
 
@@ -594,14 +594,18 @@ classDiagram
 - displays error toast when log fetching fails
 - renders responsive layout elements for toolbar, search input, and log entry stream
 
-#### `GitRepoManager.test.tsx` (7 tests)
-- renders repository list with status badges and details
+#### `GitRepoManager.test.tsx` (11 tests)
+- renders repository list with status badges, auto-sync buttons, and details
 - shows empty state when no repositories are registered
 - opens modal, handles cancel, and submits new repository registration
 - triggers repo sync, refreshes stats, and updates status optimistically
+- toggles auto-sync state and sends PATCH request
+- handles auto-sync toggle error with rollback and error toast
+- opens webhook modal, displays URL & instructions, and copies URL
+- closes webhook modal via close button and backdrop click
 - triggers repo deletion, calls refreshStats, and removes repo optimistically
 - handles errors when loading repos, adding repo, syncing repo, and deleting repo
-- renders mobile cards for repositories with action buttons
+- renders mobile cards for repositories with action buttons and auto-sync toggles
 
 #### `LocalPathManager.test.tsx` (7 tests)
 - renders configured paths correctly
@@ -628,8 +632,8 @@ classDiagram
 - performs doc search with repo filter and renders documentation hits
 - renders search query form and hit card headers with responsive classes
 
-#### `Settings.test.tsx` (15 tests)
-- renders vector database panel, multi-provider token boxes, rate limits, and host vault list
+#### `Settings.test.tsx` (25 tests)
+- renders vector database panel, auto-sync panel, multi-provider token boxes, rate limits, and host vault list
 - handles empty stats or fallback provider auth structure and vector store load error
 - switches vector store form fields between embedded and remote modes and changes default paths/urls
 - tests vector store connection successfully and displays success feedback banner
@@ -644,6 +648,16 @@ classDiagram
 - deletes host credential and handles cancellation / delete error
 - handles loadHostCredentials network failure gracefully
 - renders responsive mobile card list for host credentials and handles mobile deletion
+- renders auto-sync settings panel with loaded interval, secret placeholder, and webhook endpoint URL
+- changes polling interval and saves auto-sync settings
+- enters new global webhook secret and saves settings successfully
+- toggles webhook secret visibility between masked and unmasked
+- clears global webhook secret with confirmation
+- cancels clearing global webhook secret when confirmation is dismissed
+- clears unsaved pending secret input without API call when no secret is stored
+- copies webhook endpoint URL to clipboard
+- handles clipboard copy failure gracefully
+- handles auto-sync load and save API errors gracefully
 
 #### `ToastContext.test.tsx` (5 tests)
 - throws error when useToast is called outside of ToastProvider

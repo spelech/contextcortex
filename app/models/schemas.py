@@ -15,6 +15,8 @@ class RepoConfig(BaseModel):
     provider: Optional[str] = "github"
     auth_user: Optional[str] = None
     enabled: bool = True
+    auto_sync: bool = True
+    webhook_secret: Optional[str] = None
 
 class LocalPathConfig(BaseModel):
     id: Optional[int] = None
@@ -116,4 +118,12 @@ class VectorStoreConfigRequest(BaseModel):
     storage_path: Optional[str] = None
     url: Optional[str] = None
     collection: Optional[str] = None
+
+class AutoSyncToggleRequest(BaseModel):
+    auto_sync: bool
+
+class AutoSyncSettingsRequest(BaseModel):
+    interval_mins: int
+    global_webhook_secret: Optional[str] = None
+
 

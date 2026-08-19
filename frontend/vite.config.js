@@ -1,10 +1,14 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { themeEditorPlugin } from 'vite-plugin-theme-editor'
 
 // https://vite.dev/config/
 export default defineConfig({
   cacheDir: './.vite',
-  plugins: [react()],
+  plugins: [
+    react(),
+    themeEditorPlugin()
+  ],
   build: {
     outDir: 'dist',
     emptyOutDir: true
@@ -13,7 +17,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/tests/setup.ts',
-    exclude: ['e2e/**/*', 'node_modules/**/*'],
+    include: ['src/tests/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['e2e/**/*', 'node_modules/**/*', '.node_modules*/**/*'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

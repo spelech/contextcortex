@@ -27,6 +27,7 @@ except Exception as e:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import app.services.indexer as indexer
+    from app.services.poller import start_poller_daemon, stop_poller_daemon
     indexer.main_event_loop = asyncio.get_running_loop()
     logger.info("Knowledge RAG Server starting up...")
     try:
@@ -34,10 +35,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Startup indexing error: {e}")
 
+    try:
+        start_poller_daemon()
+    except Exception as e:
+        logger.error(f"Startup poller daemon error: {e}")
+
     async with mcp_server.session_manager.run():
         yield
 
     logger.info("Knowledge RAG Server shutting down...")
+    try:
+        stop_poller_daemon()
+    except Exception as e:
+        logger.error(f"Shutdown poller daemon error: {e}")
+
     try:
         from app.services.vector_store.manager import VectorStoreManager
         VectorStoreManager.reset_instance()

@@ -1,4 +1,4 @@
-# Knowledge RAG MCP Server (v2.6.1)
+# Knowledge RAG MCP Server (v2.7.0)
 
 
 [![Build and Publish Docker Image](https://github.com/spelech/knowledge-rag-mcp/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/knowledge-rag-mcp/actions/workflows/docker-publish.yml)

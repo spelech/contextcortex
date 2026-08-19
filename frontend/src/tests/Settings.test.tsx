@@ -55,6 +55,12 @@ const mockHostCreds: GitHostCredential[] = [
   }
 ];
 
+const mockAutoSyncSettings = {
+  interval_mins: 15,
+  webhook_url: '/api/webhooks/git',
+  has_global_secret: false
+};
+
 describe('Settings Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -68,11 +74,14 @@ describe('Settings Component', () => {
       if (url === '/admin/api/vector-store') {
         return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
       }
+      if (url === '/admin/api/settings/auto-sync') {
+        return Promise.resolve({ ok: true, json: async () => mockAutoSyncSettings });
+      }
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });
   };
 
-  it('renders vector database panel, multi-provider token boxes, rate limits, and host vault list', async () => {
+  it('renders vector database panel, auto-sync panel, multi-provider token boxes, rate limits, and host vault list', async () => {
     setupDefaultMocks();
 
     render(
@@ -83,6 +92,7 @@ describe('Settings Component', () => {
 
     expect(screen.getByText('Vector Database Engine')).toBeInTheDocument();
     expect(screen.getByText('Active Vector Backend')).toBeInTheDocument();
+    expect(screen.getByText('Auto-Sync & Webhooks')).toBeInTheDocument();
     expect(screen.getByText('Global Git Provider Authentication')).toBeInTheDocument();
     expect(screen.getByText('Custom & Self-Hosted Git Host Vault')).toBeInTheDocument();
     expect(screen.getByText('ghp_****5678')).toBeInTheDocument();
@@ -392,7 +402,7 @@ describe('Settings Component', () => {
 
     // 1. Save empty (guard branch)
     fireEvent.click(saveBtns[0]);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2); // Initial loads for hosts & vector store
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3); // Initial loads for hosts, vector store & auto-sync
 
     // 2. Save GitHub token
     const ghInput = screen.getByPlaceholderText(/ghp_xxxx/i);
@@ -649,14 +659,375 @@ describe('Settings Component', () => {
 
     const mobileCards = container.querySelectorAll('.mobile-card-list .data-mobile-card');
     expect(mobileCards.length).toBe(2);
-
     const deleteBtn = mobileCards[0].querySelector('.btn-delete') as HTMLElement;
     expect(deleteBtn).toBeInTheDocument();
     fireEvent.click(deleteBtn);
 
+      await waitFor(() => {
+        expect(globalThis.fetch).toHaveBeenCalledWith('/admin/api/settings/hosts/1', { method: 'DELETE' });
+      });
+    });
+
+  it('renders auto-sync settings panel with loaded interval, secret placeholder, and webhook endpoint URL', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url === '/admin/api/settings/hosts') return Promise.resolve({ ok: true, json: async () => [] });
+      if (url === '/admin/api/vector-store') return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      if (url === '/admin/api/settings/auto-sync') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            interval_mins: 30,
+            webhook_url: '/api/webhooks/git',
+            has_global_secret: true
+          })
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    expect(screen.getByText('Auto-Sync & Webhooks')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Repository Polling Interval/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Global Webhook Secret/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Incoming Webhook Payload URL/i)).toBeInTheDocument();
+
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith('/admin/api/settings/hosts/1', { method: 'DELETE' });
+      expect(screen.getByLabelText(/Repository Polling Interval/i)).toHaveValue('30');
+      expect(screen.getByPlaceholderText(/Secret configured \(enter new to change\)/i)).toBeInTheDocument();
+      expect(screen.getByText('Secret Active')).toBeInTheDocument();
     });
   });
-});
 
+  it('changes polling interval and saves auto-sync settings', async () => {
+    setupDefaultMocks();
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url === '/admin/api/settings/hosts') return Promise.resolve({ ok: true, json: async () => [] });
+      if (url === '/admin/api/vector-store') return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      if (url === '/admin/api/settings/auto-sync' && opts?.method === 'POST') {
+        const body = JSON.parse(opts.body);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ status: 'success', interval_mins: body.interval_mins, has_global_secret: false })
+        });
+      }
+      if (url === '/admin/api/settings/auto-sync') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ interval_mins: 15, webhook_url: '/api/webhooks/git', has_global_secret: false })
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Repository Polling Interval/i)).toHaveValue('15');
+    });
+
+    const intervalSelect = screen.getByLabelText(/Repository Polling Interval/i);
+    fireEvent.change(intervalSelect, { target: { value: '60' } });
+    expect(intervalSelect).toHaveValue('60');
+
+    const saveBtn = screen.getByRole('button', { name: /Save Auto-Sync Settings/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/admin/api/settings/auto-sync',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ interval_mins: 60 })
+        })
+      );
+      expect(screen.getByText('Auto-sync settings saved successfully')).toBeInTheDocument();
+    });
+  });
+
+  it('enters new global webhook secret and saves settings successfully', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url === '/admin/api/settings/hosts') return Promise.resolve({ ok: true, json: async () => [] });
+      if (url === '/admin/api/vector-store') return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      if (url === '/admin/api/settings/auto-sync' && opts?.method === 'POST') {
+        const body = JSON.parse(opts.body);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ status: 'success', interval_mins: body.interval_mins, has_global_secret: true })
+        });
+      }
+      if (url === '/admin/api/settings/auto-sync') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ interval_mins: 15, webhook_url: '/api/webhooks/git', has_global_secret: false })
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Repository Polling Interval/i)).toHaveValue('15');
+    });
+
+    const secretInput = screen.getByPlaceholderText(/Enter webhook secret \(optional\)/i);
+    fireEvent.change(secretInput, { target: { value: 'super-secret-hmac' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Save Auto-Sync Settings/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/admin/api/settings/auto-sync',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ interval_mins: 15, global_webhook_secret: 'super-secret-hmac' })
+        })
+      );
+      expect(screen.getByText('Auto-sync settings saved successfully')).toBeInTheDocument();
+      expect(screen.getByText('Secret Active')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText(/Secret configured \(enter new to change\)/i)).toBeInTheDocument();
+    });
+  });
+
+  it('toggles webhook secret visibility between masked and unmasked', async () => {
+    setupDefaultMocks();
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Repository Polling Interval/i)).toHaveValue('15');
+    });
+
+    const secretInput = screen.getByLabelText(/Global Webhook Secret/i);
+    expect(secretInput).toHaveAttribute('type', 'password');
+
+    const toggleBtn = screen.getByRole('button', { name: /Reveal secret/i });
+    fireEvent.click(toggleBtn);
+    expect(secretInput).toHaveAttribute('type', 'text');
+
+    const hideBtn = screen.getByRole('button', { name: /Hide secret/i });
+    fireEvent.click(hideBtn);
+    expect(secretInput).toHaveAttribute('type', 'password');
+  });
+
+  it('clears global webhook secret with confirmation', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url === '/admin/api/settings/hosts') return Promise.resolve({ ok: true, json: async () => [] });
+      if (url === '/admin/api/vector-store') return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      if (url === '/admin/api/settings/auto-sync' && opts?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ status: 'success', interval_mins: 15, has_global_secret: false })
+        });
+      }
+      if (url === '/admin/api/settings/auto-sync') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ interval_mins: 15, webhook_url: '/api/webhooks/git', has_global_secret: true })
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Secret Active')).toBeInTheDocument();
+    });
+
+    const clearBtn = screen.getByRole('button', { name: /Clear secret/i });
+    fireEvent.click(clearBtn);
+
+    expect(window.confirm).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/admin/api/settings/auto-sync',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ interval_mins: 15, global_webhook_secret: '' })
+        })
+      );
+      expect(screen.getByText('Global webhook secret cleared')).toBeInTheDocument();
+      expect(screen.queryByText('Secret Active')).not.toBeInTheDocument();
+    });
+  });
+
+  it('cancels clearing global webhook secret when confirmation is dismissed', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url === '/admin/api/settings/hosts') return Promise.resolve({ ok: true, json: async () => [] });
+      if (url === '/admin/api/vector-store') return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      if (url === '/admin/api/settings/auto-sync') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ interval_mins: 15, webhook_url: '/api/webhooks/git', has_global_secret: true })
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Secret Active')).toBeInTheDocument();
+    });
+
+    const clearBtn = screen.getByRole('button', { name: /Clear secret/i });
+    fireEvent.click(clearBtn);
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalledWith(
+      '/admin/api/settings/auto-sync',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('clears unsaved pending secret input without API call when no secret is stored', async () => {
+    setupDefaultMocks();
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Repository Polling Interval/i)).toHaveValue('15');
+    });
+
+    const secretInput = screen.getByLabelText(/Global Webhook Secret/i);
+    fireEvent.change(secretInput, { target: { value: 'unsaved-secret' } });
+    expect(secretInput).toHaveValue('unsaved-secret');
+
+    const clearBtn = screen.getByRole('button', { name: /Clear secret/i });
+    fireEvent.click(clearBtn);
+
+    expect(secretInput).toHaveValue('');
+    expect(globalThis.fetch).not.toHaveBeenCalledWith(
+      '/admin/api/settings/auto-sync',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('copies webhook endpoint URL to clipboard', async () => {
+    setupDefaultMocks();
+
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock
+      }
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    const copyBtn = screen.getByRole('button', { name: /Copy Webhook URL/i });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('/api/webhooks/git'));
+      expect(screen.getByText('Webhook URL copied to clipboard')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Copy Webhook URL/i })).toHaveTextContent(/Copied!/i);
+    });
+  });
+
+  it('handles clipboard copy failure gracefully', async () => {
+    setupDefaultMocks();
+
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockRejectedValue(new Error('Permission denied'))
+      }
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Repository Polling Interval/i)).toHaveValue('15');
+    });
+
+    const copyBtn = screen.getByRole('button', { name: /Copy Webhook URL/i });
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to copy: Permission denied/i)).toBeInTheDocument();
+    });
+  });
+
+  it('handles auto-sync load and save API errors gracefully', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url === '/admin/api/settings/auto-sync' && opts?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          json: async () => ({ error: 'Invalid auto-sync interval' })
+        });
+      }
+      if (url === '/admin/api/settings/auto-sync') {
+        return Promise.reject(new Error('Auto-sync settings endpoint failed'));
+      }
+      if (url === '/admin/api/settings/hosts') return Promise.resolve({ ok: true, json: async () => [] });
+      if (url === '/admin/api/vector-store') return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to load auto-sync settings:', expect.any(Error));
+    });
+
+    const saveBtn = screen.getByRole('button', { name: /Save Auto-Sync Settings/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Error saving auto-sync settings: Invalid auto-sync interval')).toBeInTheDocument();
+    });
+
+    consoleSpy.mockRestore();
+  });
+});

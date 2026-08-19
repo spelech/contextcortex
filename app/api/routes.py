@@ -8,7 +8,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from app.models.schemas import (
     RepoConfig, LocalPathConfig, SearchRequest, TokenRequest, HostCredentialRequest,
-    VectorStoreTestRequest, VectorStoreSwitchRequest, VectorStoreConfigRequest
+    VectorStoreTestRequest, VectorStoreSwitchRequest, VectorStoreConfigRequest,
+    AutoSyncToggleRequest, AutoSyncSettingsRequest
 )
 
 from app.services.db import (
@@ -28,8 +29,11 @@ from app.services.indexer import (
 from app.services.embeddings import (
     EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
 )
+from app.api.webhooks import router as webhook_router
 
 router = APIRouter()
+router.include_router(webhook_router)
+
 
 
 @router.get("/admin/api/stats")
@@ -111,7 +115,7 @@ async def api_get_repos():
     try:
         with get_db_connection() as conn:
             rows = conn.execute(
-                """SELECT id, name, url, branch, commit_sha, provider, auth_user, enabled, status, 
+                """SELECT id, name, url, branch, commit_sha, provider, auth_user, enabled, auto_sync, webhook_secret, status, 
                           last_error, last_synced, added_at, 
                           (SELECT count(*) FROM indexed_files WHERE repo = git_repositories.name) as file_count 
                    FROM git_repositories 
@@ -129,6 +133,8 @@ async def api_add_repo(payload: RepoConfig):
         branch = payload.branch.strip() if payload.branch else "main"
         token = payload.auth_token.strip() if payload.auth_token else None
         auth_user = payload.auth_user.strip() if payload.auth_user else None
+        auto_sync = 1 if payload.auto_sync else 0
+        webhook_secret = payload.webhook_secret.strip() if payload.webhook_secret else None
 
         if not name or not url:
             return JSONResponse(status_code=400, content={"error": "Repository name and Git URL are required."})
@@ -139,8 +145,8 @@ async def api_add_repo(payload: RepoConfig):
 
         with get_db_connection() as conn:
             conn.execute(
-                "INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user) VALUES (?, ?, ?, ?, ?, ?)",
-                (name, url, branch, token, provider, auth_user)
+                "INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user, auto_sync, webhook_secret) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (name, url, branch, token, provider, auth_user, auto_sync, webhook_secret)
             )
             conn.commit()
             repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -149,6 +155,17 @@ async def api_add_repo(payload: RepoConfig):
         return {"status": "success", "message": f"Added repo '{name}' ({provider}) and started background sync."}
     except sqlite3.IntegrityError:
         return JSONResponse(status_code=400, content={"error": f"Repository '{name}' is already registered."})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.patch("/admin/api/repos/{repo_id}/auto-sync")
+async def api_toggle_repo_auto_sync(repo_id: int, payload: AutoSyncToggleRequest):
+    try:
+        from app.services.db import set_repo_auto_sync
+        success = set_repo_auto_sync(repo_id, payload.auto_sync)
+        if not success:
+            return JSONResponse(status_code=404, content={"error": "Repository not found"})
+        return {"status": "success", "repo_id": repo_id, "auto_sync": payload.auto_sync}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -313,6 +330,36 @@ async def api_set_token(payload: TokenRequest):
                 "gitea": {"token_source": gt_src, "masked_token": mask_token(gt_token)},
             },
             "rate_limit": rate_info
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/admin/api/settings/auto-sync")
+async def api_get_auto_sync_settings():
+    try:
+        from app.services.db import get_auto_sync_interval, get_global_webhook_secret
+        interval = get_auto_sync_interval()
+        secret = get_global_webhook_secret()
+        return {
+            "interval_mins": interval,
+            "webhook_url": "/api/webhooks/git",
+            "has_global_secret": bool(secret)
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.post("/admin/api/settings/auto-sync")
+async def api_update_auto_sync_settings(payload: AutoSyncSettingsRequest):
+    try:
+        from app.services.db import set_auto_sync_interval, set_global_webhook_secret, get_global_webhook_secret
+        set_auto_sync_interval(payload.interval_mins)
+        if payload.global_webhook_secret is not None:
+            set_global_webhook_secret(payload.global_webhook_secret)
+        secret = get_global_webhook_secret()
+        return {
+            "status": "success",
+            "interval_mins": payload.interval_mins,
+            "has_global_secret": bool(secret)
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

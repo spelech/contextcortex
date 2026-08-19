@@ -13,7 +13,9 @@ const mockRepos: Repo[] = [
     commit_sha: '687f7b1abcde12345',
     status: 'synced',
     file_count: 25,
-    last_synced: '2026-08-17 00:00:00'
+    last_synced: '2026-08-17 00:00:00',
+    auto_sync: 1,
+    webhook_secret: 'secret-xyz-123'
   },
   {
     id: 2,
@@ -22,7 +24,8 @@ const mockRepos: Repo[] = [
     branch: 'master',
     status: 'error',
     last_error: 'Authentication failed for repository',
-    file_count: 0
+    file_count: 0,
+    auto_sync: 0
   }
 ];
 
@@ -31,7 +34,7 @@ describe('GitRepoManager Component', () => {
     vi.clearAllMocks();
   });
 
-  it('renders repository list with status badges and details', async () => {
+  it('renders repository list with status badges, auto-sync buttons, and details', async () => {
     (globalThis as any).fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => mockRepos
@@ -50,6 +53,8 @@ describe('GitRepoManager Component', () => {
       expect(screen.getAllByText('failed-repo')[0]).toBeInTheDocument();
       expect(screen.getAllByText('Error')[0]).toBeInTheDocument();
       expect(screen.getAllByText('Authentication failed for repository')[0]).toBeInTheDocument();
+      expect(screen.getAllByText(/Auto-Sync: ON/i)[0]).toBeInTheDocument();
+      expect(screen.getAllByText(/Auto-Sync: OFF/i)[0]).toBeInTheDocument();
     });
   });
 
@@ -163,6 +168,152 @@ describe('GitRepoManager Component', () => {
     });
   });
 
+  it('toggles auto-sync state and sends PATCH request', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url.includes('/auto-sync') && opts?.method === 'PATCH') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ status: 'success', repo_id: 1, auto_sync: false })
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => mockRepos });
+    });
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
+    });
+
+    // Repo 1 has auto_sync: 1 -> toggle to OFF
+    const toggleButtons = screen.getAllByLabelText('Toggle auto-sync for knowledge-rag-mcp');
+    fireEvent.click(toggleButtons[0]);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/admin/api/repos/1/auto-sync',
+        expect.objectContaining({
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auto_sync: false })
+        })
+      );
+      expect(screen.getByText('Auto-sync disabled')).toBeInTheDocument();
+    });
+  });
+
+  it('handles auto-sync toggle error with rollback and error toast', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url.includes('/auto-sync') && opts?.method === 'PATCH') {
+        return Promise.resolve({
+          ok: false,
+          json: async () => ({ error: 'Database locked' })
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => mockRepos });
+    });
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
+    });
+
+    const toggleButtons = screen.getAllByLabelText('Toggle auto-sync for knowledge-rag-mcp');
+    fireEvent.click(toggleButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to update auto-sync: Database locked')).toBeInTheDocument();
+    });
+  });
+
+  it('opens webhook modal, displays URL & instructions, and copies URL', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: writeTextMock
+      }
+    });
+
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockRepos
+    });
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
+    });
+
+    // Open Webhook modal
+    const webhookBtns = screen.getAllByTitle('Webhook Setup');
+    fireEvent.click(webhookBtns[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Webhook Setup: knowledge-rag-mcp/i })).toBeInTheDocument();
+      expect(screen.getByLabelText('Webhook Payload URL')).toBeInTheDocument();
+      expect(screen.getByLabelText('Repository Secret Token')).toHaveValue('secret-xyz-123');
+      expect(screen.getByText(/GitHub:/i)).toBeInTheDocument();
+      expect(screen.getByText(/GitLab:/i)).toBeInTheDocument();
+      expect(screen.getByText(/Gitea \/ Forgejo:/i)).toBeInTheDocument();
+    });
+
+    // Click Copy button
+    const copyBtn = screen.getByLabelText('Copy Webhook URL');
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('/api/webhooks/git'));
+      expect(screen.getByText('Webhook URL copied to clipboard')).toBeInTheDocument();
+    });
+  });
+
+  it('closes webhook modal via close button and backdrop click', async () => {
+    (globalThis as any).fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => mockRepos
+    });
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
+    });
+
+    // Open Webhook modal
+    const webhookBtns = screen.getAllByTitle('Webhook Setup');
+    fireEvent.click(webhookBtns[0]);
+    expect(screen.getByRole('heading', { name: /Webhook Setup: knowledge-rag-mcp/i })).toBeInTheDocument();
+
+    // Close via Close button
+    const closeBtn = screen.getByRole('button', { name: /Close$/i });
+    fireEvent.click(closeBtn);
+    expect(screen.queryByRole('heading', { name: /Webhook Setup: knowledge-rag-mcp/i })).not.toBeInTheDocument();
+
+    // Reopen and close via Backdrop click
+    fireEvent.click(webhookBtns[0]);
+    const backdrop = screen.getByTestId('webhook-modal-backdrop');
+    fireEvent.click(backdrop);
+    expect(screen.queryByRole('heading', { name: /Webhook Setup: knowledge-rag-mcp/i })).not.toBeInTheDocument();
+  });
+
   it('triggers repo deletion, calls refreshStats, and removes repo optimistically', async () => {
     const refreshStats = vi.fn();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -251,7 +402,7 @@ describe('GitRepoManager Component', () => {
     });
   });
 
-  it('renders mobile cards for repositories with action buttons', async () => {
+  it('renders mobile cards for repositories with action buttons and auto-sync toggles', async () => {
     (globalThis as any).fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => mockRepos
@@ -273,6 +424,8 @@ describe('GitRepoManager Component', () => {
     // Verify action buttons inside mobile cards
     const mobileSyncBtns = screen.getAllByRole('button', { name: /sync/i });
     expect(mobileSyncBtns.length).toBeGreaterThan(0);
+    const mobileWebhookBtns = screen.getAllByRole('button', { name: /webhook/i });
+    expect(mobileWebhookBtns.length).toBeGreaterThan(0);
   });
 });
 

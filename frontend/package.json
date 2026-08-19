@@ -1,7 +1,7 @@
 {
   "name": "knowledge-rag-mcp-frontend",
   "private": true,
-  "version": "2.6.1",
+  "version": "2.7.0",
 
   "type": "module",
   "scripts": {
@@ -31,6 +31,7 @@
     "oxlint": "^1.75.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",
+    "vite-plugin-theme-editor": "file:/containers/dev/vite-plugin-theme-editor",
     "vitest": "^4.1.10"
   }
 }
