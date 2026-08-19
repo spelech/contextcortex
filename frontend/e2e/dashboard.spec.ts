@@ -36,7 +36,9 @@ const mockRepos = [
     status: 'synced',
     file_count: 25,
     last_synced: '2026-08-17 00:00:00',
-    last_error: null
+    last_error: null,
+    auto_sync: 1,
+    webhook_secret: null
   },
   {
     id: 2,
@@ -47,7 +49,9 @@ const mockRepos = [
     status: 'error',
     file_count: 0,
     last_synced: 'Never',
-    last_error: 'Authentication failed: Bad credentials'
+    last_error: 'Authentication failed: Bad credentials',
+    auto_sync: 0,
+    webhook_secret: null
   }
 ];
 
@@ -276,6 +280,34 @@ test.beforeEach(async ({ page }) => {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ status: 'saved' })
+    });
+  });
+
+  await page.route('**/admin/api/settings/auto-sync*', async route => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success', interval_mins: 15, has_global_secret: false })
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          interval_mins: 15,
+          webhook_url: 'http://localhost:5173/api/webhooks/git',
+          has_global_secret: false
+        })
+      });
+    }
+  });
+
+  await page.route('**/admin/api/repos/*/auto-sync', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'success', repo_id: 1, auto_sync: false })
     });
   });
 
@@ -1160,3 +1192,135 @@ test('21. [Mobile] log viewer filter pills, search bar, and traceback toggle ope
   await toggleBtn.click();
   await expect(page.locator('.traceback-box')).not.toBeVisible();
 });
+
+test('22. toggles repository auto-sync ON/OFF with optimistic UI update and toast confirmation', async ({ page, isMobile }) => {
+  let patchCalled = false;
+  let lastBody: any = null;
+
+  await page.route('**/admin/api/repos/1/auto-sync', async route => {
+    patchCalled = true;
+    lastBody = JSON.parse(route.request().postData() || '{}');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'success', repo_id: 1, auto_sync: false })
+    });
+  });
+
+  await navigateToTab(page, 'Git Repositories');
+  await expect(page.getByText('Registered Git Repositories')).toBeVisible();
+
+  // Find the Auto-Sync button for knowledge-rag-mcp (currently ON)
+  const autoSyncBtn = isMobile
+    ? page.locator('.mobile-card-list').getByRole('button', { name: /Toggle auto-sync for knowledge-rag-mcp/i }).first()
+    : page.locator('.desktop-table-view').getByRole('button', { name: /Toggle auto-sync for knowledge-rag-mcp/i }).first();
+
+  await expect(autoSyncBtn).toBeVisible();
+  await expect(autoSyncBtn).toContainText('ON');
+
+  // Click to toggle OFF
+  await autoSyncBtn.click();
+
+  expect(patchCalled).toBe(true);
+  expect(lastBody.auto_sync).toBe(false);
+  await expect(page.locator('.toast-info', { hasText: 'Auto-sync disabled' })).toBeVisible();
+});
+
+test('23. opens Webhook setup modal, displays copyable endpoint, and shows provider setup guides', async ({ page, isMobile }) => {
+  await navigateToTab(page, 'Git Repositories');
+  await expect(page.getByText('Registered Git Repositories')).toBeVisible();
+
+  // Click Webhook button on the first repo
+  const webhookBtn = isMobile
+    ? page.locator('.mobile-card-list').locator('button[title="Webhook Setup"]').first()
+    : page.locator('.desktop-table-view').locator('button[title="Webhook Setup"]').first();
+
+  await expect(webhookBtn).toBeVisible();
+  await webhookBtn.click();
+
+  // Modal header and content
+  await expect(page.getByRole('heading', { name: /Webhook Setup: knowledge-rag-mcp/i })).toBeVisible();
+  await expect(page.getByLabel('Webhook Payload URL')).toBeVisible();
+
+  // Check provider setup guides
+  await expect(page.getByText('GitHub:')).toBeVisible();
+  await expect(page.getByText('GitLab:')).toBeVisible();
+  await expect(page.getByText('Gitea / Forgejo:')).toBeVisible();
+
+  // Test Copy Endpoint button
+  const copyBtn = page.getByRole('button', { name: /Copy Webhook URL/i });
+  await expect(copyBtn).toBeVisible();
+  await copyBtn.click();
+  await expect(page.locator('.toast-info', { hasText: 'Webhook URL copied to clipboard' })).toBeVisible();
+
+  // Dismiss modal
+  const closeBtn = page.locator('button[aria-label="Close webhook modal"]');
+  await expect(closeBtn).toBeVisible();
+  await closeBtn.click();
+  await expect(page.getByRole('heading', { name: /Webhook Setup: knowledge-rag-mcp/i })).not.toBeVisible();
+});
+
+test('24. configures auto-sync polling schedule and manages global webhook secret in Settings', async ({ page }) => {
+  let settingsSaved = false;
+  let savedPayload: any = null;
+
+  await page.route('**/admin/api/settings/auto-sync*', async route => {
+    if (route.request().method() === 'POST') {
+      settingsSaved = true;
+      savedPayload = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'success', interval_mins: 30, has_global_secret: true })
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          interval_mins: 15,
+          webhook_url: '/api/webhooks/git',
+          has_global_secret: false
+        })
+      });
+    }
+  });
+
+  await navigateToTab(page, 'Settings');
+  await expect(page.getByRole('heading', { name: /Auto-Sync & Webhooks/i })).toBeVisible();
+
+  // Select 30 minutes polling interval
+  const intervalSelect = page.locator('#auto-sync-interval');
+  await expect(intervalSelect).toBeVisible();
+  await intervalSelect.selectOption('30');
+
+  // Fill in Webhook Secret and test mask/unmask toggle
+  const secretInput = page.locator('#auto-sync-secret');
+  await expect(secretInput).toBeVisible();
+  await secretInput.fill('my-super-secret-key-123');
+
+  const eyeToggle = page.locator('button[aria-label="Reveal secret"], button[aria-label="Hide secret"]');
+  await expect(eyeToggle).toBeVisible();
+  await expect(secretInput).toHaveAttribute('type', 'password');
+  await eyeToggle.click();
+  await expect(secretInput).toHaveAttribute('type', 'text');
+  await eyeToggle.click();
+  await expect(secretInput).toHaveAttribute('type', 'password');
+
+  // Test Copy Webhook URL button in Settings
+  const copySettingsBtn = page.getByRole('button', { name: /Copy Webhook URL/i });
+  await expect(copySettingsBtn).toBeVisible();
+  await copySettingsBtn.click();
+  await expect(page.locator('.toast-info', { hasText: 'Webhook URL copied to clipboard' })).toBeVisible();
+
+  // Save Settings
+  const saveBtn = page.getByRole('button', { name: /Save Auto-Sync/i });
+  await expect(saveBtn).toBeVisible();
+  await saveBtn.click();
+
+  expect(settingsSaved).toBe(true);
+  expect(savedPayload.interval_mins).toBe(30);
+  expect(savedPayload.global_webhook_secret).toBe('my-super-secret-key-123');
+  await expect(page.locator('.toast-success', { hasText: 'Auto-sync settings saved successfully' })).toBeVisible();
+});
+

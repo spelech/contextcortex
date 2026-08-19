@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **342 Automated Tests** (247 Pytest Backend + 74 Vitest Frontend + 21 Playwright E2E).
+**Test Verification Baseline:** **345 Automated Tests** (247 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
 
 ---
 
@@ -689,3 +689,6 @@ classDiagram
 - 19. [Mobile] filesystem browser modal navigates and selects path on mobile viewport
 - 20. [Mobile] performs search and renders responsive result item on mobile viewport
 - 21. [Mobile] log viewer filter pills, search bar, and traceback toggle operate cleanly on mobile
+- 22. toggles repository auto-sync ON/OFF with optimistic UI update and toast confirmation
+- 23. opens Webhook setup modal, displays copyable endpoint, and shows provider setup guides
+- 24. configures auto-sync polling schedule and manages global webhook secret in Settings
