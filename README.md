@@ -5,8 +5,19 @@
 [![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fcontextcortex-blue?logo=docker)](https://github.com/spelech/contextcortex/pkgs/container/contextcortex)
 
 A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, **Multi-Vector Database Backends (Qdrant & ChromaDB)**, and **Universal Git Provider indexing** with an integrated Web Admin Dashboard (ContextCortex) and real-time Diagnostic Observability.
+<details>
+<summary><b>🖼️ View Dashboard Components</b></summary>
 
-![ContextCortex Admin Dashboard](docs/assets/dashboard.jpg)
+| Overview | Git Repositories |
+|:---:|:---:|
+| ![Overview](docs/assets/desktop_overview.png) | ![Git Repos](docs/assets/desktop_git-repos.png) |
+| **Search & Inspector** | **Local Paths** |
+| ![Search](docs/assets/desktop_search-inspector.png) | ![Local Paths](docs/assets/desktop_local-paths.png) |
+| **Settings** | **Diagnostics & Logs** |
+| ![Settings](docs/assets/desktop_settings.png) | ![Diagnostics](docs/assets/desktop_diagnostics.png) |
+
+</details>
+
 
 ---
 
