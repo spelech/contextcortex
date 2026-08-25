@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **345 Automated Tests** (247 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
+**Test Verification Baseline:** **349 Automated Tests** (251 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
 
 ---
 
@@ -319,6 +319,12 @@ classDiagram
 - `test_api_switch_vector_store_exception` - _Test handling of unexpected exception during switch._
 - `test_api_get_stats_uses_vector_store` - _Test that GET /admin/api/stats queries the vector store adapter._
 - `test_api_delete_repo_uses_vector_store` - _Test that DELETE /admin/api/repos/{id} calls delete_by_repo on the vector store._
+
+#### `test_architecture_adr.py` (4 tests)
+- `test_entry_point_detection_heuristics`
+- `test_language_distribution_and_token_limit`
+- `test_madr_nygard_markdown_ingestion`
+- `test_adr_state_transitions`
 
 #### `test_chunker.py` (3 tests)
 - `test_detect_language`
