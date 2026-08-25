@@ -126,7 +126,7 @@ def get_remote_head_sha(
     """
     Checks remote repository commit SHA for a branch without cloning using git ls-remote.
     """
-    from app.services.db import get_effective_git_token
+    from app.services.database import get_effective_git_token
     norm_url = normalize_git_url(git_url)
     
     if not token and not username:
@@ -163,7 +163,7 @@ def shallow_clone_repo(
     Shallow clones a git repository to a temporary directory.
     Returns: CloneResult
     """
-    from app.services.db import get_effective_git_token
+    from app.services.database import get_effective_git_token
     norm_url = normalize_git_url(git_url)
     os.makedirs(TMP_BASE_DIR, exist_ok=True)
     repo_dir = tempfile.mkdtemp(prefix=f"repo_{repo_id or 'temp'}_", dir=TMP_BASE_DIR)

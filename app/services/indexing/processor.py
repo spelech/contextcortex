@@ -6,8 +6,8 @@ import logging
 from collections import Counter
 from typing import Tuple, List, Dict, Any, Optional
 import frontmatter
-from app.services.db import *
-from app.services.chunker import *
+from app.services.database import *
+from app.services.chunking import *
 from app.services.embeddings import *
 from app.services.git_manager import *
 from app.services.vector_store import (

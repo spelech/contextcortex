@@ -1,13 +1,19 @@
+import app.services.indexing.local_syncer as local_syncer
+import app.services.indexing.state as idx_state
+import app.services.indexing.processor as proc_service
 import os
 import json
 import logging
 import sys
 from typing import List, Dict, Any
-from app.services.db import *
-from app.services.chunker import *
+import app.services.database as db_service
+from app.services.database import *
+from app.services.chunking import *
 from app.services.embeddings import *
+import app.services.git_manager as gm_service
 from app.services.git_manager import *
-from app.services.vector_store import get_vector_store, VectorStoreManager
+import app.services.vector_store as vs_service
+from app.services.vector_store import VectorStoreManager
 from app.services.indexing.state import (
     VAULT_PATH, CHUNK_SIZE, CHUNK_OVERLAP,
     indexing_lock, is_indexing,
@@ -28,7 +34,7 @@ def _get_indexer_attr(name, default):
 
 def sync_single_git_repo(repo_id: int):
     """Ephemeral shallow clone, AST parse, hybrid vector upsert, and immediate disk cleanup."""
-    with get_db_connection() as conn:
+    with db_service.get_db_connection() as conn:
         repo_row = conn.execute("SELECT * FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
     if not repo_row:
         return
@@ -40,8 +46,7 @@ def sync_single_git_repo(repo_id: int):
     per_repo_user = repo_row["auth_user"] if "auth_user" in repo_row.keys() else None
     provider = repo_row["provider"] if "provider" in repo_row.keys() else None
 
-    from app.services.db import get_effective_git_token
-    effective_token, effective_user, token_source = get_effective_git_token(
+    effective_token, effective_user, token_source = db_service.get_effective_git_token(
         git_url, 
         override_token=per_repo_token, 
         override_user=per_repo_user, 
@@ -49,22 +54,22 @@ def sync_single_git_repo(repo_id: int):
     )
 
     logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url}, provider: {provider or 'auto'}, auth: {token_source})...")
-    remote_sha = _get_indexer_attr("get_remote_head_sha", get_remote_head_sha)(git_url, branch, token=effective_token, username=effective_user, provider=provider)
+    remote_sha = gm_service.get_remote_head_sha(git_url, branch, token=effective_token, username=effective_user, provider=provider)
     if remote_sha and repo_row["commit_sha"] == remote_sha:
         logger.info(f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone.")
-        with get_db_connection() as conn:
+        with db_service.get_db_connection() as conn:
             conn.execute("UPDATE git_repositories SET status = 'synced', last_synced = CURRENT_TIMESTAMP WHERE id = ?", (repo_id,))
             conn.commit()
         return
 
     # Update status to syncing
-    with get_db_connection() as conn:
+    with db_service.get_db_connection() as conn:
         conn.execute("UPDATE git_repositories SET status = 'syncing' WHERE id = ?", (repo_id,))
         conn.commit()
 
     temp_dir = None
     try:
-        clone_res = _get_indexer_attr("shallow_clone_repo", shallow_clone_repo)(
+        clone_res = gm_service.shallow_clone_repo(
             git_url, 
             branch, 
             token=effective_token, 
@@ -78,7 +83,7 @@ def sync_single_git_repo(repo_id: int):
         
         if err or not temp_dir:
             logger.error(f"Failed to clone repo '{repo_name}': {err}")
-            with get_db_connection() as conn:
+            with db_service.get_db_connection() as conn:
                 conn.execute("UPDATE git_repositories SET status = 'error', last_error = ? WHERE id = ?", (err or "Unknown clone error", repo_id))
                 conn.commit()
             return
@@ -114,7 +119,7 @@ def sync_single_git_repo(repo_id: int):
                     # Filepath recorded in DB is repo:rel_path
                     db_filepath = f"{repo_name}://{rel_path}"
 
-                    points, symbols, summary_tuple, rels, routes, calls = _get_indexer_attr("process_file_content", process_file_content)(
+                    points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
                         filepath=db_filepath,
                         rel_path=rel_path,
                         content=content,
@@ -135,7 +140,7 @@ def sync_single_git_repo(repo_id: int):
                     logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
 
         # Purge previous vectors for this repo in vector store
-        store = _get_indexer_attr("get_vector_store", get_vector_store)()
+        store = vs_service.get_vector_store()
         try:
             store.delete_by_repo(repo_name)
         except Exception as qe:
@@ -149,7 +154,7 @@ def sync_single_git_repo(repo_id: int):
                 raise RuntimeError(f"Failed to upsert {len(all_points)} documents into vector store for repo '{repo_name}'")
 
         # Update SQLite
-        with get_db_connection() as conn:
+        with db_service.get_db_connection() as conn:
             conn.execute("DELETE FROM indexed_files WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM file_summaries WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM ast_relationships WHERE repo = ?", (repo_name,))
@@ -226,19 +231,19 @@ def sync_single_git_repo(repo_id: int):
             conn.commit()
 
         logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Vectors: {len(all_points)}, Symbols: {len(all_symbols)}")
-        _get_indexer_attr("trigger_list_changed_notification", trigger_list_changed_notification)()
+        idx_state.trigger_list_changed_notification()
 
     except Exception as e:
         logger.error(f"Unexpected error during repo sync for '{repo_name}': {e}")
         try:
-            with get_db_connection() as conn:
+            with db_service.get_db_connection() as conn:
                 conn.execute("UPDATE git_repositories SET status = 'error', last_error = ? WHERE id = ?", (str(e), repo_id))
                 conn.commit()
         except Exception:
             pass
     finally:
         # Crucial: Ephemeral disk cleanup!
-        _get_indexer_attr("cleanup_repo_dir", cleanup_repo_dir)(temp_dir)
+        gm_service.cleanup_repo_dir(temp_dir)
 
 def run_full_indexing():
     global is_indexing
@@ -247,18 +252,18 @@ def run_full_indexing():
         return False
     is_indexing = True
     try:
-        _get_indexer_attr("ensure_collection", ensure_collection)()
-        _get_indexer_attr("sync_local_paths", sync_local_paths)()
+        idx_state.ensure_collection()
+        local_syncer.sync_local_paths()
         
         # Sync all registered git repos
-        with get_db_connection() as conn:
+        with db_service.get_db_connection() as conn:
             git_repos = conn.execute("SELECT id FROM git_repositories WHERE enabled = 1").fetchall()
         for gr in git_repos:
             sync_single_git_repo(gr["id"])
 
         import datetime
         set_metadata("last_indexed", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        _get_indexer_attr("trigger_list_changed_notification", trigger_list_changed_notification)()
+        idx_state.trigger_list_changed_notification()
         return True
     except Exception as e:
         logger.error(f"Error during full indexing: {e}")

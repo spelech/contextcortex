@@ -22,7 +22,7 @@ except Exception:
 
 def get_db_connection() -> sqlite3.Connection:
     import sys
-    db_mod = sys.modules.get("app.services.db")
+    db_mod = sys.modules.get("app.services.database")
     if db_mod and hasattr(db_mod, "CACHE_DB_PATH"):
         db_path = db_mod.CACHE_DB_PATH
     else:

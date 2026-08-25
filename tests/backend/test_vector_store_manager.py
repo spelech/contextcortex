@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 from unittest.mock import MagicMock, patch
 
-from app.services.db import (
+from app.services.database import (
     init_db,
     get_metadata,
     set_metadata,
@@ -26,7 +26,7 @@ from app.services.vector_store.manager import (
 def isolated_db_and_manager(tmp_path, monkeypatch):
     """Isolate DB path and VectorStoreManager singleton per test."""
     test_db_path = str(tmp_path / "test_index_cache.db")
-    monkeypatch.setattr("app.services.db.CACHE_DB_PATH", test_db_path)
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", test_db_path)
     
     # Reset manager singleton instance
     VectorStoreManager.reset_instance()

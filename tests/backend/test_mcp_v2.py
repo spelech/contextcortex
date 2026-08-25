@@ -5,14 +5,14 @@ from pydantic import AnyUrl
 
 from app.mcp.mcp_server import mcp_server
 from app.mcp.tools import register_mcp_tools_and_resources
-from app.services.db import init_db, get_db_connection, set_metadata
+from app.services.database import init_db, get_db_connection, set_metadata
 from main import app, lifespan
 
 
 @pytest.fixture
 def temp_mcp_db(tmp_path):
     db_file = str(tmp_path / "test_mcp_rag.db")
-    with patch("app.services.db.CACHE_DB_PATH", db_file):
+    with patch("app.services.database.CACHE_DB_PATH", db_file):
         init_db()
         yield db_file
 

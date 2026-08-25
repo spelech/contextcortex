@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
-from app.services.indexer import (
+from app.services.indexing import (
     ensure_collection, get_chunk_uuid, extract_keywords_from_text,
     get_dynamic_catalog_description, process_file_content,
     sync_local_paths, run_full_indexing, notify_list_changed,
@@ -16,12 +16,12 @@ from app.services.embeddings import (
     get_hybrid_embeddings, get_hybrid_embeddings_batch,
     get_dense_dim, init_embeddings
 )
-from app.services.db import init_db, get_db_connection
+from app.services.database import init_db, get_db_connection
 
 @pytest.fixture
 def temp_indexer_db(tmp_path):
     db_file = str(tmp_path / "test_indexer.db")
-    with patch("app.services.db.CACHE_DB_PATH", db_file):
+    with patch("app.services.database.CACHE_DB_PATH", db_file):
         init_db()
         yield db_file
 
@@ -129,7 +129,7 @@ def test_extract_keywords():
     assert "tokens" in keywords
 
 def test_ensure_collection():
-    with patch("app.services.indexer.get_vector_store") as mock_get_store:
+    with patch("app.services.vector_store.get_vector_store") as mock_get_store:
         mock_store = MagicMock()
         mock_store.ensure_collection.return_value = True
         mock_get_store.return_value = mock_store
@@ -138,7 +138,7 @@ def test_ensure_collection():
         mock_store.ensure_collection.assert_called_once()
 
 def test_ensure_collection_failure():
-    with patch("app.services.indexer.get_vector_store") as mock_get_store:
+    with patch("app.services.vector_store.get_vector_store") as mock_get_store:
         mock_store = MagicMock()
         mock_store.ensure_collection.side_effect = Exception("Vector store connection error")
         mock_get_store.return_value = mock_store
@@ -158,13 +158,13 @@ def test_dynamic_catalog_description(temp_indexer_db):
     assert "Indexed Code Symbols" in desc
 
 def test_dynamic_catalog_description_error():
-    with patch("app.services.indexer.get_db_connection", side_effect=RuntimeError("DB query failed")):
+    with patch("app.services.database.get_db_connection", side_effect=RuntimeError("DB query failed")):
         desc = get_dynamic_catalog_description()
         assert "Hybrid semantic & code symbol search" in desc
 
 def test_process_file_content_doc():
     doc_content = "---\ncategory: architecture\ntags: design, system\n---\n# Architecture\n\nThis is a system overview."
-    with patch("app.services.indexer.get_hybrid_embeddings_batch") as mock_embed:
+    with patch("app.services.embeddings.get_hybrid_embeddings_batch") as mock_embed:
         mock_embed.return_value = [{"dense": [0.1] * 384, "sparse": {"indices": [1], "values": [1.0]}}]
         points, symbols, summary, *extras = process_file_content(
             filepath="/docs/arch.md",
@@ -192,7 +192,7 @@ def test_process_file_content_doc_corrupt_frontmatter():
 
 def test_process_file_content_code():
     code_content = "def calculate_hash(content: str) -> str:\n    return 'hash'\n\nclass DataManager:\n    def save(self):\n        pass\n"
-    with patch("app.services.indexer.get_hybrid_embeddings_batch") as mock_embed:
+    with patch("app.services.embeddings.get_hybrid_embeddings_batch") as mock_embed:
         mock_embed.return_value = [{"dense": [0.1] * 384, "sparse": {"indices": [1], "values": [1.0]}}] * 5
         points, symbols, summary, *extras = process_file_content(
             filepath="/src/crypto.py",
@@ -228,8 +228,8 @@ def test_sync_local_paths(temp_indexer_db, tmp_path):
         conn.execute("INSERT INTO indexed_paths (path, type, recursive, enabled, repo, category) VALUES ('/nonexistent/path', 'directory', 1, 1, 'ghost', 'none')")
         conn.commit()
 
-    with patch("app.services.indexer.get_vector_store") as mock_get_store, \
-         patch("app.services.indexer.get_hybrid_embeddings_batch") as mock_embed:
+    with patch("app.services.vector_store.get_vector_store") as mock_get_store, \
+         patch("app.services.embeddings.get_hybrid_embeddings_batch") as mock_embed:
         mock_store = MagicMock()
         mock_get_store.return_value = mock_store
         mock_embed.return_value = [{"dense": [0.1] * 384, "sparse": {"indices": [1], "values": [1.0]}}] * 5
@@ -250,9 +250,9 @@ def test_sync_local_paths_default_vault_fallback(temp_indexer_db, tmp_path):
     doc = vault_dir / "default_note.md"
     doc.write_text("# Default Note")
 
-    with patch("app.services.indexer.VAULT_PATH", str(vault_dir)), \
-         patch("app.services.indexer.get_vector_store") as mock_get_store, \
-         patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]):
+    with patch("app.services.indexing.state.VAULT_PATH", str(vault_dir)), \
+         patch("app.services.vector_store.get_vector_store") as mock_get_store, \
+         patch("app.services.embeddings.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]):
         mock_store = MagicMock()
         mock_get_store.return_value = mock_store
         sync_local_paths()
@@ -269,8 +269,8 @@ def test_sync_local_paths_exceptions(temp_indexer_db, tmp_path):
         conn.commit()
 
     # Process file exception, store delete exception, store upsert exception, sqlite exception
-    with patch("app.services.indexer.process_file_content", side_effect=Exception("Process error")), \
-         patch("app.services.indexer.get_vector_store") as mock_get_store:
+    with patch("app.services.indexing.processor.process_file_content", side_effect=Exception("Process error")), \
+         patch("app.services.vector_store.get_vector_store") as mock_get_store:
         mock_store = MagicMock()
         mock_store.delete_by_path.side_effect = Exception("Delete error")
         mock_store.upsert_documents.side_effect = Exception("Upsert error")
@@ -278,8 +278,8 @@ def test_sync_local_paths_exceptions(temp_indexer_db, tmp_path):
         sync_local_paths()
 
 def test_run_full_indexing(temp_indexer_db):
-    with patch("app.services.indexer.sync_local_paths") as mock_sync_paths, \
-         patch("app.services.indexer.ensure_collection") as mock_ensure:
+    with patch("app.services.indexing.local_syncer.sync_local_paths") as mock_sync_paths, \
+         patch("app.services.indexing.state.ensure_collection") as mock_ensure:
         res = run_full_indexing()
         assert res is True
         mock_ensure.assert_called_once()
@@ -309,7 +309,7 @@ async def test_notify_list_changed_session_error():
         active_sessions.clear()
 
 def test_trigger_list_changed_notification():
-    import app.services.indexer as idx_module
+    import app.services.indexing as idx_module
     mock_loop = MagicMock()
     mock_loop.is_running.return_value = True
 
@@ -317,7 +317,7 @@ def test_trigger_list_changed_notification():
         coro.close()
         return MagicMock()
 
-    with patch.object(idx_module, "main_event_loop", mock_loop), \
-         patch("app.services.indexer.asyncio.run_coroutine_threadsafe", side_effect=close_coro) as mock_threadsafe:
+    with patch("app.services.indexing.state.main_event_loop", mock_loop), \
+         patch("asyncio.run_coroutine_threadsafe", side_effect=close_coro) as mock_threadsafe:
         idx_module.trigger_list_changed_notification()
         mock_threadsafe.assert_called_once()

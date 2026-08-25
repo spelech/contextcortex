@@ -3,12 +3,12 @@ import logging
 from typing import List, Dict, Any, Optional, Annotated
 from pydantic import Field
 
-from app.services.db import get_db_connection, extract_host_from_url, get_adr, list_adrs, create_adr, update_adr, supersede_adr, upsert_adr
+from app.services.database import get_db_connection, extract_host_from_url, get_adr, list_adrs, create_adr, update_adr, supersede_adr, upsert_adr
 from app.services.search import execute_hybrid_search, trace_symbol_path
-from app.services.indexer import get_dynamic_catalog_description, sync_single_git_repo, run_full_indexing
+from app.services.indexing import get_dynamic_catalog_description, sync_single_git_repo, run_full_indexing
 from app.services.vector_store import get_vector_store_config
 from app.services.git_manager import format_git_permalink
-from app.services.chunker import match_route_and_call, normalize_path_pattern
+from app.services.chunking import match_route_and_call, normalize_path_pattern
 from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
 
 logger = logging.getLogger("contextcortex")
@@ -48,7 +48,7 @@ async def handle_manage_adr(
         return "Error: repo parameter is required."
 
     try:
-        from app.services.db import list_adrs, get_adr, create_adr, update_adr, supersede_adr
+        from app.services.database import list_adrs, get_adr, create_adr, update_adr, supersede_adr
 
         if action_clean == "list":
             records = _get_tools_attr("list_adrs", list_adrs)(repo=repo, status=status)

@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from app.services.db import get_db_connection, init_db, create_adr, update_adr, supersede_adr, get_adr, list_adrs
+from app.services.database import get_db_connection, init_db, create_adr, update_adr, supersede_adr, get_adr, list_adrs
 from app.services.adr import parse_adr_markdown, sync_adr_file
 from app.services.architecture import detect_entry_points, synthesize_architecture
 from app.mcp.tools import handle_get_architecture, handle_manage_adr
@@ -10,7 +10,7 @@ from app.mcp.mcp_server import mcp_server
 @pytest.fixture(autouse=True)
 def setup_test_db(tmp_path, monkeypatch):
     db_file = tmp_path / "test_architecture_adr.db"
-    monkeypatch.setattr("app.services.db.CACHE_DB_PATH", str(db_file))
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", str(db_file))
     init_db()
     yield
     if db_file.exists():

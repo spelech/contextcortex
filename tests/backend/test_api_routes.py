@@ -28,7 +28,7 @@ def mock_db(tmp_path):
     conn.commit()
     conn.close()
 
-    with patch("app.api.routes.get_db_connection") as mock_conn:
+    with patch("app.services.database.get_db_connection") as mock_conn:
         def get_conn():
             c = sqlite3.connect(db_file)
             c.row_factory = sqlite3.Row
@@ -38,7 +38,7 @@ def mock_db(tmp_path):
 
 def test_api_get_stats_with_keywords(mock_db):
     # Insert summaries with valid and corrupt keywords JSON
-    with patch("app.api.routes.get_db_connection") as mock_conn:
+    with patch("app.services.database.get_db_connection") as mock_conn:
         conn = sqlite3.connect(mock_db)
         conn.execute("INSERT INTO file_summaries (filepath, keywords) VALUES ('/doc1.md', ?)", (json.dumps(["python", "fastapi", "rag"]),))
         conn.execute("INSERT INTO file_summaries (filepath, keywords) VALUES ('/doc2.md', ?)", ("corrupt_json_string{",))
@@ -48,8 +48,8 @@ def test_api_get_stats_with_keywords(mock_db):
     mock_store = MagicMock()
     mock_store.get_stats.return_value = {"points_count": 120}
 
-    with patch("app.api.routes.get_vector_store", return_value=mock_store), \
-         patch("app.api.routes.check_github_rate_limit", return_value={"remaining": 4900, "limit": 5000}):
+    with patch("app.services.vector_store.get_vector_store", return_value=mock_store), \
+         patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 4900, "limit": 5000}):
         res = client.get("/admin/api/stats")
         assert res.status_code == 200
         data = res.json()
@@ -60,7 +60,7 @@ def test_api_get_stats_with_keywords(mock_db):
         assert data["rate_limit"]["remaining"] == 4900
 
 def test_api_get_stats_error():
-    with patch("app.api.routes.get_db_connection", side_effect=RuntimeError("Database failure")):
+    with patch("app.services.database.get_db_connection", side_effect=RuntimeError("Database failure")):
         res = client.get("/admin/api/stats")
         assert res.status_code == 500
         assert "Database failure" in res.json()["error"]
@@ -76,7 +76,7 @@ def test_api_repos_crud(mock_db):
     assert res.status_code == 400
 
     # Add valid repo
-    with patch("app.api.routes.sync_single_git_repo"):
+    with patch("app.services.indexing.sync_single_git_repo"):
         res = client.post("/admin/api/repos", json={"name": "test-repo", "url": "https://github.com/example/test-repo.git", "branch": "main", "auth_token": "ghp_tok"})
         assert res.status_code == 200
         assert res.json()["status"] == "success"
@@ -93,14 +93,14 @@ def test_api_repos_crud(mock_db):
     repo_id = repos[0]["id"]
 
     # Trigger sync
-    with patch("app.api.routes.sync_single_git_repo"):
+    with patch("app.services.indexing.sync_single_git_repo"):
         res_sync = client.post(f"/admin/api/repos/sync/{repo_id}")
         assert res_sync.status_code == 200
         res_sync_404 = client.post("/admin/api/repos/sync/999")
         assert res_sync_404.status_code == 404
 
     # Delete repo (with vector store error handled gracefully)
-    with patch("app.api.routes.get_vector_store") as mock_get_store:
+    with patch("app.services.vector_store.get_vector_store") as mock_get_store:
         mock_get_store.return_value.delete_by_repo.side_effect = Exception("Vector store connection down")
         res_del = client.delete(f"/admin/api/repos/{repo_id}")
         assert res_del.status_code == 200
@@ -111,7 +111,7 @@ def test_api_repos_crud(mock_db):
 
 
 def test_api_repos_error_handlers():
-    with patch("app.api.routes.get_db_connection", side_effect=RuntimeError("DB error on repos")):
+    with patch("app.services.database.get_db_connection", side_effect=RuntimeError("DB error on repos")):
         # GET /admin/api/repos
         res = client.get("/admin/api/repos")
         assert res.status_code == 500
@@ -143,7 +143,7 @@ def test_api_paths_crud(mock_db, tmp_path):
     assert res_inv.status_code == 400
 
     # Add valid path
-    with patch("app.api.routes.run_full_indexing"):
+    with patch("app.services.indexing.run_full_indexing"):
         res = client.post("/admin/api/paths", json={"path": str(sample_dir), "repo": "local-docs", "type": "directory", "recursive": True, "enabled": True})
         assert res.status_code == 200
 
@@ -157,14 +157,14 @@ def test_api_paths_crud(mock_db, tmp_path):
     path_id = paths[0]["id"]
 
     # Delete path
-    with patch("app.api.routes.run_full_indexing"):
+    with patch("app.services.indexing.run_full_indexing"):
         res_del = client.delete(f"/admin/api/paths/{path_id}")
         assert res_del.status_code == 200
         res_del_404 = client.delete("/admin/api/paths/999")
         assert res_del_404.status_code == 404
 
 def test_api_paths_error_handlers():
-    with patch("app.api.routes.get_db_connection", side_effect=RuntimeError("Paths DB error")):
+    with patch("app.services.database.get_db_connection", side_effect=RuntimeError("Paths DB error")):
         # GET /admin/api/paths
         res = client.get("/admin/api/paths")
         assert res.status_code == 500
@@ -179,14 +179,14 @@ def test_api_paths_error_handlers():
         assert res.status_code == 500
 
 def test_api_settings_token(mock_db):
-    with patch("app.api.routes.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
+    with patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
         res = client.post("/admin/api/settings/token", json={"github_token": "ghp_test123456789"})
         assert res.status_code == 200
         data = res.json()
         assert data["status"] == "success"
 
 def test_api_settings_token_error():
-    with patch("app.api.routes.set_metadata", side_effect=RuntimeError("Failed to store token")):
+    with patch("app.services.database.set_metadata", side_effect=RuntimeError("Failed to store token")):
         res = client.post("/admin/api/settings/token", json={"github_token": "ghp_fail"})
         assert res.status_code == 500
         assert "Failed to store token" in res.json()["error"]
@@ -215,12 +215,12 @@ def test_api_search_test_error():
         assert "Search index down" in res.json()["error"]
 
 def test_api_reindex():
-    with patch("app.api.routes.is_indexing", False), \
-          patch("app.api.routes.run_full_indexing"):
+    with patch("app.services.indexing.is_indexing", return_value=False), \
+          patch("app.services.indexing.run_full_indexing"):
         res = client.post("/admin/api/reindex")
         assert res.status_code == 200
 
-    with patch("app.api.routes.is_indexing", True):
+    with patch("app.services.indexing.is_indexing", return_value=True):
         res = client.post("/admin/api/reindex")
         assert res.status_code == 409
 
@@ -260,10 +260,10 @@ def test_api_logs_endpoints():
     assert res_del.json()["status"] == "success"
 
 def test_api_logs_error_handlers():
-    with patch("app.api.routes.get_diagnostic_logs", side_effect=RuntimeError("Logs read error")):
+    with patch("app.services.logger.get_diagnostic_logs", side_effect=RuntimeError("Logs read error")):
         res = client.get("/admin/api/logs")
         assert res.status_code == 500
 
-    with patch("app.api.routes.clear_diagnostic_logs", side_effect=RuntimeError("Logs clear error")):
+    with patch("app.services.logger.clear_diagnostic_logs", side_effect=RuntimeError("Logs clear error")):
         res = client.delete("/admin/api/logs")
         assert res.status_code == 500

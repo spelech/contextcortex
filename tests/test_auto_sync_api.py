@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-from app.services.db import init_db, get_db_connection, set_global_webhook_secret, set_auto_sync_interval
+from app.services.database import init_db, get_db_connection, set_global_webhook_secret, set_auto_sync_interval
 
 client = TestClient(app)
 
@@ -119,17 +119,17 @@ def test_api_error_handling(monkeypatch):
     def mock_db_error(*args, **kwargs):
         raise RuntimeError("Simulated database failure")
 
-    monkeypatch.setattr("app.services.db.set_repo_auto_sync", mock_db_error)
+    monkeypatch.setattr("app.services.database.set_repo_auto_sync", mock_db_error)
     res_patch = client.patch("/admin/api/repos/1/auto-sync", json={"auto_sync": True})
     assert res_patch.status_code == 500
     assert "Simulated database failure" in res_patch.json()["error"]
 
-    monkeypatch.setattr("app.services.db.get_auto_sync_interval", mock_db_error)
+    monkeypatch.setattr("app.services.database.get_auto_sync_interval", mock_db_error)
     res_get_settings = client.get("/admin/api/settings/auto-sync")
     assert res_get_settings.status_code == 500
     assert "Simulated database failure" in res_get_settings.json()["error"]
 
-    monkeypatch.setattr("app.services.db.set_auto_sync_interval", mock_db_error)
+    monkeypatch.setattr("app.services.database.set_auto_sync_interval", mock_db_error)
     res_post_settings = client.post("/admin/api/settings/auto-sync", json={"interval_mins": 15})
     assert res_post_settings.status_code == 500
     assert "Simulated database failure" in res_post_settings.json()["error"]

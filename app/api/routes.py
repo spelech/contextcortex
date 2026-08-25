@@ -17,7 +17,7 @@ from app.models.schemas import (
     VectorStoreTestRequest, VectorStoreSwitchRequest, VectorStoreConfigRequest,
     AutoSyncToggleRequest, AutoSyncSettingsRequest
 )
-from app.services.db import (
+from app.services.database import (
     get_db_connection, get_metadata, set_metadata, 
     get_effective_git_token, CACHE_DB_PATH
 )
@@ -27,7 +27,7 @@ from app.services.vector_store import (
     get_vector_store, get_vector_store_config, switch_vector_store, test_vector_store_connection
 )
 from app.services.topology import get_topology_graph, get_node_details
-from app.services.indexer import (
+from app.services.indexing import (
     sync_single_git_repo, run_full_indexing, is_indexing, COLLECTION_NAME
 )
 from app.services.embeddings import (

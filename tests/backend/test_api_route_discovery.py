@@ -1,14 +1,14 @@
 import pytest
 import sqlite3
 import asyncio
-from app.services.chunker import (
+from app.services.chunking import (
     extract_api_routes_and_calls,
     normalize_path_pattern,
     match_route_and_call,
     extract_symbols_and_chunks
 )
 from app.mcp.tools import handle_find_routes, handle_find_api_callers
-from app.services.db import get_db_connection, init_db
+from app.services.database import get_db_connection, init_db
 
 def test_path_normalization_and_matching():
     # Test path normalization

@@ -1,7 +1,7 @@
 import pytest
 import sqlite3
-from app.services.chunker import extract_symbols_and_chunks
-from app.services.db import get_db_connection, init_db
+from app.services.chunking import extract_symbols_and_chunks
+from app.services.database import get_db_connection, init_db
 
 def test_python_relationship_extraction():
     code = """

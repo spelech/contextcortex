@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from main import app
-from app.services.db import init_db, get_db_connection, set_global_webhook_secret
+from app.services.database import init_db, get_db_connection, set_global_webhook_secret
 
 client = TestClient(app)
 

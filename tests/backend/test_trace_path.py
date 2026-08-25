@@ -1,7 +1,7 @@
 import pytest
 import time
 import asyncio
-from app.services.db import get_db_connection, init_db
+from app.services.database import get_db_connection, init_db
 from app.services.search import trace_symbol_path
 from app.mcp.tools import handle_trace_path
 from httpx import AsyncClient, ASGITransport

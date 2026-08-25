@@ -1,4 +1,4 @@
-from app.services.db import get_db_connection
+from app.services.database import get_db_connection
 from app.services.topology.helpers import (
     _clean_filepath,
     _get_permalink,

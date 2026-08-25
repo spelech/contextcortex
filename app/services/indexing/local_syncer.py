@@ -1,11 +1,15 @@
+import app.services.database as db_service
+import app.services.vector_store as vs_service
+import app.services.indexing.state as idx_state
+import app.services.indexing.processor as proc_service
 import os
 import json
 import logging
 from typing import List, Dict, Any
-from app.services.db import *
-from app.services.chunker import *
+from app.services.database import *
+from app.services.chunking import *
 from app.services.embeddings import *
-from app.services.vector_store import get_vector_store
+import app.services.vector_store as vs_service
 from app.services.indexing.state import (
     VAULT_PATH, CHUNK_SIZE, CHUNK_OVERLAP,
     trigger_list_changed_notification, ensure_collection
@@ -26,7 +30,7 @@ def sync_local_paths():
     """Scans and indexes mounted local paths and notes vaults."""
     logger.info("Scanning local paths...")
     active_paths = []
-    with get_db_connection() as conn:
+    with db_service.get_db_connection() as conn:
         rows = conn.execute("SELECT path, type, recursive, category, repo FROM indexed_paths WHERE enabled = 1").fetchall()
         for r in rows:
             active_paths.append({
@@ -37,7 +41,7 @@ def sync_local_paths():
                 "repo": r["repo"] or "local"
             })
 
-    vault_p = _get_indexer_attr("VAULT_PATH", VAULT_PATH)
+    vault_p = idx_state.VAULT_PATH
     if not active_paths and os.path.exists(vault_p):
         active_paths.append({
             "path": vault_p,
@@ -91,7 +95,7 @@ def sync_local_paths():
     for filepath, (repo, category, base_dir) in found_files.items():
         try:
             mtime = os.path.getmtime(filepath)
-            with get_db_connection() as conn:
+            with db_service.get_db_connection() as conn:
                 cached = conn.execute("SELECT mtime FROM indexed_files WHERE filepath = ?", (filepath,)).fetchone()
             
             if cached and abs(cached["mtime"] - mtime) < 0.01:
@@ -104,7 +108,7 @@ def sync_local_paths():
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
 
-            points, symbols, summary_tuple, rels, routes, calls = _get_indexer_attr("process_file_content", process_file_content)(
+            points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
                 filepath=filepath,
                 rel_path=rel_path,
                 content=content,
@@ -125,11 +129,11 @@ def sync_local_paths():
             logger.error(f"Error processing local file {filepath}: {e}")
 
     # Purge old points for modified files
-    store = _get_indexer_attr("get_vector_store", get_vector_store)()
+    store = vs_service.get_vector_store()
     for (fpath, repo) in files_to_delete:
         try:
             store.delete_by_path(fpath)
-            with get_db_connection() as conn:
+            with db_service.get_db_connection() as conn:
                 conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
                 conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
                 conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
@@ -152,7 +156,7 @@ def sync_local_paths():
 
     # Batch update SQLite tables
     try:
-        with get_db_connection() as conn:
+        with db_service.get_db_connection() as conn:
             if files_to_update_cache:
                 conn.executemany(
                     "INSERT OR REPLACE INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime) VALUES (?, ?, ?, ?, ?, ?)",

@@ -1,5 +1,5 @@
 import pytest
-from app.services.db import (
+from app.services.database import (
     init_db, get_db_connection, set_repo_auto_sync, 
     get_auto_sync_interval, set_auto_sync_interval,
     get_global_webhook_secret, set_global_webhook_secret,
@@ -8,7 +8,7 @@ from app.services.db import (
 
 def test_db_migration_and_auto_sync_helpers(tmp_path, monkeypatch):
     test_db = str(tmp_path / "test_rag.db")
-    monkeypatch.setattr("app.services.db.CACHE_DB_PATH", test_db)
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", test_db)
     init_db()
     with get_db_connection() as conn:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(git_repositories)").fetchall()]
@@ -30,7 +30,7 @@ def test_db_migration_and_auto_sync_helpers(tmp_path, monkeypatch):
 
 def test_repo_auto_sync_and_list(tmp_path, monkeypatch):
     test_db = str(tmp_path / "test_rag2.db")
-    monkeypatch.setattr("app.services.db.CACHE_DB_PATH", test_db)
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", test_db)
     init_db()
 
     with get_db_connection() as conn:
@@ -70,7 +70,7 @@ def test_repo_auto_sync_and_list(tmp_path, monkeypatch):
 
 def test_auto_sync_interval_edge_cases(tmp_path, monkeypatch):
     test_db = str(tmp_path / "test_rag3.db")
-    monkeypatch.setattr("app.services.db.CACHE_DB_PATH", test_db)
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", test_db)
     init_db()
 
     set_auto_sync_interval(-10)

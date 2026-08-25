@@ -1,11 +1,11 @@
 import pytest
 from unittest.mock import patch
 from app.mcp.mcp_server import mcp_server
-from app.services.indexer import get_dynamic_catalog_description
+from app.services.indexing import get_dynamic_catalog_description
 
 @pytest.mark.asyncio
 async def test_dynamic_catalog_description():
-    with patch("app.services.db.get_db_connection") as mock_conn:
+    with patch("app.services.database.get_db_connection") as mock_conn:
         mock_db = mock_conn.return_value.__enter__.return_value
         mock_db.execute.return_value.fetchall.return_value = [
             {"name": "repo1", "url": "https://github.com/org/repo1", "status": "synced"}

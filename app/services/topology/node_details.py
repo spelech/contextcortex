@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Optional, Dict, Any, List, Set
-from app.services.db import get_db_connection
+from app.services.database import get_db_connection
 from app.services.topology.helpers import _clean_filepath, _get_permalink, _read_code_snippet
 
 logger = logging.getLogger("contextcortex.topology")

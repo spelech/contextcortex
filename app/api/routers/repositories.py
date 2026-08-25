@@ -7,192 +7,220 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from app.models.schemas import (
-    RepoConfig, LocalPathConfig, SearchRequest, TokenRequest, HostCredentialRequest,
-    VectorStoreTestRequest, VectorStoreSwitchRequest, VectorStoreConfigRequest,
-    AutoSyncToggleRequest, AutoSyncSettingsRequest
-)
-from app.services.db import (
-    get_db_connection, get_metadata, set_metadata, 
-    get_effective_git_token, CACHE_DB_PATH
-)
-from app.services.git_manager import check_github_rate_limit, mask_token
-from app.services.logger import get_diagnostic_logs, clear_diagnostic_logs
-from app.services.vector_store import (
-    get_vector_store, get_vector_store_config, switch_vector_store, test_vector_store_connection
-)
-from app.services.topology import get_topology_graph, get_node_details
-from app.services.indexer import (
-    sync_single_git_repo, run_full_indexing, is_indexing, COLLECTION_NAME
-)
-from app.services.embeddings import (
-    EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
-)
+
+from app.models.schemas import RepoConfig, LocalPathConfig, AutoSyncToggleRequest, SearchRequest
+import app.services.database as db_service
+import app.services.vector_store as vs_service
+import app.services.indexing as idx_service
+import app.services.search as search_service
 
 logger = logging.getLogger("contextcortex.api")
-
-def _get_r_attr(name, default):
-    import sys
-    routes_mod = sys.modules.get("app.api.routes")
-    return getattr(routes_mod, name, default) if routes_mod else default
 
 router = APIRouter()
 
 @router.get("/admin/api/repos")
 async def api_get_repos():
     try:
-        with _get_r_attr("get_db_connection", get_db_connection)() as conn:
-            rows = conn.execute(
-                """SELECT id, name, url, branch, commit_sha, provider, auth_user, enabled, auto_sync, webhook_secret, status, 
-                          last_error, last_synced, added_at, 
-                          (SELECT count(*) FROM indexed_files WHERE repo = git_repositories.name) as file_count 
-                   FROM git_repositories 
-                   ORDER BY added_at DESC"""
-            ).fetchall()
-            return [dict(r) for r in rows]
+        with db_service.get_db_connection() as conn:
+            rows = conn.execute("""
+                SELECT id, name, url, branch, commit_sha, status, last_error, last_synced, 
+                       auth_token, provider, auth_user, auto_sync, webhook_secret
+                FROM git_repositories 
+                ORDER BY id DESC
+            """).fetchall()
+            result = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    f_count = conn.execute("SELECT COUNT(*) as c FROM indexed_files WHERE repo = ?", (item["name"],)).fetchone()["c"]
+                except Exception:
+                    f_count = 0
+                item["file_count"] = f_count
+                result.append(item)
+            return result
     except Exception as e:
+        logger.error(f"Error fetching repos: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.post("/admin/api/repos")
-async def api_add_repo(payload: RepoConfig):
+async def api_add_repo(repo: RepoConfig):
+    if not repo.name or not repo.name.strip() or not repo.url or not repo.url.strip():
+        return JSONResponse(status_code=400, content={"error": "Name and URL are required"})
+
     try:
-        name = payload.name.strip() if payload.name else ""
-        url = payload.url.strip() if payload.url else ""
-        branch = payload.branch.strip() if payload.branch else "main"
-        token = payload.auth_token.strip() if payload.auth_token else None
-        auth_user = payload.auth_user.strip() if payload.auth_user else None
-        auto_sync = 1 if payload.auto_sync else 0
-        webhook_secret = payload.webhook_secret.strip() if payload.webhook_secret else None
-
-        if not name or not url:
-            return JSONResponse(status_code=400, content={"error": "Repository name and Git URL are required."})
-
-        from app.services.git_manager import detect_git_provider
-        provider = detect_git_provider(url, payload.provider)
-        name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).lower()
-
-        with _get_r_attr("get_db_connection", get_db_connection)() as conn:
-            conn.execute(
-                "INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user, auto_sync, webhook_secret) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (name, url, branch, token, provider, auth_user, auto_sync, webhook_secret)
+        with db_service.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user, auto_sync, webhook_secret)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (repo.name.strip(), repo.url.strip(), repo.branch or "main", repo.auth_token, repo.provider or "github", repo.auth_user,
+                 1 if repo.auto_sync else 0, repo.webhook_secret)
             )
             conn.commit()
-            repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            repo_id = cursor.lastrowid
 
-        threading.Thread(target=sync_single_git_repo, args=(repo_id,), daemon=True).start()
-        return {"status": "success", "message": f"Added repo '{name}' ({provider}) and started background sync."}
+        threading.Thread(
+            target=idx_service.sync_single_git_repo,
+            args=(repo_id,)
+        ).start()
+
+        return {"status": "success", "id": repo_id}
     except sqlite3.IntegrityError:
-        return JSONResponse(status_code=400, content={"error": f"Repository '{name}' is already registered."})
+        return JSONResponse(status_code=400, content={"error": f"Repository with name '{repo.name}' already exists"})
     except Exception as e:
+        logger.error(f"Error adding repo: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.patch("/admin/api/repos/{repo_id}/auto-sync")
 async def api_toggle_repo_auto_sync(repo_id: int, payload: AutoSyncToggleRequest):
     try:
-        from app.services.db import set_repo_auto_sync
-        success = set_repo_auto_sync(repo_id, payload.auto_sync)
-        if not success:
-            return JSONResponse(status_code=404, content={"error": "Repository not found"})
-        return {"status": "success", "repo_id": repo_id, "auto_sync": payload.auto_sync}
+        updated = db_service.set_repo_auto_sync(repo_id, payload.auto_sync)
+        if not updated:
+            return JSONResponse(status_code=404, content={"error": f"Repository with ID {repo_id} not found"})
+        return {"status": "success", "id": repo_id, "repo_id": repo_id, "auto_sync": payload.auto_sync}
     except Exception as e:
+        logger.error(f"Error toggling auto-sync for repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+@router.post("/admin/api/repos/{repo_id}/sync")
 @router.post("/admin/api/repos/sync/{repo_id}")
 async def api_sync_repo(repo_id: int):
     try:
-        with _get_r_attr("get_db_connection", get_db_connection)() as conn:
-            row = conn.execute("SELECT id FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+        with db_service.get_db_connection() as conn:
+            row = conn.execute("SELECT * FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
             if not row:
-                return JSONResponse(status_code=404, content={"error": f"Repository ID {repo_id} not found."})
-        threading.Thread(target=sync_single_git_repo, args=(repo_id,), daemon=True).start()
-        return {"status": "success", "message": f"Sync triggered for repository ID {repo_id}"}
+                return JSONResponse(status_code=404, content={"error": "Repo not found"})
+            r = dict(row)
+
+        threading.Thread(
+            target=idx_service.sync_single_git_repo,
+            args=(r["id"],)
+        ).start()
+
+        return {"status": "success", "repo": r["name"], "message": f"Sync started for {r['name']}"}
     except Exception as e:
+        logger.error(f"Error syncing repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.delete("/admin/api/repos/{repo_id}")
 async def api_delete_repo(repo_id: int):
     try:
-        with _get_r_attr("get_db_connection", get_db_connection)() as conn:
+        with db_service.get_db_connection() as conn:
             row = conn.execute("SELECT name FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
             if not row:
                 return JSONResponse(status_code=404, content={"error": "Repo not found"})
-            repo_name = row["name"]
+            name = row["name"]
+
             conn.execute("DELETE FROM git_repositories WHERE id = ?", (repo_id,))
-            conn.execute("DELETE FROM indexed_files WHERE repo = ?", (repo_name,))
-            conn.execute("DELETE FROM file_summaries WHERE repo = ?", (repo_name,))
-            conn.execute("DELETE FROM ast_symbols WHERE repo = ?", (repo_name,))
+            for table in ("indexed_files", "ast_symbols", "ast_relationships", "api_routes"):
+                try:
+                    conn.execute(f"DELETE FROM {table} WHERE repo = ?", (name,))
+                except Exception:
+                    pass
             conn.commit()
 
-        # Delete from vector store
         try:
-            store = _get_r_attr("get_vector_store", get_vector_store)()
-            store.delete_by_repo(repo_name)
-        except Exception:
-            pass
+            store = vs_service.get_vector_store()
+            store.delete_by_repo(name)
+        except Exception as e:
+            logger.error(f"Error removing points from vector database for {name}: {e}")
 
-        return {"status": "success", "message": f"Deleted repository '{repo_name}'"}
-
+        return {"status": "success", "name": name, "deleted": name}
     except Exception as e:
+        logger.error(f"Error deleting repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.get("/admin/api/paths")
 async def api_get_paths():
     try:
-        with _get_r_attr("get_db_connection", get_db_connection)() as conn:
-            rows = conn.execute("SELECT id, path, type, recursive, enabled, category, repo, added_at FROM indexed_paths ORDER BY added_at DESC").fetchall()
+        with db_service.get_db_connection() as conn:
+            rows = conn.execute("SELECT * FROM indexed_paths ORDER BY id DESC").fetchall()
             return [dict(r) for r in rows]
     except Exception as e:
+        logger.error(f"Error getting paths: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.post("/admin/api/paths")
-async def api_add_path(payload: LocalPathConfig):
+async def api_add_path(config: LocalPathConfig):
     try:
-        path = payload.path
-        ptype = payload.type if payload.type else "directory"
-        recursive = 1 if payload.recursive else 0
-        enabled = 1 if payload.enabled else 0
-        category = payload.category
-        repo = payload.repo if payload.repo else "local"
+        resolved = os.path.abspath(config.path)
+        if not os.path.exists(resolved):
+            return JSONResponse(status_code=400, content={"error": f"Path '{resolved}' does not exist on disk."})
 
-        if not path or not os.path.exists(path):
-            return JSONResponse(status_code=400, content={"error": f"Valid local path is required: {path}"})
-
-        path = os.path.abspath(path)
-        with _get_r_attr("get_db_connection", get_db_connection)() as conn:
-            conn.execute(
-                "INSERT INTO indexed_paths (path, type, recursive, enabled, category, repo) VALUES (?, ?, ?, ?, ?, ?)",
-                (path, ptype, recursive, enabled, category, repo)
+        with db_service.get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO indexed_paths (path, type, recursive, category, repo) VALUES (?, ?, ?, ?, ?)",
+                (resolved, config.type, 1 if config.recursive else 0, config.category, config.repo or "local")
             )
             conn.commit()
+            path_id = cursor.lastrowid
 
-        threading.Thread(target=run_full_indexing, daemon=True).start()
-        return {"status": "success", "message": f"Added local path: {path}"}
+        threading.Thread(target=idx_service.run_full_indexing).start()
+        return {"status": "success", "id": path_id, "path": resolved}
     except sqlite3.IntegrityError:
-        return JSONResponse(status_code=400, content={"error": f"Local path '{payload.path}' is already registered."})
+        return JSONResponse(status_code=400, content={"error": "Path already indexed"})
     except Exception as e:
+        logger.error(f"Error adding path: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.delete("/admin/api/paths/{path_id}")
 async def api_delete_path(path_id: int):
     try:
-        with _get_r_attr("get_db_connection", get_db_connection)() as conn:
+        with db_service.get_db_connection() as conn:
             row = conn.execute("SELECT path FROM indexed_paths WHERE id = ?", (path_id,)).fetchone()
             if not row:
-                return JSONResponse(status_code=404, content={"error": f"Path ID {path_id} not found."})
+                return JSONResponse(status_code=404, content={"error": "Path not found"})
+            path_val = row["path"]
+
             conn.execute("DELETE FROM indexed_paths WHERE id = ?", (path_id,))
+            conn.execute("DELETE FROM indexed_files WHERE filepath LIKE ?", (f"{path_val}%",))
             conn.commit()
-        threading.Thread(target=run_full_indexing, daemon=True).start()
-        return {"status": "success", "message": f"Deleted path ID {path_id}"}
+
+        try:
+            store = vs_service.get_vector_store()
+            store.delete_by_path(path_val)
+        except Exception as e:
+            logger.error(f"Error removing points from vector DB for path {path_val}: {e}")
+
+        return {"status": "success", "path": path_val, "deleted": path_val}
     except Exception as e:
+        logger.error(f"Error deleting path {path_id}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-
+@router.post("/admin/api/sync")
 @router.post("/admin/api/reindex")
-async def api_trigger_reindex():
-    if _get_r_attr("is_indexing", is_indexing):
-        return JSONResponse(status_code=409, content={"error": "Indexing in progress"})
-    threading.Thread(target=run_full_indexing, daemon=True).start()
-    return {"status": "success", "message": "Re-indexing triggered"}
+async def api_trigger_sync():
+    is_idx = idx_service.is_indexing
+    if (is_idx() if callable(is_idx) else is_idx):
+        return JSONResponse(status_code=409, content={"status": "error", "error": "Indexing in progress", "message": "Indexing is already in progress."})
+    
+    threading.Thread(target=idx_service.run_full_indexing, daemon=True).start()
+    return {"status": "success", "message": "Background ingestion pipeline dispatched."}
+
+@router.post("/admin/api/search/test")
+async def api_test_search(payload: SearchRequest):
+    try:
+        query = payload.query.strip() if payload.query else ""
+        if not query:
+            return JSONResponse(status_code=400, content={"error": "Query required"})
+
+        hits = search_service.execute_hybrid_search(
+            query_text=query,
+            doc_type=payload.type,
+            repo=payload.repo,
+            limit=payload.limit or 6
+        )
+        results = []
+        for h in hits:
+            results.append({
+                "score": round(getattr(h, "score", 0.0), 4),
+                "payload": getattr(h, "payload", {})
+            })
+        return {"query": query, "type": payload.type, "results": results}
+    except Exception as e:
+        logger.error(f"Error testing search: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.get("/admin/api/browse")
 async def api_browse_dir(path: str = "/"):
@@ -219,5 +247,5 @@ async def api_browse_dir(path: str = "/"):
             "files": files
         }
     except Exception as e:
+        logger.error(f"Error browsing dir {path}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
-

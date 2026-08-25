@@ -11,8 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import router as admin_router
 from app.mcp.mcp_server import mcp_server
 
-from app.services.db import init_db
-from app.services.indexer import run_full_indexing, VAULT_PATH
+from app.services.database import init_db
+from app.services.indexing import run_full_indexing, VAULT_PATH
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -26,7 +26,7 @@ except Exception as e:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import app.services.indexer as indexer
+    import app.services.indexing as indexer
     from app.services.poller import start_poller_daemon, stop_poller_daemon
     indexer.main_event_loop = asyncio.get_running_loop()
     logger.info("ContextCortex Server starting up...")

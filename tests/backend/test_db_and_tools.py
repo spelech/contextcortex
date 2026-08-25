@@ -2,7 +2,7 @@ import os
 import sqlite3
 import pytest
 from unittest.mock import patch, MagicMock
-from app.services.db import (
+from app.services.database import (
     init_db, get_db_connection, set_metadata, get_metadata,
     get_effective_git_token, get_default_db_path
 )
@@ -17,7 +17,7 @@ from app.mcp.tools import (
 @pytest.fixture
 def temp_db(tmp_path):
     db_file = str(tmp_path / "test_rag.db")
-    with patch("app.services.db.CACHE_DB_PATH", db_file):
+    with patch("app.services.database.CACHE_DB_PATH", db_file):
         init_db()
         yield db_file
 
@@ -41,7 +41,7 @@ def test_db_init_seeding_vault(tmp_path):
     vault_dir = tmp_path / "seed_vault"
     vault_dir.mkdir()
     db_file = str(tmp_path / "test_seed.db")
-    with patch("app.services.db.CACHE_DB_PATH", db_file):
+    with patch("app.services.database.CACHE_DB_PATH", db_file):
         init_db(vault_path=str(vault_dir))
         with sqlite3.connect(db_file) as conn:
             conn.row_factory = sqlite3.Row
@@ -51,7 +51,7 @@ def test_db_init_seeding_vault(tmp_path):
 
 def test_db_init_seeding_errors(tmp_path):
     db_file = str(tmp_path / "test_err_seed.db")
-    with patch("app.services.db.CACHE_DB_PATH", db_file):
+    with patch("app.services.database.CACHE_DB_PATH", db_file):
         init_db()
         real_conn = sqlite3.connect(db_file)
         real_conn.row_factory = sqlite3.Row
@@ -63,11 +63,11 @@ def test_db_init_seeding_errors(tmp_path):
         mock_conn.execute.side_effect = failing_execute
         mock_conn.__enter__.return_value = mock_conn
 
-        with patch("app.services.db.get_db_connection", return_value=mock_conn):
+        with patch("app.services.database.get_db_connection", return_value=mock_conn):
             init_db(vault_path=str(tmp_path))
 
 def test_db_metadata_errors(temp_db):
-    with patch("app.services.db.get_db_connection", side_effect=Exception("DB down")):
+    with patch("app.services.database.get_db_connection", side_effect=Exception("DB down")):
         # get_metadata returns default
         assert get_metadata("some_key", "default_val") == "default_val"
         # set_metadata logs error without raising
@@ -241,8 +241,8 @@ async def test_handle_list_repositories(temp_db):
 
 @pytest.mark.asyncio
 async def test_handle_sync_repository(temp_db):
-    with patch("app.services.indexer.run_full_indexing"), \
-         patch("app.services.indexer.sync_single_git_repo"):
+    with patch("app.services.indexing.run_full_indexing"), \
+         patch("app.services.indexing.sync_single_git_repo"):
         # Sync all
         res_all = await handle_sync_repository()
         assert "Triggered full background re-indexing" in res_all
@@ -270,7 +270,7 @@ async def test_handle_index_status(temp_db):
         "healthy": True,
     }
     with patch("app.mcp.tools.get_vector_store_config", return_value=mock_vs_cfg), \
-         patch("app.services.db.get_effective_git_token", return_value=("ghp_token123", None, "Database (Github)")), \
+         patch("app.services.database.get_effective_git_token", return_value=("ghp_token123", None, "Database (Github)")), \
          patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
         res = await handle_index_status()
         assert "Total Vectors: 500" in res

@@ -3,7 +3,7 @@ import threading
 import asyncio
 import logging
 from typing import Set
-from app.services.vector_store import get_vector_store
+import app.services.vector_store as vs_service
 
 logger = logging.getLogger('contextcortex.indexer')
 
@@ -29,12 +29,10 @@ async def notify_list_changed():
             logger.warning(f"Failed to send list_changed notification to session: {e}")
 
 def trigger_list_changed_notification():
-    import sys
-    idx_mod = sys.modules.get("app.services.indexer")
-    loop = getattr(idx_mod, "main_event_loop", main_event_loop) if idx_mod else main_event_loop
+    import app.services.indexing.state as s_mod
+    loop = getattr(s_mod, "main_event_loop", main_event_loop)
     if loop and loop.is_running():
-        asyncio_mod = getattr(idx_mod, "asyncio", asyncio) if idx_mod else asyncio
-        asyncio_mod.run_coroutine_threadsafe(notify_list_changed(), loop)
+        asyncio.run_coroutine_threadsafe(notify_list_changed(), loop)
 
 indexing_lock = threading.Lock()
 is_indexing = False
@@ -42,10 +40,7 @@ is_indexing = False
 def ensure_collection() -> bool:
     """Ensures that the vector store collection/index exists."""
     try:
-        import sys
-        idx_mod = sys.modules.get("app.services.indexer")
-        _g_store = getattr(idx_mod, "get_vector_store", get_vector_store) if idx_mod else get_vector_store
-        store = _g_store()
+        store = vs_service.get_vector_store()
         return store.ensure_collection()
     except Exception as e:
         logger.error(f"Failed to ensure vector store collection: {e}")

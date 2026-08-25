@@ -26,31 +26,34 @@ def get_git_host_credential(host: str) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
-def save_git_host_credential(host: str, provider: str, auth_token: str, auth_user: Optional[str] = None):
+def save_git_host_credential(host: str, provider: str, auth_token: str, auth_user: Optional[str] = None) -> int:
     try:
         clean_host = host.strip().lower()
         clean_host = re.sub(r"^https?://", "", clean_host).split("/")[0]
         with get_db_connection() as conn:
-            conn.execute(
+            cur = conn.cursor()
+            cur.execute(
                 """INSERT OR REPLACE INTO git_host_credentials (host, provider, auth_user, auth_token)
                    VALUES (?, ?, ?, ?)""",
                 (clean_host, provider.lower().strip(), auth_user.strip() if auth_user else None, auth_token.strip())
             )
             conn.commit()
+            return cur.lastrowid
     except Exception as e:
         logger.error(f"Failed to save git host credential for {host}: {e}")
         raise
 
-def delete_git_host_credential(id_or_host: Any):
+def delete_git_host_credential(id_or_host: Any) -> bool:
     try:
         with get_db_connection() as conn:
             if isinstance(id_or_host, int) or (isinstance(id_or_host, str) and id_or_host.isdigit()):
-                conn.execute("DELETE FROM git_host_credentials WHERE id = ?", (int(id_or_host),))
+                cur = conn.execute("DELETE FROM git_host_credentials WHERE id = ?", (int(id_or_host),))
             else:
                 clean_host = str(id_or_host).strip().lower()
                 clean_host = re.sub(r"^https?://", "", clean_host).split("/")[0]
-                conn.execute("DELETE FROM git_host_credentials WHERE host = ?", (clean_host,))
+                cur = conn.execute("DELETE FROM git_host_credentials WHERE host = ?", (clean_host,))
             conn.commit()
+            return cur.rowcount > 0
     except Exception as e:
         logger.error(f"Failed to delete git host credential {id_or_host}: {e}")
         raise
