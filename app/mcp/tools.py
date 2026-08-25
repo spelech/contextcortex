@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Annotated
 from pydantic import Field
 
 from app.services.db import get_db_connection
-from app.services.search import execute_hybrid_search
+from app.services.search import execute_hybrid_search, trace_symbol_path
 from app.services.indexer import get_dynamic_catalog_description
 from app.services.vector_store import get_vector_store_config
 from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
@@ -136,6 +136,27 @@ async def handle_find_symbol(
     except Exception as e:
         logger.error(f"find_symbol error: {e}")
         return f"Error finding symbol: {str(e)}"
+
+
+async def handle_trace_path(
+    symbol: Annotated[str, Field(description="The target function, method, or class name to trace.")],
+    repo: Annotated[Optional[str], Field(description="Specific repository to trace within. If omitted, searches across all indexed repositories.")] = None,
+    direction: Annotated[str, Field(description="Direction of traversal: 'callers' (inbound), 'callees' (outbound), or 'both' (default 'both').")] = "both",
+    depth: Annotated[int, Field(description="Maximum hops in the BFS traversal (min 1, max 5, default 2).")] = 2,
+    limit: Annotated[int, Field(description="Maximum total relationships returned to avoid token bloat (default 25).")] = 25
+) -> str:
+    """Deterministically traverse function call graphs, module imports, and inheritance hierarchies using AST relationships (BFS)."""
+    try:
+        return trace_symbol_path(
+            symbol=symbol,
+            repo=repo,
+            direction=direction,
+            depth=depth,
+            limit=limit
+        )
+    except Exception as e:
+        logger.error(f"trace_path tool execution failed: {e}")
+        return f"Error executing trace_path: {str(e)}"
 
 
 async def handle_get_file_outline(
@@ -342,6 +363,12 @@ def register_mcp_tools_and_resources(server=None):
             name="find_symbol",
             description="Instant exact or prefix symbol lookup (functions, classes, structs, interfaces) from AST index without broad token scans."
         )(handle_find_symbol)
+
+    if "trace_path" not in existing_tools:
+        server.tool(
+            name="trace_path",
+            description="Deterministically traverse function call graphs, module imports, and inheritance hierarchies using AST relationships (BFS)."
+        )(handle_trace_path)
 
     if "get_file_outline" not in existing_tools:
         server.tool(

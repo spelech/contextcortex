@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **345 Automated Tests** (247 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
+**Test Verification Baseline:** **352 Automated Tests** (254 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
 
 ---
 
@@ -320,6 +320,12 @@ classDiagram
 - `test_api_get_stats_uses_vector_store` - _Test that GET /admin/api/stats queries the vector store adapter._
 - `test_api_delete_repo_uses_vector_store` - _Test that DELETE /admin/api/repos/{id} calls delete_by_repo on the vector store._
 
+#### `test_ast_relationships.py` (4 tests)
+- `test_python_relationship_extraction`
+- `test_ts_js_relationship_extraction`
+- `test_go_rust_csharp_relationship_extraction`
+- `test_deletion_and_foreign_key_cascades`
+
 #### `test_chunker.py` (3 tests)
 - `test_detect_language`
 - `test_split_by_length`
@@ -460,6 +466,11 @@ classDiagram
 - `test_execute_hybrid_search_exception`
 
 #### `test_tools.py` (0 tests)
+
+#### `test_trace_path.py` (3 tests)
+- `test_direct_and_mutual_recursion_termination`
+- `test_depth_clamping_and_limit_truncation`
+- `test_database_query_performance`
 
 #### `test_vector_store_base.py` (7 tests)
 - `test_cannot_instantiate_abstract_vector_store` - _Verify VectorStore is an ABC and cannot be instantiated directly._

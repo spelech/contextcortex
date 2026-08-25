@@ -126,8 +126,8 @@ def process_file_content(
     commit_sha: Optional[str] = None,
     category_override: Optional[str] = None,
     provider: Optional[str] = None
-) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple]:
-    """Processes a single file into vector documents, AST symbols, and summary metadata."""
+) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple, List[Dict[str, Any]]]:
+    """Processes a single file into vector documents, AST symbols, summary metadata, and AST relationships."""
     language = detect_language(filepath)
     title = os.path.basename(filepath)
     folder = os.path.dirname(rel_path) or "root"
@@ -137,6 +137,7 @@ def process_file_content(
 
     points: List[VectorDocument] = []
     ast_symbols = []
+    ast_relationships = []
     headings = []
 
     if doc_type == "doc":
@@ -213,6 +214,7 @@ def process_file_content(
         ast_result = extract_symbols_and_chunks(content, filepath, repo=repo, max_chunk_chars=CHUNK_SIZE)
         chunks = [c.model_dump() for c in ast_result.chunks]
         ast_symbols = [s.model_dump() for s in ast_result.symbols]
+        ast_relationships = [r.model_dump() for r in ast_result.relationships]
         valid_chunks = [c for c in chunks if c.get("content", "").strip()]
         headings = [s["name"] for s in ast_symbols]
         keywords = extract_keywords_from_text(content, title, headings, [language])
@@ -285,7 +287,7 @@ def process_file_content(
         mtime
     )
 
-    return points, ast_symbols, summary_tuple
+    return points, ast_symbols, summary_tuple, ast_relationships
 
 # ----------------------------------------------------
 # INCREMENTAL SCAN & SYNC ENGINE
@@ -347,6 +349,7 @@ def sync_local_paths():
     all_points = []
     all_symbols = []
     all_summaries = []
+    all_relationships = []
     files_to_update_cache = []
     files_to_delete = []
 
@@ -366,7 +369,7 @@ def sync_local_paths():
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
 
-            points, symbols, summary_tuple = process_file_content(
+            points, symbols, summary_tuple, rels = process_file_content(
                 filepath=filepath,
                 rel_path=rel_path,
                 content=content,
@@ -379,6 +382,7 @@ def sync_local_paths():
             all_points.extend(points)
             all_symbols.extend(symbols)
             all_summaries.append(summary_tuple)
+            all_relationships.extend(rels)
             files_to_update_cache.append((filepath, repo, doc_type, lang, None, mtime))
         except Exception as e:
             logger.error(f"Error processing local file {filepath}: {e}")
@@ -390,6 +394,7 @@ def sync_local_paths():
             store.delete_by_path(fpath)
             with get_db_connection() as conn:
                 conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
+                conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to delete old points for {fpath}: {e}")
@@ -420,13 +425,38 @@ def sync_local_paths():
                     all_summaries
                 )
             if all_symbols:
-                symbol_tuples = [
-                    (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
-                    for s in all_symbols
-                ]
+                for s in all_symbols:
+                    cursor = conn.execute(
+                        "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
+                    )
+                    s["inserted_id"] = cursor.lastrowid
+
+            if all_relationships:
+                # Map symbol (repo, filepath, name) to inserted_id
+                sym_map = {}
+                for s in all_symbols:
+                    if "inserted_id" in s:
+                        sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
+
+                rel_tuples = []
+                for r in all_relationships:
+                    src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
+                    rel_tuples.append((
+                        r["repo"],
+                        src_id,
+                        r["source_filepath"],
+                        r["source_symbol"],
+                        r["target_symbol"],
+                        r["relationship_type"],
+                        r["line_number"]
+                    ))
+
                 conn.executemany(
-                    "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    symbol_tuples
+                    """INSERT INTO ast_relationships
+                       (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    rel_tuples
                 )
             conn.commit()
     except Exception as e:
@@ -501,6 +531,7 @@ def sync_single_git_repo(repo_id: int):
         all_points = []
         all_symbols = []
         all_summaries = []
+        all_relationships = []
         indexed_files = []
 
         for root, dirs, files in os.walk(temp_dir):
@@ -520,7 +551,7 @@ def sync_single_git_repo(repo_id: int):
                     # Filepath recorded in DB is repo:rel_path
                     db_filepath = f"{repo_name}://{rel_path}"
 
-                    points, symbols, summary_tuple = process_file_content(
+                    points, symbols, summary_tuple, rels = process_file_content(
                         filepath=db_filepath,
                         rel_path=rel_path,
                         content=content,
@@ -533,6 +564,7 @@ def sync_single_git_repo(repo_id: int):
                     all_points.extend(points)
                     all_symbols.extend(symbols)
                     all_summaries.append(summary_tuple)
+                    all_relationships.extend(rels)
                     indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0))
                 except Exception as fe:
                     logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
@@ -555,6 +587,7 @@ def sync_single_git_repo(repo_id: int):
         with get_db_connection() as conn:
             conn.execute("DELETE FROM indexed_files WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM file_summaries WHERE repo = ?", (repo_name,))
+            conn.execute("DELETE FROM ast_relationships WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM ast_symbols WHERE repo = ?", (repo_name,))
 
             if indexed_files:
@@ -568,13 +601,37 @@ def sync_single_git_repo(repo_id: int):
                     all_summaries
                 )
             if all_symbols:
-                symbol_tuples = [
-                    (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
-                    for s in all_symbols
-                ]
+                for s in all_symbols:
+                    cursor = conn.execute(
+                        "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
+                    )
+                    s["inserted_id"] = cursor.lastrowid
+
+            if all_relationships:
+                sym_map = {}
+                for s in all_symbols:
+                    if "inserted_id" in s:
+                        sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
+
+                rel_tuples = []
+                for r in all_relationships:
+                    src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
+                    rel_tuples.append((
+                        r["repo"],
+                        src_id,
+                        r["source_filepath"],
+                        r["source_symbol"],
+                        r["target_symbol"],
+                        r["relationship_type"],
+                        r["line_number"]
+                    ))
+
                 conn.executemany(
-                    "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    symbol_tuples
+                    """INSERT INTO ast_relationships
+                       (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    rel_tuples
                 )
 
             conn.execute(
