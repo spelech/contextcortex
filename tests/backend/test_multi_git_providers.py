@@ -160,7 +160,7 @@ def test_multi_token_settings_api(temp_db):
 def test_process_file_content_with_custom_provider():
     from app.services.indexer import process_file_content
     content = "# My Document\n\nSome important notes."
-    points, symbols, summary, _ = process_file_content(
+    points, symbols, summary, *extras = process_file_content(
         filepath="custom_repo://docs/README.md",
         rel_path="docs/README.md",
         content=content,

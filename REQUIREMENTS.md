@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **352 Automated Tests** (254 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
+**Test Verification Baseline:** **361 Automated Tests** (263 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
 
 ---
 
@@ -289,6 +289,13 @@ classDiagram
 
 ### 6.1 Backend Python Tests (`tests/backend/`)
 
+#### `test_api_route_discovery.py` (5 tests)
+- `test_path_normalization_and_matching`
+- `test_fastapi_route_parsing`
+- `test_express_route_parsing_with_middleware`
+- `test_csharp_controller_routes`
+- `test_client_call_detection`
+
 #### `test_api_routes.py` (15 tests)
 - `test_api_get_stats_with_keywords`
 - `test_api_get_stats_error`
@@ -319,6 +326,12 @@ classDiagram
 - `test_api_switch_vector_store_exception` - _Test handling of unexpected exception during switch._
 - `test_api_get_stats_uses_vector_store` - _Test that GET /admin/api/stats queries the vector store adapter._
 - `test_api_delete_repo_uses_vector_store` - _Test that DELETE /admin/api/repos/{id} calls delete_by_repo on the vector store._
+
+#### `test_architecture_adr.py` (4 tests)
+- `test_entry_point_detection_heuristics`
+- `test_language_distribution_and_token_limit`
+- `test_madr_nygard_markdown_ingestion`
+- `test_adr_state_transitions`
 
 #### `test_ast_relationships.py` (4 tests)
 - `test_python_relationship_extraction`

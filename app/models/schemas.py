@@ -28,6 +28,29 @@ class LocalPathConfig(BaseModel):
     enabled: bool = True
 
 # Code Analysis Models
+# API Route Discovery & Linking Models
+class ApiRouteRecord(BaseModel):
+    id: Optional[int] = None
+    repo: str
+    filepath: str
+    framework: str
+    http_method: str
+    path_pattern: str
+    handler_symbol: Optional[str] = None
+    start_line: int
+    end_line: int
+    created_at: Optional[str] = None
+
+class ApiClientCallRecord(BaseModel):
+    id: Optional[int] = None
+    repo: str
+    filepath: str
+    http_method: Optional[str] = None
+    url_pattern: str
+    caller_symbol: Optional[str] = None
+    line_number: int
+    created_at: Optional[str] = None
+
 class CodeSymbol(BaseModel):
     name: str
     full_symbol: str
@@ -65,8 +88,10 @@ class MarkdownChunk(BaseModel):
 class ExtractionResult(BaseModel):
     chunks: List[CodeChunk]
     symbols: List[CodeSymbol]
-    outline: List[str]
+    outline: List[str] = Field(default_factory=list)
     relationships: List[CodeRelationship] = Field(default_factory=list)
+    api_routes: List[ApiRouteRecord] = Field(default_factory=list)
+    api_client_calls: List[ApiClientCallRecord] = Field(default_factory=list)
 
 class CloneResult(BaseModel):
     temp_dir: Optional[str]

@@ -126,8 +126,8 @@ def process_file_content(
     commit_sha: Optional[str] = None,
     category_override: Optional[str] = None,
     provider: Optional[str] = None
-) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple, List[Dict[str, Any]]]:
-    """Processes a single file into vector documents, AST symbols, summary metadata, and AST relationships."""
+) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple, List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Processes a single file into vector documents, AST symbols, summary metadata, AST relationships, API routes, and client calls."""
     language = detect_language(filepath)
     title = os.path.basename(filepath)
     folder = os.path.dirname(rel_path) or "root"
@@ -138,10 +138,21 @@ def process_file_content(
     points: List[VectorDocument] = []
     ast_symbols = []
     ast_relationships = []
+    api_routes = []
+    api_calls = []
     headings = []
 
     if doc_type == "doc":
         if filepath.endswith((".md", ".txt")):
+            # Check if file is in standard ADR directories or follows ADR naming
+            norm_rel = rel_path.replace("\\", "/").lower()
+            if any(adr_dir in norm_rel for adr_dir in ["docs/adr/", "docs/decisions/", ".adr/", "doc/architecture/decisions/", "/adr/"]):
+                try:
+                    from app.services.adr import sync_adr_file
+                    sync_adr_file(filepath=filepath, repo=repo, content=content)
+                except Exception as adr_e:
+                    logger.error(f"Failed to auto-ingest ADR {filepath}: {adr_e}")
+
             try:
                 post = frontmatter.loads(content)
                 content = post.content
@@ -215,6 +226,8 @@ def process_file_content(
         chunks = [c.model_dump() for c in ast_result.chunks]
         ast_symbols = [s.model_dump() for s in ast_result.symbols]
         ast_relationships = [r.model_dump() for r in ast_result.relationships]
+        api_routes = [r.model_dump() for r in ast_result.api_routes]
+        api_calls = [c.model_dump() for c in ast_result.api_client_calls]
         valid_chunks = [c for c in chunks if c.get("content", "").strip()]
         headings = [s["name"] for s in ast_symbols]
         keywords = extract_keywords_from_text(content, title, headings, [language])
@@ -287,7 +300,7 @@ def process_file_content(
         mtime
     )
 
-    return points, ast_symbols, summary_tuple, ast_relationships
+    return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
 
 # ----------------------------------------------------
 # INCREMENTAL SCAN & SYNC ENGINE
@@ -348,6 +361,8 @@ def sync_local_paths():
 
     all_points = []
     all_symbols = []
+    all_routes = []
+    all_calls = []
     all_summaries = []
     all_relationships = []
     files_to_update_cache = []
@@ -369,7 +384,7 @@ def sync_local_paths():
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
 
-            points, symbols, summary_tuple, rels = process_file_content(
+            points, symbols, summary_tuple, rels, routes, calls = process_file_content(
                 filepath=filepath,
                 rel_path=rel_path,
                 content=content,
@@ -381,6 +396,8 @@ def sync_local_paths():
             files_to_delete.append((filepath, repo))
             all_points.extend(points)
             all_symbols.extend(symbols)
+            all_routes.extend(routes)
+            all_calls.extend(calls)
             all_summaries.append(summary_tuple)
             all_relationships.extend(rels)
             files_to_update_cache.append((filepath, repo, doc_type, lang, None, mtime))
@@ -395,6 +412,8 @@ def sync_local_paths():
             with get_db_connection() as conn:
                 conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
                 conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
+                conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
+                conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (fpath,))
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to delete old points for {fpath}: {e}")
@@ -457,6 +476,24 @@ def sync_local_paths():
                        (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     rel_tuples
+                )
+            if all_routes:
+                route_tuples = [
+                    (r["repo"], r["filepath"], r["framework"], r["http_method"], r["path_pattern"], r.get("handler_symbol"), r["start_line"], r["end_line"])
+                    for r in all_routes
+                ]
+                conn.executemany(
+                    "INSERT INTO api_routes (repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    route_tuples
+                )
+            if all_calls:
+                call_tuples = [
+                    (c["repo"], c["filepath"], c.get("http_method"), c["url_pattern"], c.get("caller_symbol"), c["line_number"])
+                    for c in all_calls
+                ]
+                conn.executemany(
+                    "INSERT INTO api_client_calls (repo, filepath, http_method, url_pattern, caller_symbol, line_number) VALUES (?, ?, ?, ?, ?, ?)",
+                    call_tuples
                 )
             conn.commit()
     except Exception as e:
@@ -530,6 +567,8 @@ def sync_single_git_repo(repo_id: int):
 
         all_points = []
         all_symbols = []
+        all_routes = []
+        all_calls = []
         all_summaries = []
         all_relationships = []
         indexed_files = []
@@ -551,7 +590,7 @@ def sync_single_git_repo(repo_id: int):
                     # Filepath recorded in DB is repo:rel_path
                     db_filepath = f"{repo_name}://{rel_path}"
 
-                    points, symbols, summary_tuple, rels = process_file_content(
+                    points, symbols, summary_tuple, rels, routes, calls = process_file_content(
                         filepath=db_filepath,
                         rel_path=rel_path,
                         content=content,
@@ -563,6 +602,8 @@ def sync_single_git_repo(repo_id: int):
                     )
                     all_points.extend(points)
                     all_symbols.extend(symbols)
+                    all_routes.extend(routes)
+                    all_calls.extend(calls)
                     all_summaries.append(summary_tuple)
                     all_relationships.extend(rels)
                     indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0))
@@ -589,6 +630,8 @@ def sync_single_git_repo(repo_id: int):
             conn.execute("DELETE FROM file_summaries WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM ast_relationships WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM ast_symbols WHERE repo = ?", (repo_name,))
+            conn.execute("DELETE FROM api_routes WHERE repo = ?", (repo_name,))
+            conn.execute("DELETE FROM api_client_calls WHERE repo = ?", (repo_name,))
 
             if indexed_files:
                 conn.executemany(
@@ -632,6 +675,24 @@ def sync_single_git_repo(repo_id: int):
                        (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     rel_tuples
+                )
+            if all_routes:
+                route_tuples = [
+                    (r["repo"], r["filepath"], r["framework"], r["http_method"], r["path_pattern"], r.get("handler_symbol"), r["start_line"], r["end_line"])
+                    for r in all_routes
+                ]
+                conn.executemany(
+                    "INSERT INTO api_routes (repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    route_tuples
+                )
+            if all_calls:
+                call_tuples = [
+                    (c["repo"], c["filepath"], c.get("http_method"), c["url_pattern"], c.get("caller_symbol"), c["line_number"])
+                    for c in all_calls
+                ]
+                conn.executemany(
+                    "INSERT INTO api_client_calls (repo, filepath, http_method, url_pattern, caller_symbol, line_number) VALUES (?, ?, ?, ?, ?, ?)",
+                    call_tuples
                 )
 
             conn.execute(
