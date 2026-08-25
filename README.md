@@ -115,29 +115,49 @@ ContextCortex can be run directly on Linux, macOS, or Windows without Docker dep
 - **Node.js 20+** & **npm**
 - **Git** (available on system `PATH`)
 
-### 2. Setup & Installation
+### 2. Automated Setup (Recommended)
+
+Clone the repository and run the automated setup script for your platform:
+
+**Linux / macOS (Bash):**
 ```bash
-# 1. Clone the repository
 git clone git@github.com:spelech/contextcortex.git
 cd contextcortex
+./setup.sh
+```
 
-# 2. Create and activate a Python virtual environment
+**Windows (PowerShell):**
+```powershell
+git clone git@github.com:spelech/contextcortex.git
+cd contextcortex
+.\setup.ps1
+```
+
+<details>
+<summary><b>Or follow manual step-by-step setup</b></summary>
+
+```bash
+# 1. Create and activate a Python virtual environment
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# 3. Install Python dependencies
+# 2. Install Python dependencies
 pip install -r requirements.txt
 
-# 4. Build the React 19 administrative dashboard frontend
+# 3. Build the React 19 administrative dashboard frontend
 cd frontend
 npm install
 npm run build
 cd ..
 ```
+</details>
 
 ### 3. Start the Server
 ```bash
-# Run with default embedded vector store and local SQLite database
+# Activate virtual environment (if not already active)
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Run ContextCortex with embedded vector store and local SQLite database
 python main.py
 ```
 

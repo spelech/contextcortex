@@ -16,6 +16,24 @@ This document provides instructions for developing, testing, configuring, and ru
 
 ## 💻 Local Setup
 
+### Option A: Automated One-Command Setup (Recommended)
+
+**Linux / macOS (Bash):**
+```bash
+git clone git@github.com:spelech/contextcortex.git
+cd contextcortex
+./setup.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+git clone git@github.com:spelech/contextcortex.git
+cd contextcortex
+.\setup.ps1
+```
+
+### Option B: Manual Setup
+
 1. **Clone the repository:**
    ```bash
    git clone git@github.com:spelech/contextcortex.git
@@ -25,7 +43,7 @@ This document provides instructions for developing, testing, configuring, and ru
 2. **Create a virtual environment:**
    ```bash
    python3 -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
 3. **Install Python dependencies:**
