@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **361 Automated Tests** (263 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
+**Test Verification Baseline:** **384 Automated Tests** (276 Pytest Backend + 82 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -480,6 +480,21 @@ classDiagram
 
 #### `test_tools.py` (0 tests)
 
+#### `test_topology_graph.py` (13 tests)
+- `test_topology_graph_files_view` - _Test topology graph construction for files view._
+- `test_topology_graph_symbols_view` - _Test topology graph construction for symbols view._
+- `test_topology_graph_routes_view` - _Test topology graph construction for routes view._
+- `test_topology_graph_full_view` - _Test topology graph construction for full view._
+- `test_topology_cross_repo_all` - _Test cross-repo topology with repo='__all__' including cross-repo client routes._
+- `test_topology_root_node_bfs` - _Test BFS traversal focused on a root node with depth limit._
+- `test_topology_invalid_repo_404` - _Test 404 response when querying a non-existent repository._
+- `test_topology_api_endpoint` - _Test REST API GET /admin/api/graph/topology endpoint._
+- `test_node_details_symbol` - _Test GET /admin/api/graph/node-details for symbol node._
+- `test_node_details_file` - _Test GET /admin/api/graph/node-details for file node._
+- `test_node_details_route` - _Test GET /admin/api/graph/node-details for route node._
+- `test_node_details_not_found` - _Test 404 response for invalid node id._
+- `test_topology_performance_benchmark` - _Test performance benchmark ensuring graph construction of 500+ items executes quickly._
+
 #### `test_trace_path.py` (3 tests)
 - `test_direct_and_mutual_recursion_termination`
 - `test_depth_clamping_and_limit_truncation`
@@ -690,6 +705,16 @@ classDiagram
 - supports showToast method with customizable toast types
 - dismisses toast immediately when clicking dismiss button
 
+#### `TopologyExplorer.test.tsx` (8 tests)
+- renders toolbar, repository selector, view type toggles, and graph canvas
+- handles switching view type between FILES, SYMBOLS, ROUTES, and FULL
+- handles changing repository selection and depth
+- toggles node type filter chips
+- opens slide-over inspector drawer on node click and renders details
+- filters search matches and focuses on matching node
+- triggers SVG and JSON exports on button click
+- handles error state when topology API fails
+
 ### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/dashboard.spec.ts`)
 
 - 1. navigates through all tabs including Diagnostics & Logs
@@ -716,3 +741,5 @@ classDiagram
 - 22. toggles repository auto-sync ON/OFF with optimistic UI update and toast confirmation
 - 23. opens Webhook setup modal, displays copyable endpoint, and shows provider setup guides
 - 24. configures auto-sync polling schedule and manages global webhook secret in Settings
+- navigates to Topology tab and renders graph controls
+- interacts with view types, search, node inspector drawer, and exports

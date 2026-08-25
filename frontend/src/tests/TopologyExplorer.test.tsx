@@ -1,0 +1,247 @@
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import TopologyExplorer from '../TopologyExplorer';
+import { ToastProvider } from '../ToastContext';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const mockRepos = [
+  { id: 1, name: 'repo-core', url: 'https://github.com/org/repo-core.git', branch: 'main', status: 'synced' },
+  { id: 2, name: 'repo-web', url: 'https://github.com/org/repo-web.git', branch: 'main', status: 'synced' }
+];
+
+const mockTopologyData = {
+  nodes: [
+    { id: 'file:repo-core:app/main.py', name: 'main.py', type: 'file', repo: 'repo-core', filepath: 'app/main.py' },
+    { id: 'file:repo-core:app/utils.py', name: 'utils.py', type: 'file', repo: 'repo-core', filepath: 'app/utils.py' },
+    { id: 'symbol:1', name: 'handle_request', type: 'function', repo: 'repo-core', filepath: 'app/main.py', start_line: 10, end_line: 25 },
+    { id: 'route:1', name: 'GET /api/v1/status', type: 'route', repo: 'repo-core', filepath: 'app/main.py', method: 'GET', path_pattern: '/api/v1/status' }
+  ],
+  edges: [
+    { source: 'file:repo-core:app/main.py', target: 'file:repo-core:app/utils.py', type: 'IMPORTS' },
+    { source: 'file:repo-core:app/main.py', target: 'symbol:1', type: 'DEFINES' },
+    { source: 'route:1', target: 'symbol:1', type: 'HANDLES' }
+  ],
+  stats: { node_count: 4, edge_count: 3 }
+};
+
+const mockNodeDetails = {
+  id: 'symbol:1',
+  name: 'handle_request',
+  type: 'function',
+  repo: 'repo-core',
+  filepath: 'app/main.py',
+  start_line: 10,
+  end_line: 25,
+  signature: 'def handle_request(req):',
+  code_preview: 'def handle_request(req):\n    return {"status": "ok"}',
+  permalink: 'https://github.com/org/repo-core/blob/c0ffee1/app/main.py#L10-L25',
+  incoming: [
+    { id: 'route:1', name: 'GET /api/v1/status', type: 'route', edge_type: 'HANDLES', line_number: 10 }
+  ],
+  outgoing: [
+    { id: 'symbol:2', name: 'format_response', type: 'function', edge_type: 'CALLS', line_number: 18 }
+  ],
+  metadata: { kind: 'function', language: 'python' }
+};
+
+describe('TopologyExplorer Component', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/admin/api/repos')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockRepos
+        } as Response);
+      }
+      if (url.includes('/admin/api/graph/topology')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockTopologyData
+        } as Response);
+      }
+      if (url.includes('/admin/api/graph/node-details')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockNodeDetails
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({})
+      } as Response);
+    });
+  });
+
+  it('renders toolbar, repository selector, view type toggles, and graph canvas', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    expect(screen.getByRole('group', { name: /View Type/i })).toBeInTheDocument();
+    expect(screen.getByText('FILES')).toBeInTheDocument();
+    expect(screen.getByText('SYMBOLS')).toBeInTheDocument();
+    expect(screen.getByText('ROUTES')).toBeInTheDocument();
+    expect(screen.getByText('FULL')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('main.py')).toBeInTheDocument();
+      expect(screen.getByText('utils.py')).toBeInTheDocument();
+    });
+  });
+
+  it('handles switching view type between FILES, SYMBOLS, ROUTES, and FULL', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    const symbolsBtn = screen.getByRole('button', { name: 'SYMBOLS' });
+    fireEvent.click(symbolsBtn);
+
+    await waitFor(() => {
+      expect(symbolsBtn).toHaveClass('active');
+    });
+
+    const routesBtn = screen.getByRole('button', { name: 'ROUTES' });
+    fireEvent.click(routesBtn);
+
+    await waitFor(() => {
+      expect(routesBtn).toHaveClass('active');
+    });
+  });
+
+  it('handles changing repository selection and depth', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /repo-core/i })).toBeInTheDocument();
+    });
+
+    const repoSelect = screen.getByRole('combobox', { name: /Select Repository/i });
+    fireEvent.change(repoSelect, { target: { value: 'repo-core' } });
+
+    const depthSelect = screen.getByRole('combobox', { name: /Graph Depth/i });
+    fireEvent.change(depthSelect, { target: { value: '3' } });
+
+    await waitFor(() => {
+      expect(repoSelect).toHaveValue('repo-core');
+      expect(depthSelect).toHaveValue('3');
+    });
+  });
+
+  it('toggles node type filter chips', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    const fileChip = screen.getByTitle('Toggle file nodes');
+    expect(fileChip).not.toHaveClass('inactive');
+
+    fireEvent.click(fileChip);
+    expect(fileChip).toHaveClass('inactive');
+
+    fireEvent.click(fileChip);
+    expect(fileChip).not.toHaveClass('inactive');
+  });
+
+  it('opens slide-over inspector drawer on node click and renders details', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Node handle_request' })).toBeInTheDocument();
+    });
+
+    // Click on node
+    const nodeBtn = screen.getByRole('button', { name: 'Node handle_request' });
+    fireEvent.click(nodeBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Location & Repository/i)).toBeInTheDocument();
+      expect(screen.getByText(/def handle_request/i)).toBeInTheDocument();
+      expect(screen.getByText(/Incoming Connections/i)).toBeInTheDocument();
+      expect(screen.getByText(/Outgoing Connections/i)).toBeInTheDocument();
+      expect(screen.getByText(/Open in Git Provider/i)).toBeInTheDocument();
+    });
+
+    // Close drawer
+    const closeBtn = screen.getByRole('button', { name: /Close Inspector/i });
+    fireEvent.click(closeBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Location & Repository/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('filters search matches and focuses on matching node', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Node handle_request' })).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByRole('textbox', { name: /Search nodes/i });
+    fireEvent.focus(searchInput);
+    fireEvent.change(searchInput, { target: { value: 'handle' } });
+
+    await waitFor(() => {
+      const matchItems = screen.getAllByText(/handle_request/i);
+      expect(matchItems.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('triggers SVG and JSON exports on button click', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    const svgBtn = screen.getByTitle('Export as SVG');
+    const jsonBtn = screen.getByTitle('Export as JSON');
+
+    expect(svgBtn).toBeInTheDocument();
+    expect(jsonBtn).toBeInTheDocument();
+
+    fireEvent.click(svgBtn);
+    fireEvent.click(jsonBtn);
+  });
+
+  it('handles error state when topology API fails', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/admin/api/graph/topology')) {
+        return Promise.resolve({
+          ok: false,
+          json: async () => ({ error: 'Repository index not found' })
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/No graph nodes found/i)).toBeInTheDocument();
+    });
+  });
+});

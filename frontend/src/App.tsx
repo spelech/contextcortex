@@ -6,6 +6,7 @@ import LocalPathManager from './LocalPathManager';
 import SearchInspector from './SearchInspector';
 import Settings from './Settings';
 import DiagnosticsViewer from './DiagnosticsViewer';
+import TopologyExplorer from './TopologyExplorer';
 import type { Stats } from './types';
 
 function App() {
@@ -84,6 +85,7 @@ function App() {
 
         <nav className={`dashboard-nav ${isMobileNavOpen ? 'drawer-open' : ''}`}>
           <button className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => { setActiveTab('overview'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-chart-pie"></i> Overview</button>
+          <button className={`nav-tab ${activeTab === 'topology' ? 'active' : ''}`} onClick={() => { setActiveTab('topology'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-diagram-project"></i> Topology</button>
           <button className={`nav-tab ${activeTab === 'git-repos' ? 'active' : ''}`} onClick={() => { setActiveTab('git-repos'); setIsMobileNavOpen(false); }}><i className="fa-brands fa-github"></i> Git Repositories</button>
           <button className={`nav-tab ${activeTab === 'local-paths' ? 'active' : ''}`} onClick={() => { setActiveTab('local-paths'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-folder-tree"></i> Local Paths</button>
           <button className={`nav-tab ${activeTab === 'search-inspector' ? 'active' : ''}`} onClick={() => { setActiveTab('search-inspector'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-magnifying-glass"></i> Search & Inspector</button>
@@ -93,6 +95,7 @@ function App() {
 
         <main className="dashboard-main">
           {activeTab === 'overview' && <Overview stats={stats} refreshStats={loadStats} />}
+          {activeTab === 'topology' && <TopologyExplorer />}
           {activeTab === 'git-repos' && <GitRepoManager refreshStats={loadStats} />}
           {activeTab === 'local-paths' && <LocalPathManager refreshStats={loadStats} />}
           {activeTab === 'search-inspector' && <SearchInspector />}

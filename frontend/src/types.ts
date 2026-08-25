@@ -112,3 +112,70 @@ export interface DiagnosticLog {
   traceback: string | null;
 }
 
+export interface TopologyNode {
+  id: string;
+  name: string;
+  type: 'file' | 'module' | 'class' | 'function' | 'route' | string;
+  repo: string;
+  filepath?: string;
+  language?: string;
+  kind?: string;
+  start_line?: number;
+  end_line?: number;
+  signature?: string;
+  method?: string;
+  path_pattern?: string;
+  metadata?: Record<string, any>;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+}
+
+export interface TopologyEdge {
+  source: string;
+  target: string;
+  type: 'IMPORTS' | 'CALLS' | 'DEFINES' | 'HANDLES' | 'ROUTES_TO' | string;
+  label?: string;
+  line_number?: number;
+  metadata?: Record<string, any>;
+}
+
+export interface TopologyStats {
+  node_count: number;
+  edge_count: number;
+}
+
+export interface TopologyGraphData {
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
+  stats: TopologyStats;
+}
+
+export interface NeighborDetail {
+  id: string;
+  name: string;
+  type: string;
+  edge_type: string;
+  filepath?: string;
+  line_number?: number;
+  permalink?: string;
+}
+
+export interface NodeDetails {
+  id: string;
+  name: string;
+  type: string;
+  repo: string;
+  filepath?: string;
+  start_line?: number;
+  end_line?: number;
+  signature?: string;
+  code_preview?: string;
+  permalink?: string;
+  incoming: NeighborDetail[];
+  outgoing: NeighborDetail[];
+  metadata?: Record<string, any>;
+}
+
+
