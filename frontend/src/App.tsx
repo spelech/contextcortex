@@ -45,7 +45,7 @@ function App() {
               <i className="fa-solid fa-layer-group logo-icon"></i>
               <div className="header-title">
                 <h1>ContextCortex</h1>
-                <span className="badge badge-primary">v2.7.0</span>
+                <span className="badge badge-primary">v2.8.0</span>
               </div>
             </div>
             <button

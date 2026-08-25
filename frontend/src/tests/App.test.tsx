@@ -61,15 +61,14 @@ describe('App Component', () => {
     );
 
     expect(screen.getByText('ContextCortex')).toBeInTheDocument();
-    expect(screen.getByText('v2.7.0')).toBeInTheDocument();
+    expect(screen.getByText('v2.8.0')).toBeInTheDocument();
 
 
     await waitFor(() => {
       expect(screen.getByText('Vector Backend')).toBeInTheDocument();
       expect(screen.getByText(/Qdrant \(Embedded\)/)).toBeInTheDocument();
+      expect(screen.getByText('System & Embedding Specs')).toBeInTheDocument();
     });
-
-    expect(screen.getByText('System & Embedding Specs')).toBeInTheDocument();
   });
 
 
