@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from app.services.db import init_db, get_db_connection
-from app.services.indexer import sync_single_git_repo, sync_local_paths
+from app.services.database import init_db, get_db_connection
+from app.services.indexing import sync_single_git_repo, sync_local_paths
 from app.models.schemas import CloneResult
 
 class TestIndexerSync(unittest.TestCase):
@@ -25,10 +25,10 @@ class TestIndexerSync(unittest.TestCase):
             conn.execute("DELETE FROM indexed_paths WHERE repo = 'test_sync_vault'")
             conn.commit()
 
-    @patch("app.services.indexer.get_remote_head_sha", return_value="abc12345")
-    @patch("app.services.indexer.shallow_clone_repo")
-    @patch("app.services.indexer.cleanup_repo_dir")
-    @patch("app.services.indexer.get_vector_store")
+    @patch("app.services.git_manager.get_remote_head_sha", return_value="abc12345")
+    @patch("app.services.git_manager.shallow_clone_repo")
+    @patch("app.services.git_manager.cleanup_repo_dir")
+    @patch("app.services.vector_store.get_vector_store")
     def test_sync_single_git_repo_success(self, mock_get_store, mock_cleanup, mock_clone, mock_sha):
         mock_clone.return_value = CloneResult(temp_dir="/tmp/mock_repo_dir", commit_sha="abc12345", error=None)
         mock_store = MagicMock()
@@ -45,9 +45,9 @@ class TestIndexerSync(unittest.TestCase):
             self.assertIsNone(row["last_error"])
             self.assertIsNotNone(row["last_synced"])
 
-    @patch("app.services.indexer.get_remote_head_sha", return_value=None)
-    @patch("app.services.indexer.shallow_clone_repo")
-    @patch("app.services.indexer.cleanup_repo_dir")
+    @patch("app.services.git_manager.get_remote_head_sha", return_value=None)
+    @patch("app.services.git_manager.shallow_clone_repo")
+    @patch("app.services.git_manager.cleanup_repo_dir")
     def test_sync_single_git_repo_failure(self, mock_cleanup, mock_clone, mock_sha):
         mock_clone.return_value = CloneResult(temp_dir=None, commit_sha=None, error="Repository not found or authentication required")
 
@@ -58,10 +58,10 @@ class TestIndexerSync(unittest.TestCase):
             self.assertEqual(row["status"], "error")
             self.assertIn("Repository not found", row["last_error"])
 
-    @patch("app.services.indexer.get_remote_head_sha", return_value="abc12345")
-    @patch("app.services.indexer.shallow_clone_repo")
-    @patch("app.services.indexer.cleanup_repo_dir")
-    @patch("app.services.indexer.get_vector_store")
+    @patch("app.services.git_manager.get_remote_head_sha", return_value="abc12345")
+    @patch("app.services.git_manager.shallow_clone_repo")
+    @patch("app.services.git_manager.cleanup_repo_dir")
+    @patch("app.services.vector_store.get_vector_store")
     def test_sync_single_git_repo_vector_upsert_failure(self, mock_get_store, mock_cleanup, mock_clone, mock_sha):
         mock_clone.return_value = CloneResult(temp_dir="/tmp/mock_repo_dir", commit_sha="abc12345", error=None)
         mock_store = MagicMock()
@@ -79,7 +79,7 @@ class TestIndexerSync(unittest.TestCase):
             self.assertIsNotNone(row["last_error"])
             self.assertIn("vector", row["last_error"].lower())
 
-    @patch("app.services.indexer.get_vector_store")
+    @patch("app.services.vector_store.get_vector_store")
     def test_sync_local_paths_vector_upsert_failure(self, mock_get_store):
         with get_db_connection() as conn:
             conn.execute(
@@ -98,7 +98,7 @@ class TestIndexerSync(unittest.TestCase):
              patch("os.path.isdir", return_value=True), \
              patch("os.path.getmtime", return_value=123456789.0), \
              patch("builtins.open", unittest.mock.mock_open(read_data=mock_file_content)), \
-             patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]):
+             patch("app.services.embeddings.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]):
             res = sync_local_paths()
             self.assertFalse(res)
 

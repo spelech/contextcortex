@@ -7,9 +7,9 @@ from typing import Optional, Dict, Any, Tuple
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.services.db import get_db_connection, get_global_webhook_secret
+from app.services.database import get_db_connection, get_global_webhook_secret
 from app.services.git_manager import normalize_git_url
-from app.services.indexer import sync_single_git_repo
+from app.services.indexing import sync_single_git_repo
 
 logger = logging.getLogger("contextcortex.webhook")
 router = APIRouter()

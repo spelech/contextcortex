@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, Optional
 import frontmatter
 
-from app.services.db import upsert_adr
+from app.services.database import upsert_adr
 
 logger = logging.getLogger("contextcortex.adr")
 

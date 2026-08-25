@@ -3,13 +3,13 @@ import shutil
 import tempfile
 import unittest
 
-from app.services.chunker import extract_symbols_and_chunks, chunk_markdown, get_file_outline
+from app.services.chunking import extract_symbols_and_chunks, chunk_markdown, get_file_outline
 from app.services.embeddings import get_dense_embedding, get_sparse_embedding, get_hybrid_embeddings
 from app.services.git_manager import (
     shallow_clone_repo, cleanup_repo_dir, format_git_permalink, 
     check_github_rate_limit
 )
-from app.services.db import init_db, get_db_connection, set_metadata, get_metadata
+from app.services.database import init_db, get_db_connection, set_metadata, get_metadata
 
 class TestKnowledgeRAG(unittest.TestCase):
 

@@ -5,7 +5,7 @@ import logging
 import threading
 from typing import Optional, Dict, Any, Tuple, Callable, List
 
-from app.services.db import get_vector_store_db_config, set_vector_store_db_config
+from app.services.database import get_vector_store_db_config, set_vector_store_db_config
 from app.services.vector_store.base import VectorStore
 from app.services.vector_store.qdrant_store import QdrantVectorStore
 from app.services.vector_store.chroma_store import ChromaVectorStore

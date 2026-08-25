@@ -12,7 +12,7 @@ from app.services.vector_store import (
     get_vector_store,
     get_vector_store_config,
 )
-from app.services.db import init_db, set_vector_store_db_config, get_vector_store_db_config
+from app.services.database import init_db, set_vector_store_db_config, get_vector_store_db_config
 from app.mcp.tools import handle_index_status
 
 
@@ -29,7 +29,7 @@ def setup_test_environment(tmp_path, monkeypatch):
     os.makedirs(storage_dir, exist_ok=True)
 
     monkeypatch.setenv("CACHE_DB_PATH", db_file)
-    monkeypatch.setattr("app.services.db.CACHE_DB_PATH", db_file)
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", db_file)
     monkeypatch.setattr("app.api.routes.CACHE_DB_PATH", db_file)
     monkeypatch.setenv("VECTOR_STORAGE_PATH", storage_dir)
     monkeypatch.setenv("DEFAULT_VECTOR_STORE_PROVIDER", "qdrant")
@@ -73,7 +73,7 @@ def test_api_get_vector_store_success(setup_test_environment):
 
 def test_api_get_vector_store_error():
     """Test GET /admin/api/vector-store error handling."""
-    with patch("app.api.routes.get_vector_store_config", side_effect=RuntimeError("Vector store config error")):
+    with patch("app.services.vector_store.get_vector_store_config", side_effect=RuntimeError("Vector store config error")):
         res = client.get("/admin/api/vector-store")
         assert res.status_code == 500
         assert "Vector store config error" in res.json()["error"]
@@ -141,7 +141,7 @@ def test_api_test_vector_store_remote_missing_url():
 
 def test_api_test_vector_store_exception():
     """Test dry-run validation when unexpected exception occurs."""
-    with patch("app.api.routes.test_vector_store_connection", side_effect=RuntimeError("Test crash")):
+    with patch("app.services.vector_store.test_vector_store_connection", side_effect=RuntimeError("Test crash")):
         payload = {"provider": "qdrant", "mode": "embedded"}
         res = client.post("/admin/api/vector-store/test", json=payload)
         assert res.status_code in (200, 500)
@@ -188,7 +188,7 @@ def test_api_switch_vector_store_invalid_provider():
 
 def test_api_switch_vector_store_exception():
     """Test handling of unexpected exception during switch."""
-    with patch("app.api.routes.switch_vector_store", side_effect=RuntimeError("Switch crash")):
+    with patch("app.services.vector_store.switch_vector_store", side_effect=RuntimeError("Switch crash")):
         payload = {"provider": "chroma", "mode": "embedded"}
         res = client.post("/admin/api/vector-store/switch", json=payload)
         assert res.status_code == 500
@@ -205,8 +205,8 @@ def test_api_get_stats_uses_vector_store(setup_test_environment):
         "mode": "embedded",
     }
 
-    with patch("app.api.routes.get_vector_store", return_value=mock_store), \
-         patch("app.api.routes.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
+    with patch("app.services.vector_store.get_vector_store", return_value=mock_store), \
+         patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
         res = client.get("/admin/api/stats")
         assert res.status_code == 200
         data = res.json()
@@ -216,7 +216,7 @@ def test_api_get_stats_uses_vector_store(setup_test_environment):
 
 def test_api_delete_repo_uses_vector_store(setup_test_environment):
     """Test that DELETE /admin/api/repos/{id} calls delete_by_repo on the vector store."""
-    from app.services.db import get_db_connection
+    from app.services.database import get_db_connection
     with get_db_connection() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO git_repositories (name, url, branch, provider) VALUES ('repo_to_del_unique', 'https://github.com/org/repo', 'main', 'github')"
@@ -225,7 +225,7 @@ def test_api_delete_repo_uses_vector_store(setup_test_environment):
         repo_id = conn.execute("SELECT id FROM git_repositories WHERE name = 'repo_to_del_unique'").fetchone()[0]
 
     mock_store = MagicMock()
-    with patch("app.api.routes.get_vector_store", return_value=mock_store):
+    with patch("app.services.vector_store.get_vector_store", return_value=mock_store):
         res = client.delete(f"/admin/api/repos/{repo_id}")
         assert res.status_code == 200
         mock_store.delete_by_repo.assert_called_once_with("repo_to_del_unique")

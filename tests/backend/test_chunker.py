@@ -1,5 +1,5 @@
 import pytest
-from app.services.chunker import detect_language, split_by_length, chunk_markdown
+from app.services.chunking import detect_language, split_by_length, chunk_markdown
 
 def test_detect_language():
     assert detect_language("test.py") == "python"

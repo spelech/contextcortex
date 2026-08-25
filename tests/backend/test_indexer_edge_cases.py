@@ -2,20 +2,20 @@ import os
 import sqlite3
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from app.services.indexer import (
+from app.services.indexing import (
     sync_single_git_repo, notify_list_changed, trigger_list_changed_notification,
     active_sessions, ensure_collection
 )
 from app.mcp.tools import handle_catalog_summary
 from app.mcp.mcp_server import mcp_server
-from app.services.db import init_db, get_db_connection
+from app.services.database import init_db, get_db_connection
 
 from app.models.schemas import CloneResult
 
 @pytest.fixture
 def temp_edge_db(tmp_path):
     db_file = str(tmp_path / "test_edge.db")
-    with patch("app.services.db.CACHE_DB_PATH", db_file):
+    with patch("app.services.database.CACHE_DB_PATH", db_file):
         init_db()
         yield db_file
 
@@ -29,8 +29,8 @@ def test_sync_single_git_repo_unchanged_sha(temp_edge_db):
         conn.commit()
         repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    with patch("app.services.indexer.get_remote_head_sha", return_value="abcdef123456"), \
-         patch("app.services.indexer.shallow_clone_repo") as mock_clone:
+    with patch("app.services.git_manager.get_remote_head_sha", return_value="abcdef123456"), \
+         patch("app.services.git_manager.shallow_clone_repo") as mock_clone:
         sync_single_git_repo(repo_id)
         mock_clone.assert_not_called()
 
@@ -45,8 +45,8 @@ def test_sync_single_git_repo_clone_error(temp_edge_db):
         conn.commit()
         repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    with patch("app.services.indexer.get_remote_head_sha", return_value="newsha"), \
-         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=None, commit_sha=None, error="Authentication failed")):
+    with patch("app.services.git_manager.get_remote_head_sha", return_value="newsha"), \
+         patch("app.services.git_manager.shallow_clone_repo", return_value=CloneResult(temp_dir=None, commit_sha=None, error="Authentication failed")):
         sync_single_git_repo(repo_id)
 
         with get_db_connection() as conn:
@@ -70,11 +70,11 @@ def test_sync_single_git_repo_full_success(temp_edge_db, tmp_path):
         conn.commit()
         repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    with patch("app.services.indexer.get_remote_head_sha", return_value="newsha123"), \
-         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="newsha123", error=None)), \
-         patch("app.services.indexer.get_vector_store") as mock_get_store, \
-         patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": {"indices": [1], "values": [1.0]}}]), \
-         patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+    with patch("app.services.git_manager.get_remote_head_sha", return_value="newsha123"), \
+         patch("app.services.git_manager.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="newsha123", error=None)), \
+         patch("app.services.vector_store.get_vector_store") as mock_get_store, \
+         patch("app.services.embeddings.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": {"indices": [1], "values": [1.0]}}]), \
+         patch("app.services.git_manager.cleanup_repo_dir") as mock_cleanup:
         mock_store = MagicMock()
         mock_get_store.return_value = mock_store
         
@@ -103,11 +103,11 @@ def test_sync_single_git_repo_file_parse_error(temp_edge_db, tmp_path):
         conn.commit()
         repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    with patch("app.services.indexer.get_remote_head_sha", return_value="sha_parse_err"), \
-         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_parse_err", error=None)), \
-         patch("app.services.indexer.process_file_content", side_effect=Exception("AST corrupt")), \
-         patch("app.services.indexer.get_vector_store") as mock_get_store, \
-         patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+    with patch("app.services.git_manager.get_remote_head_sha", return_value="sha_parse_err"), \
+         patch("app.services.git_manager.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_parse_err", error=None)), \
+         patch("app.services.indexing.processor.process_file_content", side_effect=Exception("AST corrupt")), \
+         patch("app.services.vector_store.get_vector_store") as mock_get_store, \
+         patch("app.services.git_manager.cleanup_repo_dir") as mock_cleanup:
         mock_store = MagicMock()
         mock_get_store.return_value = mock_store
         
@@ -125,11 +125,11 @@ def test_sync_single_git_repo_qdrant_purge_error(temp_edge_db, tmp_path):
         conn.commit()
         repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    with patch("app.services.indexer.get_remote_head_sha", return_value="sha_qd_err"), \
-         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_qd_err", error=None)), \
-         patch("app.services.indexer.get_vector_store") as mock_get_store, \
-         patch("app.services.indexer.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]), \
-         patch("app.services.indexer.cleanup_repo_dir") as mock_cleanup:
+    with patch("app.services.git_manager.get_remote_head_sha", return_value="sha_qd_err"), \
+         patch("app.services.git_manager.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_qd_err", error=None)), \
+         patch("app.services.vector_store.get_vector_store") as mock_get_store, \
+         patch("app.services.embeddings.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]), \
+         patch("app.services.git_manager.cleanup_repo_dir") as mock_cleanup:
         mock_store = MagicMock()
         mock_store.delete_by_repo.side_effect = Exception("Purge vectors failed")
         mock_get_store.return_value = mock_store
@@ -145,10 +145,10 @@ def test_sync_single_git_repo_unexpected_exception(temp_edge_db, tmp_path):
         conn.commit()
         repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    with patch("app.services.indexer.get_remote_head_sha", return_value="newsha_fatal"), \
-         patch("app.services.indexer.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="newsha_fatal", error=None)), \
+    with patch("app.services.git_manager.get_remote_head_sha", return_value="newsha_fatal"), \
+         patch("app.services.git_manager.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="newsha_fatal", error=None)), \
          patch("os.walk", side_effect=RuntimeError("Fatal filesystem crash")), \
-         patch("app.services.indexer.cleanup_repo_dir"):
+         patch("app.services.git_manager.cleanup_repo_dir"):
         sync_single_git_repo(repo_id)
 
         with get_db_connection() as conn:
@@ -170,7 +170,7 @@ async def test_notify_list_changed():
         active_sessions.clear()
 
 def test_ensure_collection_delegation():
-    with patch("app.services.indexer.get_vector_store") as mock_get_store:
+    with patch("app.services.vector_store.get_vector_store") as mock_get_store:
         mock_store = MagicMock()
         mock_store.ensure_collection.return_value = True
         mock_get_store.return_value = mock_store

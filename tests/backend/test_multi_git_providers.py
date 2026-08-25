@@ -9,7 +9,7 @@ from app.services.git_manager import (
     detect_git_provider, build_authenticated_url, sanitize_url_for_logging, 
     format_git_permalink, get_remote_head_sha, shallow_clone_repo
 )
-from app.services.db import (
+from app.services.database import (
     save_git_host_credential, list_git_host_credentials, get_git_host_credential,
     delete_git_host_credential, get_effective_git_token
 )
@@ -19,8 +19,8 @@ client = TestClient(app)
 @pytest.fixture
 def temp_db(tmp_path):
     db_file = str(tmp_path / "multi_provider_test.db")
-    with patch("app.services.db.CACHE_DB_PATH", db_file), patch("app.api.routes.CACHE_DB_PATH", db_file):
-        from app.services.db import init_db
+    with patch("app.services.database.CACHE_DB_PATH", db_file), patch("app.api.routes.CACHE_DB_PATH", db_file):
+        from app.services.database import init_db
         init_db()
         yield db_file
 
@@ -105,7 +105,7 @@ def test_effective_git_token_hierarchy(temp_db):
     assert src == "Host Vault (gitlab.internal.lan)"
 
     # 3. Global DB setting
-    from app.services.db import set_metadata
+    from app.services.database import set_metadata
     set_metadata("gitea_token", "global_gitea_tok")
     tok, user, src = get_effective_git_token("https://gitea.homelab.arpa/org/repo.git")
     assert tok == "global_gitea_tok"
@@ -158,7 +158,7 @@ def test_multi_token_settings_api(temp_db):
     assert data["providers_auth"]["gitea"]["token_source"] == "Database (Gitea)"
 
 def test_process_file_content_with_custom_provider():
-    from app.services.indexer import process_file_content
+    from app.services.indexing import process_file_content
     content = "# My Document\n\nSome important notes."
     points, symbols, summary, *extras = process_file_content(
         filepath="custom_repo://docs/README.md",
@@ -176,8 +176,8 @@ def test_process_file_content_with_custom_provider():
     assert points[0].permalink_url == points[0].github_url
 
 def test_sync_single_git_repo_triggers_notification(temp_db):
-    from app.services.indexer import sync_single_git_repo
-    from app.services.db import get_db_connection
+    from app.services.indexing import sync_single_git_repo
+    from app.services.database import get_db_connection
     from unittest.mock import patch, MagicMock
 
     with get_db_connection() as conn:
@@ -188,9 +188,9 @@ def test_sync_single_git_repo_triggers_notification(temp_db):
         conn.commit()
         repo_id = conn.execute("SELECT id FROM git_repositories WHERE name = 'test_notif_repo'").fetchone()[0]
 
-    with patch("app.services.indexer.get_remote_head_sha", return_value="sha123"), \
-         patch("app.services.indexer.shallow_clone_repo", return_value=MagicMock(temp_dir=None, commit_sha="sha123", error=None)), \
-         patch("app.services.indexer.trigger_list_changed_notification") as mock_notify:
+    with patch("app.services.git_manager.get_remote_head_sha", return_value="sha123"), \
+         patch("app.services.git_manager.shallow_clone_repo", return_value=MagicMock(temp_dir=None, commit_sha="sha123", error=None)), \
+         patch("app.services.indexing.state.trigger_list_changed_notification") as mock_notify:
         sync_single_git_repo(repo_id)
         # Even if clone failed or succeeded, test on success
     
@@ -201,11 +201,11 @@ def test_sync_single_git_repo_triggers_notification(temp_db):
     with tempfile.TemporaryDirectory() as td:
         with open(os.path.join(td, "doc.md"), "w") as f:
             f.write("# Hello\nWorld")
-        with patch("app.services.indexer.get_remote_head_sha", return_value="sha456"), \
-             patch("app.services.indexer.shallow_clone_repo", return_value=MagicMock(temp_dir=td, commit_sha="sha456", error=None)), \
-             patch("app.services.indexer.cleanup_repo_dir"), \
-             patch("app.services.indexer.get_vector_store", return_value=mock_store), \
-             patch("app.services.indexer.trigger_list_changed_notification") as mock_notify:
+        with patch("app.services.git_manager.get_remote_head_sha", return_value="sha456"), \
+             patch("app.services.git_manager.shallow_clone_repo", return_value=MagicMock(temp_dir=td, commit_sha="sha456", error=None)), \
+             patch("app.services.git_manager.cleanup_repo_dir"), \
+             patch("app.services.vector_store.get_vector_store", return_value=mock_store), \
+             patch("app.services.indexing.state.trigger_list_changed_notification") as mock_notify:
             sync_single_git_repo(repo_id)
             mock_notify.assert_called_once()
 

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from app.services.chunker import (
+from app.services.chunking import (
     extract_symbols_and_chunks, get_file_outline, detect_language, is_code_file,
     chunk_markdown, split_by_length, get_tree_sitter_parser, _PARSERS
 )
@@ -51,7 +51,7 @@ def test_get_tree_sitter_parser_caching_and_fallbacks():
 def test_extract_symbols_unsupported_language():
     code = "echo 'Hello world'\necho 'Line 2'\n"
     # Plain text file or language where parser returns None
-    with patch("app.services.chunker.get_tree_sitter_parser", return_value=None):
+    with patch("app.services.chunking.symbol_extractor.get_tree_sitter_parser", return_value=None):
         result = extract_symbols_and_chunks(code, "script.custom", repo="custom-repo")
         assert len(result.chunks) >= 1
         assert result.symbols == []
@@ -62,7 +62,7 @@ def test_extract_symbols_parser_parse_exception():
     mock_parser = MagicMock()
     mock_parser.parse.side_effect = Exception("AST parser segfault")
     
-    with patch("app.services.chunker.get_tree_sitter_parser", return_value=mock_parser):
+    with patch("app.services.chunking.symbol_extractor.get_tree_sitter_parser", return_value=mock_parser):
         result = extract_symbols_and_chunks(code, "test.py", repo="error-repo")
         assert len(result.chunks) >= 1
         assert result.symbols == []

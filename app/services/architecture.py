@@ -2,7 +2,7 @@ import os
 import re
 import logging
 from typing import Optional, List, Dict, Any
-from app.services.db import get_db_connection
+from app.services.database import get_db_connection
 
 logger = logging.getLogger("contextcortex.architecture")
 

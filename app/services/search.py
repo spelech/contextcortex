@@ -6,7 +6,7 @@ logger = logging.getLogger('contextcortex.search')
 
 
 from collections import deque
-from app.services.db import get_db_connection
+from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
 
 def trace_symbol_path(

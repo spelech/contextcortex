@@ -2,10 +2,10 @@ import time
 import logging
 import threading
 from typing import Tuple, Optional
-from app.services.db import list_auto_sync_repos, get_auto_sync_interval, get_effective_git_token
+from app.services.database import list_auto_sync_repos, get_auto_sync_interval, get_effective_git_token
 from app.services.git_manager import get_remote_head_sha
-import app.services.indexer as indexer
-from app.services.indexer import sync_single_git_repo
+import app.services.indexing as indexer
+from app.services.indexing import sync_single_git_repo
 
 logger = logging.getLogger("contextcortex.poller")
 
