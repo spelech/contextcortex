@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **349 Automated Tests** (251 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
+**Test Verification Baseline:** **354 Automated Tests** (256 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
 
 ---
 
@@ -288,6 +288,13 @@ classDiagram
 ## 6. Parsed Test Suite Inventory
 
 ### 6.1 Backend Python Tests (`tests/backend/`)
+
+#### `test_api_route_discovery.py` (5 tests)
+- `test_path_normalization_and_matching`
+- `test_fastapi_route_parsing`
+- `test_express_route_parsing_with_middleware`
+- `test_csharp_controller_routes`
+- `test_client_call_detection`
 
 #### `test_api_routes.py` (15 tests)
 - `test_api_get_stats_with_keywords`

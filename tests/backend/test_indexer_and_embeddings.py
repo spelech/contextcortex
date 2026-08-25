@@ -166,7 +166,7 @@ def test_process_file_content_doc():
     doc_content = "---\ncategory: architecture\ntags: design, system\n---\n# Architecture\n\nThis is a system overview."
     with patch("app.services.indexer.get_hybrid_embeddings_batch") as mock_embed:
         mock_embed.return_value = [{"dense": [0.1] * 384, "sparse": {"indices": [1], "values": [1.0]}}]
-        points, symbols, summary = process_file_content(
+        points, symbols, summary, _, _ = process_file_content(
             filepath="/docs/arch.md",
             rel_path="arch.md",
             content=doc_content,
@@ -181,7 +181,7 @@ def test_process_file_content_doc():
 
 def test_process_file_content_doc_corrupt_frontmatter():
     doc_content = "---\n[bad frontmatter YAML---\n# Header\nContent"
-    points, symbols, summary = process_file_content(
+    points, symbols, summary, _, _ = process_file_content(
         filepath="/docs/bad.md",
         rel_path="bad.md",
         content=doc_content,
@@ -194,7 +194,7 @@ def test_process_file_content_code():
     code_content = "def calculate_hash(content: str) -> str:\n    return 'hash'\n\nclass DataManager:\n    def save(self):\n        pass\n"
     with patch("app.services.indexer.get_hybrid_embeddings_batch") as mock_embed:
         mock_embed.return_value = [{"dense": [0.1] * 384, "sparse": {"indices": [1], "values": [1.0]}}] * 5
-        points, symbols, summary = process_file_content(
+        points, symbols, summary, _, _ = process_file_content(
             filepath="/src/crypto.py",
             rel_path="src/crypto.py",
             content=code_content,
