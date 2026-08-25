@@ -169,6 +169,39 @@ def init_db(vault_path: str = "/docs"):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_symbols_name ON ast_symbols(name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_symbols_repo ON ast_symbols(repo)")
 
+        # API Server Routes
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS api_routes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo TEXT NOT NULL,
+                filepath TEXT NOT NULL,
+                framework TEXT NOT NULL,
+                http_method TEXT NOT NULL,
+                path_pattern TEXT NOT NULL,
+                handler_symbol TEXT,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_api_routes_repo_path ON api_routes(repo, path_pattern)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_api_routes_method ON api_routes(http_method)")
+
+        # API Client Calls
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS api_client_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo TEXT NOT NULL,
+                filepath TEXT NOT NULL,
+                http_method TEXT,
+                url_pattern TEXT NOT NULL,
+                caller_symbol TEXT,
+                line_number INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_api_calls_url ON api_client_calls(url_pattern)")
+
         # System metadata (tokens, timestamps)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS system_metadata (
