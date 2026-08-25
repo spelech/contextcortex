@@ -1,7 +1,7 @@
 import os
 import re
 from typing import List, Dict, Any, Optional, Tuple
-from app.models.schemas import CodeChunk, MarkdownChunk, CodeSymbol, ExtractionResult, ApiRouteRecord, ApiClientCallRecord
+from app.models.schemas import CodeChunk, MarkdownChunk, CodeSymbol, CodeRelationship, ExtractionResult, ApiRouteRecord, ApiClientCallRecord
 
 # Supported language mappings to tree-sitter language names
 EXTENSION_TO_LANGUAGE = {
@@ -174,6 +174,208 @@ def extract_node_name(node, source_bytes: bytes) -> Optional[str]:
             return source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore")
     return None
 
+CALL_NODE_TYPES = {
+    "call", "call_expression", "method_invocation", "invocation_expression",
+    "function_call_expression", "new_expression", "object_creation_expression",
+    "macro_invocation"
+}
+
+IMPORT_NODE_TYPES = {
+    "import_statement", "import_from_statement", "import_declaration",
+    "use_declaration", "using_directive", "namespace_use_declaration",
+    "preproc_include"
+}
+
+def extract_target_from_call_node(node, source_bytes: bytes) -> Optional[str]:
+    """Extract function, method, constructor, or macro name from a call node."""
+    fn_node = node.child_by_field_name("function") or node.child_by_field_name("method") or node.child_by_field_name("expression")
+    if not fn_node and len(node.children) > 0:
+        fn_node = node.children[0]
+
+    if fn_node:
+        call_str = source_bytes[fn_node.start_byte:fn_node.end_byte].decode("utf-8", errors="ignore").strip()
+        # Clean up any trailing brackets or instantiation keywords if any
+        if call_str.startswith("new "):
+            call_str = call_str[4:].strip()
+        # Clean method call like self.foo() or obj.bar() or math.sqrt() -> get target symbol name
+        if "(" in call_str:
+            call_str = call_str.split("(")[0].strip()
+        if "." in call_str:
+            parts = [p for p in call_str.split(".") if p]
+            if parts:
+                return parts[-1]
+        if "::" in call_str:
+            parts = [p for p in call_str.split("::") if p]
+            if parts:
+                return parts[-1]
+        if "->" in call_str:
+            parts = [p for p in call_str.split("->") if p]
+            if parts:
+                return parts[-1]
+        if "\\" in call_str:
+            parts = [p for p in call_str.split("\\") if p]
+            if parts:
+                return parts[-1]
+        return call_str
+    return None
+
+def extract_import_targets(node, source_bytes: bytes) -> List[str]:
+    """Extract symbol/module names from import nodes."""
+    imp_text = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="ignore").strip()
+    targets = []
+    # Extract identifiers, quoted modules, or package names
+    # Match imported names or modules
+    for child in node.children:
+        if child.type in ("identifier", "type_identifier", "dotted_name", "string", "string_literal", "import_spec", "import_clause", "namespace_use_clause"):
+            val = source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore").strip("\"'`; ")
+            if val and val not in ("import", "from", "as", "use", "using", "include"):
+                targets.append(val)
+    if not targets:
+        # Fallback regex over node text
+        tokens = re.findall(r'[A-Za-z_][A-Za-z0-9_\.]*', imp_text)
+        targets = [t for t in tokens if t not in ("import", "from", "as", "use", "using", "include", "require", "package")]
+    return targets
+
+def extract_inheritance_relationships(node, language: str, source_bytes: bytes, current_symbol: str, line_num: int) -> List[Dict[str, Any]]:
+    """Extract INHERITS and IMPLEMENTS relationships from class/interface definition nodes."""
+    rels = []
+    # Python: class Derived(Base1, Base2):
+    if language == "python":
+        arg_list = node.child_by_field_name("superclasses") or node.child_by_field_name("argument_list")
+        if arg_list:
+            for child in arg_list.children:
+                if child.type in ("identifier", "attribute"):
+                    target = source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore").strip()
+                    if "." in target:
+                        target = target.split(".")[-1]
+                    if target:
+                        rels.append({"target": target, "type": "INHERITS", "line": line_num})
+
+    # JavaScript / TypeScript
+    elif language in ("javascript", "typescript", "tsx"):
+        for child in node.children:
+            if child.type in ("class_heritage", "extends_clause", "extends_type_clause", "implements_clause"):
+                heritage_nodes = child.children if child.type == "class_heritage" else [child]
+                for hnode in heritage_nodes:
+                    if hnode.type in ("extends_clause", "extends_type_clause"):
+                        for sub in hnode.children:
+                            if sub.type in ("identifier", "type_identifier", "expression_with_type_arguments"):
+                                t = source_bytes[sub.start_byte:sub.end_byte].decode("utf-8", errors="ignore").strip()
+                                if t and t not in ("extends",):
+                                    rels.append({"target": t, "type": "INHERITS", "line": line_num})
+                    elif hnode.type == "implements_clause":
+                        for sub in hnode.children:
+                            if sub.type in ("identifier", "type_identifier", "expression_with_type_arguments"):
+                                t = source_bytes[sub.start_byte:sub.end_byte].decode("utf-8", errors="ignore").strip()
+                                if t and t not in ("implements",):
+                                    rels.append({"target": t, "type": "IMPLEMENTS", "line": line_num})
+
+    # Go: embedded structs
+    elif language == "go":
+        # struct embedded fields or interfaces
+        pass
+
+    # Rust: impl Trait for Struct
+    elif language == "rust":
+        if node.type == "impl_item":
+            trait_node = node.child_by_field_name("trait")
+            type_node = node.child_by_field_name("type")
+            if trait_node and type_node:
+                trait_name = source_bytes[trait_node.start_byte:trait_node.end_byte].decode("utf-8", errors="ignore").strip()
+                struct_name = source_bytes[type_node.start_byte:type_node.end_byte].decode("utf-8", errors="ignore").strip()
+                if trait_name and struct_name:
+                    rels.append({"source_override": struct_name, "target": trait_name, "type": "IMPLEMENTS", "line": line_num})
+
+    # C#
+    elif language in ("c_sharp", "csharp"):
+        base_list = node.child_by_field_name("base_list")
+        if not base_list:
+            for c in node.children:
+                if c.type == "base_list":
+                    base_list = c
+                    break
+        if base_list:
+            for child in base_list.children:
+                if child.type in ("identifier", "simple_type", "type_identifier", "generic_name"):
+                    t = source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore").strip()
+                    if t:
+                        rel_type = "IMPLEMENTS" if (t.startswith("I") and len(t) > 1 and t[1].isupper()) else "INHERITS"
+                        rels.append({"target": t, "type": rel_type, "line": line_num})
+
+    # Java
+    elif language == "java":
+        super_node = node.child_by_field_name("superclass")
+        if not super_node:
+            for c in node.children:
+                if c.type == "superclass":
+                    super_node = c
+                    break
+        if super_node:
+            for child in super_node.children:
+                if child.type in ("type_identifier", "type_list"):
+                    t = source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore").strip()
+                    if t and t != "extends":
+                        rels.append({"target": t, "type": "INHERITS", "line": line_num})
+
+        impl_node = node.child_by_field_name("interfaces")
+        if not impl_node:
+            for c in node.children:
+                if c.type in ("super_interfaces", "implements_clause"):
+                    impl_node = c
+                    break
+        if impl_node:
+            for child in impl_node.children:
+                if child.type in ("type_identifier", "type_list", "interface_type_list"):
+                    t = source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore").strip()
+                    if t and t != "implements":
+                        # split by comma if list
+                        for sub_t in t.split(","):
+                            sub_t = sub_t.strip()
+                            if sub_t:
+                                rels.append({"target": sub_t, "type": "IMPLEMENTS", "line": line_num})
+
+    # C++
+    elif language in ("cpp", "c"):
+        for child in node.children:
+            if child.type == "base_class_clause":
+                for sub in child.children:
+                    if sub.type in ("type_identifier", "identifier"):
+                        t = source_bytes[sub.start_byte:sub.end_byte].decode("utf-8", errors="ignore").strip()
+                        if t and t not in ("public", "protected", "private"):
+                            rels.append({"target": t, "type": "INHERITS", "line": line_num})
+
+    # PHP
+    elif language == "php":
+        for child in node.children:
+            if child.type == "base_clause":
+                t = source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore").strip()
+                t = re.sub(r"^extends\s+", "", t).strip()
+                if t:
+                    rels.append({"target": t, "type": "INHERITS", "line": line_num})
+            elif child.type == "class_interface_clause":
+                t = source_bytes[child.start_byte:child.end_byte].decode("utf-8", errors="ignore").strip()
+                t = re.sub(r"^implements\s+", "", t).strip()
+                if t:
+                    for sub_t in t.split(","):
+                        sub_t = sub_t.strip()
+                        if sub_t:
+                            rels.append({"target": sub_t, "type": "IMPLEMENTS", "line": line_num})
+
+    # Ruby
+    elif language == "ruby":
+        super_node = node.child_by_field_name("superclass")
+        if not super_node:
+            for c in node.children:
+                if c.type == "superclass":
+                    super_node = c
+                    break
+        if super_node:
+            t = source_bytes[super_node.start_byte:super_node.end_byte].decode("utf-8", errors="ignore").strip("< ").strip()
+            if t:
+                rels.append({"target": t, "type": "INHERITS", "line": line_num})
+
+    return rels
+
 def extract_symbols_and_chunks(
     code: str, 
     filepath: str, 
@@ -200,7 +402,7 @@ def extract_symbols_and_chunks(
         return ExtractionResult(
             chunks=[CodeChunk(**c) for c in raw_chunks],
             symbols=[],
-            outline=[],
+            relationships=[],
             api_routes=routes,
             api_client_calls=client_calls
         )
@@ -215,6 +417,7 @@ def extract_symbols_and_chunks(
             chunks=[CodeChunk(**c) for c in raw_chunks],
             symbols=[],
             outline=[],
+            relationships=[],
             api_routes=routes,
             api_client_calls=client_calls
         )
@@ -222,10 +425,15 @@ def extract_symbols_and_chunks(
     symbols = []
     chunks = []
     outline = []
+    relationships = []
     
     target_types = CODE_CONTAINER_TYPES.get(language, set())
+    file_symbol = os.path.basename(filepath)
 
     def traverse(node, parent_symbol: Optional[str] = None):
+        current_active_symbol = parent_symbol or file_symbol
+        line_num = node.start_point[0] + 1
+
         if node.type in target_types:
             name = extract_node_name(node, source_bytes) or "anonymous"
             full_symbol = f"{parent_symbol}.{name}" if parent_symbol else name
@@ -256,6 +464,19 @@ def extract_symbols_and_chunks(
                 "signature": first_line[:120]
             })
 
+            # Check inheritance / interface implementation on class declaration nodes
+            inherit_rels = extract_inheritance_relationships(node, language, source_bytes, name, start_line)
+            for irel in inherit_rels:
+                src_sym = irel.get("source_override") or name
+                relationships.append({
+                    "repo": repo,
+                    "source_filepath": filepath,
+                    "source_symbol": src_sym,
+                    "target_symbol": irel["target"],
+                    "relationship_type": irel["type"],
+                    "line_number": irel["line"]
+                })
+
             # Add as discrete chunk if reasonable size
             if len(node_text) <= max_chunk_chars:
                 chunks.append({
@@ -279,6 +500,39 @@ def extract_symbols_and_chunks(
             # Traverse child nodes for nested methods/functions
             for child in node.children:
                 traverse(child, parent_symbol=full_symbol)
+
+        elif node.type in CALL_NODE_TYPES:
+            target = extract_target_from_call_node(node, source_bytes)
+            if target and target not in ("self", "this", "super"):
+                # Clean method prefix if full_symbol has parent
+                active_src = parent_symbol if parent_symbol else file_symbol
+                # if current active symbol is a method like Foo.bar, extract just bar or Foo.bar
+                if active_src and "." in active_src:
+                    active_src_name = active_src.split(".")[-1]
+                else:
+                    active_src_name = active_src
+                relationships.append({
+                    "repo": repo,
+                    "source_filepath": filepath,
+                    "source_symbol": active_src_name,
+                    "target_symbol": target,
+                    "relationship_type": "CALLS",
+                    "line_number": line_num
+                })
+            for child in node.children:
+                traverse(child, parent_symbol=parent_symbol)
+
+        elif node.type in IMPORT_NODE_TYPES:
+            targets = extract_import_targets(node, source_bytes)
+            for t in targets:
+                relationships.append({
+                    "repo": repo,
+                    "source_filepath": filepath,
+                    "source_symbol": file_symbol,
+                    "target_symbol": t,
+                    "relationship_type": "IMPORTS",
+                    "line_number": line_num
+                })
         else:
             for child in node.children:
                 traverse(child, parent_symbol=parent_symbol)
@@ -299,6 +553,7 @@ def extract_symbols_and_chunks(
         chunks=[CodeChunk(**c) for c in chunks],
         symbols=parsed_symbols,
         outline=[f"{o['name']} ({o['kind']}) lines {o['start_line']}-{o['end_line']}" for o in outline],
+        relationships=[CodeRelationship(**r) for r in relationships],
         api_routes=routes,
         api_client_calls=client_calls
     )

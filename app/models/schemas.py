@@ -62,6 +62,16 @@ class CodeSymbol(BaseModel):
     repo: Optional[str] = None
     filepath: Optional[str] = None
 
+class CodeRelationship(BaseModel):
+    id: Optional[int] = None
+    repo: str
+    source_symbol_id: Optional[int] = None
+    source_filepath: str
+    source_symbol: str
+    target_symbol: str
+    relationship_type: str # 'CALLS', 'IMPORTS', 'INHERITS', 'IMPLEMENTS'
+    line_number: int
+
 class CodeChunk(BaseModel):
     content: str
     start_line: int
@@ -78,9 +88,10 @@ class MarkdownChunk(BaseModel):
 class ExtractionResult(BaseModel):
     chunks: List[CodeChunk]
     symbols: List[CodeSymbol]
-    outline: List[str]
-    api_routes: List[ApiRouteRecord] = []
-    api_client_calls: List[ApiClientCallRecord] = []
+    outline: List[str] = Field(default_factory=list)
+    relationships: List[CodeRelationship] = Field(default_factory=list)
+    api_routes: List[ApiRouteRecord] = Field(default_factory=list)
+    api_client_calls: List[ApiClientCallRecord] = Field(default_factory=list)
 
 class CloneResult(BaseModel):
     temp_dir: Optional[str]

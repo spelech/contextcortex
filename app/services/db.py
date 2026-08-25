@@ -29,6 +29,7 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=5000;")
+    conn.execute("PRAGMA foreign_keys=ON;")
     return conn
 
 def init_db(vault_path: str = "/docs"):
@@ -168,6 +169,24 @@ def init_db(vault_path: str = "/docs"):
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_symbols_name ON ast_symbols(name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_symbols_repo ON ast_symbols(repo)")
+
+        # AST relationships table for call graph traversal
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ast_relationships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo TEXT NOT NULL,
+                source_symbol_id INTEGER,
+                source_filepath TEXT NOT NULL,
+                source_symbol TEXT NOT NULL,
+                target_symbol TEXT NOT NULL,
+                relationship_type TEXT NOT NULL,
+                line_number INTEGER NOT NULL,
+                FOREIGN KEY(source_symbol_id) REFERENCES ast_symbols(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_rel_repo_source ON ast_relationships(repo, source_symbol)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_rel_repo_target ON ast_relationships(repo, target_symbol)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ast_rel_type ON ast_relationships(relationship_type)")
 
         # API Server Routes
         conn.execute("""

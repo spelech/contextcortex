@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **354 Automated Tests** (256 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
+**Test Verification Baseline:** **361 Automated Tests** (263 Pytest Backend + 74 Vitest Frontend + 24 Playwright E2E).
 
 ---
 
@@ -333,6 +333,12 @@ classDiagram
 - `test_madr_nygard_markdown_ingestion`
 - `test_adr_state_transitions`
 
+#### `test_ast_relationships.py` (4 tests)
+- `test_python_relationship_extraction`
+- `test_ts_js_relationship_extraction`
+- `test_go_rust_csharp_relationship_extraction`
+- `test_deletion_and_foreign_key_cascades`
+
 #### `test_chunker.py` (3 tests)
 - `test_detect_language`
 - `test_split_by_length`
@@ -473,6 +479,11 @@ classDiagram
 - `test_execute_hybrid_search_exception`
 
 #### `test_tools.py` (0 tests)
+
+#### `test_trace_path.py` (3 tests)
+- `test_direct_and_mutual_recursion_termination`
+- `test_depth_clamping_and_limit_truncation`
+- `test_database_query_performance`
 
 #### `test_vector_store_base.py` (7 tests)
 - `test_cannot_instantiate_abstract_vector_store` - _Verify VectorStore is an ABC and cannot be instantiated directly._
