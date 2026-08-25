@@ -1,6 +1,5 @@
 # Developer Documentation: ContextCortex (v2.8.0)
 
-
 This document provides instructions for developing, testing, configuring, and running ContextCortex locally.
 
 ---
@@ -71,10 +70,10 @@ This document provides instructions for developing, testing, configuring, and ru
 
 ### Backend Tests (Python Pytest & Coverage)
 ```bash
-# Run all backend unit and integration tests
+# Run all backend unit and integration tests (277 tests)
 pytest -v
 
-# Run backend tests with code coverage report
+# Run backend tests with code coverage report (88% coverage baseline)
 pytest -v --cov=app --cov-report=term-missing
 ```
 
@@ -82,14 +81,21 @@ pytest -v --cov=app --cov-report=term-missing
 ```bash
 cd frontend
 
-# Run unit and component tests via Vitest
+# Run unit and component tests via Vitest (82 tests)
 npm test
 
-# Run component tests with code coverage
+# Run component tests with code coverage (87% line coverage)
 npm run test:coverage
 
-# Run end-to-end user journey tests via Playwright
+# Run end-to-end user journey tests via Playwright (26 user journeys)
 npx playwright test
+```
+
+### Software Requirements Specification (SRS) Generator
+```bash
+# Regenerate and validate REQUIREMENTS.md against live test suite
+python3 scripts/generate_requirements.py
+pytest -v tests/backend/test_requirements_sync.py
 ```
 
 ---
@@ -115,27 +121,53 @@ npx playwright test
 
 ---
 
-## 📁 Project Structure
+## 📁 Modular Project Structure
 
 ```
 contextcortex/
 ├── main.py                # FastAPI entry point, lifespan manager & FastMCP route mounting
-├── app/                   # Backend modular architecture
-│   ├── api/               # FastAPI REST routes (repos, paths, search, logs, stats, vector-store)
-│   ├── mcp/               # FastMCP 2.0 server, tools, resources, and prompt templates
+├── app/                   # Modular architecture (all files < 450 LOC)
+│   ├── api/               # FastAPI REST routers
+│   │   ├── routers/       # Dedicated subrouters (repositories.py, settings.py, graph.py)
+│   │   ├── routes.py      # Main router aggregator and health checks
+│   │   └── webhooks.py    # Multi-provider webhook endpoint and HMAC validation
+│   ├── mcp/               # FastMCP 2.0 dual-transport server
+│   │   ├── handlers/      # Modular tool handlers (search, symbol, repo, route, architecture)
+│   │   ├── mcp_server.py  # FastMCP server lifecycle & session registry
+│   │   └── tools.py       # Tool registry and handler dispatcher
 │   ├── models/            # Pydantic schema validation models
-│   └── services/          # Core services (chunker, embeddings, db, git_manager, logger, search, vector_store)
-├── tests/                 # Backend pytest test suite
-│   └── backend/           # Unit and integration tests (>95% coverage)
-├── frontend/              # Web Admin Dashboard - ContextCortex Dashboard (React 19, TypeScript, Vite)
-│   ├── src/               # React components, contexts, and styles
-│   │   └── tests/         # Vitest component unit tests
-│   ├── e2e/               # Playwright E2E test specs (13 full test workflows)
+│   │   └── schemas.py     # Request/response schemas for APIs and MCP
+│   └── services/          # Modular business logic services
+│       ├── chunking/      # Tree-sitter loaders, token chunkers, AST/route extractors
+│       ├── database/      # SQLite WAL connection, credential vault, ADRs, sync configs
+│       ├── indexing/      # Git/local syncers, file processor, state notifications
+│       ├── topology/      # Graph topology builder, node details, BFS helpers
+│       ├── vector_store/  # Qdrant and ChromaDB pluggable vector store implementations
+│       ├── git_manager.py # Ephemeral shallow git clone, token masking, permalinks
+│       ├── embeddings.py  # FastEmbed dense (384d) & sparse BM25 multi-vector engine
+│       ├── search.py      # Hybrid search & Reciprocal Rank Fusion (RRF) reranker
+│       ├── poller.py      # Background scheduled repo SHA poller daemon
+│       ├── adr.py         # MADR / Nygard format ADR ingestion and lifecycle
+│       ├── architecture.py# Codebase entry point, language distribution synthesis
+│       └── logger.py      # In-memory 500-event ring buffer diagnostic logger
+├── tests/                 # Backend pytest test suite (277 tests, 88% coverage)
+│   ├── backend/           # Unit and integration test modules
+│   ├── test_poller.py     # Background poller tests
+│   └── test_webhooks.py   # Multi-provider webhook tests
+├── frontend/              # Web Admin Dashboard (React 19, TypeScript, Vite)
+│   ├── src/               # React components and modular sub-components
+│   │   ├── components/    # Sub-component trees (git/, settings/, topology/)
+│   │   ├── styles/        # Modular CSS stylesheets (base.css, components.css, topology.css)
+│   │   └── tests/         # Vitest component unit tests (82 tests, 87% coverage)
+│   ├── e2e/               # Playwright E2E test specs (26 user journeys)
 │   └── dist/              # Compiled production distribution assets
-├── requirements.txt       # Python dependencies (FastMCP 2.0, FastAPI, Qdrant, ChromaDB, FastEmbed)
+├── requirements.txt       # Python dependencies
 ├── Dockerfile             # Container definition with Python 3.11 & Git
 ├── ARCHITECTURE.md        # Deep architectural design specification
-└── DEVELOPER_DOCS.md      # Local developer setup and test guide
+├── DEVELOPER_DOCS.md      # Local developer setup and test guide
+└── docs/
+    ├── REQUIREMENTS.md    # Pointer to root Software Requirements Specification
+    └── TEST_COVERAGE.md   # Full test coverage report and metrics breakdown
 ```
 
 ---
@@ -148,7 +180,7 @@ Connect any MCP client supporting **Server-Sent Events (SSE)** or **Streamable H
 - **SSE Stream Endpoint**: `http://localhost:3000/sse`
 - **Message Exchange Endpoint**: `http://localhost:3000/messages/`
 
-Example configuration (`claude_desktop_config.json` / Cursor):
+Example configuration (`claude_desktop_config.json` / Cursor / Antigravity):
 ```json
 {
   "mcpServers": {
@@ -173,18 +205,21 @@ Example configuration:
 }
 ```
 
-### Available MCP Tools:
+### Available MCP Tools (11 Tools):
 - `search_code(query="JWT authentication handler", repo="backend-api")`
 - `search_docs(query="caddy reverse proxy configuration")`
 - `find_symbol(name="extract_symbols_and_chunks", exact=true)`
-- `get_file_outline(filepath="chunker.py")`
+- `get_file_outline(filepath="app/services/search.py")`
 - `list_repositories()`
 - `sync_repository(repo="backend-api")`
 - `index_status()`
+- `get_architecture(repo="backend-api")`
+- `manage_adr(action="list", repo="backend-api")`
+- `get_code_routes(repo="backend-api")`
+- `trace_call_path(target="authenticate_user", repo="backend-api")`
 
 ### Available MCP Resources:
 - `knowledge://catalog/summary`
-
 
 ### Available MCP Prompts:
 - `search_infrastructure_docs(topic="docker-compose network topology")`

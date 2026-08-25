@@ -27,48 +27,44 @@ from app.services.indexing.local_syncer import sync_local_paths
 logger = logging.getLogger('contextcortex.indexer')
 import sys
 
-def _get_indexer_attr(name, default):
-    mod = sys.modules.get("app.services.indexer")
-    return getattr(mod, name, default) if mod else default
-
-
 def sync_single_git_repo(repo_id: int):
     """Ephemeral shallow clone, AST parse, hybrid vector upsert, and immediate disk cleanup."""
-    with db_service.get_db_connection() as conn:
-        repo_row = conn.execute("SELECT * FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
-    if not repo_row:
-        return
-
-    repo_name = repo_row["name"]
-    git_url = repo_row["url"]
-    branch = repo_row["branch"] or "main"
-    per_repo_token = repo_row["auth_token"]
-    per_repo_user = repo_row["auth_user"] if "auth_user" in repo_row.keys() else None
-    provider = repo_row["provider"] if "provider" in repo_row.keys() else None
-
-    effective_token, effective_user, token_source = db_service.get_effective_git_token(
-        git_url, 
-        override_token=per_repo_token, 
-        override_user=per_repo_user, 
-        provider=provider
-    )
-
-    logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url}, provider: {provider or 'auto'}, auth: {token_source})...")
-    remote_sha = gm_service.get_remote_head_sha(git_url, branch, token=effective_token, username=effective_user, provider=provider)
-    if remote_sha and repo_row["commit_sha"] == remote_sha:
-        logger.info(f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone.")
-        with db_service.get_db_connection() as conn:
-            conn.execute("UPDATE git_repositories SET status = 'synced', last_synced = CURRENT_TIMESTAMP WHERE id = ?", (repo_id,))
-            conn.commit()
-        return
-
-    # Update status to syncing
-    with db_service.get_db_connection() as conn:
-        conn.execute("UPDATE git_repositories SET status = 'syncing' WHERE id = ?", (repo_id,))
-        conn.commit()
-
+    repo_name = f"repo-{repo_id}"
     temp_dir = None
     try:
+        with db_service.get_db_connection() as conn:
+            repo_row = conn.execute("SELECT * FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+        if not repo_row:
+            return
+
+        repo_name = repo_row["name"]
+        git_url = repo_row["url"]
+        branch = repo_row["branch"] or "main"
+        per_repo_token = repo_row["auth_token"]
+        per_repo_user = repo_row["auth_user"] if "auth_user" in repo_row.keys() else None
+        provider = repo_row["provider"] if "provider" in repo_row.keys() else None
+
+        effective_token, effective_user, token_source = db_service.get_effective_git_token(
+            git_url, 
+            override_token=per_repo_token, 
+            override_user=per_repo_user, 
+            provider=provider
+        )
+
+        logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url}, provider: {provider or 'auto'}, auth: {token_source})...")
+        remote_sha = gm_service.get_remote_head_sha(git_url, branch, token=effective_token, username=effective_user, provider=provider)
+        if remote_sha and repo_row["commit_sha"] == remote_sha:
+            logger.info(f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone.")
+            with db_service.get_db_connection() as conn:
+                conn.execute("UPDATE git_repositories SET status = 'synced', last_synced = CURRENT_TIMESTAMP WHERE id = ?", (repo_id,))
+                conn.commit()
+            return
+
+        # Update status to syncing
+        with db_service.get_db_connection() as conn:
+            conn.execute("UPDATE git_repositories SET status = 'syncing' WHERE id = ?", (repo_id,))
+            conn.commit()
+
         clone_res = gm_service.shallow_clone_repo(
             git_url, 
             branch, 

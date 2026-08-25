@@ -1,7 +1,8 @@
 # Architecture: ContextCortex (v2.8.0)
 
+ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, architecture documents, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, pluggable vector store backends (Qdrant & ChromaDB), automatic polling daemons, multi-provider webhooks, interactive dependency topology graph explorer, and a React 19 administrative dashboard.
 
-ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, and a React 19 administrative dashboard.
+All backend services and frontend components are modularized into cohesive packages with a strict **sub-500 LOC per file** maintainability floor.
 
 ---
 
@@ -19,22 +20,56 @@ flowchart TD
         FastMCP["FastMCP Server (app/mcp/mcp_server.py)"]
         SSE["SSE Transport (/sse, /messages/)"]
         HTTP["Streamable HTTP Transport (/mcp)"]
-        AdminAPI["Admin REST API Router (app/api/routes.py)"]
+        AdminAPI["Admin REST API Routers (app/api/routers/*)"]
+        Webhooks["Webhook Ingestion (app/api/webhooks.py)"]
         LogBuffer["Diagnostic Ring Buffer (app/services/logger.py)"]
     end
 
-    subgraph CoreEngine["Core Engine (app/services)"]
-        Chunker["Tree-sitter AST Chunker (chunker.py)"]
-        Embeddings["FastEmbed Engine (embeddings.py)\nDense (384d) + Sparse BM25"]
+    subgraph ModularServices["Core Modular Services (app/services/)"]
+        subgraph ChunkingPkg["app/services/chunking/"]
+            TSLoader["tree_sitter_loader.py"]
+            TextChunk["text_chunker.py"]
+            SymExtract["symbol_extractor.py"]
+            RelExtract["relationship_extractor.py"]
+            RouteExtract["api_route_extractor.py"]
+        end
+
+        subgraph IndexingPkg["app/services/indexing/"]
+            IdxState["state.py"]
+            GitSync["git_syncer.py"]
+            LocalSync["local_syncer.py"]
+            ProcFile["processor.py"]
+        end
+
+        subgraph DatabasePkg["app/services/database/"]
+            DBConn["connection.py"]
+            Creds["credentials.py"]
+            SyncCfg["sync_config.py"]
+            ADRDb["adrs.py"]
+        end
+
+        subgraph VectorStorePkg["app/services/vector_store/"]
+            VSBase["base.py"]
+            VSManager["manager.py"]
+            QdrantStore["qdrant_store.py"]
+            ChromaStore["chroma_store.py"]
+        end
+
+        subgraph TopologyPkg["app/services/topology/"]
+            GraphBuilder["graph_builder.py"]
+            NodeDetails["node_details.py"]
+            TopoHelpers["helpers.py"]
+        end
+
         GitMgr["Universal Shallow Git Ingestion (git_manager.py)"]
-        Indexer["Incremental Indexer (indexer.py)"]
+        Embeddings["FastEmbed Engine (embeddings.py)\nDense (384d) + Sparse BM25"]
         Search["Hybrid & RRF Search (search.py)"]
-        DB["SQLite DB & Symbol Registry (db.py)"]
-        VSMgr["Vector Store Manager (vector_store/manager.py)"]
+        Poller["Auto-Sync Poller Daemon (poller.py)"]
+        ADRService["ADR Parser & Lifecycle (adr.py)"]
     end
 
     subgraph PersistentStorage["Persistent Storage"]
-        VectorStore["Vector Store (Qdrant / ChromaDB)"]
+        VectorStore["Pluggable Vector Store (Qdrant / ChromaDB)"]
         SQLite["SQLite Index Cache (index_cache.db)"]
     end
 
@@ -44,270 +79,254 @@ flowchart TD
     HTTP --> FastMCP
 
     Browser -->|REST API /admin/api/*| AdminAPI
-    AdminAPI --> DB
-    AdminAPI --> Indexer
-    AdminAPI --> LogBuffer
+    Browser -->|Webhooks /api/webhooks/*| Webhooks
+
+    AdminAPI --> DatabasePkg
+    AdminAPI --> IndexingPkg
+    AdminAPI --> VectorStorePkg
+    AdminAPI --> TopologyPkg
     AdminAPI --> Search
-    AdminAPI --> VSMgr
+    AdminAPI --> LogBuffer
 
     FastMCP --> Search
-    FastMCP --> Chunker
-    FastMCP --> DB
-    FastMCP --> Indexer
+    FastMCP --> SymExtract
+    FastMCP --> DatabasePkg
+    FastMCP --> IndexingPkg
+    FastMCP --> TopologyPkg
+    FastMCP --> ADRService
 
-    Indexer --> Chunker
-    Indexer --> Embeddings
-    Indexer --> GitMgr
-    Indexer --> VSMgr
-    Indexer --> SQLite
-    Indexer --> LogBuffer
+    IndexingPkg --> ChunkingPkg
+    IndexingPkg --> Embeddings
+    IndexingPkg --> GitMgr
+    IndexingPkg --> VectorStorePkg
+    IndexingPkg --> DatabasePkg
+    IndexingPkg --> LogBuffer
 
-    VSMgr --> VectorStore
+    Poller --> GitMgr
+    Poller --> IndexingPkg
+    Webhooks --> IndexingPkg
+
+    VectorStorePkg --> VectorStore
+    DatabasePkg --> SQLite
 
     Search --> Embeddings
-    Search --> VSMgr
+    Search --> VectorStorePkg
 ```
 
 ---
 
-## 🧩 Core Architecture Components
+## 🧩 Modular Architecture Packages
 
-### 1. FastMCP 2.0 Server & Transport Routing (`app/mcp/`)
-- **FastMCP Foundation**: Implemented via `mcp.server.fastmcp.FastMCP` (`ContextCortex`) with lifespan session management (`mcp_server.session_manager.run()`).
-- **Dual MCP Transports**:
-  - **Server-Sent Events (SSE)**: Mounted via `mcp_server.sse_app().routes`, handling streaming events at `/sse` and message exchanges at `/messages/`.
-  - **Streamable HTTP**: Mounted via `mcp_server.streamable_http_app().routes` at `/mcp` for direct bidirectional JSON-RPC.
-- **Agent Tools (7 Tools)**:
-  - `search_code`: Hybrid semantic + BM25 search over code functions and logic blocks with line numbers and git links.
-  - `search_docs`: Dedicated hybrid search across markdown notes, system architecture, and runbooks.
-  - `find_symbol`: Instant exact/fuzzy symbol definitions from AST index.
-  - `get_file_outline`: File symbol hierarchy without full token context costs.
-  - `list_repositories`: Summary of all indexed Git repos and local paths.
-  - `sync_repository`: On-demand re-sync for a specific repo or all sources.
-  - `index_status`: Global vector stats, model metadata, and GitHub rate limits.
+### 1. FastMCP 2.0 Server & Handlers (`app/mcp/`)
+- **FastMCP Core (`app/mcp/mcp_server.py`)**: Manages MCP lifespan and session registration.
+- **Dual Transports**:
+  - **Server-Sent Events (SSE)**: Streaming events at `/sse` and message exchanges at `/messages/`.
+  - **Streamable HTTP**: Bidirectional JSON-RPC at `/mcp`.
+- **Extended Agent Tools (`app/mcp/tools.py` & `app/mcp/handlers/`)**:
+  - `search_handlers.py`: `search_code`, `search_docs` hybrid search with RRF.
+  - `symbol_handlers.py`: `find_symbol`, `get_file_outline` sub-50ms AST lookups.
+  - `repo_handlers.py`: `list_repositories`, `sync_repository`, `index_status`.
+  - `route_handlers.py`: `get_code_routes`, `trace_call_path` cross-repo API calls.
+  - `architecture_handlers.py`: `get_architecture`, `manage_adr` ADR tracking.
 - **Dynamic Resource Providers**:
-  - `knowledge://catalog/summary`: Markdown catalog summarizing indexed repositories, file counts, and AST symbol distributions.
-
-- **Custom Agent Prompt Templates**:
-  - `search_infrastructure_docs`: Parameterized workflow for infrastructure and deployment queries.
-  - `find_implementation_symbol`: Parameterized workflow for locating implementation symbols.
+  - `knowledge://catalog/summary`: Markdown catalog of repositories, document types, and symbols.
+- **Agent Prompts**:
+  - `search_infrastructure_docs`, `find_implementation_symbol`.
 
 ---
 
-### 2. Diagnostic Logging & System Observability (`app/services/logger.py`)
-- **In-Memory Ring Buffer**: Implemented using `collections.deque(maxlen=500)` guarded by a `threading.Lock()`.
-- **Diagnostic Log Handler**: Captures log records across all backend modules (`contextcortex`, `contextcortex.*`, `server.*`, `indexer`, `git`, `ast_parser`), preserving:
-  - `timestamp`: ISO-8601 UTC timestamp.
-  - `level`: `INFO`, `WARNING`, `ERROR`, `DEBUG`.
-  - `logger`: Originating logger name.
-  - `message`: Formatted log message.
-  - `traceback`: Full exception stack trace when available.
-- **REST Endpoints**:
-  - `GET /admin/api/logs`: Retrieves formatted log records with level filtering and search query support.
-  - `DELETE /admin/api/logs`: Atomically clears the ring buffer.
+### 2. Multi-Language Tree-sitter AST & Chunking (`app/services/chunking/`)
+- `tree_sitter_loader.py`: Lazy loader for 10 Tree-sitter grammars (Python, TS/JS, Go, Rust, C#, C++, Java, Ruby, PHP).
+- `text_chunker.py`: Hierarchical markdown breadcrumbs (`# > ## > ###`) and sliding window text chunking.
+- `symbol_extractor.py`: AST symbol declaration extraction with 1-indexed line numbers and signatures.
+- `relationship_extractor.py`: AST relations extraction (`CALLS`, `IMPORTS`, `EXTENDS`).
+- `api_route_extractor.py`: REST route definitions and client invocations across backend frameworks.
 
 ---
 
-### 3. AST Code & Documentation Parsing Engine (`app/services/chunker.py`)
-- **Tree-sitter AST Parser**: Parses syntactic structures across Python, TypeScript, JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more.
-- **Boundary-Aware Chunking**: Chunks along class, method, function, and struct boundaries with exact line numbers and symbol names.
-- **Contextual Markdown Chunker**: Chunks documentation files by header hierarchies (`#`, `##`, `###`) with breadcrumb enrichment.
-- **Graceful Fallback**: Text-based fallback chunker for unsupported languages and malformed syntax.
+### 3. Incremental Ingestion & Syncing (`app/services/indexing/`)
+- `state.py`: Global indexing lock, active session notifications (`send_tool_list_changed`), configuration constants.
+- `git_syncer.py`: Ephemeral shallow git cloning, remote commit SHA tracking, AST symbol ingestion, vector upserts.
+- `local_syncer.py`: Local filesystem directories and Obsidian markdown vault indexing with mtime caching.
+- `processor.py`: Unified file parsing, YAML frontmatter extraction, and AST chunk generation.
 
 ---
 
-### 4. Multi-Backend Vector Database Layer (`app/services/vector_store/`)
-- **Pluggable Vector Stores**:
-  - **Qdrant**: High performance multi-vector search (Dense + Sparse BM25 with RRF) supporting embedded disk storage (`/app/data/qdrant_storage`) or remote server mode (`http://qdrant:6333`).
-  - **ChromaDB**: Embedded persistent disk (`/app/data/chroma_db`), in-memory, or remote HTTP server modes with automatic fallback.
-- **VectorStoreManager**: Dynamic backend switcher with hot reconfiguration, connection health checks, and automatic re-indexing trigger.
-- **Collection Defaults**: Default collection name `knowledge_rag_v1`.
+### 4. Pluggable Multi-Backend Vector Layer (`app/services/vector_store/`)
+- `base.py`: Abstract `VectorStore` base class and standard `VectorSearchResult` / `VectorDocument` models.
+- `manager.py`: Singleton vector store provider with runtime backend switching (`/admin/api/settings/vector-store/switch`), health checks, and data migration.
+- `qdrant_store.py`: Qdrant embedded (`/app/data/qdrant_storage`) and remote server (`http://qdrant:6333`) hybrid search (Dense 384d + Sparse BM25 with RRF).
+- `chroma_store.py`: ChromaDB persistent disk (`/app/data/chroma_db`) and remote client storage.
 
 ---
 
-### 5. Universal Git Repository Ingestion (`app/services/git_manager.py`)
-- **Universal Provider Support**:
-  - Automatically identifies or configures providers: **GitHub**, **GitLab (Cloud, Enterprise & Self-Hosted)**, **Gitea & Forgejo**, **Bitbucket (Cloud & Server)**, and **Generic Git HTTP/HTTPS**.
-  - Custom ports, local IPs, and self-hosted instances supported (e.g. `http://git.lan:3000/user/repo.git`).
-- **Shallow Cloning**: Authenticated shallow clones (`git clone --depth 1 --branch <branch> --single-branch`) into temporary directories.
-- **Remote SHA Tracking**: Queries remote commit SHAs via `git ls-remote` to skip redundant clones.
-- **Zero Disk Bloat**: Prunes cloned directories immediately after AST extraction and vector upserts.
-- **Provider-Exact Permalinks**:
-  - GitHub: `{base}/blob/{sha}/{path}#L{start}-L{end}`
-  - GitLab: `{base}/-/blob/{sha}/{path}#L{start}-{end}`
-  - Gitea / Forgejo: `{base}/src/commit/{sha}/{path}#L{start}-L{end}`
-  - Bitbucket: `{base}/src/{sha}/{path}#lines-{start}:{end}`
-- **Multi-Tier Git Authentication Hierarchy**:
-  1. Per-repository override token & optional username (`auth_token`, `auth_user`).
-  2. Domain-level Custom Git Host Vault (`git_host_credentials`).
-  3. Global provider tokens (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `GITEA_TOKEN` in DB or Settings UI).
-  4. Environment variable fallback.
-- **Credential Masking & URL Sanitization**: Complete redaction of all passwords and tokens from log messages and UI payloads.
+### 5. Topology & Dependency Graph (`app/services/topology/`)
+- `graph_builder.py`: Builds multi-repo dependency graphs combining files, classes, functions, and API routes with depth-bounded BFS filtering.
+- `node_details.py`: Formats deep inspection data (code previews, line ranges, neighbor relations, permalinks).
+- `helpers.py`: Cross-repo node ID generation, URL link normalization, and graph pruning.
 
 ---
 
-### 6. Database & Symbol Index (`app/services/db.py`)
-- **SQLite Database (`index_cache.db`) with WAL mode**:
-  - `git_repositories`: Registered remote Git repos, provider type, auth usernames, branches, commit SHAs, status, and last synced timestamps.
-  - `git_host_credentials`: Host domain credential vault for self-hosted instances.
-  - `indexed_paths`: Monitored local directories and files.
-  - `ast_symbols`: Indexed symbol table (classes, functions, methods, line numbers, signatures) for instantaneous `find_symbol` and `get_file_outline`.
-  - `indexed_files` & `file_summaries`: File metadata, mtime change detection, and topic tags.
-  - `system_metadata`: Key-value storage for tokens, timestamps, and active vector store settings.
+### 6. Relational Database & Credential Vault (`app/services/database/`)
+- `connection.py`: SQLite WAL connection management, automatic table migration, resilient stats count.
+- `credentials.py`: Multi-tier credential hierarchy resolution and Custom Git Host Vault CRUD.
+- `sync_config.py`: Auto-sync intervals and webhook secret configurations.
+- `adrs.py`: Architectural Decision Record storage, search, and lifecycle status transitions.
 
-#### SQLite Relational Entity-Relationship Diagram (ERD)
+---
+
+### 7. Universal Git Management (`app/services/git_manager.py`)
+- **Universal Provider Ingestion**: GitHub, GitLab (Cloud & Self-Hosted), Gitea/Forgejo, Bitbucket, and Generic Git HTTP/HTTPS.
+- **Zero Disk Bloat**: Shallow ephemeral clones cleaned immediately after processing.
+- **Provider-Exact Permalinks**: Deep code permalinks across all supported Git hosts.
+- **Credential Sanitization**: URL sanitization masking tokens in logs and client responses.
+
+---
+
+### 8. Background Poller & Multi-Provider Webhooks
+- `app/services/poller.py`: Background daemon checking remote commit SHAs at configured intervals.
+- `app/api/webhooks.py`: Authenticated push event ingestion for GitHub, GitLab, Gitea, and Bitbucket.
+
+---
+
+## 🗄️ Relational Data Models (ERD)
+
 ```mermaid
 erDiagram
     GIT_REPOSITORIES {
         int id PK
-        string name UK "Repository alias"
-        string url "Clone URL"
-        string branch "Branch name"
-        string provider "github | gitlab | gitea | bitbucket | generic"
-        string auth_user "Optional auth username"
-        string auth_token "Optional repo override token"
-        string commit_sha "Latest indexed commit SHA"
-        string status "pending | syncing | synced | error"
-        string last_error "Error message if failed"
-        string last_synced "ISO-8601 Timestamp"
-        int enabled "1 = Active, 0 = Disabled"
-        datetime added_at "Creation timestamp"
+        string name UK
+        string url
+        string branch
+        string provider
+        string auth_user
+        string auth_token
+        string commit_sha
+        string status
+        string last_error
+        string last_synced
+        int enabled
+        int auto_sync_enabled
+        int auto_sync_interval
+        string webhook_secret
+        datetime added_at
     }
 
     GIT_HOST_CREDENTIALS {
         int id PK
-        string host UK "Domain / IP:Port"
-        string provider "gitlab | gitea | github | bitbucket | generic"
-        string auth_user "Optional default user"
-        string auth_token "Host access token / password"
-        datetime added_at "Creation timestamp"
+        string host UK
+        string provider
+        string auth_user
+        string auth_token
+        datetime added_at
     }
 
     INDEXED_PATHS {
         int id PK
-        string path UK "Absolute filesystem path"
-        string type "directory | file"
-        int recursive "1 = Yes, 0 = No"
-        int enabled "1 = Active, 0 = Disabled"
-        string category "architecture | guides | notes"
-        string repo "Assigned repo alias"
-        datetime added_at "Creation timestamp"
+        string path UK
+        string type
+        int recursive
+        int enabled
+        string category
+        string repo
+        datetime added_at
     }
 
     INDEXED_FILES {
-        string filepath PK "Path within repo or local vault"
-        string repo "Repository or vault alias"
-        string doc_type "code | doc"
-        string language "python | typescript | markdown | ..."
-        string commit_sha "Commit SHA when indexed"
-        real mtime "Filesystem modification time"
-        string hash "Content SHA256 hash"
+        string filepath PK
+        string repo
+        string doc_type
+        string language
+        string commit_sha
+        real mtime
+        string hash
     }
 
     AST_SYMBOLS {
         int id PK
-        string repo "Repository alias"
-        string filepath "Relative file path"
-        string kind "class | function | method | interface | struct"
-        string name "Symbol identifier name"
-        string full_symbol "Qualified symbol path"
-        string signature "Parameter signature"
-        int start_line "1-indexed start line"
-        int end_line "1-indexed end line"
-        string language "Language grammar identifier"
+        string repo
+        string filepath
+        string kind
+        string name
+        string full_symbol
+        string signature
+        int start_line
+        int end_line
+        string language
+    }
+
+    AST_RELATIONSHIPS {
+        int id PK
+        string repo
+        int source_symbol_id
+        string source_filepath
+        string source_symbol
+        string target_symbol
+        string relationship_type
+        int line_number
+    }
+
+    API_ROUTES {
+        int id PK
+        string repo
+        string filepath
+        string framework
+        string http_method
+        string path_pattern
+        string handler_symbol
+        int start_line
+        int end_line
+    }
+
+    API_CLIENT_CALLS {
+        int id PK
+        string repo
+        string filepath
+        string http_method
+        string url_pattern
+        string caller_symbol
+        int line_number
+    }
+
+    ARCHITECTURE_ADRS {
+        int id PK
+        string repo
+        string adr_number
+        string title
+        string status
+        string date
+        string filepath
+        string context
+        string decision
+        string consequences
+        string raw_content
     }
 
     FILE_SUMMARIES {
-        string filepath PK "Relative or local path"
-        string repo "Repository alias"
-        string title "Extracted title or basename"
-        string folder "Parent directory name"
-        string category "Documentation category"
-        string tags "JSON list of tags"
-        string headings "JSON list of headings"
-        string keywords "JSON list of keywords"
-        real mtime "Modification timestamp"
+        string filepath PK
+        string repo
+        string title
+        string folder
+        string category
+        string tags
+        string headings
+        string keywords
+        real mtime
     }
 
     SYSTEM_METADATA {
-        string key PK "Key identifier"
-        string value "String value"
+        string key PK
+        string value
     }
 
     GIT_REPOSITORIES ||--o{ INDEXED_FILES : "contains"
     GIT_REPOSITORIES ||--o{ AST_SYMBOLS : "declares"
+    GIT_REPOSITORIES ||--o{ AST_RELATIONSHIPS : "traces"
+    GIT_REPOSITORIES ||--o{ API_ROUTES : "exposes"
+    GIT_REPOSITORIES ||--o{ API_CLIENT_CALLS : "invokes"
+    GIT_REPOSITORIES ||--o{ ARCHITECTURE_ADRS : "documents"
     GIT_REPOSITORIES ||--o{ FILE_SUMMARIES : "summarizes"
     INDEXED_PATHS ||--o{ INDEXED_FILES : "contains"
     INDEXED_FILES ||--o{ AST_SYMBOLS : "defines"
     INDEXED_FILES ||--o| FILE_SUMMARIES : "has metadata"
-```
-
-#### Vector Store Schema
-```mermaid
-classDiagram
-    class VectorCollection {
-        +String collection_name "knowledge_rag_v1"
-        +DenseVectorParams dense (384d, Cosine)
-        +SparseVectorParams sparse (BM25)
-    }
-
-    class VectorPoint {
-        +UUID id "UUID5(namespace, repo:filepath#index)"
-        +List~Float~ dense_vector [384 floats]
-        +Map~Int,Float~ sparse_vector [BM25 weights]
-        +PointPayload payload
-    }
-
-    class PointPayload {
-        +String repo "Keyword index: repo alias"
-        +String path "Keyword index: relative path"
-        +String doc_type "Keyword index: code | doc"
-        +String language "Keyword index: python, ts, md, etc."
-        +String content "Raw chunk text"
-        +Int start_line "Line start"
-        +Int end_line "Line end"
-        +String symbol "AST symbol name"
-        +String github_url "Provider deep permalink"
-        +List~String~ tags "Documentation tags"
-        +String title "Doc title / heading"
-        +String commit_sha "Commit SHA snapshot"
-    }
-
-    VectorCollection *-- VectorPoint : stores
-    VectorPoint *-- PointPayload : contains
-```
-
----
-
-### 7. Modern Web Admin Dashboard (`frontend/`) - ContextCortex Dashboard
-- **React 19 + TypeScript + Vite**: Fast, reactive dashboard served at `/admin/`.
-- **Tabs**:
-  - **Overview**: System metrics, embedding model specs, keyword cloud, and full reindex trigger.
-  - **Git Repositories**: Repository registration modal, single-repo sync triggers, error diagnostics, and deletion.
-  - **Local Paths**: Workspace directory browser, path configuration, and recursive indexing toggles.
-  - **Search & Inspector**: Live hybrid search tester with code/doc toggle, repo filters, and RRF score inspect.
-  - **Settings**: Vector Database switcher (Qdrant & ChromaDB), multi-provider token configurations, and rate limit status monitor.
-  - **Diagnostics & Logs**: Real-time log inspector with level pills (ALL, INFO, WARNING, ERROR, DEBUG), keyword filtering, traceback view modal, and buffer clear action.
-
----
-
-## 🧪 Test Topology & Quality Assurance
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Test Suite Topology                      │
-├──────────────────────────────┬──────────────────────────────┤
-│ Python Backend (Pytest)      │ Frontend (Vitest & Playwright)│
-├──────────────────────────────┼──────────────────────────────┤
-│ - tests/backend/test_mcp*.py │ - Vitest Unit/Component:     │
-│ - tests/backend/test_api*.py │   * App.test.tsx             │
-│ - tests/backend/test_*.py    │   * DiagnosticsViewer.test   │
-│ - >95% statement coverage    │   * GitRepoManager.test      │
-│ - FastMCP 2.0 tools/prompts  │   * SearchInspector.test     │
-│ - Multi-vector backend tests │   * Settings.test            │
-│ - Ring buffer logging tests  │ - Playwright E2E:            │
-│ - Ephemeral git clone tests  │   * Full UI navigation       │
-│ - Hybrid search & RRF tests  │   * Backend switching        │
-│                              │   * Diagnostics log viewer   │
-└──────────────────────────────┴──────────────────────────────┘
 ```
