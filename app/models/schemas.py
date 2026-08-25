@@ -162,4 +162,62 @@ class AutoSyncSettingsRequest(BaseModel):
     interval_mins: int
     global_webhook_secret: Optional[str] = None
 
+# Topology Graph Models
+class TopologyNode(BaseModel):
+    id: str
+    name: str
+    type: str  # 'file', 'module', 'class', 'function', 'route'
+    repo: str
+    filepath: Optional[str] = None
+    language: Optional[str] = None
+    kind: Optional[str] = None
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
+    signature: Optional[str] = None
+    method: Optional[str] = None
+    path_pattern: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class TopologyEdge(BaseModel):
+    source: str
+    target: str
+    type: str  # 'IMPORTS', 'CALLS', 'DEFINES', 'HANDLES', 'ROUTES_TO'
+    label: Optional[str] = None
+    line_number: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class TopologyStats(BaseModel):
+    node_count: int
+    edge_count: int
+
+class TopologyResponse(BaseModel):
+    nodes: List[TopologyNode]
+    edges: List[TopologyEdge]
+    stats: TopologyStats
+
+class NeighborDetail(BaseModel):
+    id: str
+    name: str
+    type: str
+    edge_type: str
+    filepath: Optional[str] = None
+    line_number: Optional[int] = None
+    permalink: Optional[str] = None
+
+class NodeDetailsResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    repo: str
+    filepath: Optional[str] = None
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
+    signature: Optional[str] = None
+    code_preview: Optional[str] = None
+    permalink: Optional[str] = None
+    incoming: List[NeighborDetail] = Field(default_factory=list)
+    outgoing: List[NeighborDetail] = Field(default_factory=list)
+    metadata: Optional[Dict[str, Any]] = None
+
+
 

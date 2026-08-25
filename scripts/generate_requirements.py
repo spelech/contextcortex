@@ -73,16 +73,17 @@ def parse_frontend_tests() -> Dict[str, List[str]]:
 
 def parse_e2e_tests() -> List[str]:
     """Parse E2E journey specifications from frontend/e2e/."""
-    e2e_file = PROJECT_ROOT / "frontend" / "e2e" / "dashboard.spec.ts"
+    e2e_dir = PROJECT_ROOT / "frontend" / "e2e"
     tests = []
-    if e2e_file.exists():
+    if e2e_dir.exists():
         test_pattern = re.compile(r"""test\s*\(\s*['"`](.*?)['"`]""")
-        try:
-            with open(e2e_file, "r", encoding="utf-8") as f:
-                matches = test_pattern.findall(f.read())
-                tests = [m.strip() for m in matches if m.strip()]
-        except Exception as e:
-            print(f"Warning parsing E2E: {e}")
+        for e2e_file in sorted(e2e_dir.glob("*.spec.ts")):
+            try:
+                with open(e2e_file, "r", encoding="utf-8") as f:
+                    matches = test_pattern.findall(f.read())
+                    tests.extend([m.strip() for m in matches if m.strip()])
+            except Exception as e:
+                print(f"Warning parsing E2E {e2e_file}: {e}")
     return tests
 
 def generate_markdown() -> str:

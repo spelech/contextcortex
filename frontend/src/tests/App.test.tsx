@@ -80,6 +80,13 @@ describe('App Component', () => {
       </ToastProvider>
     );
 
+    // Switch to Topology
+    const topologyTab = screen.getByRole('button', { name: /Topology/i });
+    fireEvent.click(topologyTab);
+    await waitFor(() => {
+      expect(screen.getByRole('group', { name: /View Type/i })).toBeInTheDocument();
+    });
+
     // Switch to Git Repositories
     const gitTab = screen.getByRole('button', { name: /Git Repositories/i });
     fireEvent.click(gitTab);
