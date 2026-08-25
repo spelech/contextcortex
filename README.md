@@ -66,6 +66,10 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `list_repositories` | *None* | Lists all registered Git repositories and local paths with commit SHAs and indexing status. |
 | `sync_repository` | `repo` (str, opt) | Triggers background shallow clone sync for a specific repository or all sources. |
 | `index_status` | *None* | Returns vector counts, collection status, embedding models, and GitHub rate limits. |
+| `get_architecture` | `repo` (str, opt) | Synthesizes codebase entry points, language breakdown, core directories, and architectural overview. |
+| `manage_adr` | `action` (str: `list`\|`get`\|`create`\|`update`), `repo` (str, opt), `title` (str, opt), `decision` (str, opt), `status` (str, opt) | Query, create, or update Architectural Decision Records (MADR / Nygard format). |
+| `get_code_routes` | `repo` (str, opt), `framework` (str, opt), `http_method` (str, opt) | Returns API endpoint route definitions and HTTP client invocations across backend frameworks. |
+| `trace_call_path` | `target` (str), `repo` (str, opt), `direction` (str, default `downstream`), `depth` (int, default 3) | Traces AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections via BFS. |
 
 ### Resources
 | Resource URI | MIME Type | Description |
@@ -88,17 +92,60 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `VECTOR_STORE_PROVIDER` | Vector database backend (`qdrant` or `chroma`) | `qdrant` |
 | `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` |
 | `COLLECTION_NAME` | Vector collection name | `knowledge_rag_v1` |
-| `QDRANT_URL` | URL to remote Qdrant vector database | `http://qdrant:6333` |
+| `QDRANT_URL` | URL to remote Qdrant vector database (if mode is `remote`) | `http://localhost:6333` |
 | `QDRANT_STORAGE_PATH` | Embedded Qdrant disk directory | `/app/data/qdrant_storage` |
 | `CHROMA_STORAGE_PATH` | Embedded ChromaDB disk directory | `/app/data/chroma_db` |
 | `EMBEDDING_PROVIDER` | Embedding engine (`local` for in-process ONNX, `api` for LiteLLM/OpenAI) | `local` |
 | `EMBEDDING_MODEL` | FastEmbed dense model name | `BAAI/bge-small-en-v1.5` |
 | `SPARSE_MODEL` | FastEmbed sparse BM25 model name | `Qdrant/bm25` |
-| `GITHUB_TOKEN` | Optional GitHub Personal Access Token for rate limits & private repos | `None` |
+| `GITHUB_TOKEN` | Optional GitHub Personal Access Token for higher rate limits & private repos | `None` |
 | `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |
 | `CACHE_DB_PATH` | Path to persistent SQLite cache database | `/app/data/index_cache.db` |
 | `CHUNK_SIZE` | Maximum character length per chunk | `1500` |
 | `CHUNK_OVERLAP` | Character overlap between consecutive chunks | `200` |
+
+---
+
+## 💻 Running Locally (Bare-Metal)
+
+ContextCortex can be run directly on Linux, macOS, or Windows without Docker dependencies. By default, it operates with **zero external services required** by leveraging embedded Qdrant/ChromaDB, local SQLite (`index_cache.db`), and in-process CPU embeddings via FastEmbed/ONNX.
+
+### 1. Prerequisites
+- **Python 3.11+**
+- **Node.js 20+** & **npm**
+- **Git** (available on system `PATH`)
+
+### 2. Setup & Installation
+```bash
+# 1. Clone the repository
+git clone git@github.com:spelech/contextcortex.git
+cd contextcortex
+
+# 2. Create and activate a Python virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 3. Install Python dependencies
+pip install -r requirements.txt
+
+# 4. Build the React 19 administrative dashboard frontend
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+### 3. Start the Server
+```bash
+# Run with default embedded vector store and local SQLite database
+python main.py
+```
+
+The server starts on port `3000`:
+- **Web Dashboard**: Access the admin interface at `http://localhost:3000/admin/`
+- **MCP SSE Transport**: `http://localhost:3000/sse`
+- **MCP Streamable HTTP Transport**: `http://localhost:3000/mcp`
+- **Health Check**: `http://localhost:3000/health`
 
 ---
 
