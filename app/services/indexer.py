@@ -143,6 +143,15 @@ def process_file_content(
 
     if doc_type == "doc":
         if filepath.endswith((".md", ".txt")):
+            # Check if file is in standard ADR directories or follows ADR naming
+            norm_rel = rel_path.replace("\\", "/").lower()
+            if any(adr_dir in norm_rel for adr_dir in ["docs/adr/", "docs/decisions/", ".adr/", "doc/architecture/decisions/", "/adr/"]):
+                try:
+                    from app.services.adr import sync_adr_file
+                    sync_adr_file(filepath=filepath, repo=repo, content=content)
+                except Exception as adr_e:
+                    logger.error(f"Failed to auto-ingest ADR {filepath}: {adr_e}")
+
             try:
                 post = frontmatter.loads(content)
                 content = post.content

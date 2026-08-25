@@ -408,6 +408,112 @@ def handle_search_infrastructure_docs(
     return f"Please perform a search using the search_docs tool for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions."
 
 
+async def handle_get_architecture(
+    repo: Annotated[Optional[str], Field(description="Specific repository name. If omitted, returns an overview of all registered repositories.")] = None
+) -> str:
+    """Synthesizes language distributions, key entry points, primary framework modules, route counts, and active ADRs into a concise summary."""
+    try:
+        from app.services.architecture import synthesize_architecture
+        return synthesize_architecture(repo=repo)
+    except Exception as e:
+        logger.error(f"get_architecture error: {e}")
+        return f"Error synthesizing architecture overview: {str(e)}"
+
+
+async def handle_manage_adr(
+    action: Annotated[str, Field(description="Action to perform: 'list', 'get', 'create', 'update', 'supersede'.")],
+    repo: Annotated[str, Field(description="Repository identifier.")],
+    id: Annotated[Optional[str], Field(description="ADR ID (e.g. 'ADR-001'). Optional for create, required for get/update/supersede.")] = None,
+    title: Annotated[Optional[str], Field(description="Title of the ADR.")] = None,
+    status: Annotated[Optional[str], Field(description="Status: 'PROPOSED', 'ACCEPTED', 'REJECTED', 'SUPERSEDED', 'DEPRECATED'.")] = None,
+    context: Annotated[Optional[str], Field(description="Context and problem statement.")] = None,
+    decision: Annotated[Optional[str], Field(description="Decision and changes made.")] = None,
+    consequences: Annotated[Optional[str], Field(description="Consequences and trade-offs.")] = None,
+    superseded_by: Annotated[Optional[str], Field(description="ID of superseding ADR.")] = None
+) -> str:
+    """Manage Architecture Decision Records (ADRs): read, create, update, supersede, or search records across repositories."""
+    action_clean = action.lower().strip() if action else ""
+    if not repo or not repo.strip():
+        return "Error: repo parameter is required."
+
+    try:
+        from app.services.db import list_adrs, get_adr, create_adr, update_adr, supersede_adr
+
+        if action_clean == "list":
+            records = list_adrs(repo=repo, status=status)
+            if not records:
+                return f"No ADRs found for repository '{repo}'."
+            out = [f"# ADRs for Repository '{repo}'\n"]
+            for r in records:
+                sup = f" (superseded by `{r['superseded_by']}`)" if r.get('superseded_by') else ""
+                out.append(f"- **{r['id']}**: {r['title']} | Status: `{r['status']}`{sup}")
+            return "\n".join(out)
+
+        elif action_clean == "get":
+            if not id:
+                return "Error: 'id' parameter is required for action 'get'."
+            r = get_adr(adr_id=id, repo=repo)
+            if not r:
+                return f"ADR '{id}' not found in repo '{repo}'."
+            out = [
+                f"# [{r['repo']}] {r['id']}: {r['title']}",
+                f"**Status:** `{r['status']}`" + (f" (Superseded by `{r['superseded_by']}`)" if r.get('superseded_by') else ""),
+                f"**Created:** {r['created_at']} | **Updated:** {r['updated_at']}\n",
+                "## Context",
+                r['context'],
+                "\n## Decision",
+                r['decision']
+            ]
+            if r.get('consequences'):
+                out.extend(["\n## Consequences", r['consequences']])
+            return "\n".join(out)
+
+        elif action_clean == "create":
+            if not title:
+                return "Error: 'title' parameter is required for action 'create'."
+            res = create_adr(
+                repo=repo,
+                title=title,
+                status=status or "PROPOSED",
+                context=context or "Context pending.",
+                decision=decision or "Decision pending.",
+                consequences=consequences,
+                superseded_by=superseded_by,
+                adr_id=id
+            )
+            return f"Successfully created ADR '{res['id']}' for repo '{repo}' with status `{res['status']}`."
+
+        elif action_clean == "update":
+            if not id:
+                return "Error: 'id' parameter is required for action 'update'."
+            res = update_adr(
+                adr_id=id,
+                repo=repo,
+                title=title,
+                status=status,
+                context=context,
+                decision=decision,
+                consequences=consequences,
+                superseded_by=superseded_by
+            )
+            return f"Successfully updated ADR '{res['id']}' for repo '{repo}'."
+
+        elif action_clean == "supersede":
+            if not id:
+                return "Error: 'id' parameter is required for action 'supersede' (ID of old ADR to be superseded)."
+            if not superseded_by:
+                return "Error: 'superseded_by' parameter is required for action 'supersede' (ID of newer ADR)."
+            res = supersede_adr(old_id=id, new_id=superseded_by, repo=repo)
+            return f"Successfully superseded ADR '{id}' with '{superseded_by}' in repo '{repo}'."
+
+        else:
+            return f"Error: Invalid action '{action}'. Supported actions: list, get, create, update, supersede."
+
+    except Exception as e:
+        logger.error(f"manage_adr error ({action_clean}): {e}")
+        return f"Error executing manage_adr action '{action}': {str(e)}"
+
+
 def handle_find_implementation_symbol(
     symbol: Annotated[str, Field(description="Function or class name to find")],
     repo: Annotated[Optional[str], Field(description="Target repository (optional)")] = None
@@ -479,6 +585,18 @@ def register_mcp_tools_and_resources(server=None):
             name="index_status",
             description="Get global index health, vector counts, Git provider auth sources, and active embedding models."
         )(handle_index_status)
+
+    if "get_architecture" not in existing_tools:
+        server.tool(
+            name="get_architecture",
+            description="Synthesizes language distributions, key entry points, primary framework modules, route counts, and active ADRs into a concise summary."
+        )(handle_get_architecture)
+
+    if "manage_adr" not in existing_tools:
+        server.tool(
+            name="manage_adr",
+            description="Manage Architecture Decision Records (ADRs): read, create, update, supersede, or search records across repositories."
+        )(handle_manage_adr)
 
     existing_resources = {str(r.uri) for r in server._resource_manager.list_resources()}
     if "knowledge://catalog/summary" not in existing_resources:
