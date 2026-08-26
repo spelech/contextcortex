@@ -119,7 +119,7 @@ export function AutoSyncSettings({
                 type="text"
                 readOnly
                 value={fullWebhookUrl}
-                style={{ fontFamily: 'monospace', fontSize: '0.85rem', flex: 1 }}
+                style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem', flex: 1 }}
                 aria-label="Webhook Payload URL"
               />
               <button

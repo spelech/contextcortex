@@ -47,7 +47,7 @@ export function WebhookModal({ repo, onClose, onCopyUrl, copiedUrl }: WebhookMod
                 type="text"
                 readOnly
                 value={webhookEndpoint}
-                style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem' }}
                 aria-label="Webhook Payload URL"
               />
               <button
@@ -70,7 +70,7 @@ export function WebhookModal({ repo, onClose, onCopyUrl, copiedUrl }: WebhookMod
                 type="text"
                 readOnly
                 value={repo.webhook_secret}
-                style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}
+                style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem' }}
                 aria-label="Repository Secret Token"
               />
             </div>

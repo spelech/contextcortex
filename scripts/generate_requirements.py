@@ -110,7 +110,7 @@ def generate_markdown() -> str:
     total_all_tests = total_py_tests + total_fe_tests + total_e2e_tests
 
     lines = [
-        "# Software Requirements Specification: ContextCortex (v2.8.0)",
+        "# Software Requirements Specification: ContextCortex (v2.9.0)",
         "",
         "> **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.",
         "",

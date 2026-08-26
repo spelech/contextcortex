@@ -5,6 +5,7 @@ import { useToast } from './ToastContext';
 import { VectorStoreSettings } from './components/settings/VectorStoreSettings';
 import { AutoSyncSettings as AutoSyncSettingsComp } from './components/settings/AutoSyncSettings';
 import { GitCredentialsSettings } from './components/settings/GitCredentialsSettings';
+import { ThemeSettings } from './components/settings/ThemeSettings';
 
 export default function Settings({ stats, refreshStats }: { stats: Stats | null; refreshStats: () => void }) {
   // Global Git Provider Auth State
@@ -371,6 +372,8 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
 
   return (
     <div className="tab-content active" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <ThemeSettings />
+
       <VectorStoreSettings
         vectorStore={vectorStore}
         isLoadingVs={isLoadingVs}
