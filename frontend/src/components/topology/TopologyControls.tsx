@@ -9,6 +9,10 @@ interface TopologyControlsProps {
   setViewType: (val: 'files' | 'symbols' | 'routes' | 'full') => void;
   depth: number;
   setDepth: (val: number) => void;
+  nodeLimit: number;
+  setNodeLimit: (val: number) => void;
+  hideOrphans: boolean;
+  setHideOrphans: React.Dispatch<React.SetStateAction<boolean>>;
   rootNode: string;
   setRootNode: (val: string) => void;
   searchQuery: string;
@@ -19,6 +23,7 @@ interface TopologyControlsProps {
   onFocusNode: (id: string) => void;
   typeFilters: Record<string, boolean>;
   setTypeFilters: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  onAutoFit?: () => void;
   onExportSVG: () => void;
   onExportJSON: () => void;
 }
@@ -31,6 +36,10 @@ export function TopologyControls({
   setViewType,
   depth,
   setDepth,
+  nodeLimit,
+  setNodeLimit,
+  hideOrphans,
+  setHideOrphans,
   rootNode,
   setRootNode,
   searchQuery,
@@ -41,6 +50,7 @@ export function TopologyControls({
   onFocusNode,
   typeFilters,
   setTypeFilters,
+  onAutoFit,
   onExportSVG,
   onExportJSON,
 }: TopologyControlsProps) {
@@ -87,6 +97,21 @@ export function TopologyControls({
           <option value={3}>Depth: 3 Hops</option>
           <option value={4}>Depth: 4 Hops</option>
           <option value={5}>Depth: 5 Hops</option>
+        </select>
+
+        {/* Node Limit Selector */}
+        <select
+          className="topology-select"
+          value={nodeLimit}
+          onChange={(e) => setNodeLimit(Number(e.target.value))}
+          aria-label="Node Limit"
+        >
+          <option value={50}>50 nodes</option>
+          <option value={100}>100 nodes</option>
+          <option value={150}>150 nodes</option>
+          <option value={200}>200 nodes</option>
+          <option value={400}>400 nodes</option>
+          <option value={800}>800 nodes</option>
         </select>
 
         {/* Root node active indicator */}
@@ -145,6 +170,23 @@ export function TopologyControls({
             {t.toUpperCase()}
           </span>
         ))}
+
+        {/* Hide Orphans Toggle Chip */}
+        <span
+          className={`topology-filter-chip chip-orphan ${hideOrphans ? '' : 'inactive'}`}
+          onClick={() => setHideOrphans((prev) => !prev)}
+          title="Toggle orphan nodes"
+          role="button"
+        >
+          <i className="fa-solid fa-filter"></i>
+          HIDE ORPHANS
+        </span>
+
+        {onAutoFit && (
+          <button className="btn btn-secondary btn-sm" onClick={onAutoFit} title="Fit Graph">
+            <i className="fa-solid fa-expand"></i> Fit Graph
+          </button>
+        )}
 
         <button className="btn btn-secondary btn-sm" onClick={onExportSVG} title="Export as SVG">
           <i className="fa-solid fa-file-image"></i> SVG

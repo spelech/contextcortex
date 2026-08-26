@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **504 Automated Tests** (381 Pytest Backend + 97 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **512 Automated Tests** (381 Pytest Backend + 105 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -948,7 +948,7 @@ and leaves the prior indexed state intact without data loss._
 - supports showToast method with customizable toast types
 - dismisses toast immediately when clicking dismiss button
 
-#### `TopologyExplorer.test.tsx` (8 tests)
+#### `TopologyExplorer.test.tsx` (16 tests)
 - renders toolbar, repository selector, view type toggles, and graph canvas
 - handles switching view type between FILES, SYMBOLS, ROUTES, and FULL
 - handles changing repository selection and depth
@@ -957,6 +957,14 @@ and leaves the prior indexed state intact without data loss._
 - filters search matches and focuses on matching node
 - triggers SVG and JSON exports on button click
 - handles error state when topology API fails
+- renders DOC_LINKS_TO edge badge in legend and allows toggling
+- handles dragging a node with SVG viewBox coordinate scaling
+- handles canvas background panning on wrapper
+- triggers Fit to View auto-fit calculation and updates canvas transform
+- handles changing node limit in toolbar and queries topology with limit parameter
+- toggles hide orphans to filter disconnected nodes
+- renders TopologyMinimap with dynamic bounding box viewBox
+- triggers toolbar Fit Graph button and updates canvas transform
 
 ### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/`)
 

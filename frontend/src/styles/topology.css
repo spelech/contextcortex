@@ -89,6 +89,7 @@
 .topology-filter-chip.chip-class { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
 .topology-filter-chip.chip-function { background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3); }
 .topology-filter-chip.chip-route { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border-color: rgba(245, 158, 11, 0.3); }
+.topology-filter-chip.chip-orphan { background: rgba(244, 63, 94, 0.15); color: #fb7185; border-color: rgba(244, 63, 94, 0.3); }
 
 .topology-filter-chip.inactive {
     opacity: 0.4;

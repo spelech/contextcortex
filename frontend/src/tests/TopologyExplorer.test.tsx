@@ -1,5 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import TopologyExplorer from '../TopologyExplorer';
+import { TopologyMinimap } from '../components/topology/TopologyMinimap';
+import type { SimNode } from '../components/topology/types';
 import { ToastProvider } from '../ToastContext';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -362,5 +364,138 @@ describe('TopologyExplorer Component', () => {
     const resetBtn = screen.getByTitle('Reset View');
     fireEvent.click(resetBtn);
     expect(mainGroup).toHaveAttribute('transform', 'translate(0, 0) scale(1)');
+  });
+
+  it('handles changing node limit in toolbar and queries topology with limit parameter', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /Node Limit/i })).toBeInTheDocument();
+    });
+
+    const limitSelect = screen.getByRole('combobox', { name: /Node Limit/i });
+    expect(limitSelect).toHaveValue('150');
+
+    fireEvent.change(limitSelect, { target: { value: '50' } });
+
+    await waitFor(() => {
+      expect(limitSelect).toHaveValue('50');
+      expect((globalThis as any).fetch).toHaveBeenCalledWith(
+        expect.stringContaining('limit=50')
+      );
+    });
+
+    fireEvent.change(limitSelect, { target: { value: '400' } });
+
+    await waitFor(() => {
+      expect(limitSelect).toHaveValue('400');
+      expect((globalThis as any).fetch).toHaveBeenCalledWith(
+        expect.stringContaining('limit=400')
+      );
+    });
+  });
+
+  it('toggles hide orphans to filter disconnected nodes', async () => {
+    const topologyWithOrphan = {
+      nodes: [
+        { id: 'file:repo-core:app/main.py', name: 'main.py', type: 'file', repo: 'repo-core', filepath: 'app/main.py' },
+        { id: 'file:repo-core:app/utils.py', name: 'utils.py', type: 'file', repo: 'repo-core', filepath: 'app/utils.py' },
+        { id: 'file:repo-core:app/orphan.py', name: 'orphan.py', type: 'file', repo: 'repo-core', filepath: 'app/orphan.py' }
+      ],
+      edges: [
+        { source: 'file:repo-core:app/main.py', target: 'file:repo-core:app/utils.py', type: 'IMPORTS' }
+      ],
+      stats: { node_count: 3, edge_count: 1 }
+    };
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/admin/api/repos')) {
+        return Promise.resolve({ ok: true, json: async () => mockRepos } as Response);
+      }
+      if (url.includes('/admin/api/graph/topology')) {
+        return Promise.resolve({ ok: true, json: async () => topologyWithOrphan } as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+    });
+
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('orphan.py')).toBeInTheDocument();
+      expect(screen.getByText('main.py')).toBeInTheDocument();
+    });
+
+    const hideOrphansChip = screen.getByTitle('Toggle orphan nodes');
+    expect(hideOrphansChip).toHaveClass('inactive');
+
+    // Click to activate hide orphans
+    fireEvent.click(hideOrphansChip);
+    expect(hideOrphansChip).not.toHaveClass('inactive');
+
+    await waitFor(() => {
+      expect(screen.queryByText('orphan.py')).not.toBeInTheDocument();
+      expect(screen.getByText('main.py')).toBeInTheDocument();
+    });
+
+    // Click again to deactivate hide orphans
+    fireEvent.click(hideOrphansChip);
+    expect(hideOrphansChip).toHaveClass('inactive');
+
+    await waitFor(() => {
+      expect(screen.getByText('orphan.py')).toBeInTheDocument();
+    });
+  });
+
+  it('renders TopologyMinimap with dynamic bounding box viewBox', () => {
+    const customNodes: SimNode[] = [
+      { id: 'n1', name: 'Node 1', type: 'file', repo: 'r1', x: 100, y: 80, vx: 0, vy: 0, radius: 20 },
+      { id: 'n2', name: 'Node 2', type: 'file', repo: 'r1', x: 500, y: 400, vx: 0, vy: 0, radius: 20 }
+    ];
+    const customEdges = [{ source: 'n1', target: 'n2', type: 'IMPORTS' }];
+    const posMap = new Map([
+      ['n1', { x: 100, y: 80, radius: 20 }],
+      ['n2', { x: 500, y: 400, radius: 20 }]
+    ]);
+
+    const { container } = render(
+      <TopologyMinimap
+        visibleNodes={customNodes}
+        visibleEdges={customEdges}
+        nodePosMap={posMap}
+      />
+    );
+
+    const svg = container.querySelector('svg');
+    expect(svg).not.toBeNull();
+    // minX: 100 - 40 = 60, maxX: 500 + 40 = 540 => width = 480
+    // minY: 80 - 40 = 40, maxY: 400 + 40 = 440 => height = 400
+    expect(svg?.getAttribute('viewBox')).toBe('60 40 480 400');
+  });
+
+  it('triggers toolbar Fit Graph button and updates canvas transform', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Fit Graph')).toBeInTheDocument();
+    });
+
+    const toolbarFitBtn = screen.getByTitle('Fit Graph');
+    fireEvent.click(toolbarFitBtn);
+
+    const svg = container.querySelector('.topology-svg');
+    const mainGroup = svg!.querySelector('g');
+    expect(mainGroup?.getAttribute('transform')).toMatch(/translate\([^,]+,\s*[^)]+\)\s+scale\([^)]+\)/);
   });
 });

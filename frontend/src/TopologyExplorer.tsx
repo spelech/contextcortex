@@ -13,6 +13,8 @@ export default function TopologyExplorer() {
   const [selectedRepo, setSelectedRepo] = useState<string>('__all__');
   const [viewType, setViewType] = useState<'files' | 'symbols' | 'routes' | 'full'>('files');
   const [depth, setDepth] = useState<number>(2);
+  const [nodeLimit, setNodeLimit] = useState<number>(150);
+  const [hideOrphans, setHideOrphans] = useState<boolean>(false);
   const [rootNode, setRootNode] = useState<string>('');
 
   // Filtering toggles
@@ -82,7 +84,7 @@ export default function TopologyExplorer() {
     setLoading(true);
     setError(null);
     try {
-      let url = `/admin/api/graph/topology?repo=${encodeURIComponent(selectedRepo)}&view_type=${viewType}&depth=${depth}&limit=400`;
+      let url = `/admin/api/graph/topology?repo=${encodeURIComponent(selectedRepo)}&view_type=${viewType}&depth=${depth}&limit=${nodeLimit}`;
       if (rootNode.trim()) {
         url += `&root_node=${encodeURIComponent(rootNode.trim())}`;
       }
@@ -122,7 +124,7 @@ export default function TopologyExplorer() {
     } finally {
       setLoading(false);
     }
-  }, [selectedRepo, viewType, depth, rootNode, toast]);
+  }, [selectedRepo, viewType, depth, nodeLimit, rootNode, toast]);
 
   useEffect(() => {
     loadTopology();
@@ -147,8 +149,19 @@ export default function TopologyExplorer() {
 
   // Filtered nodes and edges for rendering
   const visibleNodes = useMemo(() => {
-    return simNodes.filter((n) => typeFilters[n.type] ?? true);
-  }, [simNodes, typeFilters]);
+    let filtered = simNodes.filter((n) => typeFilters[n.type] ?? true);
+    if (hideOrphans && graphData?.edges) {
+      const connectedNodeIds = new Set<string>();
+      graphData.edges.forEach((e) => {
+        if (edgeFilters[e.type] ?? true) {
+          connectedNodeIds.add(e.source);
+          connectedNodeIds.add(e.target);
+        }
+      });
+      filtered = filtered.filter((n) => connectedNodeIds.has(n.id));
+    }
+    return filtered;
+  }, [simNodes, typeFilters, hideOrphans, graphData, edgeFilters]);
 
   const visibleNodeIds = useMemo(() => {
     return new Set(visibleNodes.map((n) => n.id));
@@ -176,7 +189,7 @@ export default function TopologyExplorer() {
     if (isSimPaused || visibleNodes.length === 0) return;
 
     let iteration = 0;
-    const maxIterations = 250;
+    const maxIterations = 140;
 
     const stepSimulation = () => {
       iteration++;
@@ -185,11 +198,12 @@ export default function TopologyExplorer() {
 
       const width = 1000;
       const height = 640;
-      const kRepulse = 3800;
+      const kRepulse = Math.max(600, Math.min(3000, 25000 / Math.sqrt(nodes.length || 1)));
       const kSpring = 0.04;
       const springLength = 110;
-      const centerGravity = 0.015;
-      const damping = 0.85;
+      const centerGravity = 0.012;
+      const damping = 0.82;
+      const boundK = 0.08;
 
       const nodeIndex = new Map<string, number>();
       nodes.forEach((n, i) => nodeIndex.set(n.id, i));
@@ -244,13 +258,27 @@ export default function TopologyExplorer() {
         }
       }
 
-      // 3. Gravity towards center and position update
+      // 3. Gravity towards center, soft boundary springs, and position update
       let totalKineticEnergy = 0;
       for (const node of nodes) {
         if (node.id === draggedNodeId) continue;
 
         node.vx += (width / 2 - node.x) * centerGravity;
         node.vy += (height / 2 - node.y) * centerGravity;
+
+        // Soft boundary containment springs for [50, 950] x [50, 590]
+        if (node.x < 50) {
+          node.vx += (50 - node.x) * boundK;
+        } else if (node.x > 950) {
+          node.vx += (950 - node.x) * boundK;
+        }
+
+        if (node.y < 50) {
+          node.vy += (50 - node.y) * boundK;
+        } else if (node.y > 590) {
+          node.vy += (590 - node.y) * boundK;
+        }
+
         node.vx *= damping;
         node.vy *= damping;
         node.x += node.vx;
@@ -261,7 +289,7 @@ export default function TopologyExplorer() {
 
       setSimNodes([...nodes]);
 
-      if (iteration < maxIterations && totalKineticEnergy > 0.5) {
+      if (iteration < maxIterations && totalKineticEnergy > 0.4) {
         animFrameRef.current = requestAnimationFrame(stepSimulation);
       }
     };
@@ -271,7 +299,7 @@ export default function TopologyExplorer() {
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [graphData, isSimPaused, draggedNodeId]);
+  }, [graphData, isSimPaused, draggedNodeId, visibleNodes.length]);
 
   // Mouse pan and zoom handlers
   const handleMouseDown = (e: MouseEvent) => {
@@ -413,6 +441,10 @@ export default function TopologyExplorer() {
         setViewType={setViewType}
         depth={depth}
         setDepth={setDepth}
+        nodeLimit={nodeLimit}
+        setNodeLimit={setNodeLimit}
+        hideOrphans={hideOrphans}
+        setHideOrphans={setHideOrphans}
         rootNode={rootNode}
         setRootNode={setRootNode}
         searchQuery={searchQuery}
@@ -423,6 +455,7 @@ export default function TopologyExplorer() {
         onFocusNode={focusOnNode}
         typeFilters={typeFilters}
         setTypeFilters={setTypeFilters}
+        onAutoFit={autoFitGraph}
         onExportSVG={exportSVG}
         onExportJSON={exportJSON}
       />
