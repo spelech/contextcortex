@@ -1,4 +1,43 @@
-:root {
+:root, [data-theme="deep-ocean"] {
+    /* === Colors === */
+    --bg-base: #07181b;
+    --bg-card: #0d2c2f;
+    --border-card: #15474d;
+    --primary: #0891b2;
+    --primary-hover: #0e7490;
+    --accent: #14b8a6;
+    --accent-light: #2dd4bf;
+    --danger: #ef4444;
+    --danger-hover: #dc2626;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --code-bg: rgba(0, 0, 0, 0.35);
+
+    /* === Layout & Radii === */
+    --radius: 10px;
+
+    /* === Typography: Font Families === */
+    --font-family-base: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-family-heading: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-family-mono: 'JetBrains Mono', monospace;
+
+    /* === Typography: Font Weights === */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    --font-weight-extrabold: 800;
+
+    /* === Typography: Font Sizes === */
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.85rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.15rem;
+    --font-size-xl: 1.35rem;
+    --font-size-2xl: 1.65rem;
+}
+
+[data-theme="midnight-blue"] {
     --bg-base: #0a0f1d;
     --bg-card: rgba(18, 26, 47, 0.65);
     --border-card: rgba(255, 255, 255, 0.08);
@@ -20,8 +59,12 @@
     box-sizing: border-box;
 }
 
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-family-heading);
+}
+
 body {
-    font-family: 'Outfit', sans-serif;
+    font-family: var(--font-family-base);
     background-color: var(--bg-base);
     color: var(--text);
     min-height: 100vh;
@@ -29,41 +72,6 @@ body {
     position: relative;
     overflow-x: hidden;
     overflow-y: scroll;
-}
-
-/* Background Glowing Orbs */
-.background-decor {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    pointer-events: none;
-    z-index: 0;
-    overflow: hidden;
-}
-
-.circle {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(120px);
-    opacity: 0.25;
-}
-
-.circle-1 {
-    width: 450px;
-    height: 450px;
-    background: #3b82f6;
-    top: -100px;
-    left: -100px;
-}
-
-.circle-2 {
-    width: 500px;
-    height: 500px;
-    background: #14b8a6;
-    bottom: -150px;
-    right: -100px;
 }
 
 /* Dashboard Container */
@@ -212,8 +220,8 @@ body {
 
 .nav-tab.active {
     color: #fff;
-    background: rgba(59, 130, 246, 0.2);
-    border: 1px solid rgba(59, 130, 246, 0.4);
+    background: color-mix(in srgb, var(--primary) 25%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 50%, transparent);
 }
 
 /* Glass Card */
@@ -284,9 +292,9 @@ body {
 }
 
 .metric-info .stat-number {
-    font-size: 1.35rem;
-    font-weight: 800;
-    font-family: 'JetBrains Mono', monospace;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-extrabold);
+    font-family: var(--font-family-mono);
     color: #fff;
     line-height: 1.1;
 }
@@ -374,8 +382,8 @@ body {
     color: var(--accent-light);
     padding: 4px 10px;
     border-radius: 6px;
-    font-size: 0.8rem;
-    font-family: 'JetBrains Mono', monospace;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-family-mono);
 }
 
 /* Badges & Code */
@@ -387,9 +395,9 @@ body {
 }
 
 .badge-primary {
-    background: rgba(59, 130, 246, 0.2);
-    color: #93c5fd;
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    background: color-mix(in srgb, var(--primary) 20%, transparent);
+    color: #67e8f9;
+    border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
 }
 
 .badge-accent {

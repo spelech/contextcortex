@@ -269,7 +269,7 @@
     border: 1px solid var(--border-card);
     border-radius: 8px;
     padding: 12px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-family-mono);
     font-size: 0.78rem;
     line-height: 1.45;
     color: #e2e8f0;

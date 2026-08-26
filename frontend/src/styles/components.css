@@ -17,7 +17,7 @@
 }
 
 code, .code {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-family-mono);
     background: var(--code-bg);
     padding: 2px 6px;
     border-radius: 4px;
@@ -326,7 +326,7 @@ input:focus, select:focus, textarea:focus {
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 6px;
     padding: 12px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-family-mono);
     font-size: 0.85rem;
     overflow-x: auto;
     white-space: pre-wrap;
@@ -718,7 +718,7 @@ input:focus, select:focus, textarea:focus {
     max-height: 580px;
     min-height: 320px;
     overflow-y: auto;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-family-mono);
 }
 
 .log-stream-list {
@@ -814,7 +814,7 @@ input:focus, select:focus, textarea:focus {
     border-radius: 6px;
     padding: 10px 14px;
     color: #fca5a5;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--font-family-mono);
     font-size: 0.78rem;
     line-height: 1.45;
     overflow-x: auto;
@@ -873,5 +873,73 @@ input:focus, select:focus, textarea:focus {
     background: rgba(239, 68, 68, 0.12);
     border: 1px solid rgba(239, 68, 68, 0.3);
     color: #fca5a5;
+}
+
+/* Theme Appearance Settings */
+.theme-options-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.theme-card {
+    background: var(--bg-card);
+    border: 2px solid var(--border-card);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    position: relative;
+    text-align: left;
+}
+
+.theme-card:hover {
+    border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+    transform: translateY(-2px);
+}
+
+.theme-card.active {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary), 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.theme-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.theme-card-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.theme-card-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.theme-swatches {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+.theme-swatch {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 

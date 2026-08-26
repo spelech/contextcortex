@@ -5,6 +5,21 @@ import { themeEditorPlugin } from 'vite-plugin-theme-editor'
 // https://vite.dev/config/
 export default defineConfig({
   cacheDir: './.vite',
+  server: {
+    host: '0.0.0.0',
+    port: 5173,
+    allowedHosts: true,
+    proxy: {
+      '/admin/api': {
+        target: 'http://localhost:8021',
+        changeOrigin: true,
+      },
+      '/api': {
+        target: 'http://localhost:8021',
+        changeOrigin: true,
+      },
+    },
+  },
   plugins: [
     react(),
     themeEditorPlugin()

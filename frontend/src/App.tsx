@@ -33,11 +33,6 @@ function App() {
 
   return (
     <>
-      <div className="background-decor">
-        <div className="circle circle-1"></div>
-        <div className="circle circle-2"></div>
-      </div>
-      
       <div className="dashboard-container">
         <header className="dashboard-header">
           <div className="header-top-row">
