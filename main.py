@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-app = FastAPI(title="ContextCortex", version="2.10.0", lifespan=lifespan)
+app = FastAPI(title="ContextCortex", version="2.11.0", lifespan=lifespan)
 
 
 # Include API routes
