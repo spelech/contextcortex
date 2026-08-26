@@ -18,6 +18,19 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 
 </details>
 
+<details open>
+<summary><b>🎨 Multi-Theme Appearance (4 Polished Palettes)</b></summary>
+
+| **Deep Ocean** *(Dark Default)* | **Midnight Blue** *(Dark Space)* |
+|:---:|:---:|
+| ![Deep Ocean](docs/assets/theme_deep_ocean.png) | ![Midnight Blue](docs/assets/theme_midnight_blue.png) |
+| *Petrol spruce `#07181b` with vibrant cyan `#0891b2` & mint* | *Obsidian navy `#0a0f1d` with royal blue `#3b82f6` & teal* |
+| **Lavender Haze** *(Light Purple)* | **Amber Warmth** *(Light Sandstone)* |
+| ![Lavender Haze](docs/assets/theme_lavender_haze.png) | ![Amber Warmth](docs/assets/theme_amber_warmth.png) |
+| *Lilac canvas `#f5f3ff` with purple `#7c3aed` & fuchsia* | *Sandstone `#fdf8f4` with terracotta `#ea580c` & amber* |
+
+</details>
+
 
 ---
 
@@ -44,7 +57,8 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   4. Environment variable fallback.
 - **Fast Deterministic Symbol Lookup**: Built-in SQLite symbol table (`ast_symbols`) powers instantaneous symbol searches (`find_symbol`) and file outlines (`get_file_outline`) without token bloat.
 - **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
-- **Modern Tabbed Web Dashboard (`/admin/`) - ContextCortex Dashboard**:
+- **Multi-Theme Engine & Modern Tabbed Web Dashboard (`/admin/`)**:
+  - **Appearance & Theme Settings**: Instant zero-latency switching between 4 distinct dark and light themes (**Deep Ocean**, **Midnight Blue**, **Lavender Haze**, and **Amber Warmth**) with live palette swatches and browser persistence.
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
   - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, trigger shallow clone syncs, inspect commit SHAs, and manage sources.
   - **Local Paths**: Monitor local workspaces and notes vaults with recursive directory scanning and filesystem browser modal.
