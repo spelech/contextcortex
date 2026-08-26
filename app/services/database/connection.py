@@ -132,6 +132,20 @@ def init_db(vault_path: str = "/docs"):
         """)
 
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS embedding_cache (
+                chunk_hash TEXT NOT NULL,
+                dense_vector TEXT,
+                sparse_indices TEXT,
+                sparse_values TEXT,
+                model_name TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (chunk_hash, model_name)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_embedding_cache_model ON embedding_cache(model_name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_embedding_cache_model_hash ON embedding_cache(model_name, chunk_hash)")
+
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS ast_symbols (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 repo TEXT NOT NULL,

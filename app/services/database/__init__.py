@@ -36,6 +36,11 @@ from app.services.database.adrs import (
     supersede_adr,
     upsert_adr,
 )
+from app.services.database.embedding_cache import (
+    get_cached_embeddings_batch,
+    set_cached_embeddings_batch,
+    invalidate_cache_by_model,
+)
 
 __all__ = [
     "CACHE_DB_PATH",
@@ -68,4 +73,7 @@ __all__ = [
     "update_adr",
     "supersede_adr",
     "upsert_adr",
+    "get_cached_embeddings_batch",
+    "set_cached_embeddings_batch",
+    "invalidate_cache_by_model",
 ]
