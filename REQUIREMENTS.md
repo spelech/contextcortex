@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **499 Automated Tests** (377 Pytest Backend + 96 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **502 Automated Tests** (380 Pytest Backend + 96 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -771,6 +771,21 @@ classDiagram
 - `test_sync_single_git_repo_incremental_delta`
 - `test_sync_single_git_repo_batching_over_25`
 - `test_sync_single_git_repo_clone_error`
+
+#### `tests/test_incremental_pipeline.py` (3 tests)
+- `test_full_incremental_sync_pipeline` - _End-to-End integration test for the full ingestion & incremental sync pipeline:
+1. Initial full repo ingestion (code + markdown with wikilinks & standard links).
+2. Subsequent sync with 0 changes: verifies no re-indexing occurs.
+3. Subsequent sync with a multi-file commit (1 file modified, 1 file added, 1 file deleted, 1 file unchanged):
+   - Verifies only modified and added files are parsed and embedded.
+   - Verifies unchanged file embeddings are retained.
+   - Verifies deleted file's vectors and SQLite entries are purged.
+   - Verifies embedding_cache is populated and reused.
+   - Verifies doc links (DOC_LINKS_TO) appear in the topology graph and search works across all indexed files._
+- `test_incremental_pipeline_batching_and_large_commit` - _Verifies that incremental sync handles batches exceeding the 25-file batch threshold,
+persisting all records and vector points correctly across multiple flushes._
+- `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
+and leaves the prior indexed state intact without data loss._
 
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`
