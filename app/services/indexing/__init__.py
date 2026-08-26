@@ -17,6 +17,8 @@ from app.services.indexing.processor import (
     extract_keywords_from_text,
     get_dynamic_catalog_description,
     process_file_content,
+    compute_text_hash,
+    MAX_FILE_SIZE_BYTES,
 )
 from app.services.indexing.local_syncer import sync_local_paths
 from app.services.indexing.git_syncer import (
@@ -41,6 +43,8 @@ __all__ = [
     "extract_keywords_from_text",
     "get_dynamic_catalog_description",
     "process_file_content",
+    "compute_text_hash",
+    "MAX_FILE_SIZE_BYTES",
     "sync_local_paths",
     "sync_single_git_repo",
     "run_full_indexing",

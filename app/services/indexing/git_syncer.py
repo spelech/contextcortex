@@ -4,6 +4,7 @@ import app.services.indexing.processor as proc_service
 import os
 import json
 import logging
+import gc
 import sys
 from typing import List, Dict, Any
 import app.services.database as db_service
@@ -90,66 +91,23 @@ def sync_single_git_repo(repo_id: int):
             ".rb", ".php", ".sh", ".sql", ".html", ".css"
         )
 
-        all_points = []
-        all_symbols = []
-        all_routes = []
-        all_calls = []
-        all_summaries = []
-        all_relationships = []
-        indexed_files = []
-
+        files_to_sync = []
         for root, dirs, files in os.walk(temp_dir):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "vendor", "__pycache__", "venv", ".git", "dist", "build")]
             for file in files:
-                if file.startswith(".") or not file.endswith(supported_extensions):
-                    continue
-                full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, temp_dir)
-                doc_type = "code" if is_code_file(full_path) else "doc"
-                lang = detect_language(full_path)
+                if not file.startswith(".") and file.endswith(supported_extensions):
+                    files_to_sync.append(os.path.join(root, file))
 
-                try:
-                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                        content = f.read()
+        total_files = len(files_to_sync)
+        logger.info(f"Discovered {total_files} files in repo '{repo_name}' to index. Purging old records and starting stream...")
 
-                    # Filepath recorded in DB is repo:rel_path
-                    db_filepath = f"{repo_name}://{rel_path}"
-
-                    points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                        filepath=db_filepath,
-                        rel_path=rel_path,
-                        content=content,
-                        repo=repo_name,
-                        doc_type=doc_type,
-                        git_url=git_url,
-                        commit_sha=commit_sha,
-                        provider=provider
-                    )
-                    all_points.extend(points)
-                    all_symbols.extend(symbols)
-                    all_routes.extend(routes)
-                    all_calls.extend(calls)
-                    all_summaries.append(summary_tuple)
-                    all_relationships.extend(rels)
-                    indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0))
-                except Exception as fe:
-                    logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
-
-        # Purge previous vectors for this repo in vector store
+        # Purge previous records upfront
         store = vs_service.get_vector_store()
         try:
             store.delete_by_repo(repo_name)
         except Exception as qe:
             logger.error(f"Error purging old vectors for repo '{repo_name}': {qe}")
 
-        # Bulk upsert new points to vector store
-        if all_points:
-            logger.info(f"Upserting {len(all_points)} vectors for repo '{repo_name}'...")
-            upsert_ok = store.upsert_documents(all_points)
-            if not upsert_ok:
-                raise RuntimeError(f"Failed to upsert {len(all_points)} documents into vector store for repo '{repo_name}'")
-
-        # Update SQLite
         with db_service.get_db_connection() as conn:
             conn.execute("DELETE FROM indexed_files WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM file_summaries WHERE repo = ?", (repo_name,))
@@ -157,76 +115,144 @@ def sync_single_git_repo(repo_id: int):
             conn.execute("DELETE FROM ast_symbols WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM api_routes WHERE repo = ?", (repo_name,))
             conn.execute("DELETE FROM api_client_calls WHERE repo = ?", (repo_name,))
+            conn.commit()
 
-            if indexed_files:
-                conn.executemany(
-                    "INSERT INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime) VALUES (?, ?, ?, ?, ?, ?)",
-                    indexed_files
-                )
-            if all_summaries:
-                conn.executemany(
-                    "INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    all_summaries
-                )
-            if all_symbols:
-                for s in all_symbols:
-                    cursor = conn.execute(
-                        "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
-                    )
-                    s["inserted_id"] = cursor.lastrowid
+        BATCH_SIZE = 25
+        batch_points = []
+        batch_symbols = []
+        batch_routes = []
+        batch_calls = []
+        batch_summaries = []
+        batch_relationships = []
+        batch_indexed_files = []
+        total_vectors_count = 0
+        total_symbols_count = 0
 
-            if all_relationships:
-                sym_map = {}
-                for s in all_symbols:
-                    if "inserted_id" in s:
-                        sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
+        for idx, full_path in enumerate(files_to_sync):
+            rel_path = os.path.relpath(full_path, temp_dir)
+            doc_type = "code" if is_code_file(full_path) else "doc"
+            lang = detect_language(full_path)
+            db_filepath = f"{repo_name}://{rel_path}"
 
-                rel_tuples = []
-                for r in all_relationships:
-                    src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
-                    rel_tuples.append((
-                        r["repo"],
-                        src_id,
-                        r["source_filepath"],
-                        r["source_symbol"],
-                        r["target_symbol"],
-                        r["relationship_type"],
-                        r["line_number"]
-                    ))
+            try:
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
 
-                conn.executemany(
-                    """INSERT INTO ast_relationships
-                       (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    rel_tuples
+                points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                    filepath=db_filepath,
+                    rel_path=rel_path,
+                    content=content,
+                    repo=repo_name,
+                    doc_type=doc_type,
+                    git_url=git_url,
+                    commit_sha=commit_sha,
+                    provider=provider
                 )
-            if all_routes:
-                route_tuples = [
-                    (r["repo"], r["filepath"], r["framework"], r["http_method"], r["path_pattern"], r.get("handler_symbol"), r["start_line"], r["end_line"])
-                    for r in all_routes
-                ]
-                conn.executemany(
-                    "INSERT INTO api_routes (repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    route_tuples
-                )
-            if all_calls:
-                call_tuples = [
-                    (c["repo"], c["filepath"], c.get("http_method"), c["url_pattern"], c.get("caller_symbol"), c["line_number"])
-                    for c in all_calls
-                ]
-                conn.executemany(
-                    "INSERT INTO api_client_calls (repo, filepath, http_method, url_pattern, caller_symbol, line_number) VALUES (?, ?, ?, ?, ?, ?)",
-                    call_tuples
-                )
+                batch_points.extend(points)
+                batch_symbols.extend(symbols)
+                batch_routes.extend(routes)
+                batch_calls.extend(calls)
+                batch_summaries.append(summary_tuple)
+                batch_relationships.extend(rels)
+                batch_indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0))
 
+                if (idx + 1) % 10 == 0 or (idx + 1) == total_files:
+                    pct = int(((idx + 1) / total_files) * 100)
+                    logger.info(f"[{idx+1}/{total_files}] ({pct}%) Ingesting {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
+
+            except Exception as fe:
+                logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
+
+            # Flush batch every BATCH_SIZE files or on the last file
+            if (idx + 1) % BATCH_SIZE == 0 or (idx + 1) == total_files:
+                if batch_points:
+                    upsert_ok = store.upsert_documents(batch_points)
+                    if not upsert_ok:
+                        logger.error(f"Failed to upsert points to vector store during git indexing for repo '{repo_name}'.")
+                        raise RuntimeError(f"Vector store upsert failed during git indexing for repo '{repo_name}'")
+                    total_vectors_count += len(batch_points)
+                    batch_points.clear()
+
+                with db_service.get_db_connection() as conn:
+                    if batch_indexed_files:
+                        conn.executemany(
+                            "INSERT OR REPLACE INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime) VALUES (?, ?, ?, ?, ?, ?)",
+                            batch_indexed_files
+                        )
+                        batch_indexed_files.clear()
+                    if batch_summaries:
+                        conn.executemany(
+                            "INSERT OR REPLACE INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            batch_summaries
+                        )
+                        batch_summaries.clear()
+                    if batch_symbols:
+                        for s in batch_symbols:
+                            cursor = conn.execute(
+                                "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
+                            )
+                            s["inserted_id"] = cursor.lastrowid
+                        total_symbols_count += len(batch_symbols)
+                    if batch_relationships:
+                        sym_map = {}
+                        for s in batch_symbols:
+                            if "inserted_id" in s:
+                                sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
+
+                        rel_tuples = []
+                        for r in batch_relationships:
+                            src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
+                            rel_tuples.append((
+                                r["repo"],
+                                src_id,
+                                r["source_filepath"],
+                                r["source_symbol"],
+                                r["target_symbol"],
+                                r["relationship_type"],
+                                r["line_number"]
+                            ))
+
+                        conn.executemany(
+                            """INSERT INTO ast_relationships
+                               (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
+                               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                            rel_tuples
+                        )
+                        batch_relationships.clear()
+                    if batch_routes:
+                        route_tuples = [
+                            (r["repo"], r["filepath"], r["framework"], r["http_method"], r["path_pattern"], r.get("handler_symbol"), r["start_line"], r["end_line"])
+                            for r in batch_routes
+                        ]
+                        conn.executemany(
+                            "INSERT INTO api_routes (repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            route_tuples
+                        )
+                        batch_routes.clear()
+                    if batch_calls:
+                        call_tuples = [
+                            (c["repo"], c["filepath"], c.get("http_method"), c["url_pattern"], c.get("caller_symbol"), c["line_number"])
+                            for c in batch_calls
+                        ]
+                        conn.executemany(
+                            "INSERT INTO api_client_calls (repo, filepath, http_method, url_pattern, caller_symbol, line_number) VALUES (?, ?, ?, ?, ?, ?)",
+                            call_tuples
+                        )
+                        batch_calls.clear()
+                    batch_symbols.clear()
+                    conn.commit()
+
+                gc.collect()
+
+        with db_service.get_db_connection() as conn:
             conn.execute(
                 "UPDATE git_repositories SET status = 'synced', last_error = NULL, commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
                 (commit_sha, repo_id)
             )
             conn.commit()
 
-        logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Vectors: {len(all_points)}, Symbols: {len(all_symbols)}")
+        logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Total Vectors: {total_vectors_count}, Total Symbols: {total_symbols_count}")
         idx_state.trigger_list_changed_notification()
 
     except Exception as e:

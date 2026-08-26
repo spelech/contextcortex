@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 import re
+import hashlib
 import logging
 from collections import Counter
 from typing import Tuple, List, Dict, Any, Optional
@@ -25,6 +26,14 @@ import sys
 def _get_indexer_attr(name, default):
     mod = sys.modules.get("app.services.indexer")
     return getattr(mod, name, default) if mod else default
+
+
+MAX_FILE_SIZE_BYTES = 500 * 1024  # 500 KB limit for binary/minified files
+
+
+def compute_text_hash(text: str) -> str:
+    """Computes SHA256 hash of utf-8 text."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def get_chunk_uuid(repo: str, rel_path: str, index: int) -> str:
@@ -83,6 +92,64 @@ def get_dynamic_catalog_description() -> str:
 # FILE & REPOSITORY PROCESSORS
 # ----------------------------------------------------
 
+def _resolve_cached_or_compute_embeddings(
+    chunks: List[Dict[str, Any]], 
+    texts_to_embed: List[str]
+) -> List[Dict[str, Any]]:
+    """Resolves embeddings for chunks using SQLite cache, computing only cache misses."""
+    if not chunks:
+        return []
+    
+    active_model = _get_indexer_attr("DENSE_MODEL_NAME", DENSE_MODEL_NAME)
+    chunk_hashes = [compute_text_hash(c.get("content", "").strip()) for c in chunks]
+    cached_map = get_cached_embeddings_batch(chunk_hashes, model_name=active_model)
+    
+    # Collect unique missing hashes
+    missing_hash_to_text = {}
+    for idx, h in enumerate(chunk_hashes):
+        if h not in cached_map and h not in missing_hash_to_text:
+            missing_hash_to_text[h] = texts_to_embed[idx]
+            
+    if missing_hash_to_text:
+        unseen_hashes = list(missing_hash_to_text.keys())
+        unseen_texts = list(missing_hash_to_text.values())
+        embed_fn = _get_indexer_attr("get_hybrid_embeddings_batch", get_hybrid_embeddings_batch)
+        new_vectors = embed_fn(unseen_texts)
+        
+        items_to_cache = []
+        for i, h in enumerate(unseen_hashes):
+            nv = new_vectors[i] if i < len(new_vectors) and isinstance(new_vectors[i], dict) else {}
+            dense_v = nv.get("dense")
+            sparse_obj = nv.get("sparse")
+            s_indices = None
+            s_values = None
+            if sparse_obj is not None:
+                if hasattr(sparse_obj, "indices") and hasattr(sparse_obj, "values"):
+                    s_indices = list(sparse_obj.indices)
+                    s_values = list(sparse_obj.values)
+                elif isinstance(sparse_obj, dict):
+                    s_indices = list(sparse_obj.get("indices", []))
+                    s_values = list(sparse_obj.get("values", []))
+            
+            cached_map[h] = {
+                "dense": dense_v,
+                "sparse_indices": s_indices,
+                "sparse_values": s_values
+            }
+            items_to_cache.append({
+                "chunk_hash": h,
+                "dense_vector": dense_v,
+                "sparse_indices": s_indices,
+                "sparse_values": s_values,
+                "model_name": active_model
+            })
+            
+        if items_to_cache:
+            set_cached_embeddings_batch(items_to_cache)
+            
+    return [cached_map.get(h, {}) for h in chunk_hashes]
+
+
 def process_file_content(
     filepath: str, 
     rel_path: str, 
@@ -95,19 +162,33 @@ def process_file_content(
     provider: Optional[str] = None
 ) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple, List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Processes a single file into vector documents, AST symbols, summary metadata, AST relationships, API routes, and client calls."""
-    language = detect_language(filepath)
-    title = os.path.basename(filepath)
-    folder = os.path.dirname(rel_path) or "root"
-    category = category_override or folder
-    tags = []
-    meta = {}
-
     points: List[VectorDocument] = []
     ast_symbols = []
     ast_relationships = []
     api_routes = []
     api_calls = []
     headings = []
+    tags = []
+    language = detect_language(filepath)
+    title = os.path.basename(filepath)
+    folder = os.path.dirname(rel_path) or "root"
+    category = category_override or folder
+
+    if content and len(content.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
+        logger.warning(f"Skipping file {filepath} exceeding 500KB size limit ({len(content.encode('utf-8'))} bytes)")
+        mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
+        summary_tuple = (
+            filepath,
+            repo,
+            title,
+            folder,
+            category,
+            json.dumps([]),
+            json.dumps([]),
+            json.dumps([]),
+            mtime
+        )
+        return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
 
     if doc_type == "doc":
         if filepath.endswith((".md", ".txt")):
@@ -152,23 +233,15 @@ def process_file_content(
             )
 
         if texts_to_embed:
-            batch_vecs = _get_indexer_attr("get_hybrid_embeddings_batch", get_hybrid_embeddings_batch)(texts_to_embed)
+            batch_vecs = _resolve_cached_or_compute_embeddings(valid_chunks, texts_to_embed)
             for idx, chunk in enumerate(valid_chunks):
                 point_id = get_chunk_uuid(repo, rel_path, idx)
                 github_url = format_git_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"), provider=provider)
                 
                 bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
                 dense_v = bv.get("dense")
-                sparse_obj = bv.get("sparse")
-                s_indices = None
-                s_values = None
-                if sparse_obj is not None:
-                    if hasattr(sparse_obj, "indices") and hasattr(sparse_obj, "values"):
-                        s_indices = list(sparse_obj.indices)
-                        s_values = list(sparse_obj.values)
-                    elif isinstance(sparse_obj, dict):
-                        s_indices = list(sparse_obj.get("indices", []))
-                        s_values = list(sparse_obj.get("values", []))
+                s_indices = bv.get("sparse_indices")
+                s_values = bv.get("sparse_values")
 
                 points.append(VectorDocument(
                     id=point_id,
@@ -215,7 +288,7 @@ def process_file_content(
             )
 
         if texts_to_embed:
-            batch_vecs = _get_indexer_attr("get_hybrid_embeddings_batch", get_hybrid_embeddings_batch)(texts_to_embed)
+            batch_vecs = _resolve_cached_or_compute_embeddings(valid_chunks, texts_to_embed)
             for idx, chunk in enumerate(valid_chunks):
                 point_id = get_chunk_uuid(repo, rel_path, idx)
                 github_url = format_git_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"), provider=provider)
@@ -223,16 +296,8 @@ def process_file_content(
 
                 bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
                 dense_v = bv.get("dense")
-                sparse_obj = bv.get("sparse")
-                s_indices = None
-                s_values = None
-                if sparse_obj is not None:
-                    if hasattr(sparse_obj, "indices") and hasattr(sparse_obj, "values"):
-                        s_indices = list(sparse_obj.indices)
-                        s_values = list(sparse_obj.values)
-                    elif isinstance(sparse_obj, dict):
-                        s_indices = list(sparse_obj.get("indices", []))
-                        s_values = list(sparse_obj.get("values", []))
+                s_indices = bv.get("sparse_indices")
+                s_values = bv.get("sparse_values")
 
                 points.append(VectorDocument(
                     id=point_id,
@@ -256,7 +321,6 @@ def process_file_content(
                     metadata={"kind": chunk.get("kind", "code")}
                 ))
 
-
     mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
     summary_tuple = (
         filepath,
@@ -271,8 +335,3 @@ def process_file_content(
     )
 
     return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
-
-# ----------------------------------------------------
-# INCREMENTAL SCAN & SYNC ENGINE
-# ----------------------------------------------------
-

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **478 Automated Tests** (356 Pytest Backend + 96 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **493 Automated Tests** (371 Pytest Backend + 96 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -751,6 +751,19 @@ classDiagram
 - `test_repo_auto_sync_and_list`
 - `test_auto_sync_interval_edge_cases`
 
+#### `tests/test_doc_links.py` (5 tests)
+- `test_extract_markdown_doc_links`
+- `test_extract_markdown_doc_links_edge_cases`
+- `test_process_file_content_doc_links`
+- `test_graph_builder_doc_links_topology`
+- `test_graph_builder_wikilink_hyphen_space_matching`
+
+#### `tests/test_embedding_cache.py` (4 tests)
+- `test_embedding_cache_set_and_get`
+- `test_embedding_cache_model_isolation`
+- `test_embedding_cache_invalidation`
+- `test_embedding_cache_empty_inputs`
+
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`
 - `test_check_all_auto_sync_repos_skips_up_to_date`
@@ -761,6 +774,14 @@ classDiagram
 - `test_poller_daemon_lifecycle`
 - `test_poller_worker_cycle`
 - `test_poller_worker_disabled_interval`
+
+#### `tests/test_processor_caching.py` (6 tests)
+- `test_compute_text_hash`
+- `test_process_file_content_populates_embedding_cache`
+- `test_process_file_content_uses_cached_embeddings`
+- `test_process_file_content_partial_cache_miss`
+- `test_process_file_content_doc_caching`
+- `test_process_file_content_file_size_guard`
 
 #### `tests/test_webhooks.py` (12 tests)
 - `test_github_webhook_no_secret`
