@@ -1,4 +1,4 @@
-export type ThemeId = 'deep-ocean' | 'midnight-blue' | 'aqua-breeze' | 'azure-daylight' | 'arctic-frost' | 'solar-daybreak';
+export type ThemeId = 'deep-ocean' | 'midnight-blue' | 'lavender-haze' | 'amber-warmth' | 'aqua-breeze' | 'azure-daylight' | 'arctic-frost' | 'solar-daybreak';
 
 export interface ThemeOption {
   id: ThemeId;
@@ -27,18 +27,18 @@ export const AVAILABLE_THEMES: ThemeOption[] = [
     swatches: ['#0a0f1d', '#121a2f', '#3b82f6', '#14b8a6'],
   },
   {
-    id: 'aqua-breeze',
-    name: 'Aqua Breeze',
+    id: 'lavender-haze',
+    name: 'Lavender Haze',
     mode: 'light',
-    description: 'Refreshing aquamarine with vibrant cyan accents and deep petrol text.',
-    swatches: ['#e1f2f5', '#f2fafb', '#0891b2', '#0d9488'],
+    description: 'Elegant soft violet canvas with vibrant purple, fuchsia accents, and plum text.',
+    swatches: ['#f5f3ff', '#faf8ff', '#7c3aed', '#ec4899'],
   },
   {
-    id: 'azure-daylight',
-    name: 'Azure Daylight',
+    id: 'amber-warmth',
+    name: 'Amber Warmth',
     mode: 'light',
-    description: 'Crisp sky blue with cobalt royal blue and indigo highlights.',
-    swatches: ['#e8effe', '#f5f8ff', '#2563eb', '#4f46e5'],
+    description: 'Warm sandstone canvas with terracotta orange, amber accents, and espresso text.',
+    swatches: ['#fdf8f4', '#ffffff', '#ea580c', '#d97706'],
   },
 ];
 
@@ -46,8 +46,8 @@ export function getSavedTheme(): ThemeId {
   if (typeof window === 'undefined') return DEFAULT_THEME;
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId | null;
-    if (saved === 'arctic-frost') return 'aqua-breeze';
-    if (saved === 'solar-daybreak') return 'azure-daylight';
+    if (saved === 'arctic-frost' || saved === 'aqua-breeze') return 'lavender-haze';
+    if (saved === 'solar-daybreak' || saved === 'azure-daylight') return 'amber-warmth';
     if (saved && AVAILABLE_THEMES.some((t) => t.id === saved)) {
       return saved;
     }
