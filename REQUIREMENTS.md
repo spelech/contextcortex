@@ -1,8 +1,8 @@
-# Software Requirements Specification: ContextCortex (v2.8.0)
+# Software Requirements Specification: ContextCortex (v2.9.0)
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **459 Automated Tests** (351 Pytest Backend + 82 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **466 Automated Tests** (351 Pytest Backend + 89 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -871,6 +871,15 @@ classDiagram
 - copies webhook endpoint URL to clipboard
 - handles clipboard copy failure gracefully
 - handles auto-sync load and save API errors gracefully
+
+#### `ThemeSettings.test.tsx` (7 tests)
+- renders theme options with Deep Ocean as default when no storage exists
+- switches theme to Lavender Haze on click and updates localStorage and documentElement
+- switches theme to Amber Warmth on click and updates localStorage and documentElement
+- loads saved theme from localStorage on initial render
+- getSavedTheme and applyTheme utility functions handle storage correctly
+- resolves legacy alias themes and falls back to default on invalid stored theme
+- displays toast message upon switching theme
 
 #### `ToastContext.test.tsx` (5 tests)
 - throws error when useToast is called outside of ToastProvider

@@ -97,4 +97,34 @@ describe('ThemeSettings Component & theme utilities', () => {
     expect(getSavedTheme()).toBe('deep-ocean');
     expect(document.documentElement.getAttribute('data-theme')).toBe('deep-ocean');
   });
+
+  it('resolves legacy alias themes and falls back to default on invalid stored theme', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'arctic-frost');
+    expect(getSavedTheme()).toBe('lavender-haze');
+
+    localStorage.setItem(THEME_STORAGE_KEY, 'aqua-breeze');
+    expect(getSavedTheme()).toBe('lavender-haze');
+
+    localStorage.setItem(THEME_STORAGE_KEY, 'solar-daybreak');
+    expect(getSavedTheme()).toBe('amber-warmth');
+
+    localStorage.setItem(THEME_STORAGE_KEY, 'azure-daylight');
+    expect(getSavedTheme()).toBe('amber-warmth');
+
+    localStorage.setItem(THEME_STORAGE_KEY, 'non-existent-theme');
+    expect(getSavedTheme()).toBe('deep-ocean');
+  });
+
+  it('displays toast message upon switching theme', () => {
+    render(
+      <ToastProvider>
+        <ThemeSettings />
+      </ToastProvider>
+    );
+
+    const lavenderRadio = screen.getByRole('radio', { name: /Select Lavender Haze theme/i });
+    fireEvent.click(lavenderRadio);
+
+    expect(screen.getByText('Switched theme to Lavender Haze')).toBeInTheDocument();
+  });
 });
