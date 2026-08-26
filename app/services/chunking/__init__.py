@@ -15,6 +15,7 @@ from app.services.chunking.text_chunker import (
     extract_target_from_call_node,
     extract_import_targets,
     extract_inheritance_relationships,
+    extract_markdown_doc_links,
 )
 from app.services.chunking.api_route_extractor import (
     normalize_path_pattern,
@@ -43,6 +44,7 @@ __all__ = [
     "extract_target_from_call_node",
     "extract_import_targets",
     "extract_inheritance_relationships",
+    "extract_markdown_doc_links",
     "normalize_path_pattern",
     "route_pattern_to_regex",
     "match_route_and_call",

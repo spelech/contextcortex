@@ -132,6 +132,9 @@ def process_file_content(
             except Exception:
                 pass
         
+        doc_relationships = extract_markdown_doc_links(content, filepath=filepath, repo=repo)
+        ast_relationships = [r.model_dump() for r in doc_relationships]
+
         chunks_models = chunk_markdown(content, max_chars=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
         chunks = [c.model_dump() for c in chunks_models]
         valid_chunks = [c for c in chunks if c.get("content", "").strip()]

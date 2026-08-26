@@ -226,9 +226,70 @@ def get_topology_graph(
             for rt_id in matched_route_ids:
                 add_edge(caller_node_id, rt_id, "ROUTES_TO", c["line_number"])
 
-    # AST Relationships (IMPORTS, CALLS, DEFINES)
+    # AST Relationships (IMPORTS, CALLS, DEFINES, DOC_LINKS_TO)
     for rel in rel_rows:
-        rel_type = (rel["relationship_type"] or "CALLS").upper()
+        raw_rel_type = (rel["relationship_type"] or "CALLS").upper()
+
+        if raw_rel_type == "DOC_LINKS_TO":
+            clean_src_fp = _clean_filepath(rel["source_filepath"])
+            src_f_id = file_id_by_path.get((rel["repo"], clean_src_fp)) or file_id_by_path.get((rel["repo"], rel["source_filepath"]))
+            if not src_f_id:
+                for (f_repo, f_path), f_id in file_id_by_path.items():
+                    if f_repo == rel["repo"] and (f_path.endswith(clean_src_fp) or clean_src_fp.endswith(f_path)):
+                        src_f_id = f_id
+                        break
+
+            tgt_sym = rel["target_symbol"]
+            tgt_f_id = None
+
+            # 1. Exact path match in repo
+            if (rel["repo"], tgt_sym) in file_id_by_path:
+                tgt_f_id = file_id_by_path.get((rel["repo"], tgt_sym))
+
+            # 2. Relative path resolution from source file's directory
+            if not tgt_f_id:
+                src_dir = os.path.dirname(clean_src_fp)
+                norm_tgt = os.path.normpath(os.path.join(src_dir, tgt_sym)).replace("\\", "/")
+                tgt_f_id = file_id_by_path.get((rel["repo"], norm_tgt))
+
+            # 3. With common doc extensions (.md, .txt, .markdown)
+            if not tgt_f_id:
+                for ext in (".md", ".txt", ".markdown"):
+                    cand = tgt_sym + ext
+                    if (rel["repo"], cand) in file_id_by_path:
+                        tgt_f_id = file_id_by_path.get((rel["repo"], cand))
+                        break
+                    src_dir = os.path.dirname(clean_src_fp)
+                    norm_tgt = os.path.normpath(os.path.join(src_dir, cand)).replace("\\", "/")
+                    if (rel["repo"], norm_tgt) in file_id_by_path:
+                        tgt_f_id = file_id_by_path.get((rel["repo"], norm_tgt))
+                        break
+
+            # 4. Basename / Title / Wikilink match across repo files
+            if not tgt_f_id:
+                tgt_base = os.path.splitext(os.path.basename(tgt_sym))[0].lower()
+                tgt_clean = tgt_sym.lower().replace("-", " ").replace("_", " ")
+                for (f_repo, f_path), f_id in file_id_by_path.items():
+                    if f_repo == rel["repo"]:
+                        f_base = os.path.splitext(os.path.basename(f_path))[0].lower()
+                        f_clean = f_base.replace("-", " ").replace("_", " ")
+                        if f_base == tgt_base or f_clean == tgt_clean or f_path.lower().endswith(tgt_sym.lower()):
+                            tgt_f_id = f_id
+                            break
+
+            # 5. Cross-repo fallback
+            if not tgt_f_id:
+                for (f_repo, f_path), f_id in file_id_by_path.items():
+                    f_base = os.path.splitext(os.path.basename(f_path))[0].lower()
+                    if f_base == os.path.splitext(os.path.basename(tgt_sym))[0].lower():
+                        tgt_f_id = f_id
+                        break
+
+            if src_f_id and tgt_f_id and src_f_id != tgt_f_id:
+                add_edge(src_f_id, tgt_f_id, "DOC_LINKS_TO", rel["line_number"], label="LINKS_TO")
+            continue
+
+        rel_type = raw_rel_type
         if rel_type not in ("IMPORTS", "CALLS", "DEFINES", "HANDLES", "ROUTES_TO"):
             rel_type = "CALLS"
 

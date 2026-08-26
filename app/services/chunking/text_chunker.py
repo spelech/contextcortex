@@ -1,7 +1,7 @@
 import os
 import re
-from typing import List, Dict, Any, Optional
-from app.models.schemas import MarkdownChunk
+from typing import List, Dict, Any, Optional, Set, Tuple
+from app.models.schemas import MarkdownChunk, CodeRelationship
 from app.services.chunking.tree_sitter_loader import detect_language
 
 def split_by_length(text: str, heading: str, max_chars: int = 1500, overlap: int = 200) -> List[Dict[str, Any]]:
@@ -87,6 +87,92 @@ def chunk_markdown(text: str, max_chars: int = 1500, overlap: int = 200) -> List
         chunks.extend(sub_chunks)
 
     return [MarkdownChunk(**c) for c in chunks]
+
+WIKILINK_PATTERN = re.compile(r'(?<!\!)\[\[([^\]]+)\]\]')
+MD_LINK_PATTERN = re.compile(r'(?<!\!)\[([^\]]*)\]\(([^)]+)\)')
+
+def extract_markdown_doc_links(content: str, filepath: str, repo: str) -> List[CodeRelationship]:
+    """
+    Extracts relative markdown links and Obsidian wikilinks from documentation content,
+    returning a list of CodeRelationship objects with relationship_type="DOC_LINKS_TO".
+    """
+    if not content:
+        return []
+
+    source_symbol = os.path.basename(filepath) if filepath else ""
+    relationships: List[CodeRelationship] = []
+    seen: Set[Tuple[str, int]] = set()
+
+    for line_idx, line in enumerate(content.split("\n"), start=1):
+        # 1. Match Obsidian wikilinks: [[Target]] or [[Target|Label]] or [[Target#Section|Label]]
+        for m in WIKILINK_PATTERN.finditer(line):
+            inner = m.group(1).strip()
+            if not inner:
+                continue
+            # Split pipe for label
+            target_part = inner.split("|", 1)[0].strip()
+            # If section anchor on same doc (e.g. [[#Section]]), skip
+            if target_part.startswith("#"):
+                continue
+            # Strip heading anchor if present (e.g. Target#Section -> Target)
+            target_name = target_part.split("#", 1)[0].strip()
+            if not target_name:
+                continue
+
+            dedup_key = (target_name, line_idx)
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                relationships.append(CodeRelationship(
+                    repo=repo,
+                    source_filepath=filepath,
+                    source_symbol=source_symbol,
+                    target_symbol=target_name,
+                    relationship_type="DOC_LINKS_TO",
+                    line_number=line_idx
+                ))
+
+        # 2. Match standard markdown links: [label](target) or [label](target "title")
+        for m in MD_LINK_PATTERN.finditer(line):
+            raw_target = m.group(2).strip()
+            if not raw_target:
+                continue
+            # Strip title in quotes if present, e.g. path/to/doc.md "Title"
+            url_part = raw_target.split()[0].strip()
+            if url_part.startswith("<") and url_part.endswith(">"):
+                url_part = url_part[1:-1].strip()
+
+            # Ignore web URLs, protocols, and anchors
+            if re.match(r'^(?:https?://|mailto:|ftp://|file://|javascript:|data:|//)', url_part, re.IGNORECASE):
+                continue
+            if url_part.startswith("#"):
+                continue
+
+            # Strip fragment / anchor if present in target URL (e.g. doc.md#section -> doc.md)
+            if "#" in url_part:
+                target_doc = url_part.split("#", 1)[0].strip()
+            else:
+                target_doc = url_part
+
+            # Strip query params if present (e.g. doc.md?v=1 -> doc.md)
+            if "?" in target_doc:
+                target_doc = target_doc.split("?", 1)[0].strip()
+
+            if not target_doc:
+                continue
+
+            dedup_key = (target_doc, line_idx)
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                relationships.append(CodeRelationship(
+                    repo=repo,
+                    source_filepath=filepath,
+                    source_symbol=source_symbol,
+                    target_symbol=target_doc,
+                    relationship_type="DOC_LINKS_TO",
+                    line_number=line_idx
+                ))
+
+    return relationships
 
 # Tree-sitter node type queries per language for AST chunking & outline
 CODE_CONTAINER_TYPES = {
