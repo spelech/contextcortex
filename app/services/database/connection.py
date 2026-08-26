@@ -116,6 +116,8 @@ def init_db(vault_path: str = "/docs"):
                 conn.execute(f"ALTER TABLE indexed_files ADD COLUMN {col} TEXT DEFAULT {default}")
             except Exception:
                 pass
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_indexed_files_repo_hash ON indexed_files(repo, hash)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_indexed_files_repo ON indexed_files(repo)")
 
         conn.execute("""
             CREATE TABLE IF NOT EXISTS file_summaries (
