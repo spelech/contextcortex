@@ -1,12 +1,14 @@
-import app.services.indexing.local_syncer as local_syncer
-import app.services.indexing.state as idx_state
-import app.services.indexing.processor as proc_service
 import os
 import json
 import logging
 import gc
 import sys
-from typing import List, Dict, Any
+import hashlib
+from typing import List, Dict, Any, Tuple, Optional
+
+import app.services.indexing.local_syncer as local_syncer
+import app.services.indexing.state as idx_state
+import app.services.indexing.processor as proc_service
 import app.services.database as db_service
 from app.services.database import *
 from app.services.chunking import *
@@ -21,15 +23,75 @@ from app.services.indexing.state import (
     trigger_list_changed_notification, ensure_collection
 )
 from app.services.indexing.processor import (
-    process_file_content, get_chunk_uuid, extract_keywords_from_text, get_dynamic_catalog_description
+    process_file_content, get_chunk_uuid, extract_keywords_from_text, get_dynamic_catalog_description,
+    compute_text_hash
 )
 from app.services.indexing.local_syncer import sync_local_paths
 
 logger = logging.getLogger('contextcortex.indexer')
-import sys
+
+DEFAULT_SUPPORTED_EXTENSIONS = (
+    ".md", ".txt", ".yaml", ".yml", ".json", ".py", ".js", ".jsx", 
+    ".ts", ".tsx", ".go", ".rs", ".cs", ".cpp", ".c", ".h", ".java", 
+    ".rb", ".php", ".sh", ".sql", ".html", ".css"
+)
+
+
+def compute_git_repo_delta(
+    temp_dir: str, 
+    repo_name: str, 
+    supported_extensions: Optional[Tuple[str, ...]] = None
+) -> Tuple[List[str], List[str], List[str], List[str]]:
+    """
+    Computes delta between local cloned repository and indexed_files table in DB.
+    Returns: (added_files, modified_files, deleted_filepaths, unchanged_files)
+      - added_files: List of full file paths on disk that do not exist in DB
+      - modified_files: List of full file paths on disk whose content SHA256 hash != DB hash
+      - deleted_filepaths: List of db_filepath strings ('repo://rel_path') in DB that no longer exist on disk
+      - unchanged_files: List of full file paths on disk whose content SHA256 hash == DB hash
+    """
+    exts = supported_extensions if supported_extensions is not None else DEFAULT_SUPPORTED_EXTENSIONS
+    
+    with db_service.get_db_connection() as conn:
+        rows = conn.execute("SELECT filepath, hash FROM indexed_files WHERE repo = ?", (repo_name,)).fetchall()
+        db_files = {r["filepath"]: r["hash"] for r in rows}
+    
+    found_filepaths = set()
+    added_files = []
+    modified_files = []
+    unchanged_files = []
+
+    for root, dirs, files in os.walk(temp_dir):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "vendor", "__pycache__", "venv", ".git", "dist", "build")]
+        for file in files:
+            if not file.startswith(".") and file.endswith(exts):
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, temp_dir)
+                db_filepath = f"{repo_name}://{rel_path}"
+                found_filepaths.add(db_filepath)
+                
+                try:
+                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                    file_hash = proc_service.compute_text_hash(content)
+                except Exception as e:
+                    logger.warning(f"Failed to read/hash file {full_path}: {e}")
+                    continue
+
+                if db_filepath not in db_files:
+                    added_files.append(full_path)
+                elif db_files[db_filepath] != file_hash:
+                    modified_files.append(full_path)
+                else:
+                    unchanged_files.append(full_path)
+
+    deleted_filepaths = [fp for fp in db_files.keys() if fp not in found_filepaths]
+
+    return added_files, modified_files, deleted_filepaths, unchanged_files
+
 
 def sync_single_git_repo(repo_id: int):
-    """Ephemeral shallow clone, AST parse, hybrid vector upsert, and immediate disk cleanup."""
+    """Ephemeral shallow clone, delta calculation, incremental vector upsert, and immediate disk cleanup."""
     repo_name = f"repo-{repo_id}"
     temp_dir = None
     try:
@@ -85,37 +147,51 @@ def sync_single_git_repo(repo_id: int):
                 conn.commit()
             return
 
-        supported_extensions = (
-            ".md", ".txt", ".yaml", ".yml", ".json", ".py", ".js", ".jsx", 
-            ".ts", ".tsx", ".go", ".rs", ".cs", ".cpp", ".c", ".h", ".java", 
-            ".rb", ".php", ".sh", ".sql", ".html", ".css"
+        added_files, modified_files, deleted_filepaths, unchanged_files = compute_git_repo_delta(temp_dir, repo_name)
+        total_delta = len(added_files) + len(modified_files) + len(deleted_filepaths)
+        logger.info(
+            f"Git delta computed for '{repo_name}': {len(added_files)} added, "
+            f"{len(modified_files)} modified, {len(deleted_filepaths)} deleted, {len(unchanged_files)} unchanged"
         )
 
-        files_to_sync = []
-        for root, dirs, files in os.walk(temp_dir):
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "vendor", "__pycache__", "venv", ".git", "dist", "build")]
-            for file in files:
-                if not file.startswith(".") and file.endswith(supported_extensions):
-                    files_to_sync.append(os.path.join(root, file))
+        if total_delta == 0:
+            logger.info(f"Repo '{repo_name}' delta is empty (all {len(unchanged_files)} files unchanged). Updating commit SHA.")
+            with db_service.get_db_connection() as conn:
+                conn.execute(
+                    "UPDATE git_repositories SET status = 'synced', last_error = NULL, commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
+                    (commit_sha, repo_id)
+                )
+                conn.commit()
+            idx_state.trigger_list_changed_notification()
+            return
 
-        total_files = len(files_to_sync)
-        logger.info(f"Discovered {total_files} files in repo '{repo_name}' to index. Purging old records and starting stream...")
-
-        # Purge previous records upfront
+        # Delete old vector points & SQLite rows ONLY for modified and deleted files
         store = vs_service.get_vector_store()
-        try:
-            store.delete_by_repo(repo_name)
-        except Exception as qe:
-            logger.error(f"Error purging old vectors for repo '{repo_name}': {qe}")
+        modified_db_filepaths = [f"{repo_name}://{os.path.relpath(f, temp_dir)}" for f in modified_files]
+        paths_to_delete = modified_db_filepaths + deleted_filepaths
 
-        with db_service.get_db_connection() as conn:
-            conn.execute("DELETE FROM indexed_files WHERE repo = ?", (repo_name,))
-            conn.execute("DELETE FROM file_summaries WHERE repo = ?", (repo_name,))
-            conn.execute("DELETE FROM ast_relationships WHERE repo = ?", (repo_name,))
-            conn.execute("DELETE FROM ast_symbols WHERE repo = ?", (repo_name,))
-            conn.execute("DELETE FROM api_routes WHERE repo = ?", (repo_name,))
-            conn.execute("DELETE FROM api_client_calls WHERE repo = ?", (repo_name,))
-            conn.commit()
+        for fpath in paths_to_delete:
+            try:
+                store.delete_by_path(fpath)
+            except Exception as qe:
+                logger.error(f"Error deleting vector for {fpath}: {qe}")
+
+        if paths_to_delete:
+            with db_service.get_db_connection() as conn:
+                for fpath in paths_to_delete:
+                    conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
+                    conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
+                    conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
+                    conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (fpath,))
+                    conn.execute("DELETE FROM file_summaries WHERE filepath = ?", (fpath,))
+                for fpath in deleted_filepaths:
+                    conn.execute("DELETE FROM indexed_files WHERE filepath = ?", (fpath,))
+                conn.commit()
+
+        # Ingest added and modified files in batches
+        files_to_sync = added_files + modified_files
+        total_files = len(files_to_sync)
+        logger.info(f"Ingesting {total_files} added/modified files for repo '{repo_name}'...")
 
         BATCH_SIZE = 25
         batch_points = []
@@ -138,6 +214,8 @@ def sync_single_git_repo(repo_id: int):
                 with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
 
+                file_hash = proc_service.compute_text_hash(content)
+
                 points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
                     filepath=db_filepath,
                     rel_path=rel_path,
@@ -154,7 +232,7 @@ def sync_single_git_repo(repo_id: int):
                 batch_calls.extend(calls)
                 batch_summaries.append(summary_tuple)
                 batch_relationships.extend(rels)
-                batch_indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0))
+                batch_indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash))
 
                 if (idx + 1) % 10 == 0 or (idx + 1) == total_files:
                     pct = int(((idx + 1) / total_files) * 100)
@@ -176,7 +254,7 @@ def sync_single_git_repo(repo_id: int):
                 with db_service.get_db_connection() as conn:
                     if batch_indexed_files:
                         conn.executemany(
-                            "INSERT OR REPLACE INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime) VALUES (?, ?, ?, ?, ?, ?)",
+                            "INSERT OR REPLACE INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
                             batch_indexed_files
                         )
                         batch_indexed_files.clear()
@@ -252,7 +330,7 @@ def sync_single_git_repo(repo_id: int):
             )
             conn.commit()
 
-        logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Total Vectors: {total_vectors_count}, Total Symbols: {total_symbols_count}")
+        logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Delta: +{len(added_files)} ~{len(modified_files)} -{len(deleted_filepaths)}. Vectors: {total_vectors_count}, Symbols: {total_symbols_count}")
         idx_state.trigger_list_changed_notification()
 
     except Exception as e:
@@ -266,6 +344,7 @@ def sync_single_git_repo(repo_id: int):
     finally:
         # Crucial: Ephemeral disk cleanup!
         gm_service.cleanup_repo_dir(temp_dir)
+
 
 def run_full_indexing():
     global is_indexing
@@ -294,8 +373,6 @@ def run_full_indexing():
         is_indexing = False
         indexing_lock.release()
 
+
 # Register re-index callback with VectorStoreManager
 VectorStoreManager.register_reindex_callback(run_full_indexing)
-
-
-

@@ -80,7 +80,7 @@ def test_sync_single_git_repo_full_success(temp_edge_db, tmp_path):
         
         sync_single_git_repo(repo_id)
 
-        mock_store.delete_by_repo.assert_called_once_with("success-repo")
+        mock_store.delete_by_repo.assert_not_called()
         mock_store.upsert_documents.assert_called_once()
         mock_cleanup.assert_called_once()
 
@@ -99,17 +99,15 @@ def test_sync_single_git_repo_file_parse_error(temp_edge_db, tmp_path):
     code_file.write_text("def broken_code(): pass")
 
     with get_db_connection() as conn:
-        conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('parse-err-repo', 'https://github.com/example/parse.git', 'main', 'oldsha', 'pending')")
+        conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('parse-err-repo', 'https://github.com/example/err.git', 'main', 'oldsha', 'pending')")
         conn.commit()
         repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    with patch("app.services.git_manager.get_remote_head_sha", return_value="sha_parse_err"), \
-         patch("app.services.git_manager.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_parse_err", error=None)), \
-         patch("app.services.indexing.processor.process_file_content", side_effect=Exception("AST corrupt")), \
-         patch("app.services.vector_store.get_vector_store") as mock_get_store, \
+    with patch("app.services.git_manager.get_remote_head_sha", return_value="sha_err"), \
+         patch("app.services.git_manager.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="sha_err", error=None)), \
+         patch("app.services.indexing.git_syncer.proc_service.process_file_content", side_effect=Exception("AST failure")), \
+         patch("app.services.vector_store.get_vector_store"), \
          patch("app.services.git_manager.cleanup_repo_dir") as mock_cleanup:
-        mock_store = MagicMock()
-        mock_get_store.return_value = mock_store
         
         sync_single_git_repo(repo_id)
         mock_cleanup.assert_called_once()
@@ -122,6 +120,7 @@ def test_sync_single_git_repo_qdrant_purge_error(temp_edge_db, tmp_path):
 
     with get_db_connection() as conn:
         conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES ('qdrant-err-repo', 'https://github.com/example/qdrant.git', 'main', 'oldsha', 'pending')")
+        conn.execute("INSERT INTO indexed_files (filepath, repo, doc_type, hash) VALUES ('qdrant-err-repo://valid.py', 'qdrant-err-repo', 'code', 'old_hash')")
         conn.commit()
         repo_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -131,7 +130,7 @@ def test_sync_single_git_repo_qdrant_purge_error(temp_edge_db, tmp_path):
          patch("app.services.embeddings.get_hybrid_embeddings_batch", return_value=[{"dense": [0.1]*384, "sparse": None}]), \
          patch("app.services.git_manager.cleanup_repo_dir") as mock_cleanup:
         mock_store = MagicMock()
-        mock_store.delete_by_repo.side_effect = Exception("Purge vectors failed")
+        mock_store.delete_by_path.side_effect = Exception("Purge vectors failed")
         mock_get_store.return_value = mock_store
         
         sync_single_git_repo(repo_id)

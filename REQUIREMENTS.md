@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **493 Automated Tests** (371 Pytest Backend + 96 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **499 Automated Tests** (377 Pytest Backend + 96 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -763,6 +763,14 @@ classDiagram
 - `test_embedding_cache_model_isolation`
 - `test_embedding_cache_invalidation`
 - `test_embedding_cache_empty_inputs`
+
+#### `tests/test_git_incremental.py` (6 tests)
+- `test_compute_git_repo_delta`
+- `test_compute_git_repo_delta_custom_extensions`
+- `test_sync_single_git_repo_noop_on_empty_delta`
+- `test_sync_single_git_repo_incremental_delta`
+- `test_sync_single_git_repo_batching_over_25`
+- `test_sync_single_git_repo_clone_error`
 
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`
