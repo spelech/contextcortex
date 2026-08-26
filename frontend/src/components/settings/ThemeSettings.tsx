@@ -46,6 +46,10 @@ export function ThemeSettings() {
               <div className="theme-card-header">
                 <div className="theme-card-title">
                   <span>{theme.name}</span>
+                  <span className="badge" style={{ fontSize: '0.68rem', fontWeight: 500, opacity: 0.85, padding: '2px 6px' }}>
+                    <i className={`fa-solid ${theme.mode === 'dark' ? 'fa-moon' : 'fa-sun'}`} style={{ marginRight: '3px' }}></i>
+                    {theme.mode === 'dark' ? 'Dark' : 'Light'}
+                  </span>
                 </div>
                 {isActive ? (
                   <span className="badge badge-accent">

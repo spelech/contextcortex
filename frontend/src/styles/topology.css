@@ -265,14 +265,14 @@
 }
 
 .topology-code-snippet {
-    background: #030509;
+    background: var(--code-bg);
     border: 1px solid var(--border-card);
     border-radius: 8px;
     padding: 12px;
     font-family: var(--font-family-mono);
     font-size: 0.78rem;
     line-height: 1.45;
-    color: #e2e8f0;
+    color: var(--text);
     overflow-x: auto;
     max-height: 220px;
     white-space: pre-wrap;

@@ -53,6 +53,38 @@
     --radius: 12px;
 }
 
+[data-theme="arctic-frost"] {
+    --bg-base: #edf6f7;
+    --bg-card: #ffffff;
+    --border-card: #cde2e5;
+    --primary: #0891b2;
+    --primary-hover: #0e7490;
+    --accent: #0d9488;
+    --accent-light: #14b8a6;
+    --danger: #dc2626;
+    --danger-hover: #b91c1c;
+    --text: #0f172a;
+    --text-muted: #526e74;
+    --code-bg: rgba(7, 24, 27, 0.06);
+    --radius: 10px;
+}
+
+[data-theme="solar-daybreak"] {
+    --bg-base: #f1f5f9;
+    --bg-card: #ffffff;
+    --border-card: #cbd5e1;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --accent: #0d9488;
+    --accent-light: #0f766e;
+    --danger: #dc2626;
+    --danger-hover: #b91c1c;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --code-bg: rgba(15, 23, 42, 0.06);
+    --radius: 12px;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -295,7 +327,7 @@ body {
     font-size: var(--font-size-xl);
     font-weight: var(--font-weight-extrabold);
     font-family: var(--font-family-mono);
-    color: #fff;
+    color: var(--text);
     line-height: 1.1;
 }
 
@@ -330,7 +362,7 @@ body {
     gap: 12px;
     font-size: 0.9rem;
     padding: 10px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--border-card);
 }
 
 .spec-row span:first-child {
@@ -377,9 +409,9 @@ body {
 }
 
 .topic-tag {
-    background: rgba(20, 184, 166, 0.12);
-    border: 1px solid rgba(20, 184, 166, 0.25);
-    color: var(--accent-light);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    color: var(--accent);
     padding: 4px 10px;
     border-radius: 6px;
     font-size: var(--font-size-xs);
@@ -395,14 +427,14 @@ body {
 }
 
 .badge-primary {
-    background: color-mix(in srgb, var(--primary) 20%, transparent);
-    color: #67e8f9;
-    border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
+    background: color-mix(in srgb, var(--primary) 15%, transparent);
+    color: var(--primary);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
 }
 
 .badge-accent {
-    background: rgba(20, 184, 166, 0.2);
-    color: #5eead4;
-    border: 1px solid rgba(20, 184, 166, 0.3);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
