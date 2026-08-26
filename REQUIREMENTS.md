@@ -1,8 +1,8 @@
-# Software Requirements Specification: ContextCortex (v2.9.0)
+# Software Requirements Specification: ContextCortex (v2.10.0)
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **466 Automated Tests** (351 Pytest Backend + 89 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **478 Automated Tests** (356 Pytest Backend + 96 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -386,7 +386,7 @@ classDiagram
 - `test_client_call_detection`
 - `test_multi_repo_contract_linking_and_mcp_tools`
 
-#### `tests/backend/test_api_routes.py` (15 tests)
+#### `tests/backend/test_api_routes.py` (17 tests)
 - `test_api_get_stats_with_keywords`
 - `test_api_get_stats_error`
 - `test_api_repos_crud`
@@ -402,6 +402,8 @@ classDiagram
 - `test_api_browse_dir_error`
 - `test_api_logs_endpoints`
 - `test_api_logs_error_handlers`
+- `test_api_embedding_settings`
+- `test_api_embedding_settings_errors`
 
 #### `tests/backend/test_api_vector_store.py` (14 tests)
 - `test_api_get_vector_store_success` - _Test retrieving active vector store configuration and stats._
@@ -517,7 +519,7 @@ classDiagram
 - `test_check_github_rate_limit_non_200`
 - `test_check_github_rate_limit_exception`
 
-#### `tests/backend/test_indexer_and_embeddings.py` (22 tests)
+#### `tests/backend/test_indexer_and_embeddings.py` (25 tests)
 - `test_embeddings_generation`
 - `test_empty_embeddings_batches`
 - `test_api_embeddings_mode`
@@ -540,6 +542,9 @@ classDiagram
 - `test_notify_list_changed_empty`
 - `test_notify_list_changed_session_error`
 - `test_trigger_list_changed_notification`
+- `test_detect_system_resources_and_cgroups`
+- `test_embedding_db_config_get_set`
+- `test_update_embedding_config`
 
 #### `tests/backend/test_indexer_edge_cases.py` (11 tests)
 - `test_sync_single_git_repo_not_found`
@@ -807,6 +812,12 @@ classDiagram
 - displays error toast when log fetching fails
 - renders responsive layout elements for toolbar, search input, and log entry stream
 
+#### `EmbeddingSettings.test.tsx` (4 tests)
+- renders loading state when embedding configuration is not yet loaded
+- renders active status with hardware metrics and local model parameters
+- handles provider switch to API and updates form fields
+- handles changes to CPU threads and batch size
+
 #### `GitRepoManager.test.tsx` (11 tests)
 - renders repository list with status badges, auto-sync buttons, and details
 - shows empty state when no repositories are registered
@@ -845,7 +856,7 @@ classDiagram
 - performs doc search with repo filter and renders documentation hits
 - renders search query form and hit card headers with responsive classes
 
-#### `Settings.test.tsx` (25 tests)
+#### `Settings.test.tsx` (28 tests)
 - renders vector database panel, auto-sync panel, multi-provider token boxes, rate limits, and host vault list
 - handles empty stats or fallback provider auth structure and vector store load error
 - switches vector store form fields between embedded and remote modes and changes default paths/urls
@@ -871,6 +882,9 @@ classDiagram
 - copies webhook endpoint URL to clipboard
 - handles clipboard copy failure gracefully
 - handles auto-sync load and save API errors gracefully
+- renders embedding engine settings panel with current CPU threads, batch size, and system hardware
+- updates thread cap and batch size and saves embedding settings
+- handles embedding save failure and load errors gracefully
 
 #### `ThemeSettings.test.tsx` (7 tests)
 - renders theme options with Deep Ocean as default when no storage exists

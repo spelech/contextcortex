@@ -1,4 +1,4 @@
-# Developer Documentation: ContextCortex (v2.9.0)
+# Developer Documentation: ContextCortex (v2.10.0)
 
 This document provides instructions for developing, testing, configuring, and running ContextCortex locally.
 
@@ -70,9 +70,11 @@ cd contextcortex
    ```bash
    export VECTOR_STORE_PROVIDER="qdrant" # "qdrant" or "chroma"
    export COLLECTION_NAME="knowledge_rag_v1"
-   export EMBEDDING_PROVIDER="local"
+   export EMBEDDING_PROVIDER="local" # "local" (FastEmbed) or "api" (LiteLLM)
    export EMBEDDING_MODEL="BAAI/bge-small-en-v1.5"
    export SPARSE_MODEL="Qdrant/bm25"
+   export EMBEDDING_NUM_THREADS=2 # CPU thread cap for ONNX (defaults to min(2, system_cpus))
+   export EMBEDDING_BATCH_SIZE=32 # Batch size for tokenization (defaults to 32)
    export GITHUB_TOKEN="ghp_your_token" # Optional: For higher rate limits & private repos
    ```
 

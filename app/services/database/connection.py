@@ -280,6 +280,22 @@ def init_db(vault_path: str = "/docs"):
         except Exception as ve:
             logger.error(f"Failed to seed vector store configuration: {ve}")
 
+        try:
+            emb_cfg = _resolve_default_embedding_config(conn)
+            for key, val in [
+                ("embedding_provider", emb_cfg["provider"]),
+                ("embedding_dense_model", emb_cfg["dense_model"]),
+                ("embedding_sparse_model", emb_cfg["sparse_model"]),
+                ("embedding_num_threads", str(emb_cfg["threads"])),
+                ("embedding_batch_size", str(emb_cfg["batch_size"])),
+                ("embedding_litellm_url", emb_cfg["litellm_url"]),
+            ]:
+                row = conn.execute("SELECT value FROM system_metadata WHERE key = ?", (key,)).fetchone()
+                if row is None:
+                    conn.execute("INSERT INTO system_metadata (key, value) VALUES (?, ?)", (key, str(val)))
+        except Exception as ee:
+            logger.error(f"Failed to seed embedding configuration: {ee}")
+
         conn.commit()
 
 def get_metadata(key: str, default: Optional[str] = None) -> Optional[str]:
@@ -381,3 +397,117 @@ def set_vector_store_db_config(
         set_metadata("vector_store_url", url.strip())
     if collection is not None:
         set_metadata("vector_store_collection", collection.strip())
+
+def detect_system_resources() -> Dict[str, Any]:
+    """Detects available CPU cores and RAM in the execution environment, respecting container quotas."""
+    import math
+    cpus = os.cpu_count() or 2
+    # Check cgroup v2
+    if os.path.exists("/sys/fs/cgroup/cpu.max"):
+        try:
+            with open("/sys/fs/cgroup/cpu.max", "r") as f:
+                parts = f.read().strip().split()
+                if len(parts) == 2 and parts[0] != "max":
+                    quota, period = float(parts[0]), float(parts[1])
+                    if period > 0:
+                        cpus = max(1, math.ceil(quota / period))
+        except Exception:
+            pass
+    # Check cgroup v1
+    elif os.path.exists("/sys/fs/cgroup/cpu/cpu.cfs_quota_us") and os.path.exists("/sys/fs/cgroup/cpu/cpu.cfs_period_us"):
+        try:
+            with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "r") as f_q, open("/sys/fs/cgroup/cpu/cpu.cfs_period_us", "r") as f_p:
+                quota = float(f_q.read().strip())
+                period = float(f_p.read().strip())
+                if quota > 0 and period > 0:
+                    cpus = max(1, math.ceil(quota / period))
+        except Exception:
+            pass
+
+    mem_gb = 4.0
+    try:
+        if hasattr(os, "sysconf") and "SC_PAGE_SIZE" in os.sysconf_names and "SC_PHYS_PAGES" in os.sysconf_names:
+            mem_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+            mem_gb = round(mem_bytes / (1024 ** 3), 1)
+    except Exception:
+        pass
+    return {"cpus": cpus, "memory_gb": mem_gb}
+
+def _resolve_default_embedding_config(conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
+    sys_res = detect_system_resources()
+    default_threads = min(2, max(1, sys_res["cpus"]))
+    
+    env_threads = os.getenv("EMBEDDING_NUM_THREADS") or os.getenv("EMBEDDING_THREADS")
+    threads = int(env_threads) if env_threads and env_threads.isdigit() else default_threads
+
+    env_batch = os.getenv("EMBEDDING_BATCH_SIZE")
+    batch_size = int(env_batch) if env_batch and env_batch.isdigit() else 32
+
+    provider = os.getenv("EMBEDDING_PROVIDER", "local").lower().strip()
+    dense_model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5").strip()
+    sparse_model = os.getenv("SPARSE_MODEL", "Qdrant/bm25").strip()
+    litellm_url = os.getenv("LITELLM_URL", "http://litellm:4000/v1").strip()
+    litellm_api_key = os.getenv("LITELLM_API_KEY", "dummy").strip()
+
+    return {
+        "provider": provider,
+        "dense_model": dense_model,
+        "sparse_model": sparse_model,
+        "threads": max(1, threads),
+        "batch_size": max(1, batch_size),
+        "litellm_url": litellm_url,
+        "litellm_api_key": litellm_api_key,
+        "system_cpus": sys_res["cpus"],
+        "system_memory_gb": sys_res["memory_gb"],
+    }
+
+def get_embedding_db_config() -> Dict[str, Any]:
+    provider = get_metadata("embedding_provider")
+    dense_model = get_metadata("embedding_dense_model")
+    sparse_model = get_metadata("embedding_sparse_model")
+    threads_str = get_metadata("embedding_num_threads")
+    batch_size_str = get_metadata("embedding_batch_size")
+    litellm_url = get_metadata("embedding_litellm_url")
+    litellm_api_key = get_metadata("embedding_litellm_api_key")
+
+    default_cfg = _resolve_default_embedding_config()
+
+    threads = int(threads_str) if threads_str and threads_str.isdigit() else default_cfg["threads"]
+    batch_size = int(batch_size_str) if batch_size_str and batch_size_str.isdigit() else default_cfg["batch_size"]
+
+    return {
+        "provider": (provider or default_cfg["provider"]).lower().strip(),
+        "dense_model": (dense_model or default_cfg["dense_model"]).strip(),
+        "sparse_model": (sparse_model or default_cfg["sparse_model"]).strip(),
+        "threads": max(1, threads),
+        "batch_size": max(1, batch_size),
+        "litellm_url": (litellm_url or default_cfg["litellm_url"]).strip(),
+        "litellm_api_key": litellm_api_key or default_cfg["litellm_api_key"],
+        "system_cpus": default_cfg["system_cpus"],
+        "system_memory_gb": default_cfg["system_memory_gb"],
+    }
+
+def set_embedding_db_config(
+    provider: Optional[str] = None,
+    dense_model: Optional[str] = None,
+    sparse_model: Optional[str] = None,
+    threads: Optional[int] = None,
+    batch_size: Optional[int] = None,
+    litellm_url: Optional[str] = None,
+    litellm_api_key: Optional[str] = None,
+):
+    if provider is not None:
+        set_metadata("embedding_provider", provider.lower().strip())
+    if dense_model is not None:
+        set_metadata("embedding_dense_model", dense_model.strip())
+    if sparse_model is not None:
+        set_metadata("embedding_sparse_model", sparse_model.strip())
+    if threads is not None:
+        set_metadata("embedding_num_threads", str(max(1, threads)))
+    if batch_size is not None:
+        set_metadata("embedding_batch_size", str(max(1, batch_size)))
+    if litellm_url is not None:
+        set_metadata("embedding_litellm_url", litellm_url.strip())
+    if litellm_api_key is not None:
+        set_metadata("embedding_litellm_api_key", litellm_api_key.strip())
+

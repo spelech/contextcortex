@@ -10,14 +10,14 @@ from fastapi.responses import JSONResponse
 from app.models.schemas import (
     TokenRequest, HostCredentialRequest,
     VectorStoreTestRequest, VectorStoreSwitchRequest,
-    AutoSyncSettingsRequest
+    AutoSyncSettingsRequest, EmbeddingSettingsRequest
 )
 import app.services.database as db_service
 import app.services.git_manager as gm_service
 import app.services.logger as log_service
 import app.services.vector_store as vs_service
 import app.services.indexing as idx_service
-from app.services.embeddings import EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
+import app.services.embeddings as emb_service
 
 logger = logging.getLogger("contextcortex.api")
 
@@ -87,6 +87,7 @@ async def api_get_stats():
             }
 
         is_idx = idx_service.is_indexing
+        emb_cfg = emb_service.get_embedding_config()
         return {
             "indexed_files": file_count,
             "total_chunks": total_chunks,
@@ -101,9 +102,13 @@ async def api_get_stats():
             "vector_db_status": vector_db_status,
             "vector_store": vs_cfg,
             "top_keywords": top_keywords,
-            "embedding_provider": EMBEDDING_PROVIDER,
-            "dense_model": DENSE_MODEL_NAME,
-            "sparse_model": SPARSE_MODEL_NAME,
+            "embedding_provider": emb_cfg["provider"],
+            "dense_model": emb_cfg["dense_model"],
+            "sparse_model": emb_cfg["sparse_model"],
+            "embedding_threads": emb_cfg["threads"],
+            "embedding_batch_size": emb_cfg["batch_size"],
+            "system_cpus": emb_cfg.get("system_cpus", 2),
+            "system_memory_gb": emb_cfg.get("system_memory_gb", 4.0),
             "rate_limit": rate_info,
             "token_source": gh_src,
             "masked_token": gm_service.mask_token(gh_token),
@@ -302,3 +307,34 @@ async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
     except Exception as e:
         logger.error(f"Error switching vector store backend: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
+
+@router.get("/admin/api/settings/embedding")
+async def api_get_embedding_settings():
+    try:
+        cfg = emb_service.get_embedding_config()
+        return cfg
+    except Exception as e:
+        logger.error(f"Error reading embedding settings: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.post("/admin/api/settings/embedding")
+async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
+    try:
+        updated_cfg = emb_service.update_embedding_config(
+            provider=payload.provider,
+            dense_model=payload.dense_model,
+            sparse_model=payload.sparse_model,
+            threads=payload.threads,
+            batch_size=payload.batch_size,
+            litellm_url=payload.litellm_url,
+            litellm_api_key=payload.litellm_api_key,
+        )
+        return {
+            "status": "success",
+            "message": "Embedding engine settings updated successfully.",
+            "config": updated_cfg
+        }
+    except Exception as e:
+        logger.error(f"Error updating embedding settings: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
+

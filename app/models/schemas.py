@@ -162,6 +162,15 @@ class AutoSyncSettingsRequest(BaseModel):
     interval_mins: int
     global_webhook_secret: Optional[str] = None
 
+class EmbeddingSettingsRequest(BaseModel):
+    provider: Optional[str] = "local"
+    dense_model: Optional[str] = None
+    sparse_model: Optional[str] = None
+    threads: Optional[int] = Field(default=None, ge=1, le=128)
+    batch_size: Optional[int] = Field(default=None, ge=1, le=1024)
+    litellm_url: Optional[str] = None
+    litellm_api_key: Optional[str] = None
+
 # Topology Graph Models
 class TopologyNode(BaseModel):
     id: str

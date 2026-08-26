@@ -1,4 +1,4 @@
-# ContextCortex (v2.9.0)
+# ContextCortex (v2.10.0)
 
 
 [![Build and Publish Docker Image](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml)
@@ -198,6 +198,8 @@ services:
       - VECTOR_STORE_PROVIDER=qdrant
       - EMBEDDING_PROVIDER=local
       - EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+      - EMBEDDING_NUM_THREADS=2
+      - EMBEDDING_BATCH_SIZE=32
       - GITHUB_TOKEN=ghp_your_optional_token
       - VAULT_PATH=/docs
     volumes:

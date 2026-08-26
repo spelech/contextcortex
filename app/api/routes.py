@@ -31,7 +31,8 @@ from app.services.indexing import (
     sync_single_git_repo, run_full_indexing, is_indexing, COLLECTION_NAME
 )
 from app.services.embeddings import (
-    EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
+    EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME,
+    get_embedding_config, update_embedding_config
 )
 from app.api.webhooks import router as webhook_router
 from app.api.routers.repositories import router as repositories_router
@@ -67,4 +68,6 @@ __all__ = [
     "run_full_indexing",
     "is_indexing",
     "COLLECTION_NAME",
+    "get_embedding_config",
+    "update_embedding_config",
 ]

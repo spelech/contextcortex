@@ -8,6 +8,9 @@ from app.services.database.connection import (
     get_default_vector_storage_path,
     get_vector_store_db_config,
     set_vector_store_db_config,
+    detect_system_resources,
+    get_embedding_db_config,
+    set_embedding_db_config,
 )
 from app.services.database.credentials import (
     list_git_host_credentials,
@@ -44,6 +47,9 @@ __all__ = [
     "get_default_vector_storage_path",
     "get_vector_store_db_config",
     "set_vector_store_db_config",
+    "detect_system_resources",
+    "get_embedding_db_config",
+    "set_embedding_db_config",
     "list_git_host_credentials",
     "get_git_host_credential",
     "save_git_host_credential",

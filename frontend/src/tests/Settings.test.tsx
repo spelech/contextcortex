@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Settings from '../Settings';
 import { ToastProvider } from '../ToastContext';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Stats, GitHostCredential, VectorStoreConfig } from '../types';
+import type { Stats, GitHostCredential, VectorStoreConfig, EmbeddingConfig } from '../types';
 
 const mockStats: Stats = {
   repos_count: 2,
@@ -34,6 +34,17 @@ const mockVectorStoreConfig: VectorStoreConfig = {
   health_message: 'Collection knowledge_rag_v1 is healthy and operational',
   points_count: 1250,
   stats: { points_count: 1250, vector_dimension: 384 }
+};
+
+const mockEmbeddingConfig: EmbeddingConfig = {
+  provider: 'local',
+  dense_model: 'BAAI/bge-small-en-v1.5',
+  sparse_model: 'Qdrant/bm25',
+  threads: 2,
+  batch_size: 32,
+  system_cpus: 8,
+  system_memory_gb: 16.0,
+  litellm_url: 'http://litellm:4000/v1'
 };
 
 const mockHostCreds: GitHostCredential[] = [
@@ -76,6 +87,9 @@ describe('Settings Component', () => {
       }
       if (url === '/admin/api/settings/auto-sync') {
         return Promise.resolve({ ok: true, json: async () => mockAutoSyncSettings });
+      }
+      if (url === '/admin/api/settings/embedding') {
+        return Promise.resolve({ ok: true, json: async () => mockEmbeddingConfig });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });
@@ -402,7 +416,7 @@ describe('Settings Component', () => {
 
     // 1. Save empty (guard branch)
     fireEvent.click(saveBtns[0]);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(3); // Initial loads for hosts, vector store & auto-sync
+    expect(globalThis.fetch).toHaveBeenCalledTimes(4); // Initial loads for hosts, vector store, auto-sync & embedding
 
     // 2. Save GitHub token
     const ghInput = screen.getByPlaceholderText(/ghp_xxxx/i);
@@ -1030,4 +1044,126 @@ describe('Settings Component', () => {
 
     consoleSpy.mockRestore();
   });
+
+  it('renders embedding engine settings panel with current CPU threads, batch size, and system hardware', async () => {
+    setupDefaultMocks();
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    expect(screen.getByText('Embedding Engine & Resource Limits')).toBeInTheDocument();
+    expect(screen.getByText('Active Embedding Engine')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('Local FastEmbed (ONNX)')).toBeInTheDocument();
+      expect(screen.getByText(/2 Cores \(of 8 detected\)/i)).toBeInTheDocument();
+      expect(screen.getByText('32 chunks/batch')).toBeInTheDocument();
+      expect(screen.getByText('16 GB')).toBeInTheDocument();
+    });
+  });
+
+  it('updates thread cap and batch size and saves embedding settings', async () => {
+    setupDefaultMocks();
+    const refreshStats = vi.fn();
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url === '/admin/api/settings/hosts') return Promise.resolve({ ok: true, json: async () => [] });
+      if (url === '/admin/api/vector-store') return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      if (url === '/admin/api/settings/auto-sync') return Promise.resolve({ ok: true, json: async () => mockAutoSyncSettings });
+      if (url === '/admin/api/settings/embedding' && opts?.method === 'POST') {
+        const body = JSON.parse(opts.body);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 'success',
+            config: { ...mockEmbeddingConfig, threads: body.threads, batch_size: body.batch_size }
+          })
+        });
+      }
+      if (url === '/admin/api/settings/embedding') {
+        return Promise.resolve({ ok: true, json: async () => mockEmbeddingConfig });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={refreshStats} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/CPU Thread Cap/i)).toHaveValue(2);
+    });
+
+    const threadInput = screen.getByLabelText(/CPU Thread Cap/i);
+    const batchSelect = screen.getByLabelText(/Embedding Batch Size/i);
+
+    fireEvent.change(threadInput, { target: { value: '4' } });
+    fireEvent.change(batchSelect, { target: { value: '64' } });
+
+    const saveBtn = screen.getByRole('button', { name: /Save & Apply Embedding Limits/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/admin/api/settings/embedding',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            provider: 'local',
+            threads: 4,
+            batch_size: 64,
+            dense_model: 'BAAI/bge-small-en-v1.5',
+            sparse_model: 'Qdrant/bm25'
+          })
+        })
+      );
+      expect(screen.getByText('Embedding resource limits updated successfully')).toBeInTheDocument();
+      expect(refreshStats).toHaveBeenCalled();
+    });
+  });
+
+  it('handles embedding save failure and load errors gracefully', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+      if (url === '/admin/api/settings/hosts') return Promise.resolve({ ok: true, json: async () => [] });
+      if (url === '/admin/api/vector-store') return Promise.resolve({ ok: true, json: async () => mockVectorStoreConfig });
+      if (url === '/admin/api/settings/auto-sync') return Promise.resolve({ ok: true, json: async () => mockAutoSyncSettings });
+      if (url === '/admin/api/settings/embedding' && opts?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          json: async () => ({ error: 'Invalid thread allocation value' })
+        });
+      }
+      if (url === '/admin/api/settings/embedding') {
+        return Promise.reject(new Error('Embedding endpoint down'));
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to load embedding config:', expect.any(Error));
+    });
+
+    const saveBtn = screen.getByRole('button', { name: /Save & Apply Embedding Limits/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Error saving embedding settings: Invalid thread allocation value')).toBeInTheDocument();
+    });
+
+    consoleSpy.mockRestore();
+  });
 });
+
