@@ -6,6 +6,11 @@ export interface Stats {
   last_indexed: string;
   dense_model?: string;
   sparse_model?: string;
+  embedding_provider?: 'local' | 'api' | string;
+  embedding_threads?: number;
+  embedding_batch_size?: number;
+  system_cpus?: number;
+  system_memory_gb?: number;
   rate_limit?: {
     remaining: number;
     limit: number;
@@ -22,6 +27,18 @@ export interface Stats {
   vector_store_provider?: 'qdrant' | 'chroma' | string;
   vector_store_mode?: 'embedded' | 'remote' | string;
   vector_store_collection?: string;
+}
+
+export interface EmbeddingConfig {
+  provider: 'local' | 'api';
+  dense_model: string;
+  sparse_model: string;
+  threads: number;
+  batch_size: number;
+  litellm_url?: string;
+  litellm_api_key?: string;
+  system_cpus?: number;
+  system_memory_gb?: number;
 }
 
 export interface AutoSyncSettings {

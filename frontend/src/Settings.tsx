@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { FormEvent } from 'react';
-import type { Stats, GitHostCredential, VectorStoreConfig, AutoSyncSettings } from './types';
+import type { Stats, GitHostCredential, VectorStoreConfig, AutoSyncSettings, EmbeddingConfig } from './types';
 import { useToast } from './ToastContext';
 import { VectorStoreSettings } from './components/settings/VectorStoreSettings';
+import { EmbeddingSettings } from './components/settings/EmbeddingSettings';
 import { AutoSyncSettings as AutoSyncSettingsComp } from './components/settings/AutoSyncSettings';
 import { GitCredentialsSettings } from './components/settings/GitCredentialsSettings';
 import { ThemeSettings } from './components/settings/ThemeSettings';
@@ -43,6 +44,17 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
   const [isTestingVs, setIsTestingVs] = useState(false);
   const [testFeedback, setTestFeedback] = useState<{ success: boolean; message: string } | null>(null);
   const [isSwitchingVs, setIsSwitchingVs] = useState(false);
+
+  // Embedding & Resource Limits State
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig | null>(null);
+  const [isLoadingEmb, setIsLoadingEmb] = useState(false);
+  const [isSavingEmb, setIsSavingEmb] = useState(false);
+  const [embProvider, setEmbProvider] = useState<'local' | 'api'>('local');
+  const [embThreads, setEmbThreads] = useState<number>(2);
+  const [embBatchSize, setEmbBatchSize] = useState<number>(32);
+  const [embDenseModel, setEmbDenseModel] = useState('BAAI/bge-small-en-v1.5');
+  const [embSparseModel, setEmbSparseModel] = useState('Qdrant/bm25');
+  const [embLitellmUrl, setEmbLitellmUrl] = useState('http://litellm:4000/v1');
 
   const toast = useToast();
 
@@ -96,11 +108,65 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
     }
   }, []);
 
+  const loadEmbeddingConfig = useCallback(async () => {
+    setIsLoadingEmb(true);
+    try {
+      const res = await fetch('/admin/api/settings/embedding');
+      if (res.ok) {
+        const data: EmbeddingConfig = await res.json();
+        setEmbeddingConfig(data);
+        if (data.provider) setEmbProvider(data.provider);
+        if (typeof data.threads === 'number') setEmbThreads(data.threads);
+        if (typeof data.batch_size === 'number') setEmbBatchSize(data.batch_size);
+        if (data.dense_model) setEmbDenseModel(data.dense_model);
+        if (data.sparse_model) setEmbSparseModel(data.sparse_model);
+        if (data.litellm_url) setEmbLitellmUrl(data.litellm_url);
+      }
+    } catch (e: any) {
+      console.error('Failed to load embedding config:', e);
+    } finally {
+      setIsLoadingEmb(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadHostCredentials();
     loadVectorStore();
     loadAutoSyncSettings();
-  }, [loadHostCredentials, loadVectorStore, loadAutoSyncSettings]);
+    loadEmbeddingConfig();
+  }, [loadHostCredentials, loadVectorStore, loadAutoSyncSettings, loadEmbeddingConfig]);
+
+  const handleSaveEmbeddingSettings = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsSavingEmb(true);
+    try {
+      const payload = {
+        provider: embProvider,
+        threads: Number(embThreads),
+        batch_size: Number(embBatchSize),
+        dense_model: embDenseModel.trim() || undefined,
+        sparse_model: embSparseModel.trim() || undefined,
+        litellm_url: embProvider === 'api' ? embLitellmUrl.trim() || undefined : undefined,
+      };
+      const res = await fetch('/admin/api/settings/embedding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.message || 'Failed to save embedding settings');
+
+      if (data.config) {
+        setEmbeddingConfig(data.config);
+      }
+      toast.success('Embedding resource limits updated successfully');
+      refreshStats();
+    } catch (e: any) {
+      toast.error('Error saving embedding settings: ' + e.message);
+    } finally {
+      setIsSavingEmb(false);
+    }
+  };
 
   const fullWebhookUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}${webhookUrl || '/api/webhooks/git'}`;
 
@@ -392,6 +458,25 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         onModeChange={handleModeChange}
         onTestConnection={handleTestConnection}
         onSwitchBackend={handleSwitchBackend}
+      />
+
+      <EmbeddingSettings
+        embeddingConfig={embeddingConfig}
+        isLoadingEmb={isLoadingEmb}
+        isSavingEmb={isSavingEmb}
+        embProvider={embProvider}
+        setEmbProvider={setEmbProvider}
+        embThreads={embThreads}
+        setEmbThreads={setEmbThreads}
+        embBatchSize={embBatchSize}
+        setEmbBatchSize={setEmbBatchSize}
+        embDenseModel={embDenseModel}
+        setEmbDenseModel={setEmbDenseModel}
+        embSparseModel={embSparseModel}
+        setEmbSparseModel={setEmbSparseModel}
+        embLitellmUrl={embLitellmUrl}
+        setEmbLitellmUrl={setEmbLitellmUrl}
+        onSaveEmbeddingSettings={handleSaveEmbeddingSettings}
       />
 
       <AutoSyncSettingsComp

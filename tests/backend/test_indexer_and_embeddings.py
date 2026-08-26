@@ -2,7 +2,8 @@ import os
 import sqlite3
 import pytest
 import asyncio
-from unittest.mock import patch, MagicMock, AsyncMock
+import unittest.mock
+from unittest.mock import patch, MagicMock, AsyncMock, mock_open
 from app.services.indexing import (
     ensure_collection, get_chunk_uuid, extract_keywords_from_text,
     get_dynamic_catalog_description, process_file_content,
@@ -321,3 +322,78 @@ def test_trigger_list_changed_notification():
          patch("asyncio.run_coroutine_threadsafe", side_effect=close_coro) as mock_threadsafe:
         idx_module.trigger_list_changed_notification()
         mock_threadsafe.assert_called_once()
+
+def test_detect_system_resources_and_cgroups():
+    from app.services.database.connection import detect_system_resources
+    res = detect_system_resources()
+    assert "cpus" in res
+    assert "memory_gb" in res
+    assert res["cpus"] >= 1
+    assert res["memory_gb"] > 0
+
+    # Test cgroup v2 parsing
+    with patch("os.path.exists", side_effect=lambda p: p == "/sys/fs/cgroup/cpu.max"), \
+         patch("builtins.open", unittest.mock.mock_open(read_data="200000 100000")):
+        cg_res = detect_system_resources()
+        assert cg_res["cpus"] == 2
+
+    # Test cgroup v1 parsing
+    def cg1_exists(p):
+        return p in ("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", "/sys/fs/cgroup/cpu/cpu.cfs_period_us")
+    
+    def cg1_open(p, *args, **kwargs):
+        if "quota" in p:
+            return unittest.mock.mock_open(read_data="400000").return_value
+        return unittest.mock.mock_open(read_data="100000").return_value
+
+    with patch("os.path.exists", side_effect=cg1_exists), \
+         patch("builtins.open", side_effect=cg1_open):
+        cg1_res = detect_system_resources()
+        assert cg1_res["cpus"] == 4
+
+def test_embedding_db_config_get_set(temp_indexer_db):
+    from app.services.database.connection import get_embedding_db_config, set_embedding_db_config
+    cfg = get_embedding_db_config()
+    assert cfg["provider"] in ("local", "api")
+    assert cfg["threads"] >= 1
+    assert cfg["batch_size"] >= 1
+
+    set_embedding_db_config(
+        provider="local",
+        dense_model="test-dense-model",
+        sparse_model="test-sparse-model",
+        threads=4,
+        batch_size=64,
+        litellm_url="http://custom:4000/v1",
+        litellm_api_key="sk-custom-key"
+    )
+
+    updated = get_embedding_db_config()
+    assert updated["dense_model"] == "test-dense-model"
+    assert updated["sparse_model"] == "test-sparse-model"
+    assert updated["threads"] == 4
+    assert updated["batch_size"] == 64
+    assert updated["litellm_url"] == "http://custom:4000/v1"
+    assert updated["litellm_api_key"] == "sk-custom-key"
+
+def test_update_embedding_config(temp_indexer_db):
+    from app.services.embeddings import get_embedding_config, update_embedding_config, init_embeddings
+    with patch("fastembed.TextEmbedding"), patch("fastembed.SparseTextEmbedding"):
+        cfg = update_embedding_config(
+            provider="local",
+            dense_model="BAAI/bge-small-en-v1.5",
+            sparse_model="Qdrant/bm25",
+            threads=3,
+            batch_size=16
+        )
+        assert cfg["threads"] == 3
+        assert cfg["batch_size"] == 16
+        assert cfg["provider"] == "local"
+
+        current = get_embedding_config()
+        assert current["threads"] == 3
+        assert current["batch_size"] == 16
+
+    # Restore default real embeddings for subsequent tests
+    init_embeddings()
+

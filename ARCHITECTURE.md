@@ -1,4 +1,4 @@
-# Architecture: ContextCortex (v2.9.0)
+# Architecture: ContextCortex (v2.10.0)
 
 ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, architecture documents, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, pluggable vector store backends (Qdrant & ChromaDB), automatic polling daemons, multi-provider webhooks, interactive dependency topology graph explorer, and a React 19 administrative dashboard.
 

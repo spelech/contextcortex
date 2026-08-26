@@ -267,3 +267,56 @@ def test_api_logs_error_handlers():
     with patch("app.services.logger.clear_diagnostic_logs", side_effect=RuntimeError("Logs clear error")):
         res = client.delete("/admin/api/logs")
         assert res.status_code == 500
+
+def test_api_embedding_settings(mock_db):
+    # GET /admin/api/settings/embedding
+    with patch("app.services.embeddings.get_embedding_config", return_value={
+        "provider": "local",
+        "dense_model": "BAAI/bge-small-en-v1.5",
+        "sparse_model": "Qdrant/bm25",
+        "threads": 2,
+        "batch_size": 32,
+        "system_cpus": 8,
+        "system_memory_gb": 16.0,
+        "litellm_url": "http://litellm:4000/v1"
+    }):
+        res = client.get("/admin/api/settings/embedding")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["threads"] == 2
+        assert data["batch_size"] == 32
+        assert data["system_cpus"] == 8
+
+    # POST /admin/api/settings/embedding
+    with patch("app.services.embeddings.update_embedding_config", return_value={
+        "provider": "local",
+        "dense_model": "BAAI/bge-small-en-v1.5",
+        "sparse_model": "Qdrant/bm25",
+        "threads": 4,
+        "batch_size": 64,
+        "system_cpus": 8,
+        "system_memory_gb": 16.0,
+        "litellm_url": "http://litellm:4000/v1"
+    }):
+        res = client.post("/admin/api/settings/embedding", json={
+            "provider": "local",
+            "threads": 4,
+            "batch_size": 64
+        })
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "success"
+        assert data["config"]["threads"] == 4
+        assert data["config"]["batch_size"] == 64
+
+def test_api_embedding_settings_errors():
+    with patch("app.services.embeddings.get_embedding_config", side_effect=RuntimeError("Embedding config error")):
+        res = client.get("/admin/api/settings/embedding")
+        assert res.status_code == 500
+        assert "Embedding config error" in res.json()["error"]
+
+    with patch("app.services.embeddings.update_embedding_config", side_effect=RuntimeError("Embedding update error")):
+        res = client.post("/admin/api/settings/embedding", json={"provider": "local", "threads": 2})
+        assert res.status_code == 500
+        assert "Embedding update error" in res.json()["error"]
+
