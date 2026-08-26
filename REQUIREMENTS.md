@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **502 Automated Tests** (380 Pytest Backend + 96 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **504 Automated Tests** (381 Pytest Backend + 97 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -386,9 +386,10 @@ classDiagram
 - `test_client_call_detection`
 - `test_multi_repo_contract_linking_and_mcp_tools`
 
-#### `tests/backend/test_api_routes.py` (17 tests)
+#### `tests/backend/test_api_routes.py` (18 tests)
 - `test_api_get_stats_with_keywords`
 - `test_api_get_stats_error`
+- `test_api_stats_field_names`
 - `test_api_repos_crud`
 - `test_api_repos_error_handlers`
 - `test_api_paths_crud`
@@ -884,10 +885,11 @@ and leaves the prior indexed state intact without data loss._
 - deletes path when delete button is confirmed and refreshes stats
 - handles errors when loading paths, adding path, deleting path, and browsing
 
-#### `Overview.test.tsx` (6 tests)
+#### `Overview.test.tsx` (7 tests)
 - renders loading state when stats is null
 - renders metrics, specs, and top keywords accurately
 - renders ChromaDB vector store specs correctly
+- renders repository count correctly using legacy git_repos fallback when repos_count is undefined
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
 - renders system specs with responsive word wrapping and badge elements

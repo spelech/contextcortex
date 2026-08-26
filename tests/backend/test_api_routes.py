@@ -65,6 +65,23 @@ def test_api_get_stats_error():
         assert res.status_code == 500
         assert "Database failure" in res.json()["error"]
 
+def test_api_stats_field_names(mock_db):
+    mock_store = MagicMock()
+    mock_store.get_stats.return_value = {"points_count": 120}
+
+    with patch("app.services.vector_store.get_vector_store", return_value=mock_store), \
+         patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 4900, "limit": 5000}):
+        res = client.get("/admin/api/stats")
+        assert res.status_code == 200
+        data = res.json()
+        assert "repos_count" in data
+        assert "files_count" in data
+        assert "symbols_count" in data
+        assert "vector_store_provider" in data
+        assert "vector_store_mode" in data
+        assert "vector_store_collection" in data
+        assert "git_repos" in data  # legacy backward compatibility
+
 def test_api_repos_crud(mock_db):
     # Get initial repos
     res = client.get("/admin/api/repos")

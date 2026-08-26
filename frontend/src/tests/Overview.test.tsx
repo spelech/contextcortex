@@ -76,6 +76,23 @@ describe('Overview Component', () => {
     expect(screen.getByText('Dense Vector Cosine Similarity')).toBeInTheDocument();
   });
 
+  it('renders repository count correctly using legacy git_repos fallback when repos_count is undefined', () => {
+    const legacyStats = {
+      ...sampleStats,
+      repos_count: undefined as any,
+      git_repos: 5,
+    };
+
+    render(
+      <ToastProvider>
+        <Overview stats={legacyStats as any} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('Git Repositories')).toBeInTheDocument();
+  });
+
 
   it('triggers reindex and calls refreshStats on success', async () => {
     const refreshStats = vi.fn();
