@@ -1,4 +1,4 @@
-export type ThemeId = 'deep-ocean' | 'midnight-blue' | 'arctic-frost' | 'solar-daybreak';
+export type ThemeId = 'deep-ocean' | 'midnight-blue' | 'aqua-breeze' | 'azure-daylight' | 'arctic-frost' | 'solar-daybreak';
 
 export interface ThemeOption {
   id: ThemeId;
@@ -27,18 +27,18 @@ export const AVAILABLE_THEMES: ThemeOption[] = [
     swatches: ['#0a0f1d', '#121a2f', '#3b82f6', '#14b8a6'],
   },
   {
-    id: 'arctic-frost',
-    name: 'Arctic Frost',
+    id: 'aqua-breeze',
+    name: 'Aqua Breeze',
     mode: 'light',
-    description: 'Crisp light ice-teal with oceanic cyan accents and slate typography.',
-    swatches: ['#edf6f7', '#ffffff', '#0891b2', '#0d9488'],
+    description: 'Refreshing aquamarine with vibrant cyan accents and deep petrol text.',
+    swatches: ['#e1f2f5', '#f2fafb', '#0891b2', '#0d9488'],
   },
   {
-    id: 'solar-daybreak',
-    name: 'Solar Daybreak',
+    id: 'azure-daylight',
+    name: 'Azure Daylight',
     mode: 'light',
-    description: 'Clean bright daylight slate with royal blue and teal highlights.',
-    swatches: ['#f1f5f9', '#ffffff', '#2563eb', '#0d9488'],
+    description: 'Crisp sky blue with cobalt royal blue and indigo highlights.',
+    swatches: ['#e8effe', '#f5f8ff', '#2563eb', '#4f46e5'],
   },
 ];
 
@@ -46,6 +46,8 @@ export function getSavedTheme(): ThemeId {
   if (typeof window === 'undefined') return DEFAULT_THEME;
   try {
     const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId | null;
+    if (saved === 'arctic-frost') return 'aqua-breeze';
+    if (saved === 'solar-daybreak') return 'azure-daylight';
     if (saved && AVAILABLE_THEMES.some((t) => t.id === saved)) {
       return saved;
     }

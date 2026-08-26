@@ -21,52 +21,52 @@ describe('ThemeSettings Component & theme utilities', () => {
     expect(screen.getByText('Appearance & Theme')).toBeInTheDocument();
     expect(screen.getByText('Deep Ocean')).toBeInTheDocument();
     expect(screen.getByText('Midnight Blue')).toBeInTheDocument();
-    expect(screen.getByText('Arctic Frost')).toBeInTheDocument();
-    expect(screen.getByText('Solar Daybreak')).toBeInTheDocument();
+    expect(screen.getByText('Aqua Breeze')).toBeInTheDocument();
+    expect(screen.getByText('Azure Daylight')).toBeInTheDocument();
 
     const deepOceanRadio = screen.getByRole('radio', { name: /Select Deep Ocean theme/i });
     const midnightRadio = screen.getByRole('radio', { name: /Select Midnight Blue theme/i });
-    const arcticRadio = screen.getByRole('radio', { name: /Select Arctic Frost theme/i });
-    const solarRadio = screen.getByRole('radio', { name: /Select Solar Daybreak theme/i });
+    const aquaRadio = screen.getByRole('radio', { name: /Select Aqua Breeze theme/i });
+    const azureRadio = screen.getByRole('radio', { name: /Select Azure Daylight theme/i });
 
     expect(deepOceanRadio).toHaveAttribute('aria-checked', 'true');
     expect(midnightRadio).toHaveAttribute('aria-checked', 'false');
-    expect(arcticRadio).toHaveAttribute('aria-checked', 'false');
-    expect(solarRadio).toHaveAttribute('aria-checked', 'false');
+    expect(aquaRadio).toHaveAttribute('aria-checked', 'false');
+    expect(azureRadio).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('switches theme to Arctic Frost on click and updates localStorage and documentElement', () => {
+  it('switches theme to Aqua Breeze on click and updates localStorage and documentElement', () => {
     render(
       <ToastProvider>
         <ThemeSettings />
       </ToastProvider>
     );
 
-    const arcticRadio = screen.getByRole('radio', { name: /Select Arctic Frost theme/i });
-    fireEvent.click(arcticRadio);
+    const aquaRadio = screen.getByRole('radio', { name: /Select Aqua Breeze theme/i });
+    fireEvent.click(aquaRadio);
 
-    expect(document.documentElement.getAttribute('data-theme')).toBe('arctic-frost');
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('arctic-frost');
-    expect(arcticRadio).toHaveAttribute('aria-checked', 'true');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('aqua-breeze');
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('aqua-breeze');
+    expect(aquaRadio).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('switches theme to Solar Daybreak on click and updates localStorage and documentElement', () => {
+  it('switches theme to Azure Daylight on click and updates localStorage and documentElement', () => {
     render(
       <ToastProvider>
         <ThemeSettings />
       </ToastProvider>
     );
 
-    const solarRadio = screen.getByRole('radio', { name: /Select Solar Daybreak theme/i });
-    fireEvent.click(solarRadio);
+    const azureRadio = screen.getByRole('radio', { name: /Select Azure Daylight theme/i });
+    fireEvent.click(azureRadio);
 
-    expect(document.documentElement.getAttribute('data-theme')).toBe('solar-daybreak');
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('solar-daybreak');
-    expect(solarRadio).toHaveAttribute('aria-checked', 'true');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('azure-daylight');
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('azure-daylight');
+    expect(azureRadio).toHaveAttribute('aria-checked', 'true');
   });
 
   it('loads saved theme from localStorage on initial render', () => {
-    localStorage.setItem(THEME_STORAGE_KEY, 'arctic-frost');
+    localStorage.setItem(THEME_STORAGE_KEY, 'aqua-breeze');
 
     render(
       <ToastProvider>
@@ -74,20 +74,20 @@ describe('ThemeSettings Component & theme utilities', () => {
       </ToastProvider>
     );
 
-    const arcticRadio = screen.getByRole('radio', { name: /Select Arctic Frost theme/i });
-    expect(arcticRadio).toHaveAttribute('aria-checked', 'true');
+    const aquaRadio = screen.getByRole('radio', { name: /Select Aqua Breeze theme/i });
+    expect(aquaRadio).toHaveAttribute('aria-checked', 'true');
   });
 
   it('getSavedTheme and applyTheme utility functions handle storage correctly', () => {
     expect(getSavedTheme()).toBe('deep-ocean');
 
-    applyTheme('arctic-frost');
-    expect(getSavedTheme()).toBe('arctic-frost');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('arctic-frost');
+    applyTheme('aqua-breeze');
+    expect(getSavedTheme()).toBe('aqua-breeze');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('aqua-breeze');
 
-    applyTheme('solar-daybreak');
-    expect(getSavedTheme()).toBe('solar-daybreak');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('solar-daybreak');
+    applyTheme('azure-daylight');
+    expect(getSavedTheme()).toBe('azure-daylight');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('azure-daylight');
 
     applyTheme('midnight-blue');
     expect(getSavedTheme()).toBe('midnight-blue');
