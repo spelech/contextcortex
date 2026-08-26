@@ -244,4 +244,123 @@ describe('TopologyExplorer Component', () => {
       expect(screen.getByText(/No graph nodes found/i)).toBeInTheDocument();
     });
   });
+
+  it('renders DOC_LINKS_TO edge badge in legend and allows toggling', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Toggle DOC_LINKS_TO edges')).toBeInTheDocument();
+    });
+
+    const docLinkChip = screen.getByTitle('Toggle DOC_LINKS_TO edges');
+    expect(docLinkChip).not.toHaveClass('inactive');
+    expect(docLinkChip).toHaveTextContent('DOC_LINKS_TO');
+
+    fireEvent.click(docLinkChip);
+    expect(docLinkChip).toHaveClass('inactive');
+
+    fireEvent.click(docLinkChip);
+    expect(docLinkChip).not.toHaveClass('inactive');
+  });
+
+  it('handles dragging a node with SVG viewBox coordinate scaling', async () => {
+    // Mock getBoundingClientRect on SVGSVGElement to simulate a 500x320 element (scaling factor 2x relative to 1000x640 viewBox)
+    vi.spyOn(SVGSVGElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 100,
+      top: 50,
+      width: 500,
+      height: 320,
+      right: 600,
+      bottom: 370,
+      x: 100,
+      y: 50,
+      toJSON: () => {}
+    });
+
+    const { container } = render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('node-symbol:1')).toBeInTheDocument();
+    });
+
+    const node = screen.getByTestId('node-symbol:1');
+    const canvasWrapper = container.querySelector('.topology-canvas-wrapper');
+    expect(canvasWrapper).not.toBeNull();
+
+    // Start drag on node
+    fireEvent.mouseDown(node);
+
+    // Move to screen position (200, 150)
+    // svgX = (200 - 100) * (1000 / 500) = 200
+    // svgY = (150 - 50) * (640 / 320) = 200
+    fireEvent.mouseMove(canvasWrapper!, { clientX: 200, clientY: 150 });
+
+    // Verify node position has been updated to 200, 200
+    expect(node).toHaveAttribute('transform', 'translate(200, 200)');
+
+    fireEvent.mouseUp(canvasWrapper!);
+  });
+
+  it('handles canvas background panning on wrapper', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('node-symbol:1')).toBeInTheDocument();
+    });
+
+    const canvasWrapper = container.querySelector('.topology-canvas-wrapper');
+    const svg = container.querySelector('.topology-svg');
+    expect(canvasWrapper).not.toBeNull();
+    expect(svg).not.toBeNull();
+
+    // The root <g> inside <svg> contains the transform
+    const mainGroup = svg!.querySelector('g');
+    expect(mainGroup).toHaveAttribute('transform', 'translate(0, 0) scale(1)');
+
+    // Mouse down on wrapper to start panning
+    fireEvent.mouseDown(canvasWrapper!, { clientX: 100, clientY: 100 });
+    fireEvent.mouseMove(canvasWrapper!, { clientX: 160, clientY: 140 });
+
+    // Pan should be (60, 40)
+    expect(mainGroup).toHaveAttribute('transform', 'translate(60, 40) scale(1)');
+
+    fireEvent.mouseUp(canvasWrapper!);
+  });
+
+  it('triggers Fit to View auto-fit calculation and updates canvas transform', async () => {
+    const { container } = render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Fit to View')).toBeInTheDocument();
+    });
+
+    const fitBtn = screen.getByTitle('Fit to View');
+    fireEvent.click(fitBtn);
+
+    const svg = container.querySelector('.topology-svg');
+    const mainGroup = svg!.querySelector('g');
+    // Transform should have updated zoom & pan based on bounding box
+    expect(mainGroup?.getAttribute('transform')).toMatch(/translate\([^,]+,\s*[^)]+\)\s+scale\([^)]+\)/);
+
+    // Test Reset View
+    const resetBtn = screen.getByTitle('Reset View');
+    fireEvent.click(resetBtn);
+    expect(mainGroup).toHaveAttribute('transform', 'translate(0, 0) scale(1)');
+  });
 });

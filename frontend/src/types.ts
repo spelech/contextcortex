@@ -152,7 +152,7 @@ export interface TopologyNode {
 export interface TopologyEdge {
   source: string;
   target: string;
-  type: 'IMPORTS' | 'CALLS' | 'DEFINES' | 'HANDLES' | 'ROUTES_TO' | string;
+  type: 'IMPORTS' | 'CALLS' | 'DEFINES' | 'HANDLES' | 'ROUTES_TO' | 'DOC_LINKS_TO' | string;
   label?: string;
   line_number?: number;
   metadata?: Record<string, any>;

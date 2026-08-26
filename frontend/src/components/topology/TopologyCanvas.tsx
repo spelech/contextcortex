@@ -14,6 +14,7 @@ interface TopologyCanvasProps {
   zoom: number;
   setZoom: React.Dispatch<React.SetStateAction<number>>;
   setPan: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
+  onAutoFit: () => void;
   isSimPaused: boolean;
   setIsSimPaused: React.Dispatch<React.SetStateAction<boolean>>;
   loading: boolean;
@@ -38,6 +39,7 @@ export function TopologyCanvas({
   zoom,
   setZoom,
   setPan,
+  onAutoFit,
   isSimPaused,
   setIsSimPaused,
   loading,
@@ -68,10 +70,10 @@ export function TopologyCanvas({
         <span className="topology-badge-type badge-function">Function</span>
         <span className="topology-badge-type badge-route">Route</span>
         <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 4px 0 8px' }}>Edges:</span>
-        {(['IMPORTS', 'CALLS', 'DEFINES', 'HANDLES', 'ROUTES_TO'] as const).map((et) => (
+        {(['IMPORTS', 'CALLS', 'DEFINES', 'HANDLES', 'ROUTES_TO', 'DOC_LINKS_TO'] as const).map((et) => (
           <span
             key={et}
-            className={`topology-badge-type badge-edge-${et.toLowerCase().replace('_', '-')} ${edgeFilters[et] ? '' : 'inactive'}`}
+            className={`topology-badge-type badge-edge-${et.toLowerCase().replace(/_/g, '-')} ${edgeFilters[et] ? '' : 'inactive'}`}
             style={{ cursor: 'pointer', opacity: edgeFilters[et] ? 1 : 0.4 }}
             onClick={() => setEdgeFilters((prev) => ({ ...prev, [et]: !prev[et] }))}
             title={`Toggle ${et} edges`}
@@ -88,6 +90,9 @@ export function TopologyCanvas({
         </button>
         <button className="topology-btn-ctrl" onClick={() => setZoom((z) => Math.max(0.2, z / 1.25))} title="Zoom Out">
           <i className="fa-solid fa-minus"></i>
+        </button>
+        <button className="topology-btn-ctrl" onClick={onAutoFit} title="Fit to View">
+          <i className="fa-solid fa-expand"></i>
         </button>
         <button className="topology-btn-ctrl" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} title="Reset View">
           <i className="fa-solid fa-arrows-rotate"></i>
@@ -144,6 +149,17 @@ export function TopologyCanvas({
           >
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#fb7185" />
           </marker>
+          <marker
+            id="arrow-DOC_LINKS_TO"
+            viewBox="0 0 10 10"
+            refX="18"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#a78bfa" />
+          </marker>
         </defs>
 
         <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
@@ -154,7 +170,14 @@ export function TopologyCanvas({
             if (!p1 || !p2) return null;
 
             const style = EDGE_COLORS[e.type] || { stroke: '#94a3b8', width: 1.2 };
-            const markerId = e.type === 'HANDLES' ? 'url(#arrow-HANDLES)' : e.type === 'ROUTES_TO' ? 'url(#arrow-ROUTES_TO)' : 'url(#arrow-default)';
+            const markerId =
+              e.type === 'HANDLES'
+                ? 'url(#arrow-HANDLES)'
+                : e.type === 'ROUTES_TO'
+                ? 'url(#arrow-ROUTES_TO)'
+                : e.type === 'DOC_LINKS_TO'
+                ? 'url(#arrow-DOC_LINKS_TO)'
+                : 'url(#arrow-default)';
 
             return (
               <g key={`edge-${idx}`}>

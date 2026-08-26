@@ -18,8 +18,9 @@ export const NODE_COLORS: Record<string, { fill: string; stroke: string; glow: s
 
 export const EDGE_COLORS: Record<string, { stroke: string; dasharray?: string; width: number }> = {
   IMPORTS: { stroke: '#38bdf8', dasharray: '4 3', width: 1.5 },
-  CALLS: { stroke: '#34d399', width: 1.5 },
-  DEFINES: { stroke: '#c084fc', width: 1.2 },
-  HANDLES: { stroke: '#fbbf24', width: 2 },
-  ROUTES_TO: { stroke: '#fb7185', dasharray: '5 3', width: 2 },
+  CALLS: { stroke: '#34d399', width: 1.2 },
+  DEFINES: { stroke: '#c084fc', dasharray: '3 3', width: 1.0 },
+  HANDLES: { stroke: '#fbbf24', width: 1.8 },
+  ROUTES_TO: { stroke: '#fb7185', dasharray: '5 3', width: 2.0 },
+  DOC_LINKS_TO: { stroke: '#a78bfa', dasharray: '4 2', width: 1.4 },
 };

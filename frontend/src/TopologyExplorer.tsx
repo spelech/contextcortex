@@ -30,6 +30,7 @@ export default function TopologyExplorer() {
     DEFINES: true,
     HANDLES: true,
     ROUTES_TO: true,
+    DOC_LINKS_TO: true,
   });
 
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -274,7 +275,13 @@ export default function TopologyExplorer() {
 
   // Mouse pan and zoom handlers
   const handleMouseDown = (e: MouseEvent) => {
-    if (e.target === canvasRef.current || (e.target as HTMLElement).tagName === 'svg') {
+    const target = e.target as HTMLElement;
+    if (
+      !target.closest('.topology-node') &&
+      !target.closest('.topology-controls-panel') &&
+      !target.closest('.topology-legend') &&
+      !target.closest('.topology-minimap')
+    ) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
@@ -285,12 +292,16 @@ export default function TopologyExplorer() {
       setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
     } else if (draggedNodeId) {
       const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const mouseX = (e.clientX - rect.left - pan.x) / zoom;
-      const mouseY = (e.clientY - rect.top - pan.y) / zoom;
+      if (!rect || rect.width === 0 || rect.height === 0) return;
+
+      // Convert screen clientX/Y to SVG viewBox (1000 x 640) coordinate space:
+      const svgX = (e.clientX - rect.left) * (1000 / rect.width);
+      const svgY = (e.clientY - rect.top) * (640 / rect.height);
+      const nodeX = (svgX - pan.x) / zoom;
+      const nodeY = (svgY - pan.y) / zoom;
 
       setSimNodes((prev) =>
-        prev.map((n) => (n.id === draggedNodeId ? { ...n, x: mouseX, y: mouseY, vx: 0, vy: 0 } : n))
+        prev.map((n) => (n.id === draggedNodeId ? { ...n, x: nodeX, y: nodeY, vx: 0, vy: 0 } : n))
       );
     }
   };
@@ -305,6 +316,36 @@ export default function TopologyExplorer() {
     const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
     setZoom((prev) => Math.max(0.2, Math.min(3.5, prev * zoomFactor)));
   };
+
+  const autoFitGraph = useCallback(() => {
+    if (visibleNodes.length === 0) {
+      setPan({ x: 0, y: 0 });
+      setZoom(1);
+      return;
+    }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    visibleNodes.forEach((n) => {
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    });
+
+    const padding = 60;
+    const graphWidth = Math.max(maxX - minX + padding * 2, 200);
+    const graphHeight = Math.max(maxY - minY + padding * 2, 200);
+    const scaleX = 1000 / graphWidth;
+    const scaleY = 640 / graphHeight;
+    const fitZoom = Math.max(0.3, Math.min(1.8, Math.min(scaleX, scaleY)));
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    setZoom(fitZoom);
+    setPan({
+      x: 500 - centerX * fitZoom,
+      y: 320 - centerY * fitZoom,
+    });
+  }, [visibleNodes]);
 
   // Search filter matches
   const searchMatches = useMemo(() => {
@@ -402,6 +443,7 @@ export default function TopologyExplorer() {
         zoom={zoom}
         setZoom={setZoom}
         setPan={setPan}
+        onAutoFit={autoFitGraph}
         isSimPaused={isSimPaused}
         setIsSimPaused={setIsSimPaused}
         loading={loading}
