@@ -195,4 +195,42 @@ export interface NodeDetails {
   metadata?: Record<string, any>;
 }
 
+export type TopologyViewMode = 'neighborhood' | 'canvas';
 
+export interface FocalBreadcrumb {
+  id: string;
+  name: string;
+  type: string;
+  repo: string;
+}
+
+export interface NeighborhoodSubGraph {
+  focalNode: TopologyNode;
+  incoming: Array<{
+    node: TopologyNode;
+    edgeType: string;
+    label?: string;
+  }>;
+  outgoing: Array<{
+    node: TopologyNode;
+    edgeType: string;
+    label?: string;
+  }>;
+  secondaryNodes: TopologyNode[];
+  edges: TopologyEdge[];
+}
+
+export interface RadialLayoutResult {
+  focal: {
+    x: number;
+    y: number;
+  };
+  neighbors: Array<{
+    node: TopologyNode;
+    x: number;
+    y: number;
+    angle: number;
+    ring: 1 | 2;
+    direction: 'incoming' | 'outgoing' | 'secondary';
+  }>;
+}

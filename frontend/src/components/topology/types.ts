@@ -24,3 +24,10 @@ export const EDGE_COLORS: Record<string, { stroke: string; dasharray?: string; w
   ROUTES_TO: { stroke: '#fb7185', dasharray: '5 3', width: 2.0 },
   DOC_LINKS_TO: { stroke: '#a78bfa', dasharray: '4 2', width: 1.4 },
 };
+
+export type {
+  TopologyViewMode,
+  FocalBreadcrumb,
+  NeighborhoodSubGraph,
+  RadialLayoutResult,
+} from '../../types';
