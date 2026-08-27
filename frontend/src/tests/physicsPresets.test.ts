@@ -8,7 +8,7 @@ import {
   setStoredPhysicsConfig,
   STORAGE_KEY_PHYSICS,
 } from '../components/topology/physicsPresets';
-import type { TopologyPhysicsConfig, ArchitecturePreset } from '../components/topology/types';
+import type { TopologyPhysicsConfig } from '../components/topology/types';
 
 describe('physicsPresets and viewType resolution', () => {
   beforeEach(() => {
