@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **582 Automated Tests** (392 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **636 Automated Tests** (446 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -800,6 +800,62 @@ classDiagram
 persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
+
+#### `tests/test_pgvector_store.py` (54 tests)
+- `TestPgVectorStoreImports::test_import_pgvector_store`
+- `TestPgVectorStoreImports::test_manager_supported_providers_includes_postgres_and_pgvector`
+- `TestPgVectorStoreLifecycle::test_initialization_defaults`
+- `TestPgVectorStoreLifecycle::test_ensure_collection_executes_ddl`
+- `TestPgVectorStoreLifecycle::test_ensure_collection_handles_extension_permission_warning`
+- `TestPgVectorStoreLifecycle::test_ensure_collection_failure`
+- `TestPgVectorStoreLifecycle::test_health_check_success`
+- `TestPgVectorStoreLifecycle::test_health_check_failure`
+- `TestPgVectorStoreLifecycle::test_get_stats_success`
+- `TestPgVectorStoreLifecycle::test_get_stats_failure`
+- `TestPgVectorStoreLifecycle::test_close_method`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_documents_with_vector_documents`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_documents_with_dicts`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_generates_embeddings_when_missing`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_empty_list_noop`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_failure_returns_false`
+- `TestPgVectorStoreUpsertAndSearch::test_search_executes_cosine_distance_query`
+- `TestPgVectorStoreUpsertAndSearch::test_search_empty_query_returns_empty`
+- `TestPgVectorStoreUpsertAndSearch::test_search_error_returns_empty_list`
+- `TestPgVectorStoreUpsertAndSearch::test_delete_by_path`
+- `TestPgVectorStoreUpsertAndSearch::test_delete_by_path_failure`
+- `TestPgVectorStoreUpsertAndSearch::test_delete_by_repo`
+- `TestPgVectorStoreUpsertAndSearch::test_delete_by_repo_failure`
+- `TestVectorStoreManagerPgVectorDispatch::test_create_store_pgvector_provider`
+- `TestVectorStoreManagerPgVectorDispatch::test_create_store_postgres_provider`
+- `TestVectorStoreManagerPgVectorDispatch::test_create_store_postgresql_provider`
+- `TestVectorStoreManagerPgVectorDispatch::test_test_connection_pgvector`
+- `test_import_pgvector_store`
+- `test_manager_supported_providers_includes_postgres_and_pgvector`
+- `test_initialization_defaults`
+- `test_ensure_collection_executes_ddl`
+- `test_ensure_collection_handles_extension_permission_warning`
+- `test_ensure_collection_failure`
+- `test_health_check_success`
+- `test_health_check_failure`
+- `test_get_stats_success`
+- `test_get_stats_failure`
+- `test_close_method`
+- `test_upsert_documents_with_vector_documents`
+- `test_upsert_documents_with_dicts`
+- `test_upsert_generates_embeddings_when_missing`
+- `test_upsert_empty_list_noop`
+- `test_upsert_failure_returns_false`
+- `test_search_executes_cosine_distance_query`
+- `test_search_empty_query_returns_empty`
+- `test_search_error_returns_empty_list`
+- `test_delete_by_path`
+- `test_delete_by_path_failure`
+- `test_delete_by_repo`
+- `test_delete_by_repo_failure`
+- `test_create_store_pgvector_provider`
+- `test_create_store_postgres_provider`
+- `test_create_store_postgresql_provider`
+- `test_test_connection_pgvector`
 
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`

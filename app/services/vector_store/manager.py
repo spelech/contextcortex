@@ -9,11 +9,12 @@ from app.services.database import get_vector_store_db_config, set_vector_store_d
 from app.services.vector_store.base import VectorStore
 from app.services.vector_store.qdrant_store import QdrantVectorStore
 from app.services.vector_store.chroma_store import ChromaVectorStore
+from app.services.vector_store.pgvector_store import PgVectorStore
 
 logger = logging.getLogger("contextcortex.vector_store.manager")
 
-SUPPORTED_PROVIDERS = {"qdrant", "chroma", "chromadb"}
-SUPPORTED_MODES = {"embedded", "persistent", "memory", "remote"}
+SUPPORTED_PROVIDERS = {"qdrant", "chroma", "chromadb", "postgres", "pgvector", "postgresql"}
+SUPPORTED_MODES = {"embedded", "persistent", "memory", "remote", "postgres"}
 
 
 class VectorStoreManager:
@@ -92,6 +93,12 @@ class VectorStoreManager:
                     prefer_remote=False,
                     auto_init=True,
                 )
+        elif provider in ("postgres", "pgvector", "postgresql"):
+            return PgVectorStore(
+                database_url=url if url else None,
+                collection_name=collection,
+                auto_init=True,
+            )
         else:
             raise ValueError(f"Unsupported vector store provider: {provider}")
 
@@ -177,7 +184,7 @@ class VectorStoreManager:
             target_url = url if url is not None else current_cfg.get("url", "")
             target_collection = collection.strip() if collection else current_cfg.get("collection", "knowledge_rag_v1")
 
-            if target_mode == "remote" and not target_url.strip():
+            if target_mode == "remote" and not target_url.strip() and prov not in ("postgres", "pgvector", "postgresql"):
                 return False, "Remote mode requires a valid non-empty URL."
 
             new_config = {
@@ -289,7 +296,7 @@ class VectorStoreManager:
             target_url = url if url is not None else current_cfg.get("url", "")
             target_collection = collection.strip() if collection else current_cfg.get("collection", "knowledge_rag_v1")
 
-            if target_mode == "remote" and not target_url.strip():
+            if target_mode == "remote" and not target_url.strip() and prov not in ("postgres", "pgvector", "postgresql"):
                 return False, "Remote mode requires a valid non-empty URL."
 
             test_config = {
