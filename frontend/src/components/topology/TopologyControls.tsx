@@ -1,5 +1,5 @@
-import React from 'react';
-import type { Repo, TopologyNode, TopologyViewMode } from '../../types';
+import React, { useState } from 'react';
+import type { Repo, TopologyNode, TopologyViewMode, ArchitecturePreset } from '../../types';
 
 export interface TopologyControlsProps {
   repos: Repo[];
@@ -7,30 +7,47 @@ export interface TopologyControlsProps {
   setSelectedRepo: (val: string) => void;
   viewMode: TopologyViewMode;
   setViewMode: (val: TopologyViewMode) => void;
-  hopRadius?: 1 | 2;
+  hopRadius?: 1 | 2 | number;
   setHopRadius?: (val: 1 | 2) => void;
-  viewType: 'files' | 'symbols' | 'routes' | 'full';
-  setViewType: (val: 'files' | 'symbols' | 'routes' | 'full') => void;
   depth: number;
   setDepth: (val: number) => void;
   nodeLimit: number;
   setNodeLimit: (val: number) => void;
+  typeFilters: Record<string, boolean>;
+  setTypeFilters: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  activePreset?: ArchitecturePreset;
+  onSelectPreset?: (preset: ArchitecturePreset) => void;
+  nodeCounts?: Record<string, number>;
   hideOrphans: boolean;
   setHideOrphans: React.Dispatch<React.SetStateAction<boolean>>;
   rootNode: string;
   setRootNode: (val: string) => void;
   searchQuery: string;
   setSearchQuery: (val: string) => void;
-  searchFocused: boolean;
-  setSearchFocused: (val: boolean) => void;
+  searchFocused?: boolean;
+  setSearchFocused?: (val: boolean) => void;
   searchMatches: TopologyNode[];
   onFocusNode: (id: string) => void;
-  typeFilters: Record<string, boolean>;
-  setTypeFilters: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   onAutoFit?: () => void;
   onExportSVG: () => void;
   onExportJSON: () => void;
+  onTogglePhysics?: () => void;
+  isPhysicsOpen?: boolean;
+  // Backward-compatible fallback props
+  viewType?: 'files' | 'symbols' | 'routes' | 'full';
+  setViewType?: (val: 'files' | 'symbols' | 'routes' | 'full') => void;
 }
+
+export const ARCHITECTURE_PRESET_OPTIONS: Array<{
+  id: ArchitecturePreset;
+  label: string;
+  title: string;
+}> = [
+  { id: 'files', label: '📁 Files Only', title: 'Show only file nodes and import dependencies' },
+  { id: 'architecture', label: '🏛️ Architecture', title: 'Show files, classes, and architectural components' },
+  { id: 'api', label: '🌐 API Surface', title: 'Show files, functions, and HTTP routes' },
+  { id: 'full', label: '🧠 Full Codebase', title: 'Complete topology including symbols and routes' },
+];
 
 export function TopologyControls({
   repos,
@@ -40,12 +57,15 @@ export function TopologyControls({
   setViewMode,
   hopRadius = 1,
   setHopRadius,
-  viewType,
-  setViewType,
   depth,
   setDepth,
   nodeLimit,
   setNodeLimit,
+  typeFilters,
+  setTypeFilters,
+  activePreset,
+  onSelectPreset,
+  nodeCounts,
   hideOrphans,
   setHideOrphans,
   rootNode,
@@ -56,12 +76,33 @@ export function TopologyControls({
   setSearchFocused,
   searchMatches,
   onFocusNode,
-  typeFilters,
-  setTypeFilters,
   onAutoFit,
   onExportSVG,
   onExportJSON,
+  onTogglePhysics,
+  isPhysicsOpen = false,
+  viewType,
+  setViewType,
 }: TopologyControlsProps) {
+  const [internalSearchFocused, setInternalSearchFocused] = useState(false);
+  const isSearchActive = searchFocused !== undefined ? searchFocused : internalSearchFocused;
+
+  const handleSearchFocus = () => {
+    if (setSearchFocused) {
+      setSearchFocused(true);
+    }
+    setInternalSearchFocused(true);
+  };
+
+  const handleSearchBlur = () => {
+    setTimeout(() => {
+      if (setSearchFocused) {
+        setSearchFocused(false);
+      }
+      setInternalSearchFocused(false);
+    }, 200);
+  };
+
   return (
     <div className="topology-toolbar">
       <div className="topology-toolbar-group">
@@ -100,19 +141,35 @@ export function TopologyControls({
           </button>
         </div>
 
-        {/* View Type Toggle */}
-        <div className="topology-view-btn-group" role="group" aria-label="View Type">
-          {(['files', 'symbols', 'routes', 'full'] as const).map((vt) => (
-            <button
-              key={vt}
-              type="button"
-              className={`topology-view-btn ${viewType === vt ? 'active' : ''}`}
-              onClick={() => setViewType(vt)}
-            >
-              {vt.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        {/* Architectural Presets or Legacy View Type Toggle */}
+        {onSelectPreset || !setViewType ? (
+          <div className="topology-view-btn-group" role="group" aria-label="Architectural Presets">
+            {ARCHITECTURE_PRESET_OPTIONS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`topology-view-btn ${activePreset === p.id ? 'active' : ''}`}
+                onClick={() => onSelectPreset?.(p.id)}
+                title={p.title}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="topology-view-btn-group" role="group" aria-label="View Type">
+            {(['files', 'symbols', 'routes', 'full'] as const).map((vt) => (
+              <button
+                key={vt}
+                type="button"
+                className={`topology-view-btn ${viewType === vt ? 'active' : ''}`}
+                onClick={() => setViewType(vt)}
+              >
+                {vt.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Contextual Controls based on viewMode */}
         {viewMode === 'neighborhood' ? (
@@ -191,16 +248,23 @@ export function TopologyControls({
           placeholder="Search nodes or routes..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          onFocus={() => setSearchFocused(true)}
+          onFocus={handleSearchFocus}
+          onBlur={handleSearchBlur}
           aria-label="Search nodes"
         />
-        {searchFocused && searchMatches.length > 0 && (
+        {isSearchActive && searchMatches.length > 0 && (
           <div className="topology-search-results">
             {searchMatches.map((m) => (
               <div
                 key={m.id}
                 className="topology-search-item"
-                onClick={() => onFocusNode(m.id)}
+                onClick={() => {
+                  onFocusNode(m.id);
+                  if (setSearchFocused) {
+                    setSearchFocused(false);
+                  }
+                  setInternalSearchFocused(false);
+                }}
               >
                 <span style={{ fontWeight: 600 }}>{m.name}</span>
                 <span className={`topology-badge-type badge-${m.type}`}>{m.type}</span>
@@ -210,19 +274,35 @@ export function TopologyControls({
         )}
       </div>
 
-      {/* Node Type Filters & Exports */}
+      {/* Node Type Filters, Layout Actions & Exports */}
       <div className="topology-toolbar-group">
-        {(['file', 'class', 'function', 'route'] as const).map((t) => (
-          <span
-            key={t}
-            className={`topology-filter-chip chip-${t} ${typeFilters[t] ? '' : 'inactive'}`}
-            onClick={() => setTypeFilters((prev) => ({ ...prev, [t]: !prev[t] }))}
-            title={`Toggle ${t} nodes`}
-          >
-            <i className={`fa-solid ${t === 'file' ? 'fa-file-code' : t === 'class' ? 'fa-cube' : t === 'function' ? 'fa-bolt' : 'fa-network-wired'}`}></i>
-            {t.toUpperCase()}
-          </span>
-        ))}
+        {(['file', 'class', 'function', 'route'] as const).map((t) => {
+          const count = nodeCounts?.[t];
+          const hasCount = typeof count === 'number';
+          return (
+            <span
+              key={t}
+              className={`topology-filter-chip chip-${t} ${typeFilters[t] ? '' : 'inactive'}`}
+              onClick={() => setTypeFilters((prev) => ({ ...prev, [t]: !prev[t] }))}
+              title={`Toggle ${t} nodes`}
+              role="button"
+            >
+              <i
+                className={`fa-solid ${
+                  t === 'file'
+                    ? 'fa-file-code'
+                    : t === 'class'
+                    ? 'fa-cube'
+                    : t === 'function'
+                    ? 'fa-bolt'
+                    : 'fa-network-wired'
+                }`}
+              ></i>
+              {t.toUpperCase()}
+              {hasCount ? ` (${count})` : ''}
+            </span>
+          );
+        })}
 
         {/* Hide Orphans Toggle Chip - shown in canvas mode */}
         {viewMode === 'canvas' && (
@@ -240,6 +320,17 @@ export function TopologyControls({
         {onAutoFit && viewMode === 'canvas' && (
           <button className="btn btn-secondary btn-sm" onClick={onAutoFit} title="Fit Graph">
             <i className="fa-solid fa-expand"></i> Fit Graph
+          </button>
+        )}
+
+        {onTogglePhysics && viewMode === 'canvas' && (
+          <button
+            type="button"
+            className={`btn btn-secondary btn-sm ${isPhysicsOpen ? 'active' : ''}`}
+            onClick={onTogglePhysics}
+            title="Layout & Physics Settings"
+          >
+            <i className="fa-solid fa-sliders"></i> Physics
           </button>
         )}
 
