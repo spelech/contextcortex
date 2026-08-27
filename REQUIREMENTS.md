@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **571 Automated Tests** (381 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **582 Automated Tests** (392 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -751,6 +751,19 @@ classDiagram
 - `test_db_migration_and_auto_sync_helpers`
 - `test_repo_auto_sync_and_list`
 - `test_auto_sync_interval_edge_cases`
+
+#### `tests/test_database_engine.py` (11 tests)
+- `test_schema_metadata_contains_all_tables`
+- `test_schema_api_keys_columns`
+- `test_sqlite_engine_initialization_and_crud`
+- `test_sqlite_engine_seeds_default_prompts_and_configs`
+- `test_ast_relationship_foreign_key_and_cascade`
+- `test_api_keys_unique_hash_constraint`
+- `test_connection_helpers_with_engine`
+- `test_get_db_url_normalization`
+- `test_is_postgres_detection`
+- `test_wait_for_db_retries_and_success`
+- `test_wait_for_db_exhausts_retries`
 
 #### `tests/test_doc_links.py` (5 tests)
 - `test_extract_markdown_doc_links`
