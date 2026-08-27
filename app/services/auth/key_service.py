@@ -4,6 +4,7 @@ Handles generation, hashing (SHA-256), DB storage, last_used tracking,
 revocation, and validation of `cc_live_...` API keys.
 """
 
+import os
 import hashlib
 import secrets
 import logging
@@ -268,3 +269,103 @@ class ApiKeyService:
                 )
                 for row in rows
             ]
+
+    def bootstrap_admin_key(
+        self,
+        initial_key: Optional[str] = None,
+        name: str = "Initial Admin Key",
+        engine: Optional[Engine] = None,
+    ) -> Optional[ApiKeyOut]:
+        """
+        Bootstraps an initial admin API key if initial_key (or ADMIN_INITIAL_KEY env var) is set.
+        - If 'auto', 'true', '1', or 'generate': auto-issues a new admin key if no active admin key exists.
+        - If a custom key string is given: idempotently registers/ensures the key exists in the database.
+        """
+        raw_val = (initial_key or os.getenv("ADMIN_INITIAL_KEY") or "").strip()
+        if not raw_val:
+            return None
+
+        eng = self._get_engine(engine)
+        api_keys_table = TABLES["api_keys"]
+
+        if raw_val.lower() in ("auto", "true", "1", "generate", "yes"):
+            with get_connection(eng) as conn:
+                existing_admin = conn.execute(
+                    select(api_keys_table.c.id).where(
+                        api_keys_table.c.role == Role.ADMIN.value,
+                        api_keys_table.c.is_active == True,
+                    )
+                ).first()
+                if existing_admin:
+                    logger.info("Active admin API key already exists; skipping auto-generation.")
+                    return None
+            key = self.issue_api_key(
+                name=name,
+                role=Role.ADMIN,
+                group_name="admin",
+                engine=eng,
+            )
+            logger.info(f"Auto-bootstrapped initial admin API key (prefix: {key.key_prefix})")
+            return key
+
+        # Custom explicit secret key specified
+        secret_key = raw_val if raw_val.startswith("cc_") else f"{API_KEY_PREFIX}{raw_val}"
+        key_prefix = secret_key[:16]
+        key_hash = self.hash_key(secret_key)
+
+        with get_connection(eng) as conn:
+            row = conn.execute(
+                select(api_keys_table).where(api_keys_table.c.key_hash == key_hash)
+            ).mappings().fetchone()
+
+            if row:
+                logger.info(f"Bootstrap admin key already registered (id={row['id']}, prefix={key_prefix})")
+                return ApiKeyOut(
+                    id=row["id"],
+                    name=row["name"],
+                    key_prefix=row["key_prefix"],
+                    role=row["role"],
+                    group_name=row["group_name"],
+                    expires_at=row["expires_at"],
+                    created_at=row["created_at"],
+                    last_used_at=row["last_used_at"],
+                    is_active=bool(row["is_active"]),
+                    secret_key=secret_key,
+                )
+
+            now = datetime.now(timezone.utc)
+            stmt = api_keys_table.insert().values(
+                name=name.strip(),
+                key_prefix=key_prefix,
+                key_hash=key_hash,
+                role=Role.ADMIN.value,
+                group_name="admin",
+                expires_at=None,
+                created_at=now,
+                last_used_at=None,
+                is_active=True,
+            )
+            result = conn.execute(stmt)
+            conn.commit()
+
+            inserted_id = result.inserted_primary_key[0] if result.inserted_primary_key else None
+            if inserted_id is None:
+                r = conn.execute(
+                    select(api_keys_table.c.id).where(api_keys_table.c.key_hash == key_hash)
+                ).first()
+                inserted_id = r[0] if r else 0
+
+        logger.info(f"Bootstrapped configured initial admin key (id={inserted_id}, prefix={key_prefix})")
+        return ApiKeyOut(
+            id=inserted_id,
+            name=name.strip(),
+            key_prefix=key_prefix,
+            role=Role.ADMIN.value,
+            group_name="admin",
+            expires_at=None,
+            created_at=now,
+            last_used_at=None,
+            is_active=True,
+            secret_key=secret_key,
+        )
+

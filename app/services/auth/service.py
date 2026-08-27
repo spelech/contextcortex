@@ -197,6 +197,16 @@ class AuthService:
     def list_api_keys(self) -> List[ApiKeyOut]:
         return self.key_service.list_api_keys()
 
+    def bootstrap_admin_key(
+        self,
+        initial_key: Optional[str] = None,
+        name: str = "Initial Admin Key",
+    ) -> Optional[ApiKeyOut]:
+        return self.key_service.bootstrap_admin_key(
+            initial_key=initial_key,
+            name=name,
+        )
+
 
 def get_auth_service(reset: bool = False, **kwargs) -> AuthService:
     """

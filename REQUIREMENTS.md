@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **668 Automated Tests** (478 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **702 Automated Tests** (512 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -811,6 +811,42 @@ classDiagram
 - `test_process_file_content_doc_links`
 - `test_graph_builder_doc_links_topology`
 - `test_graph_builder_wikilink_hyphen_space_matching`
+
+#### `tests/test_docker_orchestration.py` (34 tests)
+- `TestDockerComposeConfig::test_compose_version_and_services`
+- `TestDockerComposeConfig::test_postgres_service_config`
+- `TestDockerComposeConfig::test_contextcortex_service_config`
+- `TestDockerComposeConfig::test_volumes_declared`
+- `TestEnvExampleDocumentation::test_contains_database_vars`
+- `TestEnvExampleDocumentation::test_contains_auth_vars`
+- `TestEnvExampleDocumentation::test_contains_vector_store_vars`
+- `TestAdminKeyBootstrap::test_bootstrap_empty_does_nothing`
+- `TestAdminKeyBootstrap::test_bootstrap_auto_generates_admin_key`
+- `TestAdminKeyBootstrap::test_bootstrap_auto_is_idempotent`
+- `TestAdminKeyBootstrap::test_bootstrap_custom_secret_key`
+- `TestAdminKeyBootstrap::test_bootstrap_custom_secret_key_without_prefix`
+- `TestAdminKeyBootstrap::test_bootstrap_custom_secret_key_idempotent`
+- `TestAdminKeyBootstrap::test_auth_service_bootstrap_delegation`
+- `TestStartupDatabaseInitialization::test_init_application_database_without_env`
+- `TestStartupDatabaseInitialization::test_init_application_database_with_admin_key_env`
+- `TestStartupDatabaseInitialization::test_wait_for_db_retry_success` - _Ensures wait_for_db returns True upon successful database connectivity._
+- `test_compose_version_and_services`
+- `test_postgres_service_config`
+- `test_contextcortex_service_config`
+- `test_volumes_declared`
+- `test_contains_database_vars`
+- `test_contains_auth_vars`
+- `test_contains_vector_store_vars`
+- `test_bootstrap_empty_does_nothing`
+- `test_bootstrap_auto_generates_admin_key`
+- `test_bootstrap_auto_is_idempotent`
+- `test_bootstrap_custom_secret_key`
+- `test_bootstrap_custom_secret_key_without_prefix`
+- `test_bootstrap_custom_secret_key_idempotent`
+- `test_auth_service_bootstrap_delegation`
+- `test_init_application_database_without_env`
+- `test_init_application_database_with_admin_key_env`
+- `test_wait_for_db_retry_success` - _Ensures wait_for_db returns True upon successful database connectivity._
 
 #### `tests/test_embedding_cache.py` (4 tests)
 - `test_embedding_cache_set_and_get`

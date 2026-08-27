@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: contextcortex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-contextcortex}
+      POSTGRES_USER: ${POSTGRES_USER:-contextcortex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cortexsecret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  contextcortex:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: contextcortex-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contextcortex}:${POSTGRES_PASSWORD:-cortexsecret}@postgres:5432/${POSTGRES_DB:-contextcortex}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_OIDC_ISSUER: ${AUTH_OIDC_ISSUER:-}
+      AUTH_JWKS_URI: ${AUTH_JWKS_URI:-}
+      AUTH_RESOURCE_INDICATOR: ${AUTH_RESOURCE_INDICATOR:-https://contextcortex.local}
+      ADMIN_INITIAL_KEY: ${ADMIN_INITIAL_KEY:-}
+    volumes:
+      - repo_cache:/app/data
+
+volumes:
+  postgres_data:
+  repo_cache:
