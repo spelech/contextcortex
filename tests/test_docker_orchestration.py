@@ -33,15 +33,27 @@ def db_engine(tmp_path):
     return engine
 
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="module")
+def compose_data():
+    compose_path = REPO_ROOT / "docker-compose.yml"
+    assert compose_path.exists(), f"docker-compose.yml does not exist at {compose_path}"
+    with open(compose_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+@pytest.fixture(scope="module")
+def env_content():
+    env_path = REPO_ROOT / ".env.example"
+    assert env_path.exists(), f".env.example does not exist at {env_path}"
+    with open(env_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
 class TestDockerComposeConfig:
     """Validates docker-compose.yml structure, services, and healthchecks."""
-
-    @pytest.fixture(scope="class")
-    def compose_data(self):
-        compose_path = Path("/containers/dev/contexthub/docker-compose.yml")
-        assert compose_path.exists(), "docker-compose.yml does not exist"
-        with open(compose_path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
 
     def test_compose_version_and_services(self, compose_data):
         assert "services" in compose_data
@@ -80,13 +92,6 @@ class TestDockerComposeConfig:
 
 class TestEnvExampleDocumentation:
     """Validates .env.example contains all required configuration options."""
-
-    @pytest.fixture(scope="class")
-    def env_content(self):
-        env_path = Path("/containers/dev/contexthub/.env.example")
-        assert env_path.exists(), ".env.example does not exist"
-        with open(env_path, "r", encoding="utf-8") as f:
-            return f.read()
 
     def test_contains_database_vars(self, env_content):
         assert "DATABASE_URL=" in env_content
