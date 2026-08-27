@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **534 Automated Tests** (381 Pytest Backend + 127 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **571 Automated Tests** (381 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -960,7 +960,7 @@ and leaves the prior indexed state intact without data loss._
 - supports showToast method with customizable toast types
 - dismisses toast immediately when clicking dismiss button
 
-#### `TopologyCanvas2D.test.tsx` (13 tests)
+#### `TopologyCanvas2D.test.tsx` (16 tests)
 - renders canvas element with data-testid and built-in control buttons
 - invokes canvas rendering pipeline with clearRect, transforms, edges, and nodes
 - sets line dash for styled dashed edges like IMPORTS and ROUTES_TO
@@ -974,14 +974,37 @@ and leaves the prior indexed state intact without data loss._
 - handles wheel events to zoom around mouse cursor
 - renders empty state when node list is empty
 - guards coordinates with isFinite to prevent NaN rendering errors
+- returns empty array when nodes array is empty or undefined
+- relaxes node positions and respects custom physicsConfig
+- handles NaN or invalid parameters safely by falling back to defaults
 
-#### `TopologyExplorer.test.tsx` (15 tests)
-- renders toolbar, repository selector, view mode switcher, and default neighborhood view
+#### `TopologyControls.test.tsx` (16 tests)
+- exports ARCHITECTURE_PRESET_OPTIONS with 4 predefined presets
+- renders all 4 architectural presets in the toolbar
+- clicking a preset triggers onSelectPreset with the correct preset key
+- renders filter chips with live node counts when nodeCounts is provided
+- renders filter chips without count badges when nodeCounts is not provided
+- toggles filter chips and triggers setTypeFilters updater
+- renders Physics button and triggers onTogglePhysics when in canvas mode
+- adds active class to Physics button when isPhysicsOpen is true
+- renders canvas-specific controls in canvas mode (depth, nodeLimit, hideOrphans, autoFit)
+- renders neighborhood-specific controls in neighborhood mode (hopRadius toggle)
+- handles switching viewMode between neighborhood and canvas
+- handles repository selection change
+- renders root node indicator and allows clearing root focus
+- handles search input, autocomplete list, and node focusing
+- triggers SVG and JSON export callbacks
+- falls back to legacy viewType buttons when onSelectPreset is not provided
+
+#### `TopologyExplorer.test.tsx` (18 tests)
+- renders toolbar, repository selector, view mode switcher, architectural presets, and default neighborhood view
+- handles switching architectural presets and queries topology with dynamic view_type
+- displays live node counts next to filter chips
+- toggles individual filter chips and updates activePreset accordingly
 - handles toggling between neighborhood view and global 2d canvas view
+- opens and closes physics controls popover in 2d canvas mode and handles preset selection & localStorage persistence
 - handles breadcrumb navigation and focal node selection in neighborhood view
-- handles switching view type between FILES, SYMBOLS, ROUTES, and FULL
 - handles changing repository selection and depth in canvas mode
-- toggles node type filter chips
 - opens slide-over inspector drawer on node inspect click and renders details
 - filters search matches and focuses on matching node
 - triggers SVG and JSON exports on button click
@@ -991,6 +1014,24 @@ and leaves the prior indexed state intact without data loss._
 - renders TopologyMinimap with dynamic bounding box viewBox
 - findInitialFocalNode prioritizes entrypoints and non-test hub files over test files
 - computeInitialLayout scales layout bounds dynamically for generous spacing
+- findMatchingPreset identifies exact matching presets or returns null for custom configurations
+
+#### `TopologyPhysicsControls.test.tsx` (15 tests)
+- renders header, preset buttons, sliders, and action buttons when open
+- renders nothing when isOpen is false
+- renders when isOpen is undefined (defaults to open)
+- renders close button when onClose is provided and triggers callback on click
+- does not render close button when onClose is not provided
+- exports PHYSICS_PRESET_ITEMS with 4 items
+- marks the active preset with active class when config matches preset values
+- calls onSelectPreset with the correct key when a preset button is clicked
+- exports PHYSICS_SLIDER_DEFS with all 6 required force-directed parameters
+- renders all 6 sliders with initial values, bounds, and step attributes
+- displays formatted readout values for each slider (including px and decimal precision)
+- triggers onChangeConfig when slider values change
+- safely parses numeric values and ensures numbers rather than strings are emitted
+- calls onReRelax when clicking Re-Relax Layout button
+- calls onResetDefaults when clicking Reset Defaults button
 
 ### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/`)
 
