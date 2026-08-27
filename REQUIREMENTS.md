@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **512 Automated Tests** (381 Pytest Backend + 105 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **531 Automated Tests** (381 Pytest Backend + 124 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -885,6 +885,17 @@ and leaves the prior indexed state intact without data loss._
 - deletes path when delete button is confirmed and refreshes stats
 - handles errors when loading paths, adding path, deleting path, and browsing
 
+#### `NeighborhoodView.test.tsx` (9 tests)
+- renders breadcrumb trail, focal node, and incoming/outgoing columns
+- clicking a breadcrumb calls onNavigateBreadcrumb with index
+- clicking the Back button jumps to the previous breadcrumb
+- clicking hop radius toggle calls setHopRadius
+- clicking a neighbor node in the canvas calls onSelectFocalNode
+- clicking Focus and Inspect quick action buttons in sidebar columns calls callbacks
+- double clicking a neighbor node in canvas calls onSelectNodeDetails
+- handles null and empty graphData gracefully
+- filters neighbor nodes when typeFilters are provided
+
 #### `Overview.test.tsx` (7 tests)
 - renders loading state when stats is null
 - renders metrics, specs, and top keywords accurately
@@ -948,23 +959,35 @@ and leaves the prior indexed state intact without data loss._
 - supports showToast method with customizable toast types
 - dismisses toast immediately when clicking dismiss button
 
-#### `TopologyExplorer.test.tsx` (16 tests)
-- renders toolbar, repository selector, view type toggles, and graph canvas
+#### `TopologyCanvas2D.test.tsx` (13 tests)
+- renders canvas element with data-testid and built-in control buttons
+- invokes canvas rendering pipeline with clearRect, transforms, edges, and nodes
+- sets line dash for styled dashed edges like IMPORTS and ROUTES_TO
+- clicking Zoom In, Zoom Out, and Reset View triggers viewport transformations
+- clicking Fit to View calculates bounding box and adjusts zoom and pan
+- clicking Export PNG generates data URL and triggers download
+- spatial hit-testing clicks on a node and calls onSelectNode
+- hovering over a node updates hover state without selecting
+- supports background panning when dragging empty canvas space
+- supports dragging nodes and triggers onNodePositionChange
+- handles wheel events to zoom around mouse cursor
+- renders empty state when node list is empty
+- guards coordinates with isFinite to prevent NaN rendering errors
+
+#### `TopologyExplorer.test.tsx` (13 tests)
+- renders toolbar, repository selector, view mode switcher, and default neighborhood view
+- handles toggling between neighborhood view and global 2d canvas view
+- handles breadcrumb navigation and focal node selection in neighborhood view
 - handles switching view type between FILES, SYMBOLS, ROUTES, and FULL
-- handles changing repository selection and depth
+- handles changing repository selection and depth in canvas mode
 - toggles node type filter chips
-- opens slide-over inspector drawer on node click and renders details
+- opens slide-over inspector drawer on node inspect click and renders details
 - filters search matches and focuses on matching node
 - triggers SVG and JSON exports on button click
 - handles error state when topology API fails
-- renders DOC_LINKS_TO edge badge in legend and allows toggling
-- handles dragging a node with SVG viewBox coordinate scaling
-- handles canvas background panning on wrapper
-- triggers Fit to View auto-fit calculation and updates canvas transform
-- handles changing node limit in toolbar and queries topology with limit parameter
-- toggles hide orphans to filter disconnected nodes
+- handles changing node limit in canvas mode and queries topology with limit parameter
+- toggles hide orphans to filter disconnected nodes in canvas mode
 - renders TopologyMinimap with dynamic bounding box viewBox
-- triggers toolbar Fit Graph button and updates canvas transform
 
 ### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/`)
 
