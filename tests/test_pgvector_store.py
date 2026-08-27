@@ -290,7 +290,9 @@ class TestPgVectorStoreUpsertAndSearch:
         params = executed_call[0][1]
 
         assert "<=>" in sql_stmt
-        assert "ORDER BY embedding <=> :query_vec" in sql_stmt
+        assert "CAST(:query_vec AS vector)" in sql_stmt
+        assert "CAST(:tag_json AS jsonb)" in sql_stmt
+        assert "ORDER BY embedding <=> CAST(:query_vec AS vector)" in sql_stmt
         assert "LIMIT :limit" in sql_stmt
         assert params["repo"] == "contextcortex"
         assert params["doc_type"] == "code"

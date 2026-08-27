@@ -302,16 +302,16 @@ class PgVectorStore(VectorStore):
                 conditions.append("category = :category")
                 params["category"] = category
             if tag:
-                conditions.append("(tags @> :tag_json OR tags::text LIKE :tag_like)")
+                conditions.append("(tags @> CAST(:tag_json AS jsonb) OR tags::text LIKE :tag_like)")
                 params["tag_json"] = json.dumps([tag])
                 params["tag_like"] = f'%"{tag}"%'
 
             where_clause = " AND ".join(conditions)
             search_sql = text(f"""
-            SELECT id, (1 - (embedding <=> :query_vec)) AS score, payload
+            SELECT id, (1 - (embedding <=> CAST(:query_vec AS vector))) AS score, payload
             FROM {self.table_name}
             WHERE {where_clause}
-            ORDER BY embedding <=> :query_vec
+            ORDER BY embedding <=> CAST(:query_vec AS vector)
             LIMIT :limit;
             """)
 
