@@ -366,5 +366,310 @@
     gap: 12px;
 }
 
+/* Focused Neighborhood View */
+.neighborhood-view {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    position: relative;
+}
 
+.neighborhood-breadcrumbs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    backdrop-filter: blur(16px);
+}
 
+.neighborhood-breadcrumbs-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.neighborhood-breadcrumbs-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.neighborhood-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    padding: 5px 10px;
+}
+
+.neighborhood-breadcrumb-trail {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.neighborhood-breadcrumb-sep {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0 2px;
+    user-select: none;
+}
+
+.neighborhood-breadcrumb-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    transition: all 0.15s ease;
+}
+
+.neighborhood-breadcrumb-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+}
+
+.neighborhood-breadcrumb-item.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: var(--text);
+    font-weight: 600;
+}
+
+.neighborhood-breadcrumb-badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+}
+
+.neighborhood-breadcrumb-text {
+    font-family: var(--font-family-mono, monospace);
+}
+
+.neighborhood-hop-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.neighborhood-hop-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.neighborhood-panels {
+    display: grid;
+    grid-template-columns: 280px 1fr 280px;
+    gap: 14px;
+    min-height: 640px;
+}
+
+@media (max-width: 1100px) {
+    .neighborhood-panels {
+        grid-template-columns: 1fr;
+    }
+}
+
+.neighborhood-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    max-height: 640px;
+    overflow: hidden;
+    backdrop-filter: blur(16px);
+}
+
+.neighborhood-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-card);
+    margin-bottom: 10px;
+}
+
+.neighborhood-panel-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.neighborhood-panel-count {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.neighborhood-panel-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-right: 2px;
+}
+
+.neighborhood-panel-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-card);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: all 0.15s ease;
+}
+
+.neighborhood-panel-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(59, 130, 246, 0.4);
+}
+
+.neighborhood-panel-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.neighborhood-panel-item-name {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 0.8rem;
+    color: var(--text);
+    word-break: break-all;
+}
+
+.neighborhood-panel-item-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.neighborhood-panel-empty {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding: 24px 8px;
+}
+
+.neighborhood-center {
+    display: flex;
+    flex-direction: column;
+    min-height: 640px;
+    position: relative;
+}
+
+.neighborhood-canvas-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 640px;
+    background: radial-gradient(circle at center, rgba(18, 26, 47, 0.75) 0%, rgba(10, 15, 29, 0.95) 100%);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.neighborhood-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.neighborhood-orbital-ring {
+    fill: none;
+    stroke: rgba(148, 163, 184, 0.18);
+    stroke-dasharray: 4 4;
+    stroke-width: 1.5;
+}
+
+.neighborhood-orbital-ring.ring-2 {
+    stroke: rgba(148, 163, 184, 0.12);
+}
+
+.neighborhood-orbital-label {
+    font-size: 10px;
+    fill: var(--text-muted);
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    text-transform: uppercase;
+}
+
+.neighborhood-edge-path {
+    transition: stroke-opacity 0.2s ease, stroke-width 0.2s ease;
+}
+
+.neighborhood-edge-path:hover {
+    stroke-opacity: 1;
+    stroke-width: 2.5;
+}
+
+.neighborhood-node-item {
+    transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.neighborhood-node-item:hover {
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.85));
+}
+
+.neighborhood-node-circle {
+    transition: filter 0.15s ease, stroke-width 0.15s ease;
+}
+
+.neighborhood-node-name {
+    font-family: var(--font-family-mono, monospace);
+    font-weight: 500;
+}
+
+.focal-pulse-ring {
+    animation: pulse-ring 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    transform-origin: center;
+}
+
+@keyframes pulse-ring {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.8;
+    }
+    50% {
+        transform: scale(1.15);
+        opacity: 0.2;
+    }
+    100% {
+        transform: scale(0.95);
+        opacity: 0.8;
+    }
+}
+
+.neighborhood-focal-node:hover .focal-body {
+    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.9));
+}
+
+.neighborhood-empty-state {
+    height: 480px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+}
