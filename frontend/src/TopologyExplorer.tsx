@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type {
   TopologyNode,
   TopologyEdge,
@@ -7,13 +7,24 @@ import type {
   Repo,
   TopologyViewMode,
   FocalBreadcrumb,
+  ArchitecturePreset,
+  TopologyPhysicsConfig,
 } from './types';
 import { useToast } from './ToastContext';
 import type { SimNode } from './components/topology/types';
 import { TopologyControls } from './components/topology/TopologyControls';
 import { NeighborhoodView } from './components/topology/NeighborhoodView';
-import { TopologyCanvas2D } from './components/topology/TopologyCanvas2D';
+import { TopologyCanvas2D, calculateForceDirectedLayout } from './components/topology/TopologyCanvas2D';
 import { TopologyInspector } from './components/topology/TopologyInspector';
+import { TopologyPhysicsControls } from './components/topology/TopologyPhysicsControls';
+import {
+  DEFAULT_PHYSICS_CONFIG,
+  PHYSICS_PRESETS,
+  ARCHITECTURE_PRESET_MAP,
+  resolveBackendViewType,
+  getStoredPhysicsConfig,
+  setStoredPhysicsConfig,
+} from './components/topology/physicsPresets';
 
 export function findInitialFocalNode(
   nodes: TopologyNode[],
@@ -82,109 +93,31 @@ export function findInitialFocalNode(
 export function computeInitialLayout(
   nodes: TopologyNode[],
   edges: TopologyEdge[] | undefined,
-  iterations: number = 60
+  iterationsOrConfig: number | TopologyPhysicsConfig = 60
 ): SimNode[] {
-  const nodeCount = nodes.length;
-  // Dynamically size layout area so nodes have generous space to breathe
-  const width = Math.max(1600, Math.sqrt(nodeCount || 1) * 180);
-  const height = Math.max(1000, Math.sqrt(nodeCount || 1) * 120);
-  const radius = Math.max(420, Math.min(width, height) * 0.42);
+  const config =
+    typeof iterationsOrConfig === 'number'
+      ? { ...DEFAULT_PHYSICS_CONFIG, iterations: iterationsOrConfig }
+      : iterationsOrConfig;
+  return calculateForceDirectedLayout(nodes, edges, undefined, undefined, config);
+}
 
-  const simNodes: SimNode[] = nodes.map((node: TopologyNode, idx: number) => {
-    const angle = (idx / (nodeCount || 1)) * 2 * Math.PI;
-    const dist = radius * (0.5 + 0.5 * Math.random());
-    const r = node.type === 'route' ? 24 : node.type === 'class' ? 22 : node.type === 'file' ? 20 : 18;
-    return {
-      ...node,
-      x: width / 2 + dist * Math.cos(angle) + (Math.random() - 0.5) * 60,
-      y: height / 2 + dist * Math.sin(angle) + (Math.random() - 0.5) * 60,
-      vx: 0,
-      vy: 0,
-      radius: r,
-    };
-  });
-
-  const nodeIndex = new Map<string, number>();
-  simNodes.forEach((n, i) => nodeIndex.set(n.id, i));
-
-  // Strong repulsion force to prevent clustering
-  const kRepulse = Math.max(10000, Math.min(45000, 120000 / Math.sqrt(simNodes.length || 1)));
-  const kSpring = 0.025;
-  const springLength = 200;
-  const centerGravity = 0.002;
-  const damping = 0.85;
-  const boundK = 0.02;
-
-  // Cap active edges for layout solving to 1200 to bound computational cost
-  const activeEdges = edges && edges.length > 1200 ? edges.slice(0, 1200) : edges || [];
-
-  for (let it = 0; it < iterations; it++) {
-    // 1. Repulsion
-    for (let i = 0; i < simNodes.length; i++) {
-      for (let j = i + 1; j < simNodes.length; j++) {
-        let dx = simNodes[j].x - simNodes[i].x;
-        let dy = simNodes[j].y - simNodes[i].y;
-        if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
-          dx = (Math.random() - 0.5) * 4;
-          dy = (Math.random() - 0.5) * 4;
-        }
-        const distSq = Math.max(64, dx * dx + dy * dy);
-        const dist = Math.sqrt(distSq) || 1;
-        const force = kRepulse / distSq;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-
-        simNodes[i].vx -= fx;
-        simNodes[i].vy -= fy;
-        simNodes[j].vx += fx;
-        simNodes[j].vy += fy;
+export function findMatchingPreset(filters: Record<string, boolean>): ArchitecturePreset | null {
+  for (const [key, presetFilters] of Object.entries(ARCHITECTURE_PRESET_MAP) as [
+    ArchitecturePreset,
+    Record<string, boolean>
+  ][]) {
+    const allKeys = new Set([...Object.keys(filters), ...Object.keys(presetFilters)]);
+    let match = true;
+    for (const k of allKeys) {
+      if (Boolean(filters[k]) !== Boolean(presetFilters[k])) {
+        match = false;
+        break;
       }
     }
-
-    // 2. Spring attraction along edges
-    for (const edge of activeEdges) {
-      const i1 = nodeIndex.get(edge.source);
-      const i2 = nodeIndex.get(edge.target);
-      if (i1 === undefined || i2 === undefined) continue;
-
-      const n1 = simNodes[i1];
-      const n2 = simNodes[i2];
-      const dx = n2.x - n1.x;
-      const dy = n2.y - n1.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const displacement = dist - springLength;
-      const force = displacement * kSpring;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-
-      n1.vx += fx;
-      n1.vy += fy;
-      n2.vx -= fx;
-      n2.vy -= fy;
-    }
-
-    // 3. Gravity, soft bounds & velocity integration
-    for (const node of simNodes) {
-      node.vx += (width / 2 - node.x) * centerGravity;
-      node.vy += (height / 2 - node.y) * centerGravity;
-
-      if (node.x < 100) node.vx += (100 - node.x) * boundK;
-      else if (node.x > width - 100) node.vx += (width - 100 - node.x) * boundK;
-
-      if (node.y < 100) node.vy += (100 - node.y) * boundK;
-      else if (node.y > height - 100) node.vy += (height - 100 - node.y) * boundK;
-
-      node.vx *= damping;
-      node.vy *= damping;
-      node.x += node.vx;
-      node.y += node.vy;
-
-      if (!isFinite(node.x)) node.x = width / 2;
-      if (!isFinite(node.y)) node.y = height / 2;
-    }
+    if (match) return key;
   }
-
-  return simNodes;
+  return null;
 }
 
 export default function TopologyExplorer() {
@@ -196,19 +129,15 @@ export default function TopologyExplorer() {
   const [breadcrumbs, setBreadcrumbs] = useState<FocalBreadcrumb[]>([]);
   const [hopRadius, setHopRadius] = useState<1 | 2>(1);
 
-  const [viewType, setViewType] = useState<'files' | 'symbols' | 'routes' | 'full'>('files');
   const [depth, setDepth] = useState<number>(2);
   const [nodeLimit, setNodeLimit] = useState<number>(150);
   const [hideOrphans, setHideOrphans] = useState<boolean>(false);
   const [rootNode, setRootNode] = useState<string>('');
 
-  // Filtering toggles
+  // Architectural Preset and Filtering toggles
+  const [activePreset, setActivePreset] = useState<ArchitecturePreset | null>('architecture');
   const [typeFilters, setTypeFilters] = useState<Record<string, boolean>>({
-    file: true,
-    class: true,
-    function: true,
-    route: true,
-    module: true,
+    ...ARCHITECTURE_PRESET_MAP.architecture,
   });
 
   const [edgeFilters] = useState<Record<string, boolean>>({
@@ -235,6 +164,28 @@ export default function TopologyExplorer() {
   const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
 
+  // Force-Directed Physics State
+  const [physicsConfig, setPhysicsConfig] = useState<TopologyPhysicsConfig>(() => getStoredPhysicsConfig());
+  const [isPhysicsOpen, setIsPhysicsOpen] = useState<boolean>(false);
+  const [relaxTrigger, setRelaxTrigger] = useState<number>(0);
+
+  // Dynamic backend view_type based on active filters
+  const activeViewType = useMemo(() => {
+    return resolveBackendViewType(typeFilters);
+  }, [typeFilters]);
+
+  // Compute live node counts per type
+  const nodeCounts = useMemo(() => {
+    const counts = { file: 0, class: 0, function: 0, route: 0 };
+    if (!graphData?.nodes) return counts;
+    for (const n of graphData.nodes) {
+      if (n.type in counts) {
+        counts[n.type as keyof typeof counts]++;
+      }
+    }
+    return counts;
+  }, [graphData]);
+
   // Load repositories on mount
   useEffect(() => {
     const fetchRepos = async () => {
@@ -251,12 +202,12 @@ export default function TopologyExplorer() {
     fetchRepos();
   }, []);
 
-  // Fetch graph data
+  // Fetch graph data using dynamic activeViewType
   const loadTopology = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      let url = `/admin/api/graph/topology?repo=${encodeURIComponent(selectedRepo)}&view_type=${viewType}&depth=${depth}&limit=${nodeLimit}`;
+      let url = `/admin/api/graph/topology?repo=${encodeURIComponent(selectedRepo)}&view_type=${activeViewType}&depth=${depth}&limit=${nodeLimit}`;
       if (rootNode.trim()) {
         url += `&root_node=${encodeURIComponent(rootNode.trim())}`;
       }
@@ -268,7 +219,13 @@ export default function TopologyExplorer() {
       setGraphData(data);
 
       // Compute relaxed force layout synchronously in memory for Canvas 2D
-      const computedNodes = computeInitialLayout(data.nodes || [], data.edges || [], 50);
+      const computedNodes = calculateForceDirectedLayout(
+        data.nodes || [],
+        data.edges || [],
+        undefined,
+        undefined,
+        physicsConfig
+      );
       setSimNodes(computedNodes);
 
       // Initialize focal node and breadcrumbs using smart selection (entrypoint / highest degree)
@@ -293,11 +250,92 @@ export default function TopologyExplorer() {
     } finally {
       setLoading(false);
     }
-  }, [selectedRepo, viewType, depth, nodeLimit, rootNode, toast]);
+  }, [selectedRepo, activeViewType, depth, nodeLimit, rootNode, physicsConfig, toast]);
 
   useEffect(() => {
     loadTopology();
   }, [loadTopology]);
+
+  // Handle architectural preset selection
+  const handleSelectPreset = useCallback((preset: ArchitecturePreset) => {
+    setActivePreset(preset);
+    setTypeFilters({ ...ARCHITECTURE_PRESET_MAP[preset] });
+  }, []);
+
+  // Handle manual filter chip toggle, updating activePreset if needed
+  const handleSetTypeFilters = useCallback<React.Dispatch<React.SetStateAction<Record<string, boolean>>>>(
+    (action) => {
+      setTypeFilters((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action;
+        setActivePreset(findMatchingPreset(next));
+        return next;
+      });
+    },
+    []
+  );
+
+  // Physics handlers
+  const handleChangePhysicsConfig = useCallback((newConfig: TopologyPhysicsConfig) => {
+    setPhysicsConfig(newConfig);
+    setStoredPhysicsConfig(newConfig);
+  }, []);
+
+  const handleSelectPhysicsPreset = useCallback(
+    (presetKey: string) => {
+      const preset = PHYSICS_PRESETS[presetKey as keyof typeof PHYSICS_PRESETS];
+      if (preset) {
+        setPhysicsConfig(preset);
+        setStoredPhysicsConfig(preset);
+        if (graphData?.nodes && graphData.nodes.length > 0) {
+          const reRelaxed = calculateForceDirectedLayout(
+            graphData.nodes,
+            graphData.edges || [],
+            undefined,
+            undefined,
+            preset
+          );
+          setSimNodes(reRelaxed);
+          setRelaxTrigger((prev) => prev + 1);
+        }
+      }
+    },
+    [graphData]
+  );
+
+  const handleResetPhysicsDefaults = useCallback(() => {
+    setPhysicsConfig(DEFAULT_PHYSICS_CONFIG);
+    setStoredPhysicsConfig(DEFAULT_PHYSICS_CONFIG);
+    if (graphData?.nodes && graphData.nodes.length > 0) {
+      const reRelaxed = calculateForceDirectedLayout(
+        graphData.nodes,
+        graphData.edges || [],
+        undefined,
+        undefined,
+        DEFAULT_PHYSICS_CONFIG
+      );
+      setSimNodes(reRelaxed);
+      setRelaxTrigger((prev) => prev + 1);
+    }
+  }, [graphData]);
+
+  const handleReRelax = useCallback(() => {
+    if (graphData?.nodes && graphData.nodes.length > 0) {
+      const reRelaxed = calculateForceDirectedLayout(
+        simNodes.length > 0 ? simNodes : graphData.nodes,
+        graphData.edges || [],
+        undefined,
+        undefined,
+        physicsConfig
+      );
+      setSimNodes(reRelaxed);
+      setRelaxTrigger((prev) => prev + 1);
+      toast.success('Layout re-relaxed');
+    }
+  }, [graphData, simNodes, physicsConfig, toast]);
+
+  const handleTogglePhysics = useCallback(() => {
+    setIsPhysicsOpen((prev) => !prev);
+  }, []);
 
   // Load Node Details
   const handleSelectNode = async (nodeId: string) => {
@@ -317,26 +355,29 @@ export default function TopologyExplorer() {
   };
 
   // Focal node selection & breadcrumbs updates
-  const handleSelectFocalNode = useCallback((nodeId: string) => {
-    const targetNode = graphData?.nodes?.find((n) => n.id === nodeId);
-    if (targetNode) {
-      setFocalNodeId(nodeId);
-      setBreadcrumbs((prev) => {
-        if (prev.length > 0 && prev[prev.length - 1].id === nodeId) {
-          return prev;
-        }
-        return [
-          ...prev,
-          {
-            id: targetNode.id,
-            name: targetNode.name,
-            type: targetNode.type,
-            repo: targetNode.repo || selectedRepo,
-          },
-        ];
-      });
-    }
-  }, [graphData, selectedRepo]);
+  const handleSelectFocalNode = useCallback(
+    (nodeId: string) => {
+      const targetNode = graphData?.nodes?.find((n) => n.id === nodeId);
+      if (targetNode) {
+        setFocalNodeId(nodeId);
+        setBreadcrumbs((prev) => {
+          if (prev.length > 0 && prev[prev.length - 1].id === nodeId) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: targetNode.id,
+              name: targetNode.name,
+              type: targetNode.type,
+              repo: targetNode.repo || selectedRepo,
+            },
+          ];
+        });
+      }
+    },
+    [graphData, selectedRepo]
+  );
 
   // Navigate back to an existing breadcrumb
   const handleNavigateBreadcrumb = useCallback((index: number) => {
@@ -382,12 +423,14 @@ export default function TopologyExplorer() {
   const searchMatches = useMemo(() => {
     if (!searchQuery.trim() || !graphData?.nodes) return [];
     const q = searchQuery.toLowerCase().trim();
-    return graphData.nodes.filter(
-      (n) =>
-        n.name.toLowerCase().includes(q) ||
-        (n.filepath && n.filepath.toLowerCase().includes(q)) ||
-        (n.path_pattern && n.path_pattern.toLowerCase().includes(q))
-    ).slice(0, 10);
+    return graphData.nodes
+      .filter(
+        (n) =>
+          n.name.toLowerCase().includes(q) ||
+          (n.filepath && n.filepath.toLowerCase().includes(q)) ||
+          (n.path_pattern && n.path_pattern.toLowerCase().includes(q))
+      )
+      .slice(0, 10);
   }, [searchQuery, graphData]);
 
   // Focus on a specific node from search or inspector
@@ -412,7 +455,7 @@ export default function TopologyExplorer() {
     const url = URL.createObjectURL(svgBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `topology-${selectedRepo}-${viewType}.svg`;
+    link.download = `topology-${selectedRepo}-${activeViewType}.svg`;
     link.click();
     URL.revokeObjectURL(url);
     toast.success('Topology SVG exported successfully');
@@ -426,7 +469,7 @@ export default function TopologyExplorer() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `topology-${selectedRepo}-${viewType}.json`;
+    link.download = `topology-${selectedRepo}-${activeViewType}.json`;
     link.click();
     URL.revokeObjectURL(url);
     toast.success('Topology JSON exported successfully');
@@ -442,8 +485,6 @@ export default function TopologyExplorer() {
         setViewMode={setViewMode}
         hopRadius={hopRadius}
         setHopRadius={setHopRadius}
-        viewType={viewType}
-        setViewType={setViewType}
         depth={depth}
         setDepth={setDepth}
         nodeLimit={nodeLimit}
@@ -459,7 +500,12 @@ export default function TopologyExplorer() {
         searchMatches={searchMatches}
         onFocusNode={focusOnNode}
         typeFilters={typeFilters}
-        setTypeFilters={setTypeFilters}
+        setTypeFilters={handleSetTypeFilters}
+        activePreset={activePreset || undefined}
+        onSelectPreset={handleSelectPreset}
+        nodeCounts={nodeCounts}
+        onTogglePhysics={handleTogglePhysics}
+        isPhysicsOpen={isPhysicsOpen}
         onExportSVG={exportSVG}
         onExportJSON={exportJSON}
       />
@@ -478,8 +524,8 @@ export default function TopologyExplorer() {
         </div>
       )}
 
-      {!loading && (
-        viewMode === 'neighborhood' ? (
+      {!loading &&
+        (viewMode === 'neighborhood' ? (
           <NeighborhoodView
             graphData={graphData}
             focalNodeId={focalNodeId}
@@ -492,16 +538,30 @@ export default function TopologyExplorer() {
             typeFilters={typeFilters}
           />
         ) : (
-          <TopologyCanvas2D
-            nodes={visibleNodes}
-            edges={visibleEdges}
-            selectedNodeId={selectedNodeId}
-            searchQuery={searchQuery}
-            onSelectNode={handleSelectNode}
-            autoFitOnMount={true}
-          />
-        )
-      )}
+          <div style={{ position: 'relative', width: '100%' }}>
+            <TopologyCanvas2D
+              nodes={visibleNodes}
+              edges={visibleEdges}
+              selectedNodeId={selectedNodeId}
+              searchQuery={searchQuery}
+              onSelectNode={handleSelectNode}
+              autoFitOnMount={true}
+              physicsConfig={physicsConfig}
+              relaxTrigger={relaxTrigger}
+            />
+            {isPhysicsOpen && (
+              <TopologyPhysicsControls
+                config={physicsConfig}
+                onChangeConfig={handleChangePhysicsConfig}
+                onSelectPreset={handleSelectPhysicsPreset}
+                onReRelax={handleReRelax}
+                onResetDefaults={handleResetPhysicsDefaults}
+                onClose={() => setIsPhysicsOpen(false)}
+                isOpen={isPhysicsOpen}
+              />
+            )}
+          </div>
+        ))}
 
       <TopologyInspector
         isOpen={isDrawerOpen}

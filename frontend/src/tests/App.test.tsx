@@ -83,7 +83,7 @@ describe('App Component', () => {
     const topologyTab = screen.getByRole('button', { name: /Topology/i });
     fireEvent.click(topologyTab);
     await waitFor(() => {
-      expect(screen.getByRole('group', { name: /View Type/i })).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: 'Architectural Presets' })).toBeInTheDocument();
     });
 
     // Switch to Git Repositories

@@ -1,9 +1,10 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import TopologyExplorer, { findInitialFocalNode, computeInitialLayout } from '../TopologyExplorer';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import TopologyExplorer, { findInitialFocalNode, computeInitialLayout, findMatchingPreset } from '../TopologyExplorer';
 import { TopologyMinimap } from '../components/topology/TopologyMinimap';
 import type { SimNode } from '../components/topology/types';
 import { ToastProvider } from '../ToastContext';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { STORAGE_KEY_PHYSICS, DEFAULT_PHYSICS_CONFIG, PHYSICS_PRESETS } from '../components/topology/physicsPresets';
 
 const mockRepos = [
   { id: 1, name: 'repo-core', url: 'https://github.com/org/repo-core.git', branch: 'main', status: 'synced' },
@@ -53,6 +54,7 @@ describe('TopologyExplorer Component', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
 
     mockCtx = {
       clearRect: vi.fn(),
@@ -126,7 +128,7 @@ describe('TopologyExplorer Component', () => {
     window.ResizeObserver = originalResizeObserver;
   });
 
-  it('renders toolbar, repository selector, view mode switcher, and default neighborhood view', async () => {
+  it('renders toolbar, repository selector, view mode switcher, architectural presets, and default neighborhood view', async () => {
     render(
       <ToastProvider>
         <TopologyExplorer />
@@ -141,12 +143,12 @@ describe('TopologyExplorer Component', () => {
     expect(canvasModeBtn).toBeInTheDocument();
     expect(neighborhoodModeBtn).toHaveClass('active');
 
-    // View Type Toggle
-    expect(screen.getByRole('group', { name: /View Type/i })).toBeInTheDocument();
-    expect(screen.getByText('FILES')).toBeInTheDocument();
-    expect(screen.getByText('SYMBOLS')).toBeInTheDocument();
-    expect(screen.getByText('ROUTES')).toBeInTheDocument();
-    expect(screen.getByText('FULL')).toBeInTheDocument();
+    // Architectural Presets Toggle
+    expect(screen.getByRole('group', { name: /Architectural Presets/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Files Only/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Architecture/i })).toHaveClass('active');
+    expect(screen.getByRole('button', { name: /API Surface/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Full Codebase/i })).toBeInTheDocument();
 
     // Default Neighborhood View should load focal node and breadcrumbs
     await waitFor(() => {
@@ -154,6 +156,122 @@ describe('TopologyExplorer Component', () => {
     });
     expect(screen.getByText('Incoming Dependencies')).toBeInTheDocument();
     expect(screen.getByText('Outgoing Dependencies')).toBeInTheDocument();
+  });
+
+  it('handles switching architectural presets and queries topology with dynamic view_type', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('main.py').length).toBeGreaterThanOrEqual(1);
+    });
+
+    const filesBtn = screen.getByRole('button', { name: /Files Only/i });
+    const apiBtn = screen.getByRole('button', { name: /API Surface/i });
+    const fullBtn = screen.getByRole('button', { name: /Full Codebase/i });
+
+    // Click API Surface preset (requires both symbols and routes -> view_type=full)
+    await act(async () => {
+      fireEvent.click(apiBtn);
+    });
+
+    await waitFor(() => {
+      expect(apiBtn).toHaveClass('active');
+      expect((globalThis as any).fetch).toHaveBeenCalledWith(
+        expect.stringContaining('view_type=full')
+      );
+    });
+
+    // Click Files Only preset
+    await act(async () => {
+      fireEvent.click(filesBtn);
+    });
+
+    await waitFor(() => {
+      expect(filesBtn).toHaveClass('active');
+      expect((globalThis as any).fetch).toHaveBeenCalledWith(
+        expect.stringContaining('view_type=files')
+      );
+    });
+
+    // Custom toggle only ROUTE on (file: false, class: false, function: false, route: true) -> view_type=routes
+    const fileChip = screen.getByTitle('Toggle file nodes');
+    const routeChip = screen.getByTitle('Toggle route nodes');
+    await act(async () => {
+      fireEvent.click(fileChip); // turns file off
+      fireEvent.click(routeChip); // turns route on
+    });
+
+    await waitFor(() => {
+      expect((globalThis as any).fetch).toHaveBeenCalledWith(
+        expect.stringContaining('view_type=routes')
+      );
+    });
+
+    // Click Full Codebase preset
+    await act(async () => {
+      fireEvent.click(fullBtn);
+    });
+
+    await waitFor(() => {
+      expect(fullBtn).toHaveClass('active');
+      expect((globalThis as any).fetch).toHaveBeenCalledWith(
+        expect.stringContaining('view_type=full')
+      );
+    });
+  });
+
+  it('displays live node counts next to filter chips', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('main.py').length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Node counts for mock data: 2 files, 1 function, 1 route, 0 class
+    expect(screen.getByText('FILE (2)')).toBeInTheDocument();
+    expect(screen.getByText('CLASS (0)')).toBeInTheDocument();
+    expect(screen.getByText('FUNCTION (1)')).toBeInTheDocument();
+    expect(screen.getByText('ROUTE (1)')).toBeInTheDocument();
+  });
+
+  it('toggles individual filter chips and updates activePreset accordingly', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('main.py').length).toBeGreaterThanOrEqual(1);
+    });
+
+    const fileChip = screen.getByTitle('Toggle file nodes');
+    const archPresetBtn = screen.getByRole('button', { name: /Architecture/i });
+    expect(archPresetBtn).toHaveClass('active');
+
+    // Toggling file node off creates custom filter state -> preset should be inactive
+    await act(async () => {
+      fireEvent.click(fileChip);
+    });
+
+    expect(fileChip).toHaveClass('inactive');
+    expect(archPresetBtn).not.toHaveClass('active');
+
+    // Toggling file node back on restores exact Architecture preset
+    await act(async () => {
+      fireEvent.click(fileChip);
+    });
+
+    expect(fileChip).not.toHaveClass('inactive');
+    expect(archPresetBtn).toHaveClass('active');
   });
 
   it('handles toggling between neighborhood view and global 2d canvas view', async () => {
@@ -171,7 +289,9 @@ describe('TopologyExplorer Component', () => {
     expect(screen.getAllByRole('group', { name: /Hop Radius/i }).length).toBeGreaterThanOrEqual(1);
 
     // Switch to Canvas mode
-    fireEvent.click(canvasModeBtn);
+    await act(async () => {
+      fireEvent.click(canvasModeBtn);
+    });
 
     await waitFor(() => {
       expect(canvasModeBtn).toHaveClass('active');
@@ -179,18 +299,98 @@ describe('TopologyExplorer Component', () => {
       expect(screen.getByTestId('topology-2d-canvas')).toBeInTheDocument();
     });
 
-    // In canvas mode, Node Limit and Hide Orphans should be present
+    // In canvas mode, Node Limit, Hide Orphans, and Physics button should be present
     expect(screen.getByRole('combobox', { name: /Node Limit/i })).toBeInTheDocument();
     expect(screen.getByTitle('Toggle orphan nodes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Physics/i })).toBeInTheDocument();
 
     // Switch back to Neighborhood view
-    fireEvent.click(neighborhoodModeBtn);
+    await act(async () => {
+      fireEvent.click(neighborhoodModeBtn);
+    });
 
     await waitFor(() => {
       expect(neighborhoodModeBtn).toHaveClass('active');
       expect(screen.queryByTestId('topology-2d-canvas')).not.toBeInTheDocument();
       expect(screen.getByText('Incoming Dependencies')).toBeInTheDocument();
     });
+  });
+
+  it('opens and closes physics controls popover in 2d canvas mode and handles preset selection & localStorage persistence', async () => {
+    render(
+      <ToastProvider>
+        <TopologyExplorer />
+      </ToastProvider>
+    );
+
+    // Switch to canvas mode
+    const canvasModeBtn = screen.getByRole('button', { name: /Global 2D Canvas/i });
+    await act(async () => {
+      fireEvent.click(canvasModeBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Physics/i })).toBeInTheDocument();
+    });
+
+    // Physics panel not open yet
+    expect(screen.queryByRole('region', { name: /Simulation Physics Controls/i })).not.toBeInTheDocument();
+
+    // Open physics panel
+    const physicsToggleBtn = screen.getByRole('button', { name: /Physics/i });
+    await act(async () => {
+      fireEvent.click(physicsToggleBtn);
+    });
+
+    expect(screen.getByRole('region', { name: /Simulation Physics Controls/i })).toBeInTheDocument();
+
+    // Presets in physics popover
+    const spaciousBtn = screen.getByRole('button', { name: /Spacious Tree/i });
+    expect(spaciousBtn).toBeInTheDocument();
+
+    // Click Spacious Tree preset
+    await act(async () => {
+      fireEvent.click(spaciousBtn);
+    });
+
+    expect(spaciousBtn).toHaveClass('active');
+
+    // Stored in localStorage
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_PHYSICS) || '{}');
+    expect(saved.kRepulse).toBe(PHYSICS_PRESETS.spacious.kRepulse);
+    expect(saved.springLength).toBe(PHYSICS_PRESETS.spacious.springLength);
+
+    // Adjust a slider
+    const repulseSlider = screen.getByRole('slider', { name: /Repulsion Force/i });
+    await act(async () => {
+      fireEvent.change(repulseSlider, { target: { value: '45000' } });
+    });
+
+    const updatedStored = JSON.parse(localStorage.getItem(STORAGE_KEY_PHYSICS) || '{}');
+    expect(updatedStored.kRepulse).toBe(45000);
+
+    // Click Re-Relax Layout
+    const reRelaxBtn = screen.getByRole('button', { name: /Re-Relax Layout/i });
+    await act(async () => {
+      fireEvent.click(reRelaxBtn);
+    });
+
+    // Click Reset Defaults
+    const resetBtn = screen.getByRole('button', { name: /Reset Defaults/i });
+    await act(async () => {
+      fireEvent.click(resetBtn);
+    });
+
+    const resetStored = JSON.parse(localStorage.getItem(STORAGE_KEY_PHYSICS) || '{}');
+    expect(resetStored.kRepulse).toBe(DEFAULT_PHYSICS_CONFIG.kRepulse);
+
+    // Close physics panel
+    const closeBtn = screen.getByRole('button', { name: /Close Physics Controls/i });
+    await act(async () => {
+      fireEvent.click(closeBtn);
+    });
+
+    expect(screen.queryByRole('region', { name: /Simulation Physics Controls/i })).not.toBeInTheDocument();
   });
 
   it('handles breadcrumb navigation and focal node selection in neighborhood view', async () => {
@@ -215,7 +415,9 @@ describe('TopologyExplorer Component', () => {
 
     const focusUtilsBtn = outgoingSection!.querySelector('button[title="Focus node"]');
     expect(focusUtilsBtn).not.toBeNull();
-    fireEvent.click(focusUtilsBtn!);
+    await act(async () => {
+      fireEvent.click(focusUtilsBtn!);
+    });
 
     // Breadcrumb trail should now contain utils.py as active
     await waitFor(() => {
@@ -224,33 +426,13 @@ describe('TopologyExplorer Component', () => {
 
     // Click back to main.py breadcrumb
     const mainBreadcrumb = screen.getByTitle('Navigate to main.py');
-    fireEvent.click(mainBreadcrumb);
+    await act(async () => {
+      fireEvent.click(mainBreadcrumb);
+    });
 
     await waitFor(() => {
       expect(screen.getByTitle('Navigate to main.py')).toHaveClass('active');
       expect(screen.queryByTitle('Navigate to utils.py')).not.toBeInTheDocument();
-    });
-  });
-
-  it('handles switching view type between FILES, SYMBOLS, ROUTES, and FULL', async () => {
-    render(
-      <ToastProvider>
-        <TopologyExplorer />
-      </ToastProvider>
-    );
-
-    const symbolsBtn = screen.getByRole('button', { name: 'SYMBOLS' });
-    fireEvent.click(symbolsBtn);
-
-    await waitFor(() => {
-      expect(symbolsBtn).toHaveClass('active');
-    });
-
-    const routesBtn = screen.getByRole('button', { name: 'ROUTES' });
-    fireEvent.click(routesBtn);
-
-    await waitFor(() => {
-      expect(routesBtn).toHaveClass('active');
     });
   });
 
@@ -263,7 +445,9 @@ describe('TopologyExplorer Component', () => {
 
     // Switch to canvas mode
     const canvasModeBtn = screen.getByRole('button', { name: /Global 2D Canvas/i });
-    fireEvent.click(canvasModeBtn);
+    await act(async () => {
+      fireEvent.click(canvasModeBtn);
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('option', { name: /repo-core/i })).toBeInTheDocument();
@@ -271,32 +455,19 @@ describe('TopologyExplorer Component', () => {
     });
 
     const repoSelect = screen.getByRole('combobox', { name: /Select Repository/i });
-    fireEvent.change(repoSelect, { target: { value: 'repo-core' } });
+    await act(async () => {
+      fireEvent.change(repoSelect, { target: { value: 'repo-core' } });
+    });
 
     const depthSelect = screen.getByRole('combobox', { name: /Graph Depth/i });
-    fireEvent.change(depthSelect, { target: { value: '3' } });
+    await act(async () => {
+      fireEvent.change(depthSelect, { target: { value: '3' } });
+    });
 
     await waitFor(() => {
       expect(repoSelect).toHaveValue('repo-core');
       expect(depthSelect).toHaveValue('3');
     });
-  });
-
-  it('toggles node type filter chips', async () => {
-    render(
-      <ToastProvider>
-        <TopologyExplorer />
-      </ToastProvider>
-    );
-
-    const fileChip = screen.getByTitle('Toggle file nodes');
-    expect(fileChip).not.toHaveClass('inactive');
-
-    fireEvent.click(fileChip);
-    expect(fileChip).toHaveClass('inactive');
-
-    fireEvent.click(fileChip);
-    expect(fileChip).not.toHaveClass('inactive');
   });
 
   it('opens slide-over inspector drawer on node inspect click and renders details', async () => {
@@ -314,7 +485,9 @@ describe('TopologyExplorer Component', () => {
     const outgoingSection = screen.getByText('Outgoing Dependencies').closest('.neighborhood-panel');
     const inspectBtn = outgoingSection!.querySelector('button[title="Inspect details"]');
     expect(inspectBtn).not.toBeNull();
-    fireEvent.click(inspectBtn!);
+    await act(async () => {
+      fireEvent.click(inspectBtn!);
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Location & Repository/i)).toBeInTheDocument();
@@ -326,7 +499,9 @@ describe('TopologyExplorer Component', () => {
 
     // Close drawer
     const closeBtn = screen.getByRole('button', { name: /Close Inspector/i });
-    fireEvent.click(closeBtn);
+    await act(async () => {
+      fireEvent.click(closeBtn);
+    });
 
     await waitFor(() => {
       expect(screen.queryByText(/Location & Repository/i)).not.toBeInTheDocument();
@@ -345,8 +520,10 @@ describe('TopologyExplorer Component', () => {
     });
 
     const searchInput = screen.getByRole('textbox', { name: /Search nodes/i });
-    fireEvent.focus(searchInput);
-    fireEvent.change(searchInput, { target: { value: 'handle' } });
+    await act(async () => {
+      fireEvent.focus(searchInput);
+      fireEvent.change(searchInput, { target: { value: 'handle' } });
+    });
 
     await waitFor(() => {
       const matchItems = screen.getAllByText(/handle_request/i);
@@ -355,7 +532,9 @@ describe('TopologyExplorer Component', () => {
 
     // Click search match item
     const matchItem = screen.getAllByText(/handle_request/i)[0];
-    fireEvent.click(matchItem);
+    await act(async () => {
+      fireEvent.click(matchItem);
+    });
 
     // Inspector drawer should open with details
     await waitFor(() => {
@@ -376,8 +555,10 @@ describe('TopologyExplorer Component', () => {
     expect(svgBtn).toBeInTheDocument();
     expect(jsonBtn).toBeInTheDocument();
 
-    fireEvent.click(svgBtn);
-    fireEvent.click(jsonBtn);
+    await act(async () => {
+      fireEvent.click(svgBtn);
+      fireEvent.click(jsonBtn);
+    });
   });
 
   it('handles error state when topology API fails', async () => {
@@ -411,7 +592,9 @@ describe('TopologyExplorer Component', () => {
 
     // Switch to canvas mode
     const canvasModeBtn = screen.getByRole('button', { name: /Global 2D Canvas/i });
-    fireEvent.click(canvasModeBtn);
+    await act(async () => {
+      fireEvent.click(canvasModeBtn);
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: /Node Limit/i })).toBeInTheDocument();
@@ -420,7 +603,9 @@ describe('TopologyExplorer Component', () => {
     const limitSelect = screen.getByRole('combobox', { name: /Node Limit/i });
     expect(limitSelect).toHaveValue('150');
 
-    fireEvent.change(limitSelect, { target: { value: '50' } });
+    await act(async () => {
+      fireEvent.change(limitSelect, { target: { value: '50' } });
+    });
 
     await waitFor(() => {
       expect(limitSelect).toHaveValue('50');
@@ -429,7 +614,9 @@ describe('TopologyExplorer Component', () => {
       );
     });
 
-    fireEvent.change(limitSelect, { target: { value: '400' } });
+    await act(async () => {
+      fireEvent.change(limitSelect, { target: { value: '400' } });
+    });
 
     await waitFor(() => {
       expect(limitSelect).toHaveValue('400');
@@ -470,7 +657,9 @@ describe('TopologyExplorer Component', () => {
 
     // Switch to canvas mode
     const canvasModeBtn = screen.getByRole('button', { name: /Global 2D Canvas/i });
-    fireEvent.click(canvasModeBtn);
+    await act(async () => {
+      fireEvent.click(canvasModeBtn);
+    });
 
     await waitFor(() => {
       expect(screen.getByTitle('Toggle orphan nodes')).toBeInTheDocument();
@@ -480,11 +669,15 @@ describe('TopologyExplorer Component', () => {
     expect(hideOrphansChip).toHaveClass('inactive');
 
     // Click to activate hide orphans
-    fireEvent.click(hideOrphansChip);
+    await act(async () => {
+      fireEvent.click(hideOrphansChip);
+    });
     expect(hideOrphansChip).not.toHaveClass('inactive');
 
     // Click again to deactivate hide orphans
-    fireEvent.click(hideOrphansChip);
+    await act(async () => {
+      fireEvent.click(hideOrphansChip);
+    });
     expect(hideOrphansChip).toHaveClass('inactive');
   });
 
@@ -562,5 +755,13 @@ describe('TopologyExplorer Component', () => {
     // Layout should have a wide spread across canvas rather than being squished into a tight cluster
     expect(spanX).toBeGreaterThan(400);
     expect(spanY).toBeGreaterThan(300);
+  });
+
+  it('findMatchingPreset identifies exact matching presets or returns null for custom configurations', () => {
+    expect(findMatchingPreset({ file: true, class: false, function: false, route: false, module: false })).toBe('files');
+    expect(findMatchingPreset({ file: true, class: true, function: false, route: false, module: true })).toBe('architecture');
+    expect(findMatchingPreset({ file: true, class: false, function: true, route: true, module: false })).toBe('api');
+    expect(findMatchingPreset({ file: true, class: true, function: true, route: true, module: true })).toBe('full');
+    expect(findMatchingPreset({ file: true, class: true, function: true, route: false, module: false })).toBeNull();
   });
 });

@@ -1,8 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TopologyCanvas2D } from '../components/topology/TopologyCanvas2D';
+import { TopologyCanvas2D, calculateForceDirectedLayout } from '../components/topology/TopologyCanvas2D';
 import type { SimNode } from '../components/topology/types';
 import type { TopologyEdge } from '../types';
+import { DEFAULT_PHYSICS_CONFIG, PHYSICS_PRESETS } from '../components/topology/physicsPresets';
 
 const mockNodes: SimNode[] = [
   { id: 'node-1', name: 'OrderService.cs', type: 'class', repo: 'backend', x: 200, y: 150, vx: 0, vy: 0, radius: 18 },
@@ -388,5 +389,59 @@ describe('TopologyCanvas2D Component', () => {
     }).not.toThrow();
 
     expect(mockCtx.clearRect).toHaveBeenCalled();
+  });
+
+  describe('calculateForceDirectedLayout', () => {
+    it('returns empty array when nodes array is empty or undefined', () => {
+      expect(calculateForceDirectedLayout([])).toEqual([]);
+      expect(calculateForceDirectedLayout(undefined as any)).toEqual([]);
+    });
+
+    it('relaxes node positions and respects custom physicsConfig', () => {
+      const initialNodes = [
+        { id: 'a', name: 'A', type: 'file', repo: 'r1' },
+        { id: 'b', name: 'B', type: 'file', repo: 'r1' },
+        { id: 'c', name: 'C', type: 'file', repo: 'r1' },
+      ];
+      const initialEdges = [
+        { source: 'a', target: 'b', type: 'IMPORTS' },
+        { source: 'b', target: 'c', type: 'IMPORTS' },
+      ];
+
+      // Default layout
+      const defaultLayout = calculateForceDirectedLayout(initialNodes, initialEdges, 1000, 600, DEFAULT_PHYSICS_CONFIG);
+      expect(defaultLayout.length).toBe(3);
+      expect(defaultLayout.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true);
+
+      // Spacious layout with higher repulsion
+      const spaciousLayout = calculateForceDirectedLayout(initialNodes, initialEdges, 1000, 600, PHYSICS_PRESETS.spacious);
+      expect(spaciousLayout.length).toBe(3);
+      expect(spaciousLayout.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true);
+
+      // Dense layout with tight spring and higher gravity
+      const denseLayout = calculateForceDirectedLayout(initialNodes, initialEdges, 1000, 600, PHYSICS_PRESETS.dense);
+      expect(denseLayout.length).toBe(3);
+      expect(denseLayout.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true);
+    });
+
+    it('handles NaN or invalid parameters safely by falling back to defaults', () => {
+      const initialNodes = [
+        { id: 'a', name: 'A', type: 'file', repo: 'r1' },
+      ];
+
+      const invalidConfig = {
+        kRepulse: NaN,
+        springLength: -10,
+        kSpring: Infinity,
+        centerGravity: NaN,
+        collisionRadius: 0,
+        iterations: -5,
+      };
+
+      const result = calculateForceDirectedLayout(initialNodes, [], NaN, NaN, invalidConfig as any);
+      expect(result.length).toBe(1);
+      expect(Number.isFinite(result[0].x)).toBe(true);
+      expect(Number.isFinite(result[0].y)).toBe(true);
+    });
   });
 });
