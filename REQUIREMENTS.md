@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **531 Automated Tests** (381 Pytest Backend + 124 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **534 Automated Tests** (381 Pytest Backend + 127 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -885,7 +885,7 @@ and leaves the prior indexed state intact without data loss._
 - deletes path when delete button is confirmed and refreshes stats
 - handles errors when loading paths, adding path, deleting path, and browsing
 
-#### `NeighborhoodView.test.tsx` (9 tests)
+#### `NeighborhoodView.test.tsx` (10 tests)
 - renders breadcrumb trail, focal node, and incoming/outgoing columns
 - clicking a breadcrumb calls onNavigateBreadcrumb with index
 - clicking the Back button jumps to the previous breadcrumb
@@ -895,6 +895,7 @@ and leaves the prior indexed state intact without data loss._
 - double clicking a neighbor node in canvas calls onSelectNodeDetails
 - handles null and empty graphData gracefully
 - filters neighbor nodes when typeFilters are provided
+- renders direct focal node selector and allows picking any file/node
 
 #### `Overview.test.tsx` (7 tests)
 - renders loading state when stats is null
@@ -974,7 +975,7 @@ and leaves the prior indexed state intact without data loss._
 - renders empty state when node list is empty
 - guards coordinates with isFinite to prevent NaN rendering errors
 
-#### `TopologyExplorer.test.tsx` (13 tests)
+#### `TopologyExplorer.test.tsx` (15 tests)
 - renders toolbar, repository selector, view mode switcher, and default neighborhood view
 - handles toggling between neighborhood view and global 2d canvas view
 - handles breadcrumb navigation and focal node selection in neighborhood view
@@ -988,6 +989,8 @@ and leaves the prior indexed state intact without data loss._
 - handles changing node limit in canvas mode and queries topology with limit parameter
 - toggles hide orphans to filter disconnected nodes in canvas mode
 - renders TopologyMinimap with dynamic bounding box viewBox
+- findInitialFocalNode prioritizes entrypoints and non-test hub files over test files
+- computeInitialLayout scales layout bounds dynamically for generous spacing
 
 ### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/`)
 

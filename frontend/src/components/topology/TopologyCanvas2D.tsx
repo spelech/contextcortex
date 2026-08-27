@@ -10,6 +10,7 @@ export interface TopologyCanvas2DProps {
   searchQuery: string;
   onSelectNode: (nodeId: string) => void;
   onNodePositionChange?: (nodeId: string, x: number, y: number) => void;
+  autoFitOnMount?: boolean;
 }
 
 export function TopologyCanvas2D({
@@ -19,6 +20,7 @@ export function TopologyCanvas2D({
   searchQuery,
   onSelectNode,
   onNodePositionChange,
+  autoFitOnMount = false,
 }: TopologyCanvas2DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -464,7 +466,7 @@ export function TopologyCanvas2D({
     setPan({ x: newPanX, y: newPanY });
   };
 
-  const handleFitToView = () => {
+  const handleFitToView = useCallback(() => {
     if (nodes.length === 0) {
       setPan({ x: 0, y: 0 });
       setZoom(1);
@@ -494,14 +496,14 @@ export function TopologyCanvas2D({
       return;
     }
 
-    const padding = 60;
+    const padding = 90;
     const boxW = maxX - minX + padding * 2;
     const boxH = maxY - minY + padding * 2;
     const viewW = canvasRef.current?.clientWidth || 1000;
     const viewH = canvasRef.current?.clientHeight || 640;
 
     let targetZoom = Math.min(viewW / Math.max(boxW, 50), viewH / Math.max(boxH, 50));
-    targetZoom = Math.max(0.2, Math.min(3.5, targetZoom));
+    targetZoom = Math.max(0.15, Math.min(1.2, targetZoom));
 
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
@@ -510,7 +512,16 @@ export function TopologyCanvas2D({
 
     setZoom(targetZoom);
     setPan({ x: targetPanX, y: targetPanY });
-  };
+  }, [nodes]);
+
+  // Automatically fit graph to view when nodes are first loaded or replaced
+  const prevNodeCountRef = useRef<number>(0);
+  useEffect(() => {
+    if (autoFitOnMount && nodes.length > 0 && nodes.length !== prevNodeCountRef.current) {
+      prevNodeCountRef.current = nodes.length;
+      handleFitToView();
+    }
+  }, [autoFitOnMount, nodes.length, handleFitToView]);
 
   const handleResetView = () => {
     setPan({ x: 0, y: 0 });

@@ -267,4 +267,28 @@ describe('NeighborhoodView Component', () => {
     // Class 'OrderController.cs' should still be visible in panel / canvas
     expect(screen.getAllByText('OrderController.cs').length).toBeGreaterThanOrEqual(1);
   });
+
+  it('renders direct focal node selector and allows picking any file/node', () => {
+    const onSelectFocalNode = vi.fn();
+
+    render(
+      <NeighborhoodView
+        graphData={mockGraphData}
+        focalNodeId="focal-1"
+        onSelectFocalNode={onSelectFocalNode}
+        onSelectNodeDetails={vi.fn()}
+        breadcrumbs={mockBreadcrumbs}
+        onNavigateBreadcrumb={vi.fn()}
+        hopRadius={1}
+        setHopRadius={vi.fn()}
+      />
+    );
+
+    const select = screen.getByRole('combobox', { name: /Select Focal File or Node/i });
+    expect(select).toBeInTheDocument();
+    expect(select).toHaveValue('focal-1');
+
+    fireEvent.change(select, { target: { value: 'caller-1' } });
+    expect(onSelectFocalNode).toHaveBeenCalledWith('caller-1');
+  });
 });

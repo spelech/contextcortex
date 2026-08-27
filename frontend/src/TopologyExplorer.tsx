@@ -15,24 +15,89 @@ import { NeighborhoodView } from './components/topology/NeighborhoodView';
 import { TopologyCanvas2D } from './components/topology/TopologyCanvas2D';
 import { TopologyInspector } from './components/topology/TopologyInspector';
 
-function computeInitialLayout(
+export function findInitialFocalNode(
+  nodes: TopologyNode[],
+  edges: TopologyEdge[] = [],
+  rootNodeQuery?: string
+): TopologyNode | undefined {
+  if (!nodes || nodes.length === 0) return undefined;
+
+  // 1. If explicit rootNode is queried
+  if (rootNodeQuery && rootNodeQuery.trim()) {
+    const q = rootNodeQuery.trim().toLowerCase();
+    const found = nodes.find(
+      (n) =>
+        n.id.toLowerCase() === q ||
+        n.name.toLowerCase() === q ||
+        (n.filepath && n.filepath.toLowerCase().endsWith(q))
+    );
+    if (found) return found;
+  }
+
+  // Build degree count map (incoming + outgoing edges)
+  const degreeMap = new Map<string, number>();
+  edges.forEach((e) => {
+    degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
+    degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+  });
+
+  const isTestNode = (n: TopologyNode) => {
+    const name = (n.name || '').toLowerCase();
+    const path = (n.filepath || n.id || '').toLowerCase();
+    return (
+      path.includes('/tests/') ||
+      path.includes('/test/') ||
+      path.startsWith('tests/') ||
+      path.startsWith('test/') ||
+      path.includes('test_') ||
+      path.includes('.test.') ||
+      path.includes('.spec.') ||
+      name.startsWith('test_')
+    );
+  };
+
+  const nonTestNodes = nodes.filter((n) => !isTestNode(n));
+  const candidateList = nonTestNodes.length > 0 ? nonTestNodes : nodes;
+
+  // 2. Look for primary entry points first
+  const entrypointPatterns = [
+    /(^|\/)(main|index|app|server|api|cli)\.(py|ts|tsx|js|jsx|go|rs)$/i,
+    /(^|\/)__init__\.py$/i,
+  ];
+  for (const pat of entrypointPatterns) {
+    const entry = candidateList.find((n) => pat.test(n.filepath || n.name || n.id));
+    if (entry) return entry;
+  }
+
+  // 3. Pick candidate with highest degree of connectivity
+  const sortedByDegree = [...candidateList].sort((a, b) => {
+    const degA = degreeMap.get(a.id) || 0;
+    const degB = degreeMap.get(b.id) || 0;
+    return degB - degA;
+  });
+
+  return sortedByDegree[0] || nodes[0];
+}
+
+export function computeInitialLayout(
   nodes: TopologyNode[],
   edges: TopologyEdge[] | undefined,
-  iterations: number = 50
+  iterations: number = 60
 ): SimNode[] {
-  const width = 1000;
-  const height = 640;
   const nodeCount = nodes.length;
-  const radius = Math.min(width, height) * 0.38;
+  // Dynamically size layout area so nodes have generous space to breathe
+  const width = Math.max(1600, Math.sqrt(nodeCount || 1) * 180);
+  const height = Math.max(1000, Math.sqrt(nodeCount || 1) * 120);
+  const radius = Math.max(420, Math.min(width, height) * 0.42);
 
   const simNodes: SimNode[] = nodes.map((node: TopologyNode, idx: number) => {
     const angle = (idx / (nodeCount || 1)) * 2 * Math.PI;
-    const dist = radius * (0.4 + 0.6 * Math.random());
+    const dist = radius * (0.5 + 0.5 * Math.random());
     const r = node.type === 'route' ? 24 : node.type === 'class' ? 22 : node.type === 'file' ? 20 : 18;
     return {
       ...node,
-      x: width / 2 + dist * Math.cos(angle) + (Math.random() - 0.5) * 40,
-      y: height / 2 + dist * Math.sin(angle) + (Math.random() - 0.5) * 40,
+      x: width / 2 + dist * Math.cos(angle) + (Math.random() - 0.5) * 60,
+      y: height / 2 + dist * Math.sin(angle) + (Math.random() - 0.5) * 60,
       vx: 0,
       vy: 0,
       radius: r,
@@ -42,15 +107,16 @@ function computeInitialLayout(
   const nodeIndex = new Map<string, number>();
   simNodes.forEach((n, i) => nodeIndex.set(n.id, i));
 
-  const kRepulse = Math.max(600, Math.min(3000, 25000 / Math.sqrt(simNodes.length || 1)));
-  const kSpring = 0.04;
-  const springLength = 110;
-  const centerGravity = 0.012;
-  const damping = 0.82;
-  const boundK = 0.08;
+  // Strong repulsion force to prevent clustering
+  const kRepulse = Math.max(10000, Math.min(45000, 120000 / Math.sqrt(simNodes.length || 1)));
+  const kSpring = 0.025;
+  const springLength = 200;
+  const centerGravity = 0.002;
+  const damping = 0.85;
+  const boundK = 0.02;
 
-  // Cap active edges for layout solving to 800 to bound computational cost
-  const activeEdges = edges && edges.length > 800 ? edges.slice(0, 800) : edges || [];
+  // Cap active edges for layout solving to 1200 to bound computational cost
+  const activeEdges = edges && edges.length > 1200 ? edges.slice(0, 1200) : edges || [];
 
   for (let it = 0; it < iterations; it++) {
     // 1. Repulsion
@@ -59,10 +125,10 @@ function computeInitialLayout(
         let dx = simNodes[j].x - simNodes[i].x;
         let dy = simNodes[j].y - simNodes[i].y;
         if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
-          dx = (Math.random() - 0.5) * 2;
-          dy = (Math.random() - 0.5) * 2;
+          dx = (Math.random() - 0.5) * 4;
+          dy = (Math.random() - 0.5) * 4;
         }
-        const distSq = Math.max(16, dx * dx + dy * dy);
+        const distSq = Math.max(64, dx * dx + dy * dy);
         const dist = Math.sqrt(distSq) || 1;
         const force = kRepulse / distSq;
         const fx = (dx / dist) * force;
@@ -102,11 +168,11 @@ function computeInitialLayout(
       node.vx += (width / 2 - node.x) * centerGravity;
       node.vy += (height / 2 - node.y) * centerGravity;
 
-      if (node.x < 50) node.vx += (50 - node.x) * boundK;
-      else if (node.x > 950) node.vx += (950 - node.x) * boundK;
+      if (node.x < 100) node.vx += (100 - node.x) * boundK;
+      else if (node.x > width - 100) node.vx += (width - 100 - node.x) * boundK;
 
-      if (node.y < 50) node.vy += (50 - node.y) * boundK;
-      else if (node.y > 590) node.vy += (590 - node.y) * boundK;
+      if (node.y < 100) node.vy += (100 - node.y) * boundK;
+      else if (node.y > height - 100) node.vy += (height - 100 - node.y) * boundK;
 
       node.vx *= damping;
       node.vy *= damping;
@@ -205,13 +271,9 @@ export default function TopologyExplorer() {
       const computedNodes = computeInitialLayout(data.nodes || [], data.edges || [], 50);
       setSimNodes(computedNodes);
 
-      // Initialize focal node and breadcrumbs
+      // Initialize focal node and breadcrumbs using smart selection (entrypoint / highest degree)
       if (data.nodes && data.nodes.length > 0) {
-        let focal = data.nodes[0];
-        if (rootNode.trim()) {
-          const foundRoot = data.nodes.find((n: TopologyNode) => n.id === rootNode.trim() || n.name === rootNode.trim());
-          if (foundRoot) focal = foundRoot;
-        }
+        const focal = findInitialFocalNode(data.nodes, data.edges || [], rootNode) || data.nodes[0];
         setFocalNodeId(focal.id);
         setBreadcrumbs([
           {
@@ -436,6 +498,7 @@ export default function TopologyExplorer() {
             selectedNodeId={selectedNodeId}
             searchQuery={searchQuery}
             onSelectNode={handleSelectNode}
+            autoFitOnMount={true}
           />
         )
       )}

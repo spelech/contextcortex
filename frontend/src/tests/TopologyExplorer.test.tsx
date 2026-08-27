@@ -1,5 +1,5 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import TopologyExplorer from '../TopologyExplorer';
+import TopologyExplorer, { findInitialFocalNode, computeInitialLayout } from '../TopologyExplorer';
 import { TopologyMinimap } from '../components/topology/TopologyMinimap';
 import type { SimNode } from '../components/topology/types';
 import { ToastProvider } from '../ToastContext';
@@ -510,5 +510,57 @@ describe('TopologyExplorer Component', () => {
     const svg = container.querySelector('svg');
     expect(svg).not.toBeNull();
     expect(svg?.getAttribute('viewBox')).toBe('60 40 480 400');
+  });
+
+  it('findInitialFocalNode prioritizes entrypoints and non-test hub files over test files', () => {
+    const nodes = [
+      { id: 'test-1', name: 'test_auth.py', type: 'file', filepath: 'tests/test_auth.py', repo: 'repo-core' },
+      { id: 'test-2', name: 'test_api.py', type: 'file', filepath: 'tests/test_api.py', repo: 'repo-core' },
+      { id: 'helper-1', name: 'helpers.py', type: 'file', filepath: 'src/helpers.py', repo: 'repo-core' },
+      { id: 'entry-1', name: 'main.py', type: 'file', filepath: 'src/main.py', repo: 'repo-core' },
+    ];
+    const edges = [
+      { source: 'entry-1', target: 'helper-1', type: 'IMPORTS' },
+      { source: 'test-1', target: 'entry-1', type: 'CALLS' },
+      { source: 'test-2', target: 'entry-1', type: 'CALLS' },
+    ];
+
+    // Even though test_auth.py is index 0, main.py is recognized as primary entrypoint
+    const focal = findInitialFocalNode(nodes, edges);
+    expect(focal?.id).toBe('entry-1');
+    expect(focal?.name).toBe('main.py');
+
+    // If explicit root node query provided, matches that node
+    const focalRoot = findInitialFocalNode(nodes, edges, 'helpers.py');
+    expect(focalRoot?.id).toBe('helper-1');
+  });
+
+  it('computeInitialLayout scales layout bounds dynamically for generous spacing', () => {
+    const nodes = Array.from({ length: 50 }, (_, i) => ({
+      id: `node-${i}`,
+      name: `Node${i}.ts`,
+      type: 'file',
+      filepath: `src/node-${i}.ts`,
+      repo: 'repo-core',
+    }));
+    const edges = Array.from({ length: 40 }, (_, i) => ({
+      source: `node-${i}`,
+      target: `node-${i + 1}`,
+      type: 'IMPORTS',
+    }));
+
+    const simNodes = computeInitialLayout(nodes, edges, 20);
+    expect(simNodes.length).toBe(50);
+    expect(simNodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true);
+
+    // Compute bounding box spread
+    const xs = simNodes.map((n) => n.x);
+    const ys = simNodes.map((n) => n.y);
+    const spanX = Math.max(...xs) - Math.min(...xs);
+    const spanY = Math.max(...ys) - Math.min(...ys);
+
+    // Layout should have a wide spread across canvas rather than being squished into a tight cluster
+    expect(spanX).toBeGreaterThan(400);
+    expect(spanY).toBeGreaterThan(300);
   });
 });

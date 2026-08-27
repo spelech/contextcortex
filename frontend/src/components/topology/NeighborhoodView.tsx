@@ -80,6 +80,32 @@ export function NeighborhoodView({
     return map;
   }, [subGraph, radialPositions, visibleNeighbors]);
 
+  // Group all available nodes for direct selection
+  const groupedNodes = useMemo(() => {
+    if (!graphData?.nodes) return {};
+    const groups: Record<string, typeof graphData.nodes> = {
+      Files: [],
+      Classes: [],
+      Functions: [],
+      Routes: [],
+      Modules: [],
+      Other: [],
+    };
+    graphData.nodes.forEach((n) => {
+      if (n.type === 'file') groups.Files.push(n);
+      else if (n.type === 'class') groups.Classes.push(n);
+      else if (n.type === 'function') groups.Functions.push(n);
+      else if (n.type === 'route') groups.Routes.push(n);
+      else if (n.type === 'module') groups.Modules.push(n);
+      else groups.Other.push(n);
+    });
+    // Sort alphabetically
+    Object.keys(groups).forEach((k) => {
+      groups[k].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    });
+    return Object.fromEntries(Object.entries(groups).filter(([_, list]) => list.length > 0));
+  }, [graphData?.nodes]);
+
   const focalNode = subGraph?.focalNode;
   const focalPos = radialPositions?.focal || { x: 500, y: 320 };
   const focalColor = focalNode ? (NODE_COLORS[focalNode.type] || NODE_COLORS.file) : NODE_COLORS.file;
@@ -127,8 +153,32 @@ export function NeighborhoodView({
         </div>
 
         <div className="neighborhood-breadcrumbs-right">
+          {/* Direct Focal Node / File Selector */}
+          <div className="neighborhood-focal-selector-wrap">
+            <label htmlFor="neighborhood-focal-select" className="neighborhood-focal-label">
+              <i className="fa-solid fa-crosshairs"></i> Focus:
+            </label>
+            <select
+              id="neighborhood-focal-select"
+              className="topology-select neighborhood-focal-select"
+              value={focalNodeId}
+              onChange={(e) => onSelectFocalNode(e.target.value)}
+              aria-label="Select Focal File or Node"
+            >
+              {Object.entries(groupedNodes).map(([groupName, groupNodes]) => (
+                <optgroup key={groupName} label={groupName}>
+                  {groupNodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name} {n.filepath && n.filepath !== n.name ? `(${n.filepath})` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
           <div className="neighborhood-hop-selector" role="group" aria-label="Hop Radius">
-            <span className="neighborhood-hop-label">Neighborhood:</span>
+            <span className="neighborhood-hop-label">Radius:</span>
             <div className="topology-view-btn-group">
               <button
                 type="button"
