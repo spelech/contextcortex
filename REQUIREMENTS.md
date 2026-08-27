@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **660 Automated Tests** (470 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **668 Automated Tests** (478 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -737,6 +737,20 @@ classDiagram
 - `test_delete_by_path`
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
+
+#### `tests/test_auth_endpoints.py` (8 tests)
+- `test_oauth_protected_resource_metadata` - _Verify GET /.well-known/oauth-protected-resource returns valid RFC 9728 JSON._
+- `test_local_dev_bypass_allows_unauthenticated_requests` - _When AUTH_ENABLED=false, endpoints allow access without authorization header._
+- `test_protected_endpoints_challenge_401_when_auth_enabled` - _When AUTH_ENABLED=true, unauthenticated requests receive 401 with WWW-Authenticate header._
+- `test_api_key_lifecycle_endpoints` - _Test POST, GET, and DELETE /admin/api/auth/keys endpoints._
+- `test_api_key_management_requires_admin_role` - _Test that viewer and editor roles cannot access /admin/api/auth/keys._
+- `test_mcp_tools_rbac_viewer_vs_editor_vs_admin` - _Test RBAC role enforcement across MCP tools:
+- Viewer: allowed search_code, search_docs, find_symbol, list_repositories, read ADRs
+- Viewer: denied sync_repository, create/update/supersede ADRs
+- Editor: allowed sync_repository, create/update/supersede ADRs
+- Admin: allowed full access_
+- `test_fastmcp_streamable_transport_auth_enforced` - _Test FastMCP /mcp endpoint requires authentication when AUTH_ENABLED=true._
+- `test_api_key_delete_nonexistent` - _Test DELETE /admin/api/auth/keys/{id} with nonexistent ID returns 404._
 
 #### `tests/test_auth_service.py` (24 tests)
 - `test_role_enum_values_and_hierarchy`

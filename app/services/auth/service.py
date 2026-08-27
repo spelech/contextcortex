@@ -6,8 +6,9 @@ and key management delegations.
 
 import os
 import logging
+from contextvars import ContextVar
 from datetime import datetime
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 
 from app.services.auth.models import (
     Role,
@@ -26,6 +27,31 @@ from app.services.auth.jwt_validator import JwtValidator
 logger = logging.getLogger("contextcortex.auth.service")
 
 _GLOBAL_AUTH_SERVICE: Optional["AuthService"] = None
+_CURRENT_AUTH_CONTEXT: ContextVar[Optional[AuthContext]] = ContextVar("current_auth_context", default=None)
+
+
+def get_current_auth_context() -> Optional[AuthContext]:
+    """Returns the AuthContext for the current execution context/thread."""
+    return _CURRENT_AUTH_CONTEXT.get()
+
+
+def set_current_auth_context(context: Optional[AuthContext]):
+    """Sets the AuthContext for the current execution context/thread."""
+    return _CURRENT_AUTH_CONTEXT.set(context)
+
+
+def enforce_tool_permission(required_role: Union[Role, str]) -> AuthContext:
+    """
+    Enforces RBAC permissions within MCP tools.
+    If no AuthContext is explicitly active in the current contextvar,
+    falls back to AuthService.authenticate_token(None).
+    Raises ForbiddenError or AuthenticationError on failure.
+    """
+    ctx = get_current_auth_context()
+    auth_srv = get_auth_service()
+    if ctx is None:
+        ctx = auth_srv.authenticate_token(None)
+    return auth_srv.require_role(ctx, required_role)
 
 
 class AuthService:
@@ -130,6 +156,16 @@ class AuthService:
                 f"Insufficient permissions: required role '{req.value}', current role '{context.role.value}'."
             )
         return context
+
+    def get_protected_resource_metadata(self) -> Dict[str, Any]:
+        """Returns RFC 9728 Protected Resource Metadata document."""
+        return {
+            "resource": self.resource_indicator,
+            "authorization_servers": [self.oidc_issuer] if self.oidc_issuer else [],
+            "scopes_supported": ["mcp:admin", "mcp:editor", "mcp:viewer"],
+            "bearer_methods_supported": ["header"],
+            "resource_documentation": "https://github.com/spelech/contextcortex",
+        }
 
     # -------------------------------------------------------------------------
     # Delegated API Key Management Methods

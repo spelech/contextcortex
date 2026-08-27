@@ -37,6 +37,13 @@ from app.services.auth.service import (
 )
 
 
+@pytest.fixture(autouse=True)
+def reset_auth_singleton():
+    """Ensures AuthService singleton is clean and resets to auth_enabled=False after each test."""
+    yield
+    get_auth_service(reset=True, auth_enabled=False)
+
+
 @pytest.fixture
 def db_engine(tmp_path):
     """Provides a fresh isolated SQLite database engine for testing."""

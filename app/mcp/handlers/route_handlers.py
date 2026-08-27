@@ -27,6 +27,8 @@ async def handle_find_routes(
 ) -> str:
     """List or search API endpoints and HTTP route handlers across registered repositories."""
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             sql = "SELECT r.id, r.repo, r.filepath, r.framework, r.http_method, r.path_pattern, r.handler_symbol, r.start_line, r.end_line, g.url as git_url, g.commit_sha, g.provider FROM api_routes r LEFT JOIN git_repositories g ON r.repo = g.name WHERE 1=1"
             params: List[Any] = []
@@ -77,6 +79,8 @@ async def handle_find_api_callers(
         return "Error: endpoint path cannot be empty."
 
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             sql = "SELECT c.id, c.repo, c.filepath, c.http_method, c.url_pattern, c.caller_symbol, c.line_number, g.url as git_url, g.commit_sha, g.provider FROM api_client_calls c LEFT JOIN git_repositories g ON c.repo = g.name WHERE 1=1"
             params: List[Any] = []

@@ -22,6 +22,8 @@ def _get_tools_attr(name, default):
 async def handle_list_repositories() -> str:
     """Lists all indexed local paths and remote Git repositories, including active branches, commit SHAs, and file counts."""
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             git_repos = conn.execute("SELECT id, name, url, branch, commit_sha, provider, auth_user, status, last_synced FROM git_repositories").fetchall()
             local_paths = conn.execute("SELECT path, repo, category FROM indexed_paths WHERE enabled = 1").fetchall()
@@ -55,6 +57,8 @@ async def handle_sync_repository(
     """Trigger an immediate re-fetch and re-indexing of a registered Git repo or local path."""
     target_repo = repo
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.EDITOR)
         from app.services.indexing import sync_single_git_repo, run_full_indexing
         import threading
         if target_repo:
@@ -73,6 +77,8 @@ async def handle_sync_repository(
 async def handle_index_status() -> str:
     """Get global index health, vector counts, Git provider auth sources, and active embedding models."""
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         from app.services.git_manager import check_github_rate_limit, mask_token
         from app.services.database import get_effective_git_token, list_git_host_credentials
         from app.services.embeddings import EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
@@ -122,6 +128,8 @@ async def handle_index_status() -> str:
 async def handle_catalog_summary() -> str:
     """Catalog of indexed repositories, documentation files, and AST symbol distributions."""
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             git_repos = conn.execute("SELECT name, url, branch, commit_sha, status, last_synced FROM git_repositories").fetchall()
             files = conn.execute("SELECT filepath, repo, doc_type, language FROM indexed_files").fetchall()
@@ -155,6 +163,8 @@ def handle_search_infrastructure_docs(
     topic: Annotated[str, Field(description="The specific infrastructure topic to search for")]
 ) -> str:
     """Workflow to search system infrastructure documentation, container mappings, or network routes."""
+    from app.services.auth import enforce_tool_permission, Role
+    enforce_tool_permission(Role.VIEWER)
     return f"Please perform a search using the search_docs tool for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions."
 
 

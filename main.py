@@ -40,8 +40,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Startup poller daemon error: {e}")
 
+    if hasattr(mcp_server.session_manager, "_has_started"):
+        mcp_server.session_manager._has_started = False
+
     async with mcp_server.session_manager.run():
         yield
+
+    if hasattr(mcp_server.session_manager, "_has_started"):
+        mcp_server.session_manager._has_started = False
 
     logger.info("ContextCortex Server shutting down...")
     try:
@@ -55,8 +61,96 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-app = FastAPI(title="ContextCortex", version="2.11.0", lifespan=lifespan)
+import json
+from app.services.auth import (
+    get_auth_service,
+    set_current_auth_context,
+    AuthenticationError,
+    ForbiddenError,
+)
 
+class AuthMiddleware:
+    """
+    ASGI Authentication Middleware enforcing Bearer token / API key security
+    when AUTH_ENABLED=true, while allowing public access to metadata, health,
+    webhooks, and static frontend assets.
+    """
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        # Public bypass routes
+        if (
+            path == "/.well-known/oauth-protected-resource"
+            or path == "/health"
+            or path == "/"
+            or path.startswith("/assets")
+            or (path.startswith("/admin") and not path.startswith("/admin/api"))
+            or path.startswith("/api/webhooks")
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        auth_service = get_auth_service()
+        if not auth_service.is_auth_enabled():
+            bypass_ctx = auth_service.authenticate_token(None)
+            token = set_current_auth_context(bypass_ctx)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                set_current_auth_context(None)
+            return
+
+        headers = dict(scope.get("headers", []))
+        auth_header = headers.get(b"authorization", b"").decode("latin1")
+
+        try:
+            auth_ctx = auth_service.authenticate_token(auth_header)
+            token = set_current_auth_context(auth_ctx)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                set_current_auth_context(None)
+        except AuthenticationError as e:
+            resource_indicator = auth_service.resource_indicator
+            res_meta = f"{resource_indicator}/.well-known/oauth-protected-resource"
+            www_auth = f'Bearer error="invalid_token", error_description="{str(e)}", resource_metadata="{res_meta}"'
+            body = json.dumps({"detail": str(e), "error": "Unauthorized"}).encode("utf-8")
+            await send({
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"www-authenticate", www_auth.encode("latin1")),
+                    (b"content-length", str(len(body)).encode("latin1")),
+                ],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": body,
+            })
+        except ForbiddenError as e:
+            body = json.dumps({"detail": str(e), "error": "Forbidden"}).encode("utf-8")
+            await send({
+                "type": "http.response.start",
+                "status": 403,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode("latin1")),
+                ],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": body,
+            })
+
+app = FastAPI(title="ContextCortex", version="2.11.0", lifespan=lifespan)
+app.add_middleware(AuthMiddleware)
 
 # Include API routes
 app.include_router(admin_router)

@@ -18,7 +18,13 @@ from app.services.auth.models import (
 )
 from app.services.auth.key_service import ApiKeyService, API_KEY_PREFIX
 from app.services.auth.jwt_validator import JwtValidator
-from app.services.auth.service import AuthService, get_auth_service
+from app.services.auth.service import (
+    AuthService,
+    get_auth_service,
+    get_current_auth_context,
+    set_current_auth_context,
+    enforce_tool_permission,
+)
 
 __all__ = [
     # Models & Principals
@@ -32,6 +38,9 @@ __all__ = [
     "JwtValidator",
     "AuthService",
     "get_auth_service",
+    "get_current_auth_context",
+    "set_current_auth_context",
+    "enforce_tool_permission",
     # Constants
     "API_KEY_PREFIX",
     # Exceptions
