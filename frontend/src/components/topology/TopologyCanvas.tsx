@@ -163,8 +163,8 @@ export function TopologyCanvas({
         </defs>
 
         <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-          {/* Edges */}
-          {visibleEdges.map((e, idx) => {
+          {/* Edges (capped to 600 for silky-smooth SVG performance) */}
+          {(visibleEdges.length > 600 ? visibleEdges.slice(0, 600) : visibleEdges).map((e, idx) => {
             const p1 = nodePosMap.get(e.source);
             const p2 = nodePosMap.get(e.target);
             if (!p1 || !p2) return null;
@@ -193,7 +193,7 @@ export function TopologyCanvas({
                   markerEnd={markerId}
                   className="topology-edge"
                 />
-                {e.label && (
+                {e.label && visibleEdges.length < 80 && (
                   <text
                     x={(p1.x + p2.x) / 2}
                     y={(p1.y + p2.y) / 2 - 4}
@@ -244,7 +244,6 @@ export function TopologyCanvas({
                   fill={colors.fill}
                   stroke={colors.stroke}
                   strokeWidth={isSelected ? 3 : 2}
-                  filter={`drop-shadow(0 0 6px ${colors.glow})`}
                 />
                 <text
                   y={n.radius + 14}

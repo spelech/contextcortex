@@ -1,11 +1,117 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { MouseEvent, WheelEvent } from 'react';
-import type { TopologyNode, TopologyGraphData, NodeDetails, Repo } from './types';
+import type { TopologyNode, TopologyEdge, TopologyGraphData, NodeDetails, Repo } from './types';
 import { useToast } from './ToastContext';
 import type { SimNode } from './components/topology/types';
 import { TopologyControls } from './components/topology/TopologyControls';
 import { TopologyCanvas } from './components/topology/TopologyCanvas';
 import { TopologyInspector } from './components/topology/TopologyInspector';
+
+function computeInitialLayout(
+  nodes: TopologyNode[],
+  edges: TopologyEdge[] | undefined,
+  iterations: number = 50
+): SimNode[] {
+  const width = 1000;
+  const height = 640;
+  const nodeCount = nodes.length;
+  const radius = Math.min(width, height) * 0.38;
+
+  const simNodes: SimNode[] = nodes.map((node: TopologyNode, idx: number) => {
+    const angle = (idx / (nodeCount || 1)) * 2 * Math.PI;
+    const dist = radius * (0.4 + 0.6 * Math.random());
+    const r = node.type === 'route' ? 24 : node.type === 'class' ? 22 : node.type === 'file' ? 20 : 18;
+    return {
+      ...node,
+      x: width / 2 + dist * Math.cos(angle) + (Math.random() - 0.5) * 40,
+      y: height / 2 + dist * Math.sin(angle) + (Math.random() - 0.5) * 40,
+      vx: 0,
+      vy: 0,
+      radius: r,
+    };
+  });
+
+  const nodeIndex = new Map<string, number>();
+  simNodes.forEach((n, i) => nodeIndex.set(n.id, i));
+
+  const kRepulse = Math.max(600, Math.min(3000, 25000 / Math.sqrt(simNodes.length || 1)));
+  const kSpring = 0.04;
+  const springLength = 110;
+  const centerGravity = 0.012;
+  const damping = 0.82;
+  const boundK = 0.08;
+
+  // Cap active edges for layout solving to 800 to bound computational cost
+  const activeEdges = edges && edges.length > 800 ? edges.slice(0, 800) : edges || [];
+
+  for (let it = 0; it < iterations; it++) {
+    // 1. Repulsion
+    for (let i = 0; i < simNodes.length; i++) {
+      for (let j = i + 1; j < simNodes.length; j++) {
+        let dx = simNodes[j].x - simNodes[i].x;
+        let dy = simNodes[j].y - simNodes[i].y;
+        if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
+          dx = (Math.random() - 0.5) * 2;
+          dy = (Math.random() - 0.5) * 2;
+        }
+        const distSq = Math.max(16, dx * dx + dy * dy);
+        const dist = Math.sqrt(distSq) || 1;
+        const force = kRepulse / distSq;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+
+        simNodes[i].vx -= fx;
+        simNodes[i].vy -= fy;
+        simNodes[j].vx += fx;
+        simNodes[j].vy += fy;
+      }
+    }
+
+    // 2. Spring attraction along edges
+    for (const edge of activeEdges) {
+      const i1 = nodeIndex.get(edge.source);
+      const i2 = nodeIndex.get(edge.target);
+      if (i1 === undefined || i2 === undefined) continue;
+
+      const n1 = simNodes[i1];
+      const n2 = simNodes[i2];
+      const dx = n2.x - n1.x;
+      const dy = n2.y - n1.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const displacement = dist - springLength;
+      const force = displacement * kSpring;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+
+      n1.vx += fx;
+      n1.vy += fy;
+      n2.vx -= fx;
+      n2.vy -= fy;
+    }
+
+    // 3. Gravity, soft bounds & velocity integration
+    for (const node of simNodes) {
+      node.vx += (width / 2 - node.x) * centerGravity;
+      node.vy += (height / 2 - node.y) * centerGravity;
+
+      if (node.x < 50) node.vx += (50 - node.x) * boundK;
+      else if (node.x > 950) node.vx += (950 - node.x) * boundK;
+
+      if (node.y < 50) node.vy += (50 - node.y) * boundK;
+      else if (node.y > 590) node.vy += (590 - node.y) * boundK;
+
+      node.vx *= damping;
+      node.vy *= damping;
+      node.x += node.vx;
+      node.y += node.vy;
+
+      if (!isFinite(node.x)) node.x = width / 2;
+      if (!isFinite(node.y)) node.y = height / 2;
+    }
+  }
+
+  return simNodes;
+}
 
 export default function TopologyExplorer() {
   const toast = useToast();
@@ -59,7 +165,6 @@ export default function TopologyExplorer() {
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
 
   const canvasRef = useRef<SVGSVGElement | null>(null);
-  const animFrameRef = useRef<number | null>(null);
   const simNodesRef = useRef<SimNode[]>([]);
   simNodesRef.current = simNodes;
 
@@ -95,27 +200,9 @@ export default function TopologyExplorer() {
       }
       setGraphData(data);
 
-      // Initialize simulation node positions
-      const width = 1000;
-      const height = 640;
-      const nodeCount = data.nodes.length;
-      const radius = Math.min(width, height) * 0.38;
-
-      const initialSimNodes: SimNode[] = data.nodes.map((node: TopologyNode, idx: number) => {
-        const angle = (idx / (nodeCount || 1)) * 2 * Math.PI;
-        const dist = radius * (0.4 + 0.6 * Math.random());
-        const r = node.type === 'route' ? 24 : node.type === 'class' ? 22 : node.type === 'file' ? 20 : 18;
-        return {
-          ...node,
-          x: width / 2 + dist * Math.cos(angle) + (Math.random() - 0.5) * 40,
-          y: height / 2 + dist * Math.sin(angle) + (Math.random() - 0.5) * 40,
-          vx: 0,
-          vy: 0,
-          radius: r,
-        };
-      });
-
-      setSimNodes(initialSimNodes);
+      // Compute relaxed force layout synchronously in memory
+      const computedNodes = computeInitialLayout(data.nodes || [], data.edges || [], 50);
+      setSimNodes(computedNodes);
       setPan({ x: 0, y: 0 });
       setZoom(1);
     } catch (err: any) {
@@ -180,126 +267,13 @@ export default function TopologyExplorer() {
   // Node position lookup
   const nodePosMap = useMemo(() => {
     const map = new Map<string, { x: number; y: number; radius: number }>();
-    visibleNodes.forEach((n) => map.set(n.id, { x: n.x, y: n.y, radius: n.radius }));
+    visibleNodes.forEach((n) => {
+      if (isFinite(n.x) && isFinite(n.y)) {
+        map.set(n.id, { x: n.x, y: n.y, radius: n.radius });
+      }
+    });
     return map;
   }, [visibleNodes]);
-
-  // Physics Simulation Step
-  useEffect(() => {
-    if (isSimPaused || visibleNodes.length === 0) return;
-
-    let iteration = 0;
-    const maxIterations = 140;
-
-    const stepSimulation = () => {
-      iteration++;
-      const nodes = [...simNodesRef.current];
-      if (nodes.length === 0) return;
-
-      const width = 1000;
-      const height = 640;
-      const kRepulse = Math.max(600, Math.min(3000, 25000 / Math.sqrt(nodes.length || 1)));
-      const kSpring = 0.04;
-      const springLength = 110;
-      const centerGravity = 0.012;
-      const damping = 0.82;
-      const boundK = 0.08;
-
-      const nodeIndex = new Map<string, number>();
-      nodes.forEach((n, i) => nodeIndex.set(n.id, i));
-
-      // 1. Repulsion between all node pairs
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[j].x - nodes[i].x;
-          const dy = nodes[j].y - nodes[i].y;
-          const distSq = dx * dx + dy * dy + 100;
-          const dist = Math.sqrt(distSq);
-          const force = kRepulse / distSq;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-
-          if (nodes[i].id !== draggedNodeId) {
-            nodes[i].vx -= fx;
-            nodes[i].vy -= fy;
-          }
-          if (nodes[j].id !== draggedNodeId) {
-            nodes[j].vx += fx;
-            nodes[j].vy += fy;
-          }
-        }
-      }
-
-      // 2. Spring attraction along edges
-      if (graphData?.edges) {
-        for (const edge of graphData.edges) {
-          const i1 = nodeIndex.get(edge.source);
-          const i2 = nodeIndex.get(edge.target);
-          if (i1 === undefined || i2 === undefined) continue;
-
-          const n1 = nodes[i1];
-          const n2 = nodes[i2];
-          const dx = n2.x - n1.x;
-          const dy = n2.y - n1.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const displacement = dist - springLength;
-          const force = displacement * kSpring;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-
-          if (n1.id !== draggedNodeId) {
-            n1.vx += fx;
-            n1.vy += fy;
-          }
-          if (n2.id !== draggedNodeId) {
-            n2.vx += fx;
-            n2.vy += fy;
-          }
-        }
-      }
-
-      // 3. Gravity towards center, soft boundary springs, and position update
-      let totalKineticEnergy = 0;
-      for (const node of nodes) {
-        if (node.id === draggedNodeId) continue;
-
-        node.vx += (width / 2 - node.x) * centerGravity;
-        node.vy += (height / 2 - node.y) * centerGravity;
-
-        // Soft boundary containment springs for [50, 950] x [50, 590]
-        if (node.x < 50) {
-          node.vx += (50 - node.x) * boundK;
-        } else if (node.x > 950) {
-          node.vx += (950 - node.x) * boundK;
-        }
-
-        if (node.y < 50) {
-          node.vy += (50 - node.y) * boundK;
-        } else if (node.y > 590) {
-          node.vy += (590 - node.y) * boundK;
-        }
-
-        node.vx *= damping;
-        node.vy *= damping;
-        node.x += node.vx;
-        node.y += node.vy;
-
-        totalKineticEnergy += node.vx * node.vx + node.vy * node.vy;
-      }
-
-      setSimNodes([...nodes]);
-
-      if (iteration < maxIterations && totalKineticEnergy > 0.4) {
-        animFrameRef.current = requestAnimationFrame(stepSimulation);
-      }
-    };
-
-    animFrameRef.current = requestAnimationFrame(stepSimulation);
-
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, [graphData, isSimPaused, draggedNodeId, visibleNodes.length]);
 
   // Mouse pan and zoom handlers
   const handleMouseDown = (e: MouseEvent) => {
@@ -353,11 +327,18 @@ export default function TopologyExplorer() {
     }
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     visibleNodes.forEach((n) => {
+      if (!isFinite(n.x) || !isFinite(n.y)) return;
       if (n.x < minX) minX = n.x;
       if (n.x > maxX) maxX = n.x;
       if (n.y < minY) minY = n.y;
       if (n.y > maxY) maxY = n.y;
     });
+
+    if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+      setPan({ x: 0, y: 0 });
+      setZoom(1);
+      return;
+    }
 
     const padding = 60;
     const graphWidth = Math.max(maxX - minX + padding * 2, 200);
@@ -390,7 +371,7 @@ export default function TopologyExplorer() {
   // Center canvas on a specific node
   const focusOnNode = (nodeId: string) => {
     const node = simNodes.find((n) => n.id === nodeId);
-    if (node) {
+    if (node && isFinite(node.x) && isFinite(node.y)) {
       const width = 1000;
       const height = 640;
       setZoom(1.4);
