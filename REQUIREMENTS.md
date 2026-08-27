@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **636 Automated Tests** (446 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **660 Automated Tests** (470 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -737,6 +737,32 @@ classDiagram
 - `test_delete_by_path`
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
+
+#### `tests/test_auth_service.py` (24 tests)
+- `test_role_enum_values_and_hierarchy`
+- `test_role_from_str`
+- `test_auth_context_and_user_alias`
+- `test_api_key_create_and_out_models`
+- `test_api_key_issue_and_validate`
+- `test_api_key_validate_invalid_and_tampered_key`
+- `test_api_key_expiration`
+- `test_api_key_revocation_and_deletion`
+- `test_api_key_list_multiple`
+- `test_jwt_validator_with_valid_token`
+- `test_jwt_validator_role_extraction_sources`
+- `test_jwt_validator_expired_and_invalid_signature`
+- `test_jwt_validator_issuer_and_audience_mismatch`
+- `test_auth_service_bypass_when_disabled`
+- `test_auth_service_routes_api_key`
+- `test_auth_service_routes_jwt`
+- `test_auth_service_rejects_missing_token_when_enabled`
+- `test_auth_service_rbac_permissions`
+- `test_auth_service_proxies_key_management`
+- `test_auth_service_singleton_getter`
+- `test_auth_context_has_scope_admin_override`
+- `test_api_key_get_nonexistent`
+- `test_jwt_validator_oidc_discovery_resolution`
+- `test_jwt_validator_stale_cache_refresh`
 
 #### `tests/test_auto_sync_api.py` (7 tests)
 - `test_repo_auto_sync_toggle_and_settings_endpoints`
