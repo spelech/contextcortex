@@ -1,10 +1,18 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import type { MouseEvent, WheelEvent } from 'react';
-import type { TopologyNode, TopologyEdge, TopologyGraphData, NodeDetails, Repo } from './types';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import type {
+  TopologyNode,
+  TopologyEdge,
+  TopologyGraphData,
+  NodeDetails,
+  Repo,
+  TopologyViewMode,
+  FocalBreadcrumb,
+} from './types';
 import { useToast } from './ToastContext';
 import type { SimNode } from './components/topology/types';
 import { TopologyControls } from './components/topology/TopologyControls';
-import { TopologyCanvas } from './components/topology/TopologyCanvas';
+import { NeighborhoodView } from './components/topology/NeighborhoodView';
+import { TopologyCanvas2D } from './components/topology/TopologyCanvas2D';
 import { TopologyInspector } from './components/topology/TopologyInspector';
 
 function computeInitialLayout(
@@ -117,6 +125,11 @@ export default function TopologyExplorer() {
   const toast = useToast();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>('__all__');
+  const [viewMode, setViewMode] = useState<TopologyViewMode>('neighborhood');
+  const [focalNodeId, setFocalNodeId] = useState<string>('');
+  const [breadcrumbs, setBreadcrumbs] = useState<FocalBreadcrumb[]>([]);
+  const [hopRadius, setHopRadius] = useState<1 | 2>(1);
+
   const [viewType, setViewType] = useState<'files' | 'symbols' | 'routes' | 'full'>('files');
   const [depth, setDepth] = useState<number>(2);
   const [nodeLimit, setNodeLimit] = useState<number>(150);
@@ -132,7 +145,7 @@ export default function TopologyExplorer() {
     module: true,
   });
 
-  const [edgeFilters, setEdgeFilters] = useState<Record<string, boolean>>({
+  const [edgeFilters] = useState<Record<string, boolean>>({
     IMPORTS: true,
     CALLS: true,
     DEFINES: true,
@@ -144,29 +157,17 @@ export default function TopologyExplorer() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchFocused, setSearchFocused] = useState<boolean>(false);
 
-  // Graph data & simulation
+  // Graph data & simulation for Canvas 2D
   const [graphData, setGraphData] = useState<TopologyGraphData | null>(null);
   const [simNodes, setSimNodes] = useState<SimNode[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Canvas pan & zoom
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState<number>(1);
-  const [isPanning, setIsPanning] = useState<boolean>(false);
-  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
-  const [isSimPaused, setIsSimPaused] = useState<boolean>(false);
 
   // Inspector Drawer
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [nodeDetails, setNodeDetails] = useState<NodeDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
-
-  const canvasRef = useRef<SVGSVGElement | null>(null);
-  const simNodesRef = useRef<SimNode[]>([]);
-  simNodesRef.current = simNodes;
 
   // Load repositories on mount
   useEffect(() => {
@@ -200,11 +201,30 @@ export default function TopologyExplorer() {
       }
       setGraphData(data);
 
-      // Compute relaxed force layout synchronously in memory
+      // Compute relaxed force layout synchronously in memory for Canvas 2D
       const computedNodes = computeInitialLayout(data.nodes || [], data.edges || [], 50);
       setSimNodes(computedNodes);
-      setPan({ x: 0, y: 0 });
-      setZoom(1);
+
+      // Initialize focal node and breadcrumbs
+      if (data.nodes && data.nodes.length > 0) {
+        let focal = data.nodes[0];
+        if (rootNode.trim()) {
+          const foundRoot = data.nodes.find((n: TopologyNode) => n.id === rootNode.trim() || n.name === rootNode.trim());
+          if (foundRoot) focal = foundRoot;
+        }
+        setFocalNodeId(focal.id);
+        setBreadcrumbs([
+          {
+            id: focal.id,
+            name: focal.name,
+            type: focal.type,
+            repo: focal.repo || selectedRepo,
+          },
+        ]);
+      } else {
+        setFocalNodeId('');
+        setBreadcrumbs([]);
+      }
     } catch (err: any) {
       setError(err.message);
       toast.error('Topology loading error: ' + err.message);
@@ -234,7 +254,39 @@ export default function TopologyExplorer() {
     }
   };
 
-  // Filtered nodes and edges for rendering
+  // Focal node selection & breadcrumbs updates
+  const handleSelectFocalNode = useCallback((nodeId: string) => {
+    const targetNode = graphData?.nodes?.find((n) => n.id === nodeId);
+    if (targetNode) {
+      setFocalNodeId(nodeId);
+      setBreadcrumbs((prev) => {
+        if (prev.length > 0 && prev[prev.length - 1].id === nodeId) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            id: targetNode.id,
+            name: targetNode.name,
+            type: targetNode.type,
+            repo: targetNode.repo || selectedRepo,
+          },
+        ];
+      });
+    }
+  }, [graphData, selectedRepo]);
+
+  // Navigate back to an existing breadcrumb
+  const handleNavigateBreadcrumb = useCallback((index: number) => {
+    setBreadcrumbs((prev) => {
+      if (index < 0 || index >= prev.length) return prev;
+      const target = prev[index];
+      setFocalNodeId(target.id);
+      return prev.slice(0, index + 1);
+    });
+  }, []);
+
+  // Filtered nodes and edges for 2D Canvas rendering
   const visibleNodes = useMemo(() => {
     let filtered = simNodes.filter((n) => typeFilters[n.type] ?? true);
     if (hideOrphans && graphData?.edges) {
@@ -264,98 +316,6 @@ export default function TopologyExplorer() {
     );
   }, [graphData, edgeFilters, visibleNodeIds]);
 
-  // Node position lookup
-  const nodePosMap = useMemo(() => {
-    const map = new Map<string, { x: number; y: number; radius: number }>();
-    visibleNodes.forEach((n) => {
-      if (isFinite(n.x) && isFinite(n.y)) {
-        map.set(n.id, { x: n.x, y: n.y, radius: n.radius });
-      }
-    });
-    return map;
-  }, [visibleNodes]);
-
-  // Mouse pan and zoom handlers
-  const handleMouseDown = (e: MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (
-      !target.closest('.topology-node') &&
-      !target.closest('.topology-controls-panel') &&
-      !target.closest('.topology-legend') &&
-      !target.closest('.topology-minimap')
-    ) {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-    }
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isPanning) {
-      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
-    } else if (draggedNodeId) {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect || rect.width === 0 || rect.height === 0) return;
-
-      // Convert screen clientX/Y to SVG viewBox (1000 x 640) coordinate space:
-      const svgX = (e.clientX - rect.left) * (1000 / rect.width);
-      const svgY = (e.clientY - rect.top) * (640 / rect.height);
-      const nodeX = (svgX - pan.x) / zoom;
-      const nodeY = (svgY - pan.y) / zoom;
-
-      setSimNodes((prev) =>
-        prev.map((n) => (n.id === draggedNodeId ? { ...n, x: nodeX, y: nodeY, vx: 0, vy: 0 } : n))
-      );
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-    setDraggedNodeId(null);
-  };
-
-  const handleWheel = (e: WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
-    setZoom((prev) => Math.max(0.2, Math.min(3.5, prev * zoomFactor)));
-  };
-
-  const autoFitGraph = useCallback(() => {
-    if (visibleNodes.length === 0) {
-      setPan({ x: 0, y: 0 });
-      setZoom(1);
-      return;
-    }
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    visibleNodes.forEach((n) => {
-      if (!isFinite(n.x) || !isFinite(n.y)) return;
-      if (n.x < minX) minX = n.x;
-      if (n.x > maxX) maxX = n.x;
-      if (n.y < minY) minY = n.y;
-      if (n.y > maxY) maxY = n.y;
-    });
-
-    if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
-      setPan({ x: 0, y: 0 });
-      setZoom(1);
-      return;
-    }
-
-    const padding = 60;
-    const graphWidth = Math.max(maxX - minX + padding * 2, 200);
-    const graphHeight = Math.max(maxY - minY + padding * 2, 200);
-    const scaleX = 1000 / graphWidth;
-    const scaleY = 640 / graphHeight;
-    const fitZoom = Math.max(0.3, Math.min(1.8, Math.min(scaleX, scaleY)));
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-
-    setZoom(fitZoom);
-    setPan({
-      x: 500 - centerX * fitZoom,
-      y: 320 - centerY * fitZoom,
-    });
-  }, [visibleNodes]);
-
   // Search filter matches
   const searchMatches = useMemo(() => {
     if (!searchQuery.trim() || !graphData?.nodes) return [];
@@ -368,17 +328,11 @@ export default function TopologyExplorer() {
     ).slice(0, 10);
   }, [searchQuery, graphData]);
 
-  // Center canvas on a specific node
+  // Focus on a specific node from search or inspector
   const focusOnNode = (nodeId: string) => {
-    const node = simNodes.find((n) => n.id === nodeId);
-    if (node && isFinite(node.x) && isFinite(node.y)) {
-      const width = 1000;
-      const height = 640;
-      setZoom(1.4);
-      setPan({
-        x: width / 2 - node.x * 1.4,
-        y: height / 2 - node.y * 1.4,
-      });
+    const targetNode = graphData?.nodes?.find((n) => n.id === nodeId);
+    if (targetNode) {
+      handleSelectFocalNode(nodeId);
       handleSelectNode(nodeId);
       setSearchFocused(false);
     }
@@ -386,8 +340,12 @@ export default function TopologyExplorer() {
 
   // Export SVG
   const exportSVG = () => {
-    if (!canvasRef.current) return;
-    const svgData = new XMLSerializer().serializeToString(canvasRef.current);
+    const svgElem = document.querySelector('.neighborhood-svg');
+    if (!svgElem) {
+      toast.error('SVG export is available in Neighborhood View. Use PNG export in 2D Canvas.');
+      return;
+    }
+    const svgData = new XMLSerializer().serializeToString(svgElem);
     const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     const link = document.createElement('a');
@@ -418,6 +376,10 @@ export default function TopologyExplorer() {
         repos={repos}
         selectedRepo={selectedRepo}
         setSelectedRepo={setSelectedRepo}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        hopRadius={hopRadius}
+        setHopRadius={setHopRadius}
         viewType={viewType}
         setViewType={setViewType}
         depth={depth}
@@ -436,7 +398,6 @@ export default function TopologyExplorer() {
         onFocusNode={focusOnNode}
         typeFilters={typeFilters}
         setTypeFilters={setTypeFilters}
-        onAutoFit={autoFitGraph}
         onExportSVG={exportSVG}
         onExportJSON={exportJSON}
       />
@@ -448,30 +409,36 @@ export default function TopologyExplorer() {
         </div>
       )}
 
-      <TopologyCanvas
-        canvasRef={canvasRef}
-        visibleNodes={visibleNodes}
-        visibleEdges={visibleEdges}
-        nodePosMap={nodePosMap}
-        pan={pan}
-        zoom={zoom}
-        setZoom={setZoom}
-        setPan={setPan}
-        onAutoFit={autoFitGraph}
-        isSimPaused={isSimPaused}
-        setIsSimPaused={setIsSimPaused}
-        loading={loading}
-        edgeFilters={edgeFilters}
-        setEdgeFilters={setEdgeFilters}
-        selectedNodeId={selectedNodeId}
-        searchQuery={searchQuery}
-        onSelectNode={handleSelectNode}
-        setDraggedNodeId={setDraggedNodeId}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
-      />
+      {loading && (
+        <div className="topology-empty-state" style={{ height: '300px' }}>
+          <i className="fa-solid fa-spinner fa-spin fa-2xl"></i>
+          <p>Generating Topology Graph...</p>
+        </div>
+      )}
+
+      {!loading && (
+        viewMode === 'neighborhood' ? (
+          <NeighborhoodView
+            graphData={graphData}
+            focalNodeId={focalNodeId}
+            onSelectFocalNode={handleSelectFocalNode}
+            onSelectNodeDetails={handleSelectNode}
+            breadcrumbs={breadcrumbs}
+            onNavigateBreadcrumb={handleNavigateBreadcrumb}
+            hopRadius={hopRadius}
+            setHopRadius={setHopRadius}
+            typeFilters={typeFilters}
+          />
+        ) : (
+          <TopologyCanvas2D
+            nodes={visibleNodes}
+            edges={visibleEdges}
+            selectedNodeId={selectedNodeId}
+            searchQuery={searchQuery}
+            onSelectNode={handleSelectNode}
+          />
+        )
+      )}
 
       <TopologyInspector
         isOpen={isDrawerOpen}
