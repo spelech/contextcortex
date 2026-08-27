@@ -693,3 +693,213 @@
     border: 1px solid var(--border-card);
     border-radius: var(--radius);
 }
+
+/* Force-Directed Physics Controls Popover */
+.topology-physics-panel,
+.topology-physics-popover {
+    position: absolute;
+    top: 70px;
+    right: 20px;
+    z-index: 100;
+    min-width: 320px;
+    max-width: 380px;
+    width: calc(100% - 40px);
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(16px);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    animation: fadeInPhysics 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInPhysics {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.topology-physics-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-card);
+}
+
+.topology-physics-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.topology-physics-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+}
+
+.topology-physics-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.topology-physics-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.topology-physics-section-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.topology-physics-presets-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+
+.topology-physics-preset-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-card);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.topology-physics-preset-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    border-color: var(--primary);
+}
+
+.topology-physics-preset-btn.active {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.5);
+    font-weight: 600;
+}
+
+.topology-physics-sliders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.topology-physics-slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.topology-physics-slider-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.8rem;
+}
+
+.topology-physics-slider-label {
+    color: var(--text);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.topology-physics-symbol {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-family: var(--font-family-mono, monospace);
+}
+
+.topology-physics-value-chip {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--primary, #38bdf8);
+    font-weight: 600;
+}
+
+.topology-physics-range-input {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.12);
+    outline: none;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.topology-physics-range-input:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.topology-physics-range-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary, #3b82f6);
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+    transition: transform 0.1s ease;
+}
+
+.topology-physics-range-input::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.topology-physics-range-input::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary, #3b82f6);
+    border: none;
+    cursor: pointer;
+}
+
+.topology-physics-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.topology-physics-action-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 0.8rem;
+}
+
