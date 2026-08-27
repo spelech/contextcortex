@@ -30,4 +30,7 @@ export type {
   FocalBreadcrumb,
   NeighborhoodSubGraph,
   RadialLayoutResult,
+  TopologyPhysicsConfig,
+  ArchitecturePreset,
 } from '../../types';
+

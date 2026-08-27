@@ -234,3 +234,15 @@ export interface RadialLayoutResult {
     direction: 'incoming' | 'outgoing' | 'secondary';
   }>;
 }
+
+export interface TopologyPhysicsConfig {
+  kRepulse: number;
+  springLength: number;
+  kSpring: number;
+  centerGravity: number;
+  collisionRadius: number;
+  iterations: number;
+}
+
+export type ArchitecturePreset = 'files' | 'architecture' | 'api' | 'full';
+
