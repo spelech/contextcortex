@@ -1,53 +1,162 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import type { MouseEvent, WheelEvent } from 'react';
-import type { TopologyNode, TopologyGraphData, NodeDetails, Repo } from './types';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import type {
+  TopologyNode,
+  TopologyEdge,
+  TopologyGraphData,
+  NodeDetails,
+  Repo,
+  TopologyViewMode,
+  FocalBreadcrumb,
+  ArchitecturePreset,
+  TopologyPhysicsConfig,
+} from './types';
 import { useToast } from './ToastContext';
 import type { SimNode } from './components/topology/types';
 import { TopologyControls } from './components/topology/TopologyControls';
-import { TopologyCanvas } from './components/topology/TopologyCanvas';
+import { NeighborhoodView } from './components/topology/NeighborhoodView';
+import { TopologyCanvas2D, calculateForceDirectedLayout } from './components/topology/TopologyCanvas2D';
 import { TopologyInspector } from './components/topology/TopologyInspector';
+import { TopologyPhysicsControls } from './components/topology/TopologyPhysicsControls';
+import {
+  DEFAULT_PHYSICS_CONFIG,
+  PHYSICS_PRESETS,
+  ARCHITECTURE_PRESET_MAP,
+  resolveBackendViewType,
+  getStoredPhysicsConfig,
+  setStoredPhysicsConfig,
+} from './components/topology/physicsPresets';
+
+export function findInitialFocalNode(
+  nodes: TopologyNode[],
+  edges: TopologyEdge[] = [],
+  rootNodeQuery?: string
+): TopologyNode | undefined {
+  if (!nodes || nodes.length === 0) return undefined;
+
+  // 1. If explicit rootNode is queried
+  if (rootNodeQuery && rootNodeQuery.trim()) {
+    const q = rootNodeQuery.trim().toLowerCase();
+    const found = nodes.find(
+      (n) =>
+        n.id.toLowerCase() === q ||
+        n.name.toLowerCase() === q ||
+        (n.filepath && n.filepath.toLowerCase().endsWith(q))
+    );
+    if (found) return found;
+  }
+
+  // Build degree count map (incoming + outgoing edges)
+  const degreeMap = new Map<string, number>();
+  edges.forEach((e) => {
+    degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
+    degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+  });
+
+  const isTestNode = (n: TopologyNode) => {
+    const name = (n.name || '').toLowerCase();
+    const path = (n.filepath || n.id || '').toLowerCase();
+    return (
+      path.includes('/tests/') ||
+      path.includes('/test/') ||
+      path.startsWith('tests/') ||
+      path.startsWith('test/') ||
+      path.includes('test_') ||
+      path.includes('.test.') ||
+      path.includes('.spec.') ||
+      name.startsWith('test_')
+    );
+  };
+
+  const nonTestNodes = nodes.filter((n) => !isTestNode(n));
+  const candidateList = nonTestNodes.length > 0 ? nonTestNodes : nodes;
+
+  // 2. Look for primary entry points first
+  const entrypointPatterns = [
+    /(^|\/)(main|index|app|server|api|cli)\.(py|ts|tsx|js|jsx|go|rs)$/i,
+    /(^|\/)__init__\.py$/i,
+  ];
+  for (const pat of entrypointPatterns) {
+    const entry = candidateList.find((n) => pat.test(n.filepath || n.name || n.id));
+    if (entry) return entry;
+  }
+
+  // 3. Pick candidate with highest degree of connectivity
+  const sortedByDegree = [...candidateList].sort((a, b) => {
+    const degA = degreeMap.get(a.id) || 0;
+    const degB = degreeMap.get(b.id) || 0;
+    return degB - degA;
+  });
+
+  return sortedByDegree[0] || nodes[0];
+}
+
+export function computeInitialLayout(
+  nodes: TopologyNode[],
+  edges: TopologyEdge[] | undefined,
+  iterationsOrConfig: number | TopologyPhysicsConfig = 60
+): SimNode[] {
+  const config =
+    typeof iterationsOrConfig === 'number'
+      ? { ...DEFAULT_PHYSICS_CONFIG, iterations: iterationsOrConfig }
+      : iterationsOrConfig;
+  return calculateForceDirectedLayout(nodes, edges, undefined, undefined, config);
+}
+
+export function findMatchingPreset(filters: Record<string, boolean>): ArchitecturePreset | null {
+  for (const [key, presetFilters] of Object.entries(ARCHITECTURE_PRESET_MAP) as [
+    ArchitecturePreset,
+    Record<string, boolean>
+  ][]) {
+    const allKeys = new Set([...Object.keys(filters), ...Object.keys(presetFilters)]);
+    let match = true;
+    for (const k of allKeys) {
+      if (Boolean(filters[k]) !== Boolean(presetFilters[k])) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return key;
+  }
+  return null;
+}
 
 export default function TopologyExplorer() {
   const toast = useToast();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string>('__all__');
-  const [viewType, setViewType] = useState<'files' | 'symbols' | 'routes' | 'full'>('files');
+  const [viewMode, setViewMode] = useState<TopologyViewMode>('neighborhood');
+  const [focalNodeId, setFocalNodeId] = useState<string>('');
+  const [breadcrumbs, setBreadcrumbs] = useState<FocalBreadcrumb[]>([]);
+  const [hopRadius, setHopRadius] = useState<1 | 2>(1);
+
   const [depth, setDepth] = useState<number>(2);
+  const [nodeLimit, setNodeLimit] = useState<number>(150);
+  const [hideOrphans, setHideOrphans] = useState<boolean>(false);
   const [rootNode, setRootNode] = useState<string>('');
 
-  // Filtering toggles
+  // Architectural Preset and Filtering toggles
+  const [activePreset, setActivePreset] = useState<ArchitecturePreset | null>('architecture');
   const [typeFilters, setTypeFilters] = useState<Record<string, boolean>>({
-    file: true,
-    class: true,
-    function: true,
-    route: true,
-    module: true,
+    ...ARCHITECTURE_PRESET_MAP.architecture,
   });
 
-  const [edgeFilters, setEdgeFilters] = useState<Record<string, boolean>>({
+  const [edgeFilters] = useState<Record<string, boolean>>({
     IMPORTS: true,
     CALLS: true,
     DEFINES: true,
     HANDLES: true,
     ROUTES_TO: true,
+    DOC_LINKS_TO: true,
   });
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchFocused, setSearchFocused] = useState<boolean>(false);
 
-  // Graph data & simulation
+  // Graph data & simulation for Canvas 2D
   const [graphData, setGraphData] = useState<TopologyGraphData | null>(null);
   const [simNodes, setSimNodes] = useState<SimNode[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Canvas pan & zoom
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState<number>(1);
-  const [isPanning, setIsPanning] = useState<boolean>(false);
-  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
-  const [isSimPaused, setIsSimPaused] = useState<boolean>(false);
 
   // Inspector Drawer
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -55,10 +164,27 @@ export default function TopologyExplorer() {
   const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
 
-  const canvasRef = useRef<SVGSVGElement | null>(null);
-  const animFrameRef = useRef<number | null>(null);
-  const simNodesRef = useRef<SimNode[]>([]);
-  simNodesRef.current = simNodes;
+  // Force-Directed Physics State
+  const [physicsConfig, setPhysicsConfig] = useState<TopologyPhysicsConfig>(() => getStoredPhysicsConfig());
+  const [isPhysicsOpen, setIsPhysicsOpen] = useState<boolean>(false);
+  const [relaxTrigger, setRelaxTrigger] = useState<number>(0);
+
+  // Dynamic backend view_type based on active filters
+  const activeViewType = useMemo(() => {
+    return resolveBackendViewType(typeFilters);
+  }, [typeFilters]);
+
+  // Compute live node counts per type
+  const nodeCounts = useMemo(() => {
+    const counts = { file: 0, class: 0, function: 0, route: 0 };
+    if (!graphData?.nodes) return counts;
+    for (const n of graphData.nodes) {
+      if (n.type in counts) {
+        counts[n.type as keyof typeof counts]++;
+      }
+    }
+    return counts;
+  }, [graphData]);
 
   // Load repositories on mount
   useEffect(() => {
@@ -76,12 +202,12 @@ export default function TopologyExplorer() {
     fetchRepos();
   }, []);
 
-  // Fetch graph data
+  // Fetch graph data using dynamic activeViewType
   const loadTopology = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      let url = `/admin/api/graph/topology?repo=${encodeURIComponent(selectedRepo)}&view_type=${viewType}&depth=${depth}&limit=400`;
+      let url = `/admin/api/graph/topology?repo=${encodeURIComponent(selectedRepo)}&view_type=${activeViewType}&depth=${depth}&limit=${nodeLimit}`;
       if (rootNode.trim()) {
         url += `&root_node=${encodeURIComponent(rootNode.trim())}`;
       }
@@ -92,40 +218,124 @@ export default function TopologyExplorer() {
       }
       setGraphData(data);
 
-      // Initialize simulation node positions
-      const width = 1000;
-      const height = 640;
-      const nodeCount = data.nodes.length;
-      const radius = Math.min(width, height) * 0.38;
+      // Compute relaxed force layout synchronously in memory for Canvas 2D
+      const computedNodes = calculateForceDirectedLayout(
+        data.nodes || [],
+        data.edges || [],
+        undefined,
+        undefined,
+        physicsConfig
+      );
+      setSimNodes(computedNodes);
 
-      const initialSimNodes: SimNode[] = data.nodes.map((node: TopologyNode, idx: number) => {
-        const angle = (idx / (nodeCount || 1)) * 2 * Math.PI;
-        const dist = radius * (0.4 + 0.6 * Math.random());
-        const r = node.type === 'route' ? 24 : node.type === 'class' ? 22 : node.type === 'file' ? 20 : 18;
-        return {
-          ...node,
-          x: width / 2 + dist * Math.cos(angle) + (Math.random() - 0.5) * 40,
-          y: height / 2 + dist * Math.sin(angle) + (Math.random() - 0.5) * 40,
-          vx: 0,
-          vy: 0,
-          radius: r,
-        };
-      });
-
-      setSimNodes(initialSimNodes);
-      setPan({ x: 0, y: 0 });
-      setZoom(1);
+      // Initialize focal node and breadcrumbs using smart selection (entrypoint / highest degree)
+      if (data.nodes && data.nodes.length > 0) {
+        const focal = findInitialFocalNode(data.nodes, data.edges || [], rootNode) || data.nodes[0];
+        setFocalNodeId(focal.id);
+        setBreadcrumbs([
+          {
+            id: focal.id,
+            name: focal.name,
+            type: focal.type,
+            repo: focal.repo || selectedRepo,
+          },
+        ]);
+      } else {
+        setFocalNodeId('');
+        setBreadcrumbs([]);
+      }
     } catch (err: any) {
       setError(err.message);
       toast.error('Topology loading error: ' + err.message);
     } finally {
       setLoading(false);
     }
-  }, [selectedRepo, viewType, depth, rootNode, toast]);
+  }, [selectedRepo, activeViewType, depth, nodeLimit, rootNode, physicsConfig, toast]);
 
   useEffect(() => {
     loadTopology();
   }, [loadTopology]);
+
+  // Handle architectural preset selection
+  const handleSelectPreset = useCallback((preset: ArchitecturePreset) => {
+    setActivePreset(preset);
+    setTypeFilters({ ...ARCHITECTURE_PRESET_MAP[preset] });
+  }, []);
+
+  // Handle manual filter chip toggle, updating activePreset if needed
+  const handleSetTypeFilters = useCallback<React.Dispatch<React.SetStateAction<Record<string, boolean>>>>(
+    (action) => {
+      setTypeFilters((prev) => {
+        const next = typeof action === 'function' ? action(prev) : action;
+        setActivePreset(findMatchingPreset(next));
+        return next;
+      });
+    },
+    []
+  );
+
+  // Physics handlers
+  const handleChangePhysicsConfig = useCallback((newConfig: TopologyPhysicsConfig) => {
+    setPhysicsConfig(newConfig);
+    setStoredPhysicsConfig(newConfig);
+  }, []);
+
+  const handleSelectPhysicsPreset = useCallback(
+    (presetKey: string) => {
+      const preset = PHYSICS_PRESETS[presetKey as keyof typeof PHYSICS_PRESETS];
+      if (preset) {
+        setPhysicsConfig(preset);
+        setStoredPhysicsConfig(preset);
+        if (graphData?.nodes && graphData.nodes.length > 0) {
+          const reRelaxed = calculateForceDirectedLayout(
+            graphData.nodes,
+            graphData.edges || [],
+            undefined,
+            undefined,
+            preset
+          );
+          setSimNodes(reRelaxed);
+          setRelaxTrigger((prev) => prev + 1);
+        }
+      }
+    },
+    [graphData]
+  );
+
+  const handleResetPhysicsDefaults = useCallback(() => {
+    setPhysicsConfig(DEFAULT_PHYSICS_CONFIG);
+    setStoredPhysicsConfig(DEFAULT_PHYSICS_CONFIG);
+    if (graphData?.nodes && graphData.nodes.length > 0) {
+      const reRelaxed = calculateForceDirectedLayout(
+        graphData.nodes,
+        graphData.edges || [],
+        undefined,
+        undefined,
+        DEFAULT_PHYSICS_CONFIG
+      );
+      setSimNodes(reRelaxed);
+      setRelaxTrigger((prev) => prev + 1);
+    }
+  }, [graphData]);
+
+  const handleReRelax = useCallback(() => {
+    if (graphData?.nodes && graphData.nodes.length > 0) {
+      const reRelaxed = calculateForceDirectedLayout(
+        simNodes.length > 0 ? simNodes : graphData.nodes,
+        graphData.edges || [],
+        undefined,
+        undefined,
+        physicsConfig
+      );
+      setSimNodes(reRelaxed);
+      setRelaxTrigger((prev) => prev + 1);
+      toast.success('Layout re-relaxed');
+    }
+  }, [graphData, simNodes, physicsConfig, toast]);
+
+  const handleTogglePhysics = useCallback(() => {
+    setIsPhysicsOpen((prev) => !prev);
+  }, []);
 
   // Load Node Details
   const handleSelectNode = async (nodeId: string) => {
@@ -144,10 +354,56 @@ export default function TopologyExplorer() {
     }
   };
 
-  // Filtered nodes and edges for rendering
+  // Focal node selection & breadcrumbs updates
+  const handleSelectFocalNode = useCallback(
+    (nodeId: string) => {
+      const targetNode = graphData?.nodes?.find((n) => n.id === nodeId);
+      if (targetNode) {
+        setFocalNodeId(nodeId);
+        setBreadcrumbs((prev) => {
+          if (prev.length > 0 && prev[prev.length - 1].id === nodeId) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: targetNode.id,
+              name: targetNode.name,
+              type: targetNode.type,
+              repo: targetNode.repo || selectedRepo,
+            },
+          ];
+        });
+      }
+    },
+    [graphData, selectedRepo]
+  );
+
+  // Navigate back to an existing breadcrumb
+  const handleNavigateBreadcrumb = useCallback((index: number) => {
+    setBreadcrumbs((prev) => {
+      if (index < 0 || index >= prev.length) return prev;
+      const target = prev[index];
+      setFocalNodeId(target.id);
+      return prev.slice(0, index + 1);
+    });
+  }, []);
+
+  // Filtered nodes and edges for 2D Canvas rendering
   const visibleNodes = useMemo(() => {
-    return simNodes.filter((n) => typeFilters[n.type] ?? true);
-  }, [simNodes, typeFilters]);
+    let filtered = simNodes.filter((n) => typeFilters[n.type] ?? true);
+    if (hideOrphans && graphData?.edges) {
+      const connectedNodeIds = new Set<string>();
+      graphData.edges.forEach((e) => {
+        if (edgeFilters[e.type] ?? true) {
+          connectedNodeIds.add(e.source);
+          connectedNodeIds.add(e.target);
+        }
+      });
+      filtered = filtered.filter((n) => connectedNodeIds.has(n.id));
+    }
+    return filtered;
+  }, [simNodes, typeFilters, hideOrphans, graphData, edgeFilters]);
 
   const visibleNodeIds = useMemo(() => {
     return new Set(visibleNodes.map((n) => n.id));
@@ -163,172 +419,25 @@ export default function TopologyExplorer() {
     );
   }, [graphData, edgeFilters, visibleNodeIds]);
 
-  // Node position lookup
-  const nodePosMap = useMemo(() => {
-    const map = new Map<string, { x: number; y: number; radius: number }>();
-    visibleNodes.forEach((n) => map.set(n.id, { x: n.x, y: n.y, radius: n.radius }));
-    return map;
-  }, [visibleNodes]);
-
-  // Physics Simulation Step
-  useEffect(() => {
-    if (isSimPaused || visibleNodes.length === 0) return;
-
-    let iteration = 0;
-    const maxIterations = 250;
-
-    const stepSimulation = () => {
-      iteration++;
-      const nodes = [...simNodesRef.current];
-      if (nodes.length === 0) return;
-
-      const width = 1000;
-      const height = 640;
-      const kRepulse = 3800;
-      const kSpring = 0.04;
-      const springLength = 110;
-      const centerGravity = 0.015;
-      const damping = 0.85;
-
-      const nodeIndex = new Map<string, number>();
-      nodes.forEach((n, i) => nodeIndex.set(n.id, i));
-
-      // 1. Repulsion between all node pairs
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[j].x - nodes[i].x;
-          const dy = nodes[j].y - nodes[i].y;
-          const distSq = dx * dx + dy * dy + 100;
-          const dist = Math.sqrt(distSq);
-          const force = kRepulse / distSq;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-
-          if (nodes[i].id !== draggedNodeId) {
-            nodes[i].vx -= fx;
-            nodes[i].vy -= fy;
-          }
-          if (nodes[j].id !== draggedNodeId) {
-            nodes[j].vx += fx;
-            nodes[j].vy += fy;
-          }
-        }
-      }
-
-      // 2. Spring attraction along edges
-      if (graphData?.edges) {
-        for (const edge of graphData.edges) {
-          const i1 = nodeIndex.get(edge.source);
-          const i2 = nodeIndex.get(edge.target);
-          if (i1 === undefined || i2 === undefined) continue;
-
-          const n1 = nodes[i1];
-          const n2 = nodes[i2];
-          const dx = n2.x - n1.x;
-          const dy = n2.y - n1.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const displacement = dist - springLength;
-          const force = displacement * kSpring;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-
-          if (n1.id !== draggedNodeId) {
-            n1.vx += fx;
-            n1.vy += fy;
-          }
-          if (n2.id !== draggedNodeId) {
-            n2.vx += fx;
-            n2.vy += fy;
-          }
-        }
-      }
-
-      // 3. Gravity towards center and position update
-      let totalKineticEnergy = 0;
-      for (const node of nodes) {
-        if (node.id === draggedNodeId) continue;
-
-        node.vx += (width / 2 - node.x) * centerGravity;
-        node.vy += (height / 2 - node.y) * centerGravity;
-        node.vx *= damping;
-        node.vy *= damping;
-        node.x += node.vx;
-        node.y += node.vy;
-
-        totalKineticEnergy += node.vx * node.vx + node.vy * node.vy;
-      }
-
-      setSimNodes([...nodes]);
-
-      if (iteration < maxIterations && totalKineticEnergy > 0.5) {
-        animFrameRef.current = requestAnimationFrame(stepSimulation);
-      }
-    };
-
-    animFrameRef.current = requestAnimationFrame(stepSimulation);
-
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, [graphData, isSimPaused, draggedNodeId]);
-
-  // Mouse pan and zoom handlers
-  const handleMouseDown = (e: MouseEvent) => {
-    if (e.target === canvasRef.current || (e.target as HTMLElement).tagName === 'svg') {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-    }
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isPanning) {
-      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
-    } else if (draggedNodeId) {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const mouseX = (e.clientX - rect.left - pan.x) / zoom;
-      const mouseY = (e.clientY - rect.top - pan.y) / zoom;
-
-      setSimNodes((prev) =>
-        prev.map((n) => (n.id === draggedNodeId ? { ...n, x: mouseX, y: mouseY, vx: 0, vy: 0 } : n))
-      );
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-    setDraggedNodeId(null);
-  };
-
-  const handleWheel = (e: WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
-    setZoom((prev) => Math.max(0.2, Math.min(3.5, prev * zoomFactor)));
-  };
-
   // Search filter matches
   const searchMatches = useMemo(() => {
     if (!searchQuery.trim() || !graphData?.nodes) return [];
     const q = searchQuery.toLowerCase().trim();
-    return graphData.nodes.filter(
-      (n) =>
-        n.name.toLowerCase().includes(q) ||
-        (n.filepath && n.filepath.toLowerCase().includes(q)) ||
-        (n.path_pattern && n.path_pattern.toLowerCase().includes(q))
-    ).slice(0, 10);
+    return graphData.nodes
+      .filter(
+        (n) =>
+          n.name.toLowerCase().includes(q) ||
+          (n.filepath && n.filepath.toLowerCase().includes(q)) ||
+          (n.path_pattern && n.path_pattern.toLowerCase().includes(q))
+      )
+      .slice(0, 10);
   }, [searchQuery, graphData]);
 
-  // Center canvas on a specific node
+  // Focus on a specific node from search or inspector
   const focusOnNode = (nodeId: string) => {
-    const node = simNodes.find((n) => n.id === nodeId);
-    if (node) {
-      const width = 1000;
-      const height = 640;
-      setZoom(1.4);
-      setPan({
-        x: width / 2 - node.x * 1.4,
-        y: height / 2 - node.y * 1.4,
-      });
+    const targetNode = graphData?.nodes?.find((n) => n.id === nodeId);
+    if (targetNode) {
+      handleSelectFocalNode(nodeId);
       handleSelectNode(nodeId);
       setSearchFocused(false);
     }
@@ -336,13 +445,17 @@ export default function TopologyExplorer() {
 
   // Export SVG
   const exportSVG = () => {
-    if (!canvasRef.current) return;
-    const svgData = new XMLSerializer().serializeToString(canvasRef.current);
+    const svgElem = document.querySelector('.neighborhood-svg');
+    if (!svgElem) {
+      toast.error('SVG export is available in Neighborhood View. Use PNG export in 2D Canvas.');
+      return;
+    }
+    const svgData = new XMLSerializer().serializeToString(svgElem);
     const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `topology-${selectedRepo}-${viewType}.svg`;
+    link.download = `topology-${selectedRepo}-${activeViewType}.svg`;
     link.click();
     URL.revokeObjectURL(url);
     toast.success('Topology SVG exported successfully');
@@ -356,7 +469,7 @@ export default function TopologyExplorer() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `topology-${selectedRepo}-${viewType}.json`;
+    link.download = `topology-${selectedRepo}-${activeViewType}.json`;
     link.click();
     URL.revokeObjectURL(url);
     toast.success('Topology JSON exported successfully');
@@ -368,10 +481,16 @@ export default function TopologyExplorer() {
         repos={repos}
         selectedRepo={selectedRepo}
         setSelectedRepo={setSelectedRepo}
-        viewType={viewType}
-        setViewType={setViewType}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        hopRadius={hopRadius}
+        setHopRadius={setHopRadius}
         depth={depth}
         setDepth={setDepth}
+        nodeLimit={nodeLimit}
+        setNodeLimit={setNodeLimit}
+        hideOrphans={hideOrphans}
+        setHideOrphans={setHideOrphans}
         rootNode={rootNode}
         setRootNode={setRootNode}
         searchQuery={searchQuery}
@@ -381,7 +500,12 @@ export default function TopologyExplorer() {
         searchMatches={searchMatches}
         onFocusNode={focusOnNode}
         typeFilters={typeFilters}
-        setTypeFilters={setTypeFilters}
+        setTypeFilters={handleSetTypeFilters}
+        activePreset={activePreset || undefined}
+        onSelectPreset={handleSelectPreset}
+        nodeCounts={nodeCounts}
+        onTogglePhysics={handleTogglePhysics}
+        isPhysicsOpen={isPhysicsOpen}
         onExportSVG={exportSVG}
         onExportJSON={exportJSON}
       />
@@ -393,29 +517,51 @@ export default function TopologyExplorer() {
         </div>
       )}
 
-      <TopologyCanvas
-        canvasRef={canvasRef}
-        visibleNodes={visibleNodes}
-        visibleEdges={visibleEdges}
-        nodePosMap={nodePosMap}
-        pan={pan}
-        zoom={zoom}
-        setZoom={setZoom}
-        setPan={setPan}
-        isSimPaused={isSimPaused}
-        setIsSimPaused={setIsSimPaused}
-        loading={loading}
-        edgeFilters={edgeFilters}
-        setEdgeFilters={setEdgeFilters}
-        selectedNodeId={selectedNodeId}
-        searchQuery={searchQuery}
-        onSelectNode={handleSelectNode}
-        setDraggedNodeId={setDraggedNodeId}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
-      />
+      {loading && (
+        <div className="topology-empty-state" style={{ height: '300px' }}>
+          <i className="fa-solid fa-spinner fa-spin fa-2xl"></i>
+          <p>Generating Topology Graph...</p>
+        </div>
+      )}
+
+      {!loading &&
+        (viewMode === 'neighborhood' ? (
+          <NeighborhoodView
+            graphData={graphData}
+            focalNodeId={focalNodeId}
+            onSelectFocalNode={handleSelectFocalNode}
+            onSelectNodeDetails={handleSelectNode}
+            breadcrumbs={breadcrumbs}
+            onNavigateBreadcrumb={handleNavigateBreadcrumb}
+            hopRadius={hopRadius}
+            setHopRadius={setHopRadius}
+            typeFilters={typeFilters}
+          />
+        ) : (
+          <div style={{ position: 'relative', width: '100%' }}>
+            <TopologyCanvas2D
+              nodes={visibleNodes}
+              edges={visibleEdges}
+              selectedNodeId={selectedNodeId}
+              searchQuery={searchQuery}
+              onSelectNode={handleSelectNode}
+              autoFitOnMount={true}
+              physicsConfig={physicsConfig}
+              relaxTrigger={relaxTrigger}
+            />
+            {isPhysicsOpen && (
+              <TopologyPhysicsControls
+                config={physicsConfig}
+                onChangeConfig={handleChangePhysicsConfig}
+                onSelectPreset={handleSelectPhysicsPreset}
+                onReRelax={handleReRelax}
+                onResetDefaults={handleResetPhysicsDefaults}
+                onClose={() => setIsPhysicsOpen(false)}
+                isOpen={isPhysicsOpen}
+              />
+            )}
+          </div>
+        ))}
 
       <TopologyInspector
         isOpen={isDrawerOpen}

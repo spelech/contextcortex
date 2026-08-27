@@ -89,6 +89,7 @@
 .topology-filter-chip.chip-class { background: rgba(168, 85, 247, 0.15); color: #c084fc; border-color: rgba(168, 85, 247, 0.3); }
 .topology-filter-chip.chip-function { background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3); }
 .topology-filter-chip.chip-route { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border-color: rgba(245, 158, 11, 0.3); }
+.topology-filter-chip.chip-orphan { background: rgba(244, 63, 94, 0.15); color: #fb7185; border-color: rgba(244, 63, 94, 0.3); }
 
 .topology-filter-chip.inactive {
     opacity: 0.4;
@@ -324,6 +325,7 @@
 .badge-edge-defines { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
 .badge-edge-handles { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .badge-edge-routes-to { background: rgba(244, 63, 94, 0.15); color: #fb7185; }
+.badge-edge-doc-links-to { background: rgba(167, 139, 250, 0.15); color: #a78bfa; }
 
 .topology-search-results {
     position: absolute;
@@ -364,5 +366,540 @@
     gap: 12px;
 }
 
+/* Focused Neighborhood View */
+.neighborhood-view {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    position: relative;
+}
 
+.neighborhood-breadcrumbs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    backdrop-filter: blur(16px);
+}
+
+.neighborhood-breadcrumbs-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.neighborhood-breadcrumbs-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.neighborhood-focal-selector-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.neighborhood-focal-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.neighborhood-focal-select {
+    max-width: 260px;
+    font-size: 0.82rem;
+    padding: 4px 10px;
+}
+
+.neighborhood-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    padding: 5px 10px;
+}
+
+.neighborhood-breadcrumb-trail {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.neighborhood-breadcrumb-sep {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0 2px;
+    user-select: none;
+}
+
+.neighborhood-breadcrumb-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    transition: all 0.15s ease;
+}
+
+.neighborhood-breadcrumb-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+}
+
+.neighborhood-breadcrumb-item.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: var(--text);
+    font-weight: 600;
+}
+
+.neighborhood-breadcrumb-badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+}
+
+.neighborhood-breadcrumb-text {
+    font-family: var(--font-family-mono, monospace);
+}
+
+.neighborhood-hop-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.neighborhood-hop-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.neighborhood-panels {
+    display: grid;
+    grid-template-columns: 280px 1fr 280px;
+    gap: 14px;
+    min-height: 640px;
+}
+
+@media (max-width: 1100px) {
+    .neighborhood-panels {
+        grid-template-columns: 1fr;
+    }
+}
+
+.neighborhood-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    max-height: 640px;
+    overflow: hidden;
+    backdrop-filter: blur(16px);
+}
+
+.neighborhood-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-card);
+    margin-bottom: 10px;
+}
+
+.neighborhood-panel-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.neighborhood-panel-count {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.neighborhood-panel-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-right: 2px;
+}
+
+.neighborhood-panel-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-card);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: all 0.15s ease;
+}
+
+.neighborhood-panel-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(59, 130, 246, 0.4);
+}
+
+.neighborhood-panel-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.neighborhood-panel-item-name {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 0.8rem;
+    color: var(--text);
+    word-break: break-all;
+}
+
+.neighborhood-panel-item-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.neighborhood-panel-empty {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding: 24px 8px;
+}
+
+.neighborhood-center {
+    display: flex;
+    flex-direction: column;
+    min-height: 640px;
+    position: relative;
+}
+
+.neighborhood-canvas-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 640px;
+    background: radial-gradient(circle at center, rgba(18, 26, 47, 0.75) 0%, rgba(10, 15, 29, 0.95) 100%);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.neighborhood-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.neighborhood-orbital-ring {
+    fill: none;
+    stroke: rgba(148, 163, 184, 0.18);
+    stroke-dasharray: 4 4;
+    stroke-width: 1.5;
+}
+
+.neighborhood-orbital-ring.ring-2 {
+    stroke: rgba(148, 163, 184, 0.12);
+}
+
+.neighborhood-orbital-label {
+    font-size: 10px;
+    fill: var(--text-muted);
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    text-transform: uppercase;
+}
+
+.neighborhood-edge-path {
+    transition: stroke-opacity 0.2s ease, stroke-width 0.2s ease;
+}
+
+.neighborhood-edge-path:hover {
+    stroke-opacity: 1;
+    stroke-width: 2.5;
+}
+
+.neighborhood-node-item {
+    transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.neighborhood-node-item:hover {
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.85));
+}
+
+.neighborhood-node-circle {
+    transition: filter 0.15s ease, stroke-width 0.15s ease;
+}
+
+.neighborhood-node-name {
+    font-family: var(--font-family-mono, monospace);
+    font-weight: 500;
+}
+
+.focal-pulse-ring {
+    animation: pulse-ring 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    transform-origin: center;
+}
+
+@keyframes pulse-ring {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.8;
+    }
+    50% {
+        transform: scale(1.15);
+        opacity: 0.2;
+    }
+    100% {
+        transform: scale(0.95);
+        opacity: 0.8;
+    }
+}
+
+.neighborhood-focal-node:hover .focal-body {
+    filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.9));
+}
+
+.neighborhood-empty-state {
+    height: 480px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+}
+
+/* Force-Directed Physics Controls Popover */
+.topology-physics-panel,
+.topology-physics-popover {
+    position: absolute;
+    top: 70px;
+    right: 20px;
+    z-index: 100;
+    min-width: 320px;
+    max-width: 380px;
+    width: calc(100% - 40px);
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(16px);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    animation: fadeInPhysics 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInPhysics {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.topology-physics-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-card);
+}
+
+.topology-physics-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.topology-physics-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+}
+
+.topology-physics-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.topology-physics-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.topology-physics-section-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.topology-physics-presets-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+}
+
+.topology-physics-preset-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-card);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.topology-physics-preset-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    border-color: var(--primary);
+}
+
+.topology-physics-preset-btn.active {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.5);
+    font-weight: 600;
+}
+
+.topology-physics-sliders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.topology-physics-slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.topology-physics-slider-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.8rem;
+}
+
+.topology-physics-slider-label {
+    color: var(--text);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.topology-physics-symbol {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-family: var(--font-family-mono, monospace);
+}
+
+.topology-physics-value-chip {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--primary, #38bdf8);
+    font-weight: 600;
+}
+
+.topology-physics-range-input {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.12);
+    outline: none;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.topology-physics-range-input:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.topology-physics-range-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary, #3b82f6);
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+    transition: transform 0.1s ease;
+}
+
+.topology-physics-range-input::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.topology-physics-range-input::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary, #3b82f6);
+    border: none;
+    cursor: pointer;
+}
+
+.topology-physics-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.topology-physics-action-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 0.8rem;
+}
 

@@ -152,7 +152,7 @@ export interface TopologyNode {
 export interface TopologyEdge {
   source: string;
   target: string;
-  type: 'IMPORTS' | 'CALLS' | 'DEFINES' | 'HANDLES' | 'ROUTES_TO' | string;
+  type: 'IMPORTS' | 'CALLS' | 'DEFINES' | 'HANDLES' | 'ROUTES_TO' | 'DOC_LINKS_TO' | string;
   label?: string;
   line_number?: number;
   metadata?: Record<string, any>;
@@ -195,4 +195,54 @@ export interface NodeDetails {
   metadata?: Record<string, any>;
 }
 
+export type TopologyViewMode = 'neighborhood' | 'canvas';
+
+export interface FocalBreadcrumb {
+  id: string;
+  name: string;
+  type: string;
+  repo: string;
+}
+
+export interface NeighborhoodSubGraph {
+  focalNode: TopologyNode;
+  incoming: Array<{
+    node: TopologyNode;
+    edgeType: string;
+    label?: string;
+  }>;
+  outgoing: Array<{
+    node: TopologyNode;
+    edgeType: string;
+    label?: string;
+  }>;
+  secondaryNodes: TopologyNode[];
+  edges: TopologyEdge[];
+}
+
+export interface RadialLayoutResult {
+  focal: {
+    x: number;
+    y: number;
+  };
+  neighbors: Array<{
+    node: TopologyNode;
+    x: number;
+    y: number;
+    angle: number;
+    ring: 1 | 2;
+    direction: 'incoming' | 'outgoing' | 'secondary';
+  }>;
+}
+
+export interface TopologyPhysicsConfig {
+  kRepulse: number;
+  springLength: number;
+  kSpring: number;
+  centerGravity: number;
+  collisionRadius: number;
+  iterations: number;
+}
+
+export type ArchitecturePreset = 'files' | 'architecture' | 'api' | 'full';
 

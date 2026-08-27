@@ -26,7 +26,7 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
         <div className="glass-card stat-metric">
           <div className="metric-icon"><i className="fa-brands fa-github"></i></div>
           <div className="metric-info">
-            <span className="stat-number">{(stats.repos_count || 0).toLocaleString()}</span>
+            <span className="stat-number">{(stats.repos_count ?? (stats as any).git_repos ?? 0).toLocaleString()}</span>
             <span className="stat-label">Git Repositories</span>
           </div>
         </div>
