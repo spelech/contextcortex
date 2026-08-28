@@ -67,6 +67,15 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   2. Domain-level Custom Git Host Vault (`git_host_credentials`).
   3. Global provider tokens (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `GITEA_TOKEN` in DB or Settings UI).
   4. Environment variable fallback.
+- **Managed Local Storage Option & Real-Time Incremental Indexing**:
+  - Direct file upload, replace, read, and delete operations within a managed directory (`LOCAL_STORAGE_PATH` / `/app/data/storage`).
+  - Real-time incremental AST extraction, semantic chunking, embedding generation, and vector store upserts with zero delay.
+  - Strict path sanitization preventing directory traversal attacks (`..`, leading slashes, null bytes).
+  - Immediate vector point and relational metadata purging upon file deletion.
+- **Unified Ingestion Catalog (`what_is_ingested`)**:
+  - Comprehensive inspection of all ingested Git repositories, monitored local directory vaults, and uploaded local storage files.
+  - Granular multi-dimensional filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo_name`, `path_prefix`, and `file_extension`.
+  - Flexible granularity (`summary` for totals and status; `detailed` for hierarchical file trees).
 - **Fast Deterministic Symbol Lookup**: Built-in symbol table (`ast_symbols`) powers instantaneous symbol searches (`find_symbol`) and file outlines (`get_file_outline`) without token bloat.
 - **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
 - **Multi-Theme Engine & Modern Tabbed Web Dashboard (`/admin/`)**:
@@ -74,6 +83,8 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
   - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, trigger shallow clone syncs, inspect commit SHAs, and manage sources.
   - **Local Paths**: Monitor local workspaces and notes vaults with recursive directory scanning and filesystem browser modal.
+  - **Local Storage**: Managed file explorer, direct file upload modal with folder categorization, and file preview/replacement.
+  - **Ingestion Catalog**: Unified multi-source explorer with source type filters, repository lookup, and file listings.
   - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews, target type toggle (Code vs Docs), and syntax highlighted results.
   - **Settings**: Vector Database manager (pgvector, Qdrant, & ChromaDB switcher & connection tester), multi-provider token cards, GitHub rate limit monitor, and interactive Custom Git Host Credential Vault table/modal.
   - **Diagnostics & Logs**: Real-time log viewer with level filtering (ALL, INFO, WARNING, ERROR, DEBUG), keyword search, traceback modal/drawer, and buffer clearing.
@@ -96,6 +107,8 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `manage_adr` | `editor` | `action` (str: `list`\|`get`\|`create`\|`update`), `repo` (str, opt), `title` (str, opt), `decision` (str, opt), `status` (str, opt) | Query, create, or update Architectural Decision Records (MADR / Nygard format). |
 | `get_code_routes` | `viewer` | `repo` (str, opt), `framework` (str, opt), `http_method` (str, opt) | Returns API endpoint route definitions and HTTP client invocations across backend frameworks. |
 | `trace_call_path` | `viewer` | `target` (str), `repo` (str, opt), `direction` (str, default `downstream`), `depth` (int, default 3) | Traces AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections via BFS. |
+| `manage_local_file` | `editor` / `viewer` | `action` (str: `upload`\|`replace`\|`delete`\|`read`), `file_path` (str), `content` (str, opt), `repo` (str, opt), `category` (str, opt) | Manage files in ContextCortex local storage: upload, replace, read, or delete files with immediate vector indexing. |
+| `what_is_ingested` | `viewer` | `source_type` (str, opt), `repo_name` (str, opt), `path_prefix` (str, opt), `file_extension` (str, opt), `detail_level` (str, opt) | Inspect all ingested Git repositories, monitored local paths, and uploaded local storage files with optional filtering. |
 
 ### Resources
 | Resource URI | MIME Type | Description |
@@ -120,6 +133,7 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `POSTGRES_USER` | PostgreSQL username (Docker Compose) | `contextcortex` |
 | `POSTGRES_PASSWORD` | PostgreSQL password (Docker Compose) | `cortexsecret` |
 | `POSTGRES_PORT` | PostgreSQL host port mapping | `5432` |
+| `LOCAL_STORAGE_PATH` | Managed local storage directory for direct file uploads & real-time incremental indexing | `/app/data/storage` |
 | `AUTH_ENABLED` | Enable MCP 2026-07-28 OAuth 2.1 & API Key RBAC | `false` |
 | `AUTH_OIDC_ISSUER` | OpenID Connect Identity Provider Issuer URL (e.g. `https://auth.company.com/realms/master`) | `None` |
 | `AUTH_JWKS_URI` | Custom JWKS URI override for JWT verification | `None` |
@@ -199,6 +213,7 @@ services:
       AUTH_JWKS_URI: ${AUTH_JWKS_URI:-}
       AUTH_RESOURCE_INDICATOR: ${AUTH_RESOURCE_INDICATOR:-https://contextcortex.local}
       ADMIN_INITIAL_KEY: ${ADMIN_INITIAL_KEY:-}
+      LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/app/data/storage}
     volumes:
       - repo_cache:/app/data
 
@@ -318,6 +333,26 @@ Connect any MCP client (VS Code, Cursor, Antigravity CLI, Claude Desktop, or Win
   }
 }
 ```
+
+---
+
+## 🌐 REST Administration APIs
+
+ContextCortex provides REST endpoints under `/admin/api/*` protected by RBAC authentication (`Role.VIEWER`, `Role.EDITOR`, `Role.ADMIN`):
+
+### Local Storage (`/admin/api/storage/*`)
+| Endpoint | Method | Required Role | Description |
+| :--- | :---: | :---: | :--- |
+| `/admin/api/storage/upload` | `POST` | `editor` | Uploads and indexes a new file via `multipart/form-data` or JSON payload (`path`, `content`, `repo`, `category`). |
+| `/admin/api/storage/file` | `PUT` | `editor` | Replaces existing file content and re-indexes vector representations. |
+| `/admin/api/storage/file` | `DELETE` | `editor` | Deletes file from disk (`?path=...`) and purges vector embeddings and AST symbols. |
+| `/admin/api/storage/file` | `GET` | `viewer` | Retrieves raw file content and metadata (`size_bytes`, `mtime`, `repo`, `category`). |
+| `/admin/api/storage/tree` | `GET` | `viewer` | Explores storage directory hierarchy (`?folder=...`) with file and subdirectory listings. |
+
+### Ingestion Catalog (`/admin/api/ingestion/*`)
+| Endpoint | Method | Required Role | Description |
+| :--- | :---: | :---: | :--- |
+| `/admin/api/ingestion/catalog` | `GET` | `viewer` | Unified inventory across Git repos, monitored paths, and uploaded files. Supports `source_type`, `repo_name`, `path_prefix`, `file_extension`, `detail_level`. |
 
 ---
 

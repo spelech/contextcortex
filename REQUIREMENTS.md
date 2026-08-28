@@ -1,14 +1,14 @@
-# Software Requirements Specification: ContextCortex (v2.11.0)
+# Software Requirements Specification: ContextCortex (v2.12.0)
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **709 Automated Tests** (519 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **734 Automated Tests** (534 Pytest Backend + 174 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
 ## 1. System Vision & Architecture Scope
 
-ContextCortex provides high-precision, syntax-aware semantic and lexical retrieval over source code repositories, markdown notes, architecture documents, API route graphs, and system documentation. It features a modular, sub-500 LOC architecture, dual MCP transports, pluggable vector store backends (Qdrant & ChromaDB), background auto-sync pollers, multi-provider webhooks, ADR tracking, and an interactive visual topology explorer in a React 19 administrative dashboard.
+ContextCortex provides high-precision, syntax-aware semantic and lexical retrieval over source code repositories, markdown notes, architecture documents, API route graphs, and system documentation. It features a modular, sub-500 LOC architecture, dual MCP transports, pluggable vector store backends (pgvector, Qdrant & ChromaDB), background auto-sync pollers, multi-provider webhooks, ADR tracking, managed local storage file uploads, unified ingestion catalog exploration, and an interactive visual topology explorer in a React 19 administrative dashboard.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────┐
@@ -24,8 +24,8 @@ ContextCortex provides high-precision, syntax-aware semantic and lexical retriev
 │  ┌─────────────────────────────────────────┐  ┌─────────────────────────────┐  │
 │  │    FastMCP 2.0.0+ Server Engine         │  │   FastAPI Admin REST Router │  │
 │  │    • SSE Transport (/sse, /messages/)   │  │   • app/api/routers/        │  │
-│  │    • Streamable HTTP (/mcp)             │  │   • repos, settings, graph  │  │
-│  │    • 11 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
+│  │    • Streamable HTTP (/mcp)             │  │   • repos, storage, catalog │  │
+│  │    • 14 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
 │  └────────────────────┬────────────────────┘  └──────────────┬──────────────┘  │
 └───────────────────────┼──────────────────────────────────────┼─────────────────┘
                         │                                      │
@@ -39,18 +39,18 @@ ContextCortex provides high-precision, syntax-aware semantic and lexical retriev
 │  └──────────┬─────────┘ └──────────┬─────────┘ └──────────────┬──────────────┘  │
 │  ┌──────────▼─────────┐ ┌──────────▼─────────┐ ┌──────────────▼──────────────┐  │
 │  │ app.services.      │ │ app.services.      │ │ app.services.               │  │
-│  │ indexing.*         │ │ topology.*         │ │ poller & adr                │  │
-│  │ git/local syncers  │ │ graph & details    │ │ cron sync & MADR ingestion  │  │
+│  │ indexing.*         │ │ topology.*         │ │ local_storage, poller, adr  │  │
+│  │ git/local syncers  │ │ graph & details    │ │ incremental index & storage │  │
 │  └──────────┬─────────┘ └──────────┬─────────┘ └──────────────┬──────────────┘  │
 └─────────────┼──────────────────────┼──────────────────────────┼─────────────────┘
               │                      │                          │
 ┌─────────────▼──────────────────────▼──────────────────────────▼────────────────┐
 │                            Storage & Vector Layer                              │
 │  ┌─────────────────────────────────────────┐  ┌─────────────────────────────┐  │
-│  │   SQLite WAL Database (index_cache.db)  │  │ Pluggable Vector Store      │  │
-│  │   • Repositories, Vault, Host Vault     │  │ (app.services.vector_store) │  │
-│  │   • AST Symbols, Routes, Relationships  │  │ • Qdrant (Embedded/Remote)  │  │
-│  │   • Architecture ADRs & Sync Configs    │  │ • ChromaDB (Embedded/Remote)│  │
+│  │ Relational DB (PostgreSQL / SQLite WAL) │  │ Pluggable Vector Store      │  │
+│  │ • Repositories, Vault, Local Storage    │  │ (app.services.vector_store) │  │
+│  │ • AST Symbols, Routes, Relationships    │  │ • pgvector, Qdrant, ChromaDB│  │
+│  │ • Architecture ADRs & Sync Configs      │  │ • DATA_DIR/storage tree     │  │
 │  └─────────────────────────────────────────┘  └─────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -271,6 +271,8 @@ classDiagram
 - **FR-2.9 (`manage_adr`)**: MUST support querying, listing, creating, and updating Architectural Decision Records (MADR / Nygard format) with lifecycle status tracking.
 - **FR-2.10 (`get_code_routes`)**: MUST return API endpoint routes and HTTP client invocations parsed from backend frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET).
 - **FR-2.11 (`trace_call_path`)**: MUST trace AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections using BFS graph traversal.
+- **FR-2.12 (`manage_local_file`)**: MUST support uploading, replacing, reading, and deleting files under managed local storage (`LOCAL_STORAGE_PATH`) with real-time vector and symbol indexing.
+- **FR-2.13 (`what_is_ingested`)**: MUST inspect and filter across all ingested Git repositories, monitored local paths, and uploaded local storage files with source type and detail level filtering.
 
 ### FR-3: Dynamic Resources & Prompt Templates
 - **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `knowledge://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.
@@ -299,7 +301,7 @@ classDiagram
 - **FR-7.3 (Line-Based Fallback)**: Plain text, configuration, or unsupported file formats MUST be chunked using sliding line windows with configurable overlap.
 
 ### FR-8: Pluggable Multi-Backend Vector Retrieval Engine
-- **FR-8.1 (Supported Vector Backends)**: MUST support both Qdrant (Embedded and Remote) and ChromaDB (Embedded persistent and Remote client) as interchangeable storage engines.
+- **FR-8.1 (Supported Vector Backends)**: MUST support PostgreSQL 16 (pgvector), Qdrant (Embedded and Remote) and ChromaDB (Embedded persistent and Remote client) as interchangeable storage engines.
 - **FR-8.2 (Reciprocal Rank Fusion)**: Hybrid search queries MUST fuse dense semantic vectors and sparse lexical search rankings using RRF ($k=60$).
 - **FR-8.3 (Deterministic UUID5 Point Identification)**: MUST generate deterministic chunk UUIDs from `{repo}:{filepath}#{index}` for atomic, idempotent upserts and updates.
 - **FR-8.4 (Runtime Provider Switching)**: MUST support dynamic vector backend switching via `POST /admin/api/settings/vector-store/switch` with health checking and live schema verification.
@@ -317,12 +319,12 @@ classDiagram
 - **FR-11.2 (Multi-Provider Webhook Ingestion)**: `POST /api/webhooks/{provider}` MUST authenticate incoming webhook payloads from GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), Gitea (`X-Gitea-Signature`), and Bitbucket with HMAC verification, triggering instantaneous repository syncs upon push events.
 
 ### FR-12: REST Administration APIs & Subrouter Hierarchy
-- **FR-12.1 (Modular Subrouters)**: REST APIs MUST be organized into dedicated FastAPI subrouters under `app/api/routers/` (`repositories.py`, `settings.py`, `graph.py`) and top-level modules (`webhooks.py`, `routes.py`).
-- **FR-12.2 (Complete CRUD & Search Endpoints)**: Full repository management, local path indexing, directory browsing, vector settings switching, diagnostic logs, and live search tester endpoints.
+- **FR-12.1 (Modular Subrouters)**: REST APIs MUST be organized into dedicated FastAPI subrouters under `app/api/routers/` (`repositories.py`, `settings.py`, `graph.py`, `auth.py`, `storage.py`, `ingestion.py`) and top-level modules (`webhooks.py`, `routes.py`).
+- **FR-12.2 (Complete CRUD & Search Endpoints)**: Full repository management, local path indexing, local storage file management, ingestion catalog querying, directory browsing, vector settings switching, diagnostic logs, and live search tester endpoints.
 
 ### FR-13: React 19 Single Page Administrative Dashboard
-- **FR-13.1 (Tab Navigation & Responsive Layout)**: Single page dashboard supporting desktop and mobile drawer navigation across Overview, Topology, Git Repositories, Local Paths, Search & Inspector, Settings, and Diagnostics & Logs.
-- **FR-13.2 (Modular Component Architecture)**: Dedicated modular component tree under `frontend/src/components/` (`git/`, `settings/`, `topology/`) with all source files under 450 lines.
+- **FR-13.1 (Tab Navigation & Responsive Layout)**: Single page dashboard supporting desktop and mobile drawer navigation across Overview, Topology, Git Repositories, Local Paths, Local Storage, Ingestion Catalog, Search & Inspector, Settings, and Diagnostics & Logs.
+- **FR-13.2 (Modular Component Architecture)**: Dedicated modular component tree under `frontend/src/components/` and dedicated manager views (`LocalStorageManager.tsx`, `IngestionCatalogViewer.tsx`) with all source files under 450 lines.
 
 ### FR-14: Interactive Visual Topology Explorer
 - **FR-14.1 (Interactive Force Canvas)**: Interactive SVG/Canvas graph visualization with zoom, pan, drag physics, minimap, view type toggling (`FILES`, `SYMBOLS`, `ROUTES`, `FULL`), and depth selection.
@@ -330,6 +332,17 @@ classDiagram
 
 ### FR-15: Diagnostics & Live In-Memory Log Buffers
 - **FR-15.1 (Ring Buffer Logging)**: In-memory 500-event log buffer with level filtering (ALL, INFO, WARNING, ERROR, DEBUG), keyword search, and exception traceback viewer drawer.
+
+### FR-16: Managed Local Storage Option & Real-Time Incremental Indexing
+- **FR-16.1 (Safe Path Resolution & Traversal Defense)**: MUST strictly sanitize relative file paths using canonical directory containment checks (`os.path.commonpath([resolved, root]) == root`), rejecting `..`, absolute paths, leading slashes, and null bytes (`\x00`).
+- **FR-16.2 (Real-Time AST & Vector Indexing on Upload/Replace)**: File uploads/replacements MUST immediately trigger semantic boundary chunking, Tree-sitter AST extraction, dense/sparse embeddings, vector store upsert (`upsert_points`), and relational records upsert in `indexed_files`, `file_summaries`, and `ast_symbols`.
+- **FR-16.3 (Clean File Deletion & Purging)**: File deletions MUST remove the physical file from disk, delete all associated chunk vectors from the active vector store, and remove metadata from relational tables.
+- **FR-16.4 (Directory Tree Hierarchy)**: MUST expose hierarchical directory tree inspection (`GET /admin/api/storage/tree`) returning directory structures, file sizes, modification timestamps, and total counts.
+
+### FR-17: Unified Ingestion Catalog (`what_is_ingested` & `/admin/api/ingestion/catalog`)
+- **FR-17.1 (Multi-Source Unified Inventory)**: MUST aggregate all ingested data sources across Git repositories, monitored local directories, and managed local storage files.
+- **FR-17.2 (Granular Multi-Dimensional Filtering)**: MUST support filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo_name`, `path_prefix`, `file_extension`, and `detail_level` (`summary` vs `detailed`).
+- **FR-17.3 (MCP & REST API Parity)**: MUST provide identical catalog inspection capabilities via FastMCP tool (`what_is_ingested`) and REST endpoint (`GET /admin/api/ingestion/catalog`) protected by `Role.VIEWER`.
 
 ---
 
@@ -350,27 +363,29 @@ classDiagram
 | Requirement ID | Requirement Description | Implementation Files | Backend Pytest Modules | Frontend Vitest & E2E Suites |
 | :--- | :--- | :--- | :--- | :--- |
 | **FR-1** | FastMCP 2.0 Dual Transport Architecture | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_indexer_sync.py` | E2E Spec 1 |
-| **FR-2** | FastMCP 11 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py` | E2E Specs 1, 8 |
+| **FR-2** | FastMCP 14 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py`, `test_mcp_storage_tools.py` | E2E Specs 1, 8 |
 | **FR-3** | Dynamic Resources & Prompt Templates | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_tools.py` | E2E Spec 1 |
 | **FR-4** | Universal Multi-Git Provider Ingestion | `app/services/git_manager.py`, `app/services/indexing/git_syncer.py` | `test_multi_git_providers.py`, `test_git_manager.py`, `test_indexer_edge_cases.py` | `GitRepoManager.test.tsx`, E2E Specs 2, 3, 4, 5, 16, 18 |
 | **FR-5** | Multi-Tier Credential Vault & Hierarchy | `app/services/database/credentials.py`, `app/services/git_manager.py` | `test_multi_git_providers.py`, `test_db_and_tools.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
 | **FR-6** | 10-Language Tree-sitter AST Syntax & Routes | `app/services/chunking/*` | `test_chunker.py`, `test_chunker_languages.py`, `test_api_route_discovery.py`, `test_ast_relationships.py` | `SearchInspector.test.tsx`, E2E Spec 8 |
 | **FR-7** | Markdown Breadcrumbs & Fallbacks | `app/services/chunking/text_chunker.py` | `test_chunker.py`, `test_chunker_languages.py` | `SearchInspector.test.tsx`, E2E Spec 8 |
-| **FR-8** | Pluggable Multi-Backend Vector Retrieval | `app/services/vector_store/*`, `app/services/search.py` | `test_vector_store_base.py`, `test_vector_store_qdrant.py`, `test_vector_store_chroma.py`, `test_vector_store_manager.py`, `test_search.py` | `Settings.test.tsx`, `SearchInspector.test.tsx`, E2E Specs 8, 9 |
+| **FR-8** | Pluggable Multi-Backend Vector Retrieval | `app/services/vector_store/*`, `app/services/search.py` | `test_vector_store_base.py`, `test_vector_store_qdrant.py`, `test_vector_store_chroma.py`, `test_vector_store_manager.py`, `test_search.py`, `test_pgvector_store.py` | `Settings.test.tsx`, `SearchInspector.test.tsx`, E2E Specs 8, 9 |
 | **FR-9** | Codebase & Dependency Topology Graph | `app/services/topology/*`, `app/api/routers/graph.py` | `test_topology_graph.py`, `test_trace_path.py` | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
 | **FR-10** | Architecture ADRs & System Synthesis | `app/services/adr.py`, `app/services/architecture.py`, `app/services/database/adrs.py` | `test_architecture_adr.py` | `SearchInspector.test.tsx` |
 | **FR-11** | Auto-Sync Poller Daemon & Webhooks | `app/services/poller.py`, `app/api/webhooks.py`, `app/services/database/sync_config.py` | `test_poller.py`, `test_webhooks.py`, `test_auto_sync_api.py`, `test_auto_sync_db.py` | `GitRepoManager.test.tsx`, `Settings.test.tsx`, E2E Specs 22, 23, 24 |
-| **FR-12** | Administrative REST APIs & Subrouters | `app/api/routes.py`, `app/api/routers/*` | `test_api_routes.py`, `test_api_vector_store.py`, `test_diagnostic_logger.py` | `Overview.test.tsx`, `DiagnosticsViewer.test.tsx`, E2E Specs 1-26 |
-| **FR-13** | React 19 Single Page Admin Dashboard | `frontend/src/*`, `frontend/src/components/*` | N/A | `App.test.tsx`, `GitRepoManager.test.tsx`, `LocalPathManager.test.tsx`, `Settings.test.tsx`, `Overview.test.tsx`, E2E Specs 1-26 |
+| **FR-12** | Administrative REST APIs & Subrouters | `app/api/routes.py`, `app/api/routers/*` | `test_api_routes.py`, `test_api_vector_store.py`, `test_diagnostic_logger.py`, `test_storage_api_routes.py` | `Overview.test.tsx`, `DiagnosticsViewer.test.tsx`, E2E Specs 1-26 |
+| **FR-13** | React 19 Single Page Admin Dashboard | `frontend/src/*`, `frontend/src/components/*` | N/A | `App.test.tsx`, `GitRepoManager.test.tsx`, `LocalPathManager.test.tsx`, `LocalStorageManager.test.tsx`, `IngestionCatalogViewer.test.tsx`, `Settings.test.tsx`, `Overview.test.tsx`, E2E Specs 1-26 |
 | **FR-14** | Interactive Visual Topology Explorer UI | `frontend/src/TopologyExplorer.tsx`, `frontend/src/components/topology/*` | N/A | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
 | **FR-15** | Diagnostics & Live In-Memory Log Viewer | `app/services/logger.py`, `frontend/src/DiagnosticsViewer.tsx` | `test_diagnostic_logger.py` | `DiagnosticsViewer.test.tsx`, E2E Specs 13, 21 |
+| **FR-16** | Managed Local Storage & Incremental Indexing | `app/services/local_storage.py`, `app/api/routers/storage.py` | `test_local_storage_service.py`, `test_local_storage_indexing.py`, `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `LocalStorageManager.test.tsx` |
+| **FR-17** | Unified Ingestion Catalog Explorer | `app/api/routers/ingestion.py`, `app/mcp/handlers/storage_handlers.py` | `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `IngestionCatalogViewer.test.tsx` |
 | **NFR-1** | Performance & Latency Budgets | `app/services/database/connection.py`, `app/services/search.py` | `test_db_and_tools.py`, `test_search.py` | E2E Specs 8, 9 |
 | **NFR-2** | Zero Disk Bloat & Memory Efficiency | `app/services/git_manager.py`, `app/services/embeddings.py` | `test_git_manager.py`, `test_indexer_and_embeddings.py` | E2E Specs 2, 3 |
 | **NFR-3** | Credential Sanitization in Logs/APIs | `app/services/git_manager.py`, `app/api/routers/*` | `test_multi_git_providers.py`, `test_api_routes.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
 | **NFR-4** | SQLite WAL & Vector Store Auto-Healing | `app/services/database/*`, `app/services/vector_store/*` | `test_db_and_tools.py`, `test_vector_store_manager.py` | E2E Spec 1 |
 | **NFR-5** | Sync Failure Isolation | `app/services/indexing/*` | `test_indexer_edge_cases.py`, `test_indexer_sync.py` | `GitRepoManager.test.tsx`, E2E Spec 5 |
 | **NFR-6** | Codebase Modularity & File Size Floor | `app/` (all < 450 LOC), `frontend/src/` (all < 450 LOC) | N/A | Sub-500 LOC CI Check |
-| **NFR-7** | Test Quality & Coverage Floors | Entire Test Suite | `pytest` (277 tests, 88% cov) | `vitest` (82 tests, 87% cov), `playwright` (26 tests) |
+| **NFR-7** | Test Quality & Coverage Floors | Entire Test Suite | `pytest` (415+ tests, 88% cov) | `vitest` (174 tests, 87% cov), `playwright` (26 tests) |
 
 ---
 
@@ -877,6 +892,12 @@ persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
 
+#### `tests/test_local_storage_indexing.py` (4 tests)
+- `test_incremental_indexing_on_save`
+- `test_incremental_indexing_code_file`
+- `test_index_file_not_found`
+- `test_incremental_deletion`
+
 #### `tests/test_local_storage_service.py` (7 tests)
 - `test_resolve_safe_path_valid`
 - `test_resolve_safe_path_traversal_rejected`
@@ -885,6 +906,15 @@ and leaves the prior indexed state intact without data loss._
 - `test_delete_file_and_directory`
 - `test_get_file_tree`
 - `test_get_local_storage_service_singleton`
+
+#### `tests/test_mcp_storage_tools.py` (7 tests)
+- `test_manage_local_file_upload_and_read`
+- `test_manage_local_file_replace_and_delete`
+- `test_manage_local_file_rbac_forbidden`
+- `test_manage_local_file_input_validation`
+- `test_what_is_ingested_summary_and_filters`
+- `test_what_is_ingested_detailed_with_data`
+- `test_tool_registration`
 
 #### `tests/test_pgvector_store.py` (54 tests)
 - `TestPgVectorStoreImports::test_import_pgvector_store`
@@ -961,6 +991,12 @@ and leaves the prior indexed state intact without data loss._
 - `test_process_file_content_doc_caching`
 - `test_process_file_content_file_size_guard`
 
+#### `tests/test_storage_api_routes.py` (4 tests)
+- `test_storage_upload_and_get_file`
+- `test_storage_upload_multipart_and_put`
+- `test_storage_validation_and_errors`
+- `test_ingestion_catalog_endpoint`
+
 #### `tests/test_webhooks.py` (12 tests)
 - `test_github_webhook_no_secret`
 - `test_github_webhook_with_secret_valid_and_invalid`
@@ -1030,6 +1066,12 @@ and leaves the prior indexed state intact without data loss._
 - handles errors when loading repos, adding repo, syncing repo, and deleting repo
 - renders mobile cards for repositories with action buttons and auto-sync toggles
 
+#### `IngestionCatalogViewer.test.tsx` (4 tests)
+- renders summary catalog with git repos, monitored paths, and local storage stats
+- switches source type filters (git, monitored_path, local_storage)
+- toggles detail level to detailed and renders ingested files list
+- applies search and extension filters
+
 #### `LocalPathManager.test.tsx` (7 tests)
 - renders configured paths correctly
 - renders mobile cards for local search paths with delete button
@@ -1038,6 +1080,14 @@ and leaves the prior indexed state intact without data loss._
 - customizes repo alias, category, and recursive options before saving and refreshes stats
 - deletes path when delete button is confirmed and refreshes stats
 - handles errors when loading paths, adding path, deleting path, and browsing
+
+#### `LocalStorageManager.test.tsx` (6 tests)
+- renders storage header, upload button, and tree view
+- supports folder navigation drilling and climbing back
+- opens upload modal, submits new file with custom category, and refreshes stats
+- opens preview modal, displays file text, and closes modal
+- replaces file content, updates vector store, and provides feedback
+- deletes file upon confirmation and refreshes list and stats
 
 #### `NeighborhoodView.test.tsx` (10 tests)
 - renders breadcrumb trail, focal node, and incoming/outgoing columns

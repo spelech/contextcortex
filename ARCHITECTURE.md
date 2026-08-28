@@ -22,7 +22,7 @@ flowchart TD
         SSE["SSE Transport (/sse, /messages/)"]
         HTTP["Streamable HTTP Transport (/mcp)"]
         WellKnown["RFC 9728 Protected Resource\n(/.well-known/oauth-protected-resource)"]
-        AdminAPI["Admin REST API Routers (app/api/routers/*)"]
+        AdminAPI["Admin REST API Routers (app/api/routers/*)\n(repositories, settings, graph, auth, storage, ingestion)"]
         Webhooks["Webhook Ingestion (app/api/webhooks.py)"]
         LogBuffer["Diagnostic Ring Buffer (app/services/logger.py)"]
     end
@@ -74,6 +74,7 @@ flowchart TD
             TopoHelpers["helpers.py"]
         end
 
+        LocalStorageSrv["Local Storage Service (local_storage.py)\nPath Traversal Defense & File Trees"]
         GitMgr["Universal Shallow Git Ingestion (git_manager.py)"]
         Embeddings["FastEmbed Engine (embeddings.py)\nDense (384d) + Sparse BM25"]
         Search["Hybrid & RRF Search (search.py)"]
@@ -91,6 +92,7 @@ flowchart TD
         Qdrant["Qdrant (Hybrid Dense+BM25)"]
         Chroma["ChromaDB (Embedded/Remote)"]
         end
+        LocalStorageDir[("Managed Local Storage\n(DATA_DIR/storage)")]
     end
 
     Claude -->|Authorization: Bearer cc_... or JWT| SSE
@@ -110,6 +112,7 @@ flowchart TD
     AdminAPI --> VectorStorePkg
     AdminAPI --> TopologyPkg
     AdminAPI --> Search
+    AdminAPI --> LocalStorageSrv
     AdminAPI --> LogBuffer
 
     FastMCP --> Search
@@ -118,6 +121,12 @@ flowchart TD
     FastMCP --> IndexingPkg
     FastMCP --> TopologyPkg
     FastMCP --> ADRService
+    FastMCP --> LocalStorageSrv
+
+    LocalStorageSrv --> LocalStorageDir
+    LocalStorageSrv --> IndexingPkg
+    LocalStorageSrv --> VectorStorePkg
+    LocalStorageSrv --> DatabasePkg
 
     IndexingPkg --> ChunkingPkg
     IndexingPkg --> Embeddings
@@ -209,6 +218,7 @@ flowchart TD
   - `repo_handlers.py`: `list_repositories`, `sync_repository`, `index_status`.
   - `route_handlers.py`: `get_code_routes`, `trace_call_path` cross-repo API calls.
   - `architecture_handlers.py`: `get_architecture`, `manage_adr` ADR tracking.
+  - `storage_handlers.py`: `manage_local_file` (upload, replace, delete, read), `what_is_ingested` (unified multi-source catalog filter).
 - **Dynamic Resource Providers**:
   - `knowledge://catalog/summary`: Markdown catalog of repositories, document types, and symbols.
 - **Agent Prompts**:
@@ -251,6 +261,90 @@ flowchart TD
 ### 9. Background Poller & Multi-Provider Webhooks
 - `app/services/poller.py`: Background daemon checking remote commit SHAs at configured intervals.
 - `app/api/webhooks.py`: Authenticated push event ingestion for GitHub, GitLab, Gitea, and Bitbucket.
+
+---
+
+### 10. Managed Local Storage Architecture & Security (`app/services/local_storage.py`)
+- **Configurable Storage Directory**: Managed directory tree located at `DATA_DIR/storage` or configured via `LOCAL_STORAGE_PATH`.
+- **Path Sanitization & Traversal Defense**:
+  - Validates relative paths using `os.path.abspath(os.path.join(root, rel_path))`.
+  - Canonical containment verification via `os.path.commonpath([resolved_path, root_dir]) == root_dir`.
+  - Rejects `..`, absolute paths, leading slashes, and null bytes (`\x00`) with 400 Bad Request / error strings.
+- **Directory Hierarchy & Tree Inspection**:
+  - `get_file_tree(subfolder)` generates nested directories, file metadata (sizes, mtimes), and aggregate file counts for UI and catalog consumers.
+- **Role-Based Access Enforcement**:
+  - Mutation actions (`upload`, `replace`, `delete`) require `Role.EDITOR`.
+  - Read actions (`read`, `tree`, `catalog`) require `Role.VIEWER`.
+
+---
+
+### 11. Real-Time Incremental Ingestion Pipeline Dataflow
+
+The incremental ingestion engine allows documents, notes, and code files uploaded to Local Storage to be parsed, chunked, and vector-indexed with sub-second latency:
+
+```mermaid
+flowchart TD
+    Client["Client / Agent Request\n(Upload / Replace / Delete)"]
+    AuthCheck{"RBAC Guard\n(Role.EDITOR)"}
+    PathGuard{"Path Sanitization\n(commonpath == root)"}
+    
+    subgraph StorageOps["Local Storage Operations"]
+        DiskWrite["Save File to Disk\n(LOCAL_STORAGE_PATH / rel_path)"]
+        DiskDelete["Remove File from Disk"]
+    end
+    
+    subgraph IncrementalIndexing["Real-Time Indexing Pipeline (processor.py)"]
+        AST["Tree-sitter AST Parsing\n(symbols, relationships, routes)"]
+        Chunk["Semantic Boundary Chunking\n(Markdown headers / code blocks)"]
+        Embed["Embedding Generation\n(Dense 384d + Sparse BM25)"]
+        Cache["Chunk-Hash Deduplication\n(embedding_cache)"]
+    end
+    
+    subgraph StoragePersistence["Persistent Store Upserts / Purges"]
+        RelUpsert["Relational Upserts\n(indexed_files, file_summaries,\nast_symbols, ast_relationships,\napi_routes, api_calls)"]
+        VecUpsert["Vector Store Upsert\n(upsert_points deterministic UUID5)"]
+        RelDelete["Relational Purge\n(DELETE WHERE filepath = ?)"]
+        VecDelete["Vector Store Purge\n(delete_by_path)"]
+    end
+    
+    Notify["List Changed Notification\n(trigger_list_changed_notification)"]
+
+    Client --> AuthCheck
+    AuthCheck -->|Authorized| PathGuard
+    
+    %% Upload / Replace Flow
+    PathGuard -->|Upload / Replace| DiskWrite
+    DiskWrite --> AST
+    AST --> Chunk
+    Chunk --> Cache
+    Cache --> Embed
+    Embed --> VecUpsert
+    AST --> RelUpsert
+    VecUpsert --> Notify
+    RelUpsert --> Notify
+    
+    %% Delete Flow
+    PathGuard -->|Delete| DiskDelete
+    DiskDelete --> RelDelete
+    DiskDelete --> VecDelete
+    RelDelete --> Notify
+    VecDelete --> Notify
+```
+
+---
+
+### 12. Unified Ingestion Catalog (`what_is_ingested` & `/admin/api/ingestion/catalog`)
+- **Multi-Source Aggregation**: Single consolidated inventory querying across:
+  1. **Git Repositories** (`git_repositories` table, branches, commit SHAs, URLs, sync status).
+  2. **Monitored Local Paths** (`indexed_paths` table, categories, recursive scan settings).
+  3. **Managed Local Storage** (`local_storage` namespace files in `indexed_files` and filesystem tree).
+- **Multi-Dimensional Query Filtering**:
+  - `source_type`: Filter by `all`, `git`, `monitored_path`, or `local_storage`.
+  - `repo_name`: Exact match repository or namespace alias.
+  - `path_prefix`: Filter files matching directory / prefix path.
+  - `file_extension`: Filter by extension (e.g. `.md`, `.py`, `.ts`).
+  - `detail_level`: `summary` for high-level repository stats, file counts, and symbol totals; `detailed` for comprehensive file-by-file inventories with doc types and languages.
+- **MCP Tool & REST Parity**: Exposes identical catalog querying functionality via FastMCP tool (`what_is_ingested`) and FastAPI endpoint (`GET /admin/api/ingestion/catalog`) guarded by `Role.VIEWER`.
 
 ---
 
