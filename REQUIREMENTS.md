@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **702 Automated Tests** (512 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **709 Automated Tests** (519 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -876,6 +876,15 @@ classDiagram
 persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
+
+#### `tests/test_local_storage_service.py` (7 tests)
+- `test_resolve_safe_path_valid`
+- `test_resolve_safe_path_traversal_rejected`
+- `test_save_and_read_file`
+- `test_save_bytes_and_read_nonexistent`
+- `test_delete_file_and_directory`
+- `test_get_file_tree`
+- `test_get_local_storage_service_singleton`
 
 #### `tests/test_pgvector_store.py` (54 tests)
 - `TestPgVectorStoreImports::test_import_pgvector_store`
