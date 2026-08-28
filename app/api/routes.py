@@ -39,6 +39,8 @@ from app.api.routers.repositories import router as repositories_router
 from app.api.routers.settings import router as settings_router
 from app.api.routers.graph import router as graph_router
 from app.api.routers.auth import router as auth_router, get_current_auth, require_role
+from app.api.routers.storage import router as storage_router
+from app.api.routers.ingestion import router as ingestion_router
 
 logger = logging.getLogger("contextcortex.api")
 
@@ -48,6 +50,8 @@ router.include_router(repositories_router)
 router.include_router(settings_router)
 router.include_router(graph_router)
 router.include_router(auth_router)
+router.include_router(storage_router)
+router.include_router(ingestion_router)
 
 __all__ = [
     "router",
