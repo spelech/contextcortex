@@ -246,3 +246,87 @@ export interface TopologyPhysicsConfig {
 
 export type ArchitecturePreset = 'files' | 'architecture' | 'api' | 'full';
 
+export interface StorageDirectoryItem {
+  name: string;
+  rel_path: string;
+  abs_path: string;
+}
+
+export interface StorageFileItem {
+  name: string;
+  rel_path: string;
+  abs_path: string;
+  size_bytes: number;
+  mtime: number;
+}
+
+export interface StorageTreeData {
+  root: string;
+  current_folder: string;
+  directories: StorageDirectoryItem[];
+  files: StorageFileItem[];
+}
+
+export interface StorageFileContent {
+  rel_path: string;
+  abs_path: string;
+  content: string;
+  size_bytes: number;
+  mtime: number;
+}
+
+export interface StorageMutationResult {
+  status: string;
+  rel_path: string;
+  abs_path?: string;
+  size_bytes?: number;
+  mtime?: number;
+  repo?: string;
+  category?: string;
+  chunks_indexed?: number;
+  symbols_indexed?: number;
+  deleted?: boolean;
+}
+
+export interface IngestionGitRepo {
+  id: number;
+  name: string;
+  url: string;
+  branch: string;
+  commit_sha?: string;
+  provider?: string;
+  status: string;
+  last_synced?: string;
+  file_count?: number;
+}
+
+export interface IngestionMonitoredPath {
+  path: string;
+  repo: string;
+  category?: string;
+  file_count?: number;
+}
+
+export interface IngestionLocalStorage {
+  root_path: string;
+  file_count: number;
+  tree?: StorageTreeData;
+}
+
+export interface IngestionDetailedFile {
+  filepath: string;
+  repo: string;
+  doc_type: string;
+  language: string;
+  mtime: number;
+}
+
+export interface IngestionCatalogData {
+  source_type: 'all' | 'git' | 'monitored_path' | 'local_storage';
+  detail_level: 'summary' | 'detailed';
+  git_repositories: IngestionGitRepo[];
+  monitored_paths: IngestionMonitoredPath[];
+  local_storage: IngestionLocalStorage | null;
+  files: IngestionDetailedFile[];
+}
+

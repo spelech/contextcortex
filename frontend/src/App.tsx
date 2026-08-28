@@ -7,6 +7,8 @@ import SearchInspector from './SearchInspector';
 import Settings from './Settings';
 import DiagnosticsViewer from './DiagnosticsViewer';
 import TopologyExplorer from './TopologyExplorer';
+import LocalStorageManager from './LocalStorageManager';
+import IngestionCatalogViewer from './IngestionCatalogViewer';
 import type { Stats } from './types';
 
 function App() {
@@ -83,6 +85,8 @@ function App() {
           <button className={`nav-tab ${activeTab === 'topology' ? 'active' : ''}`} onClick={() => { setActiveTab('topology'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-diagram-project"></i> Topology</button>
           <button className={`nav-tab ${activeTab === 'git-repos' ? 'active' : ''}`} onClick={() => { setActiveTab('git-repos'); setIsMobileNavOpen(false); }}><i className="fa-brands fa-github"></i> Git Repositories</button>
           <button className={`nav-tab ${activeTab === 'local-paths' ? 'active' : ''}`} onClick={() => { setActiveTab('local-paths'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-folder-tree"></i> Local Paths</button>
+          <button className={`nav-tab ${activeTab === 'local-storage' ? 'active' : ''}`} onClick={() => { setActiveTab('local-storage'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-hard-drive"></i> Local Storage</button>
+          <button className={`nav-tab ${activeTab === 'ingestion-catalog' ? 'active' : ''}`} onClick={() => { setActiveTab('ingestion-catalog'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-book-bookmark"></i> Ingestion Catalog</button>
           <button className={`nav-tab ${activeTab === 'search-inspector' ? 'active' : ''}`} onClick={() => { setActiveTab('search-inspector'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-magnifying-glass"></i> Search & Inspector</button>
           <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-gear"></i> Settings</button>
           <button className={`nav-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => { setActiveTab('diagnostics'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-terminal"></i> Diagnostics & Logs</button>
@@ -93,10 +97,13 @@ function App() {
           {activeTab === 'topology' && <TopologyExplorer />}
           {activeTab === 'git-repos' && <GitRepoManager refreshStats={loadStats} />}
           {activeTab === 'local-paths' && <LocalPathManager refreshStats={loadStats} />}
+          {activeTab === 'local-storage' && <LocalStorageManager refreshStats={loadStats} />}
+          {activeTab === 'ingestion-catalog' && <IngestionCatalogViewer />}
           {activeTab === 'search-inspector' && <SearchInspector />}
           {activeTab === 'settings' && <Settings stats={stats} refreshStats={loadStats} />}
           {activeTab === 'diagnostics' && <DiagnosticsViewer />}
         </main>
+
 
 
         <footer className="dashboard-footer">
