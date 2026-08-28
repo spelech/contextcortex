@@ -24,6 +24,8 @@ async def handle_get_architecture(
 ) -> str:
     """Synthesizes language distributions, key entry points, primary framework modules, route counts, and active ADRs into a concise summary."""
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         from app.services.architecture import synthesize_architecture
         return synthesize_architecture(repo=repo)
     except Exception as e:
@@ -48,6 +50,9 @@ async def handle_manage_adr(
         return "Error: repo parameter is required."
 
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        required_role = Role.EDITOR if action_clean in ("create", "update", "supersede") else Role.VIEWER
+        enforce_tool_permission(required_role)
         from app.services.database import list_adrs, get_adr, create_adr, update_adr, supersede_adr
 
         if action_clean == "list":

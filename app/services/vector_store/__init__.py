@@ -11,6 +11,9 @@ from app.services.vector_store.qdrant_store import (
 from app.services.vector_store.chroma_store import (
     ChromaVectorStore,
 )
+from app.services.vector_store.pgvector_store import (
+    PgVectorStore,
+)
 from app.services.vector_store.manager import (
     VectorStoreManager,
     get_vector_store,
@@ -25,6 +28,7 @@ __all__ = [
     "VectorSearchResult",
     "QdrantVectorStore",
     "ChromaVectorStore",
+    "PgVectorStore",
     "VectorStoreManager",
     "get_vector_store",
     "get_vector_store_config",

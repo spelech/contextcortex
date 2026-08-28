@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **571 Automated Tests** (381 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **702 Automated Tests** (512 Pytest Backend + 164 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -738,6 +738,46 @@ classDiagram
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
 
+#### `tests/test_auth_endpoints.py` (8 tests)
+- `test_oauth_protected_resource_metadata` - _Verify GET /.well-known/oauth-protected-resource returns valid RFC 9728 JSON._
+- `test_local_dev_bypass_allows_unauthenticated_requests` - _When AUTH_ENABLED=false, endpoints allow access without authorization header._
+- `test_protected_endpoints_challenge_401_when_auth_enabled` - _When AUTH_ENABLED=true, unauthenticated requests receive 401 with WWW-Authenticate header._
+- `test_api_key_lifecycle_endpoints` - _Test POST, GET, and DELETE /admin/api/auth/keys endpoints._
+- `test_api_key_management_requires_admin_role` - _Test that viewer and editor roles cannot access /admin/api/auth/keys._
+- `test_mcp_tools_rbac_viewer_vs_editor_vs_admin` - _Test RBAC role enforcement across MCP tools:
+- Viewer: allowed search_code, search_docs, find_symbol, list_repositories, read ADRs
+- Viewer: denied sync_repository, create/update/supersede ADRs
+- Editor: allowed sync_repository, create/update/supersede ADRs
+- Admin: allowed full access_
+- `test_fastmcp_streamable_transport_auth_enforced` - _Test FastMCP /mcp endpoint requires authentication when AUTH_ENABLED=true._
+- `test_api_key_delete_nonexistent` - _Test DELETE /admin/api/auth/keys/{id} with nonexistent ID returns 404._
+
+#### `tests/test_auth_service.py` (24 tests)
+- `test_role_enum_values_and_hierarchy`
+- `test_role_from_str`
+- `test_auth_context_and_user_alias`
+- `test_api_key_create_and_out_models`
+- `test_api_key_issue_and_validate`
+- `test_api_key_validate_invalid_and_tampered_key`
+- `test_api_key_expiration`
+- `test_api_key_revocation_and_deletion`
+- `test_api_key_list_multiple`
+- `test_jwt_validator_with_valid_token`
+- `test_jwt_validator_role_extraction_sources`
+- `test_jwt_validator_expired_and_invalid_signature`
+- `test_jwt_validator_issuer_and_audience_mismatch`
+- `test_auth_service_bypass_when_disabled`
+- `test_auth_service_routes_api_key`
+- `test_auth_service_routes_jwt`
+- `test_auth_service_rejects_missing_token_when_enabled`
+- `test_auth_service_rbac_permissions`
+- `test_auth_service_proxies_key_management`
+- `test_auth_service_singleton_getter`
+- `test_auth_context_has_scope_admin_override`
+- `test_api_key_get_nonexistent`
+- `test_jwt_validator_oidc_discovery_resolution`
+- `test_jwt_validator_stale_cache_refresh`
+
 #### `tests/test_auto_sync_api.py` (7 tests)
 - `test_repo_auto_sync_toggle_and_settings_endpoints`
 - `test_repo_auto_sync_toggle_not_found`
@@ -752,12 +792,61 @@ classDiagram
 - `test_repo_auto_sync_and_list`
 - `test_auto_sync_interval_edge_cases`
 
+#### `tests/test_database_engine.py` (11 tests)
+- `test_schema_metadata_contains_all_tables`
+- `test_schema_api_keys_columns`
+- `test_sqlite_engine_initialization_and_crud`
+- `test_sqlite_engine_seeds_default_prompts_and_configs`
+- `test_ast_relationship_foreign_key_and_cascade`
+- `test_api_keys_unique_hash_constraint`
+- `test_connection_helpers_with_engine`
+- `test_get_db_url_normalization`
+- `test_is_postgres_detection`
+- `test_wait_for_db_retries_and_success`
+- `test_wait_for_db_exhausts_retries`
+
 #### `tests/test_doc_links.py` (5 tests)
 - `test_extract_markdown_doc_links`
 - `test_extract_markdown_doc_links_edge_cases`
 - `test_process_file_content_doc_links`
 - `test_graph_builder_doc_links_topology`
 - `test_graph_builder_wikilink_hyphen_space_matching`
+
+#### `tests/test_docker_orchestration.py` (34 tests)
+- `TestDockerComposeConfig::test_compose_version_and_services`
+- `TestDockerComposeConfig::test_postgres_service_config`
+- `TestDockerComposeConfig::test_contextcortex_service_config`
+- `TestDockerComposeConfig::test_volumes_declared`
+- `TestEnvExampleDocumentation::test_contains_database_vars`
+- `TestEnvExampleDocumentation::test_contains_auth_vars`
+- `TestEnvExampleDocumentation::test_contains_vector_store_vars`
+- `TestAdminKeyBootstrap::test_bootstrap_empty_does_nothing`
+- `TestAdminKeyBootstrap::test_bootstrap_auto_generates_admin_key`
+- `TestAdminKeyBootstrap::test_bootstrap_auto_is_idempotent`
+- `TestAdminKeyBootstrap::test_bootstrap_custom_secret_key`
+- `TestAdminKeyBootstrap::test_bootstrap_custom_secret_key_without_prefix`
+- `TestAdminKeyBootstrap::test_bootstrap_custom_secret_key_idempotent`
+- `TestAdminKeyBootstrap::test_auth_service_bootstrap_delegation`
+- `TestStartupDatabaseInitialization::test_init_application_database_without_env`
+- `TestStartupDatabaseInitialization::test_init_application_database_with_admin_key_env`
+- `TestStartupDatabaseInitialization::test_wait_for_db_retry_success` - _Ensures wait_for_db returns True upon successful database connectivity._
+- `test_compose_version_and_services`
+- `test_postgres_service_config`
+- `test_contextcortex_service_config`
+- `test_volumes_declared`
+- `test_contains_database_vars`
+- `test_contains_auth_vars`
+- `test_contains_vector_store_vars`
+- `test_bootstrap_empty_does_nothing`
+- `test_bootstrap_auto_generates_admin_key`
+- `test_bootstrap_auto_is_idempotent`
+- `test_bootstrap_custom_secret_key`
+- `test_bootstrap_custom_secret_key_without_prefix`
+- `test_bootstrap_custom_secret_key_idempotent`
+- `test_auth_service_bootstrap_delegation`
+- `test_init_application_database_without_env`
+- `test_init_application_database_with_admin_key_env`
+- `test_wait_for_db_retry_success` - _Ensures wait_for_db returns True upon successful database connectivity._
 
 #### `tests/test_embedding_cache.py` (4 tests)
 - `test_embedding_cache_set_and_get`
@@ -787,6 +876,62 @@ classDiagram
 persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
+
+#### `tests/test_pgvector_store.py` (54 tests)
+- `TestPgVectorStoreImports::test_import_pgvector_store`
+- `TestPgVectorStoreImports::test_manager_supported_providers_includes_postgres_and_pgvector`
+- `TestPgVectorStoreLifecycle::test_initialization_defaults`
+- `TestPgVectorStoreLifecycle::test_ensure_collection_executes_ddl`
+- `TestPgVectorStoreLifecycle::test_ensure_collection_handles_extension_permission_warning`
+- `TestPgVectorStoreLifecycle::test_ensure_collection_failure`
+- `TestPgVectorStoreLifecycle::test_health_check_success`
+- `TestPgVectorStoreLifecycle::test_health_check_failure`
+- `TestPgVectorStoreLifecycle::test_get_stats_success`
+- `TestPgVectorStoreLifecycle::test_get_stats_failure`
+- `TestPgVectorStoreLifecycle::test_close_method`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_documents_with_vector_documents`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_documents_with_dicts`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_generates_embeddings_when_missing`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_empty_list_noop`
+- `TestPgVectorStoreUpsertAndSearch::test_upsert_failure_returns_false`
+- `TestPgVectorStoreUpsertAndSearch::test_search_executes_cosine_distance_query`
+- `TestPgVectorStoreUpsertAndSearch::test_search_empty_query_returns_empty`
+- `TestPgVectorStoreUpsertAndSearch::test_search_error_returns_empty_list`
+- `TestPgVectorStoreUpsertAndSearch::test_delete_by_path`
+- `TestPgVectorStoreUpsertAndSearch::test_delete_by_path_failure`
+- `TestPgVectorStoreUpsertAndSearch::test_delete_by_repo`
+- `TestPgVectorStoreUpsertAndSearch::test_delete_by_repo_failure`
+- `TestVectorStoreManagerPgVectorDispatch::test_create_store_pgvector_provider`
+- `TestVectorStoreManagerPgVectorDispatch::test_create_store_postgres_provider`
+- `TestVectorStoreManagerPgVectorDispatch::test_create_store_postgresql_provider`
+- `TestVectorStoreManagerPgVectorDispatch::test_test_connection_pgvector`
+- `test_import_pgvector_store`
+- `test_manager_supported_providers_includes_postgres_and_pgvector`
+- `test_initialization_defaults`
+- `test_ensure_collection_executes_ddl`
+- `test_ensure_collection_handles_extension_permission_warning`
+- `test_ensure_collection_failure`
+- `test_health_check_success`
+- `test_health_check_failure`
+- `test_get_stats_success`
+- `test_get_stats_failure`
+- `test_close_method`
+- `test_upsert_documents_with_vector_documents`
+- `test_upsert_documents_with_dicts`
+- `test_upsert_generates_embeddings_when_missing`
+- `test_upsert_empty_list_noop`
+- `test_upsert_failure_returns_false`
+- `test_search_executes_cosine_distance_query`
+- `test_search_empty_query_returns_empty`
+- `test_search_error_returns_empty_list`
+- `test_delete_by_path`
+- `test_delete_by_path_failure`
+- `test_delete_by_repo`
+- `test_delete_by_repo_failure`
+- `test_create_store_pgvector_provider`
+- `test_create_store_postgres_provider`
+- `test_create_store_postgresql_provider`
+- `test_test_connection_pgvector`
 
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`

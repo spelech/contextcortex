@@ -31,6 +31,8 @@ async def handle_search_code(
         return "Error: search query cannot be empty."
 
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(query_text=query, doc_type="code", repo=repo, language=language, limit=limit)
         if not hits:
             return f"No matching code snippets found for query: '{query}'."
@@ -69,6 +71,8 @@ async def handle_search_docs(
         return "Error: search query cannot be empty."
 
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(query_text=query, doc_type="doc", repo=repo, category=category, tag=tag, limit=limit)
         if not hits:
             return f"No matching documentation found for query: '{query}'."

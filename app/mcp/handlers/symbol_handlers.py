@@ -31,6 +31,8 @@ async def handle_find_symbol(
         return "Error: symbol name cannot be empty."
 
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             query = "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language FROM ast_symbols WHERE "
             params = []
@@ -72,6 +74,8 @@ async def handle_trace_path(
 ) -> str:
     """Deterministically traverse function call graphs, module imports, and inheritance hierarchies using AST relationships (BFS)."""
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         return trace_symbol_path(
             symbol=symbol,
             repo=repo,
@@ -92,6 +96,8 @@ async def handle_get_file_outline(
     """Get the AST outline (classes, methods, functions, line numbers) of a file without retrieving its entire token body."""
     fp = filepath.strip() if filepath else ""
     try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             if repo:
                 rows = conn.execute(
@@ -121,6 +127,8 @@ def handle_find_implementation_symbol(
     repo: Annotated[Optional[str], Field(description="Target repository (optional)")] = None
 ) -> str:
     """Workflow to locate functions, classes, and logic across registered codebases."""
+    from app.services.auth import enforce_tool_permission, Role
+    enforce_tool_permission(Role.VIEWER)
     return f"Please use find_symbol for '{symbol}' in repo '{repo}' and inspect its declaration, line numbers, and implementation details."
 
 

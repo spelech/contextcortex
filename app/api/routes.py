@@ -38,6 +38,7 @@ from app.api.webhooks import router as webhook_router
 from app.api.routers.repositories import router as repositories_router
 from app.api.routers.settings import router as settings_router
 from app.api.routers.graph import router as graph_router
+from app.api.routers.auth import router as auth_router, get_current_auth, require_role
 
 logger = logging.getLogger("contextcortex.api")
 
@@ -46,6 +47,7 @@ router.include_router(webhook_router)
 router.include_router(repositories_router)
 router.include_router(settings_router)
 router.include_router(graph_router)
+router.include_router(auth_router)
 
 __all__ = [
     "router",

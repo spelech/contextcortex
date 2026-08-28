@@ -1,6 +1,6 @@
-# Architecture: ContextCortex (v2.11.0)
+# Architecture: ContextCortex (v2.12.0)
 
-ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, architecture documents, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, pluggable vector store backends (Qdrant & ChromaDB), automatic polling daemons, multi-provider webhooks, interactive dependency topology graph explorer, and a React 19 administrative dashboard.
+ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, architecture documents, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, pluggable relational and vector store backends (PostgreSQL 16 with pgvector, Qdrant, ChromaDB, and SQLite), automatic polling daemons, multi-provider webhooks, interactive dependency topology graph explorer, RFC 9728 OAuth 2.1 Protected Resource Server, 3-tier API key RBAC, and a React 19 administrative dashboard.
 
 All backend services and frontend components are modularized into cohesive packages with a strict **sub-500 LOC per file** maintainability floor.
 
@@ -11,21 +11,48 @@ All backend services and frontend components are modularized into cohesive packa
 ```mermaid
 flowchart TD
     subgraph Clients["MCP & Web Clients"]
-        Claude["AI Coding Agents / MCP Clients (Cursor, Claude Desktop, Antigravity)"]
-        Browser["Admin Dashboard (ContextCortex Dashboard - React 19)"]
+        Claude["AI Coding Agents / MCP Clients\n(Cursor, Claude Desktop, Antigravity, Windsurf)"]
+        Browser["Admin Dashboard\n(ContextCortex Dashboard - React 19)"]
     end
 
     subgraph Server["FastAPI Core & FastMCP 2.0 Application (main.py)"]
         FastAPI["FastAPI App (Lifespan Session Manager)"]
+        AuthMiddleware["Auth & RBAC Layer (app/services/auth/)"]
         FastMCP["FastMCP Server (app/mcp/mcp_server.py)"]
         SSE["SSE Transport (/sse, /messages/)"]
         HTTP["Streamable HTTP Transport (/mcp)"]
+        WellKnown["RFC 9728 Protected Resource\n(/.well-known/oauth-protected-resource)"]
         AdminAPI["Admin REST API Routers (app/api/routers/*)"]
         Webhooks["Webhook Ingestion (app/api/webhooks.py)"]
         LogBuffer["Diagnostic Ring Buffer (app/services/logger.py)"]
     end
 
     subgraph ModularServices["Core Modular Services (app/services/)"]
+        subgraph AuthPkg["app/services/auth/"]
+            AuthSrv["service.py"]
+            KeySrv["key_service.py"]
+            JwtVal["jwt_validator.py"]
+            AuthModels["models.py"]
+        end
+
+        subgraph DatabasePkg["app/services/database/"]
+            SchemaCore["schema.py (SQLAlchemy Core)"]
+            EngineMgr["engine.py (Connection Pool & Retries)"]
+            DBConn["connection.py"]
+            Creds["credentials.py"]
+            SyncCfg["sync_config.py"]
+            ADRDb["adrs.py"]
+            EmbCacheDb["embedding_cache.py"]
+        end
+
+        subgraph VectorStorePkg["app/services/vector_store/"]
+            VSBase["base.py"]
+            VSManager["manager.py"]
+            PgVectorStore["pgvector_store.py (HNSW Cosine)"]
+            QdrantStore["qdrant_store.py (Dense + BM25)"]
+            ChromaStore["chroma_store.py"]
+        end
+
         subgraph ChunkingPkg["app/services/chunking/"]
             TSLoader["tree_sitter_loader.py"]
             TextChunk["text_chunker.py"]
@@ -41,20 +68,6 @@ flowchart TD
             ProcFile["processor.py"]
         end
 
-        subgraph DatabasePkg["app/services/database/"]
-            DBConn["connection.py"]
-            Creds["credentials.py"]
-            SyncCfg["sync_config.py"]
-            ADRDb["adrs.py"]
-        end
-
-        subgraph VectorStorePkg["app/services/vector_store/"]
-            VSBase["base.py"]
-            VSManager["manager.py"]
-            QdrantStore["qdrant_store.py"]
-            ChromaStore["chroma_store.py"]
-        end
-
         subgraph TopologyPkg["app/services/topology/"]
             GraphBuilder["graph_builder.py"]
             NodeDetails["node_details.py"]
@@ -68,19 +81,30 @@ flowchart TD
         ADRService["ADR Parser & Lifecycle (adr.py)"]
     end
 
-    subgraph PersistentStorage["Persistent Storage"]
-        VectorStore["Pluggable Vector Store (Qdrant / ChromaDB)"]
-        SQLite["SQLite Index Cache (index_cache.db)"]
+    subgraph PersistentStorage["Pluggable Persistent Storage"]
+        subgraph RelationalDB["Relational Backend (SQLAlchemy 2.0)"]
+        PostgresDB[("PostgreSQL 16 Engine\n(pgvector/pgvector:pg16)")]
+        SQLiteDB[("SQLite WAL Engine\n(index_cache.db)")]
+        end
+        subgraph VectorEngines["Vector Search Backends"]
+        PgV["pgvector (HNSW Cosine)"]
+        Qdrant["Qdrant (Hybrid Dense+BM25)"]
+        Chroma["ChromaDB (Embedded/Remote)"]
+        end
     end
 
-    Claude -->|SSE /sse & /messages/| SSE
-    Claude -->|Streamable HTTP /mcp| HTTP
-    SSE --> FastMCP
-    HTTP --> FastMCP
+    Claude -->|Authorization: Bearer cc_... or JWT| SSE
+    Claude -->|Authorization: Bearer cc_... or JWT| HTTP
+    Claude -->|OAuth Discovery| WellKnown
+
+    SSE --> AuthMiddleware
+    HTTP --> AuthMiddleware
+    AuthMiddleware --> FastMCP
 
     Browser -->|REST API /admin/api/*| AdminAPI
     Browser -->|Webhooks /api/webhooks/*| Webhooks
 
+    AdminAPI --> AuthPkg
     AdminAPI --> DatabasePkg
     AdminAPI --> IndexingPkg
     AdminAPI --> VectorStorePkg
@@ -106,8 +130,8 @@ flowchart TD
     Poller --> IndexingPkg
     Webhooks --> IndexingPkg
 
-    VectorStorePkg --> VectorStore
-    DatabasePkg --> SQLite
+    VectorStorePkg --> VectorEngines
+    DatabasePkg --> RelationalDB
 
     Search --> Embeddings
     Search --> VectorStorePkg
@@ -117,7 +141,64 @@ flowchart TD
 
 ## 🧩 Modular Architecture Packages
 
-### 1. FastMCP 2.0 Server & Handlers (`app/mcp/`)
+### 1. MCP 2026-07-28 OAuth 2.1 & RBAC Security Engine (`app/services/auth/` & `app/api/routers/auth.py`)
+- **RFC 9728 Protected Resource Metadata (`/.well-known/oauth-protected-resource`)**:
+  - Exposes resource URI indicator, supported authorization server issuers, token bearer methods (`header`), and available MCP scopes (`mcp:admin`, `mcp:editor`, `mcp:viewer`).
+- **3-Tier Role Hierarchy & Permissions**:
+  - `admin` (Level 30 / `mcp:admin`): Full administrative control over server settings, API key lifecycle, credentials vault, repository syncs, and MCP tools.
+  - `editor` (Level 20 / `mcp:editor`): Mutation operations including repository triggering, ADR authoring/updating, and read-only searches.
+  - `viewer` (Level 10 / `mcp:viewer`): Read-only retrieval across code search, documentation search, AST symbols, outlines, and architecture summaries.
+- **JWT & OIDC Validation (`jwt_validator.py`)**:
+  - Validates RS256/ES256 signed JWTs against OpenID Connect discovery endpoints (`/.well-known/openid-configuration`) and JWKS key sets with in-memory caching and automatic stale key refresh.
+  - Verifies token claims: `iss` (issuer), `aud` or `resource` (resource indicator matching RFC 8707 / RFC 9728), `exp` (expiration with clock skew tolerance), and extracts roles from `roles`, `groups`, or `scope` claims.
+- **Database-Backed API Keys (`key_service.py`)**:
+  - Generates secure random keys prefixed with `cc_` (e.g. `cc_live_...`).
+  - Stores SHA-256 hashes (`key_hash`) and 16-character public prefixes (`key_prefix`) in relational storage.
+  - Tracks `last_used_at` timestamps, expiration policies, and active revocation flags.
+- **Tool Authorization Guards (`enforce_tool_permission`)**:
+  - ContextVar-based per-request security context propagation (`AuthContext`).
+  - Guards MCP tool executions with clear `ForbiddenError` (403) or `AuthenticationError` (401) responses when permissions are insufficient.
+- **Local Development Bypass & Auto-Bootstrap**:
+  - Default bypass mode when `AUTH_ENABLED=false` grants full `admin` rights for zero-friction local development.
+  - Automatically bootstraps admin keys from `ADMIN_INITIAL_KEY` environment variable during container startup.
+
+---
+
+### 2. Relational Database & Connection Management (`app/services/database/`)
+- **Canonical Schema Single Source of Truth (`schema.py`)**:
+  - Declares all relational tables using SQLAlchemy 2.0 Core (`MetaData`, `Table`, `Column`, `Index`, `ForeignKey`).
+  - Maintains structural parity between SQLite and PostgreSQL 16.
+- **Engine Factory & Connection Pool (`engine.py`)**:
+  - Dynamic URL normalization for `postgresql+psycopg://` driver connection strings and `sqlite:///` paths.
+  - Connection pooling with `pool_pre_ping=True`, configurable `pool_size` (default 10) and `max_overflow` (default 20) for PostgreSQL.
+  - WAL mode, busy timeout (5000ms), and foreign keys enabled automatically on SQLite connections.
+  - Cold-boot retry loop (`wait_for_db`) with exponential backoff for resilient container orchestration.
+  - Idempotent table creation (`metadata.create_all`) and automatic default seeding (system metadata, default prompts, vault paths).
+- **Embedding Cache (`embedding_cache.py`)**:
+  - Fast chunk-hash deduplication cache storing dense and sparse embedding representations across reindexing runs.
+- **Custom Git Host Vault & ADR Storage (`credentials.py`, `adrs.py`, `sync_config.py`)**:
+  - Multi-tier credential hierarchy resolution and Architectural Decision Record lifecycle state machine.
+
+---
+
+### 3. Pluggable Multi-Backend Vector Layer (`app/services/vector_store/`)
+- **Abstract Vector Interface (`base.py`)**:
+  - Standardized `VectorStore` contract with `upsert_documents`, `search`, `delete_by_path`, `delete_by_repo`, `get_stats`, and `health_check`.
+- **PostgreSQL 16 + pgvector Backend (`pgvector_store.py`)**:
+  - Native `vector(384)` column storage with HNSW cosine distance index (`vector_cosine_ops`).
+  - Cosine similarity ranking (`1 - (embedding <=> query_vec)`).
+  - Native `JSONB` payload and tag filtering (`tags @> '["tag"]'`).
+  - Parameterized chunked batch upserts with `ON CONFLICT (id) DO UPDATE`.
+- **Qdrant Backend (`qdrant_store.py`)**:
+  - Embedded disk and remote server support with dense + sparse BM25 multi-vectors and Reciprocal Rank Fusion (RRF).
+- **ChromaDB Backend (`chroma_store.py`)**:
+  - Lightweight persistent disk or remote vector store.
+- **Vector Store Manager (`manager.py`)**:
+  - Singleton provider supporting dynamic runtime backend switching across `pgvector`, `qdrant`, and `chroma`.
+
+---
+
+### 4. FastMCP 2.0 Server & Handlers (`app/mcp/`)
 - **FastMCP Core (`app/mcp/mcp_server.py`)**: Manages MCP lifespan and session registration.
 - **Dual Transports**:
   - **Server-Sent Events (SSE)**: Streaming events at `/sse` and message exchanges at `/messages/`.
@@ -135,7 +216,7 @@ flowchart TD
 
 ---
 
-### 2. Multi-Language Tree-sitter AST & Chunking (`app/services/chunking/`)
+### 5. Multi-Language Tree-sitter AST & Chunking (`app/services/chunking/`)
 - `tree_sitter_loader.py`: Lazy loader for 10 Tree-sitter grammars (Python, TS/JS, Go, Rust, C#, C++, Java, Ruby, PHP).
 - `text_chunker.py`: Hierarchical markdown breadcrumbs (`# > ## > ###`) and sliding window text chunking.
 - `symbol_extractor.py`: AST symbol declaration extraction with 1-indexed line numbers and signatures.
@@ -144,7 +225,7 @@ flowchart TD
 
 ---
 
-### 3. Incremental Ingestion & Syncing (`app/services/indexing/`)
+### 6. Incremental Ingestion & Syncing (`app/services/indexing/`)
 - `state.py`: Global indexing lock, active session notifications (`send_tool_list_changed`), configuration constants.
 - `git_syncer.py`: Ephemeral shallow git cloning, remote commit SHA tracking, AST symbol ingestion, vector upserts.
 - `local_syncer.py`: Local filesystem directories and Obsidian markdown vault indexing with mtime caching.
@@ -152,30 +233,14 @@ flowchart TD
 
 ---
 
-### 4. Pluggable Multi-Backend Vector Layer (`app/services/vector_store/`)
-- `base.py`: Abstract `VectorStore` base class and standard `VectorSearchResult` / `VectorDocument` models.
-- `manager.py`: Singleton vector store provider with runtime backend switching (`/admin/api/settings/vector-store/switch`), health checks, and data migration.
-- `qdrant_store.py`: Qdrant embedded (`/app/data/qdrant_storage`) and remote server (`http://qdrant:6333`) hybrid search (Dense 384d + Sparse BM25 with RRF).
-- `chroma_store.py`: ChromaDB persistent disk (`/app/data/chroma_db`) and remote client storage.
-
----
-
-### 5. Topology & Dependency Graph (`app/services/topology/`)
+### 7. Topology & Dependency Graph (`app/services/topology/`)
 - `graph_builder.py`: Builds multi-repo dependency graphs combining files, classes, functions, and API routes with depth-bounded BFS filtering.
 - `node_details.py`: Formats deep inspection data (code previews, line ranges, neighbor relations, permalinks).
 - `helpers.py`: Cross-repo node ID generation, URL link normalization, and graph pruning.
 
 ---
 
-### 6. Relational Database & Credential Vault (`app/services/database/`)
-- `connection.py`: SQLite WAL connection management, automatic table migration, resilient stats count.
-- `credentials.py`: Multi-tier credential hierarchy resolution and Custom Git Host Vault CRUD.
-- `sync_config.py`: Auto-sync intervals and webhook secret configurations.
-- `adrs.py`: Architectural Decision Record storage, search, and lifecycle status transitions.
-
----
-
-### 7. Universal Git Management (`app/services/git_manager.py`)
+### 8. Universal Git Management (`app/services/git_manager.py`)
 - **Universal Provider Ingestion**: GitHub, GitLab (Cloud & Self-Hosted), Gitea/Forgejo, Bitbucket, and Generic Git HTTP/HTTPS.
 - **Zero Disk Bloat**: Shallow ephemeral clones cleaned immediately after processing.
 - **Provider-Exact Permalinks**: Deep code permalinks across all supported Git hosts.
@@ -183,7 +248,7 @@ flowchart TD
 
 ---
 
-### 8. Background Poller & Multi-Provider Webhooks
+### 9. Background Poller & Multi-Provider Webhooks
 - `app/services/poller.py`: Background daemon checking remote commit SHAs at configured intervals.
 - `app/api/webhooks.py`: Authenticated push event ingestion for GitHub, GitLab, Gitea, and Bitbucket.
 
@@ -204,10 +269,9 @@ erDiagram
         string commit_sha
         string status
         string last_error
-        string last_synced
+        datetime last_synced
         int enabled
-        int auto_sync_enabled
-        int auto_sync_interval
+        int auto_sync
         string webhook_secret
         datetime added_at
     }
@@ -258,7 +322,7 @@ erDiagram
     AST_RELATIONSHIPS {
         int id PK
         string repo
-        int source_symbol_id
+        int source_symbol_id FK
         string source_filepath
         string source_symbol
         string target_symbol
@@ -276,6 +340,7 @@ erDiagram
         string handler_symbol
         int start_line
         int end_line
+        datetime created_at
     }
 
     API_CLIENT_CALLS {
@@ -286,20 +351,20 @@ erDiagram
         string url_pattern
         string caller_symbol
         int line_number
+        datetime created_at
     }
 
-    ARCHITECTURE_ADRS {
-        int id PK
+    ARCHITECTURE_DECISION_RECORDS {
+        string id PK
         string repo
-        string adr_number
         string title
         string status
-        string date
-        string filepath
         string context
         string decision
         string consequences
-        string raw_content
+        string superseded_by
+        datetime created_at
+        datetime updated_at
     }
 
     FILE_SUMMARIES {
@@ -314,6 +379,37 @@ erDiagram
         real mtime
     }
 
+    EMBEDDING_CACHE {
+        string chunk_hash PK
+        string model_name PK
+        string dense_vector
+        string sparse_indices
+        string sparse_values
+        datetime created_at
+    }
+
+    CUSTOM_PROMPTS {
+        int id PK
+        string name UK
+        string description
+        string arguments_json
+        string template
+        datetime added_at
+    }
+
+    API_KEYS {
+        int id PK
+        string name
+        string key_prefix
+        string key_hash UK
+        string role
+        string group_name
+        datetime expires_at
+        datetime created_at
+        datetime last_used_at
+        boolean is_active
+    }
+
     SYSTEM_METADATA {
         string key PK
         string value
@@ -324,9 +420,11 @@ erDiagram
     GIT_REPOSITORIES ||--o{ AST_RELATIONSHIPS : "traces"
     GIT_REPOSITORIES ||--o{ API_ROUTES : "exposes"
     GIT_REPOSITORIES ||--o{ API_CLIENT_CALLS : "invokes"
-    GIT_REPOSITORIES ||--o{ ARCHITECTURE_ADRS : "documents"
+    GIT_REPOSITORIES ||--o{ ARCHITECTURE_DECISION_RECORDS : "documents"
     GIT_REPOSITORIES ||--o{ FILE_SUMMARIES : "summarizes"
     INDEXED_PATHS ||--o{ INDEXED_FILES : "contains"
     INDEXED_FILES ||--o{ AST_SYMBOLS : "defines"
     INDEXED_FILES ||--o| FILE_SUMMARIES : "has metadata"
+    AST_SYMBOLS ||--o{ AST_RELATIONSHIPS : "source"
 ```
+
