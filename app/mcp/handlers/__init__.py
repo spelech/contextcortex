@@ -23,6 +23,10 @@ from app.mcp.handlers.architecture_handlers import (
     handle_get_architecture,
     handle_manage_adr,
 )
+from app.mcp.handlers.storage_handlers import (
+    handle_manage_local_file,
+    handle_what_is_ingested,
+)
 
 __all__ = [
     "handle_search_code",
@@ -40,4 +44,6 @@ __all__ = [
     "handle_search_infrastructure_docs",
     "handle_get_architecture",
     "handle_manage_adr",
+    "handle_manage_local_file",
+    "handle_what_is_ingested",
 ]
