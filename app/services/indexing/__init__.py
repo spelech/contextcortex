@@ -26,6 +26,11 @@ from app.services.indexing.git_syncer import (
     sync_single_git_repo,
     run_full_indexing,
 )
+from app.services.indexing.git_progress import (
+    GitSyncJob,
+    GitProgressTracker,
+    progress_tracker,
+)
 
 __all__ = [
     "VAULT_PATH",
@@ -50,4 +55,7 @@ __all__ = [
     "compute_git_repo_delta",
     "sync_single_git_repo",
     "run_full_indexing",
+    "GitSyncJob",
+    "GitProgressTracker",
+    "progress_tracker",
 ]

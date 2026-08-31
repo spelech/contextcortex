@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **734 Automated Tests** (534 Pytest Backend + 174 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **744 Automated Tests** (544 Pytest Backend + 174 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -534,6 +534,18 @@ classDiagram
 - `test_check_github_rate_limit_success`
 - `test_check_github_rate_limit_non_200`
 - `test_check_github_rate_limit_exception`
+
+#### `tests/backend/test_git_progress.py` (10 tests)
+- `test_job_dataclass_defaults_and_to_dict`
+- `test_tracker_singleton`
+- `test_tracker_job_lifecycle`
+- `test_tracker_finish_job_with_error`
+- `test_tracker_log_ring_buffer_limit`
+- `test_tracker_job_reset`
+- `test_tracker_cancellation`
+- `test_tracker_snapshots`
+- `test_tracker_nonexistent_repo_safe_handling`
+- `test_tracker_subscription_and_broadcast`
 
 #### `tests/backend/test_indexer_and_embeddings.py` (25 tests)
 - `test_embeddings_generation`
