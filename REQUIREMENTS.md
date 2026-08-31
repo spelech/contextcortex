@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **790 Automated Tests** (560 Pytest Backend + 204 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **798 Automated Tests** (560 Pytest Backend + 204 Vitest Frontend + 34 Playwright E2E).
 
 ---
 
@@ -1329,5 +1329,13 @@ and leaves the prior indexed state intact without data loss._
 - 22. toggles repository auto-sync ON/OFF with optimistic UI update and toast confirmation
 - 23. opens Webhook setup modal, displays copyable endpoint, and shows provider setup guides
 - 24. configures auto-sync polling schedule and manages global webhook secret in Settings
+- 1. renders multi-stage progress chip, percentage, and current file in table and mobile card
+- 2. opens RepoSyncDrawer when clicking progress chip and renders 5-stage checklist and overall progress
+- 3. opens RepoSyncDrawer via
+- 4. dismisses RepoSyncDrawer via close button and backdrop click
+- 5. displays error state in drawer with highlighted failing step and error details
+- 6. displays completed synced state with all 5 stages marked complete and 100% progress
+- 7. triggers sync action and handles cancel sync from drawer
+- 8. validates responsive layout containment on desktop and mobile viewports
 - navigates to Topology tab and renders graph controls
 - interacts with view types, search, node inspector drawer, and exports

@@ -61,6 +61,7 @@ code, .code {
 
 .data-mobile-card-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-top: 4px;
     padding-top: 10px;
@@ -68,7 +69,8 @@ code, .code {
 }
 
 .data-mobile-card-actions .btn {
-    flex: 1;
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
     justify-content: center;
 }
 
@@ -1285,5 +1287,16 @@ input:focus, select:focus, textarea:focus {
 .log-msg {
     color: #e6edf3;
     flex: 1;
+}
+
+/* Theme Editor Dev Tool Overlay Non-blocking */
+theme-editor-overlay {
+    pointer-events: none !important;
+}
+
+theme-editor-overlay button,
+theme-editor-overlay [role="button"],
+theme-editor-overlay a {
+    pointer-events: auto !important;
 }
 

@@ -301,13 +301,15 @@ export function RepoListTable({
                       className={`badge ${isAutoSync ? 'badge-success' : 'badge-danger'}`}
                       style={{ cursor: 'pointer', padding: '2px 6px', fontSize: '0.75rem' }}
                       onClick={() => onToggleAutoSync(r.id, isAutoSync)}
+                      title={`Auto-Sync: ${isAutoSync ? 'ON' : 'OFF'} (Click to toggle)`}
+                      aria-label={`Toggle auto-sync for ${r.name}`}
                     >
                       {isAutoSync ? 'ON' : 'OFF'}
                     </button>
                   </div>
                   <div>
                     <span className="data-label">Files:</span>
-                    {(r.file_count || 0).toLocaleString()}
+                    {(r.file_count || 0).toLocaleString()} files
                   </div>
                   <div>
                     <span className="data-label">Last Synced:</span>
