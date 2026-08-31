@@ -65,8 +65,9 @@ class GitProgressTracker:
                 job.started_at = time.time()
                 job.updated_at = time.time()
             payload = self.jobs[repo_id].to_dict()
+            job_obj = self.jobs[repo_id]
         self._broadcast({"type": "progress", "data": payload})
-        return self.jobs[repo_id]
+        return job_obj
 
     def update_step(
         self,
@@ -74,10 +75,11 @@ class GitProgressTracker:
         step: int,
         step_name: str,
         current_file: Optional[str] = None,
-        processed: int = 0,
-        total: int = 0,
+        processed: Optional[int] = None,
+        total: Optional[int] = None,
         pct: Optional[int] = None
     ):
+        payload = None
         with self._lock:
             job = self.jobs.get(repo_id)
             if not job:
@@ -85,20 +87,24 @@ class GitProgressTracker:
             job.status = "syncing"
             job.step = step
             job.step_name = step_name
-            job.current_file = current_file
-            job.processed_files = processed
-            job.total_files = total
+            if current_file is not None:
+                job.current_file = current_file
+            if processed is not None:
+                job.processed_files = processed
+            if total is not None:
+                job.total_files = total
             if pct is not None:
                 job.percent = max(0, min(100, pct))
-            elif total > 0:
+            elif job.total_files > 0:
                 base_pct = int(((step - 1) / job.total_steps) * 100)
                 step_range = int(100 / job.total_steps)
-                job.percent = min(100, base_pct + int((processed / total) * step_range))
+                job.percent = min(100, base_pct + int((job.processed_files / job.total_files) * step_range))
             else:
                 job.percent = int(((step - 1) / job.total_steps) * 100)
             job.updated_at = time.time()
             payload = job.to_dict()
-        self._broadcast({"type": "progress", "data": payload})
+        if payload is not None:
+            self._broadcast({"type": "progress", "data": payload})
 
     def log(self, repo_id: int, level: str, message: str):
         entry = {
@@ -106,14 +112,18 @@ class GitProgressTracker:
             "level": level.upper(),
             "message": message
         }
+        should_broadcast = False
         with self._lock:
             job = self.jobs.get(repo_id)
             if job:
                 job.logs.append(entry)
                 job.updated_at = time.time()
-        self._broadcast({"type": "log", "repo_id": repo_id, "data": entry})
+                should_broadcast = True
+        if should_broadcast:
+            self._broadcast({"type": "log", "repo_id": repo_id, "data": entry})
 
     def finish_job(self, repo_id: int, status: str = "synced", error: Optional[str] = None):
+        payload = None
         with self._lock:
             job = self.jobs.get(repo_id)
             if not job:
@@ -124,21 +134,26 @@ class GitProgressTracker:
                 job.step = job.total_steps
                 job.percent = 100
                 job.step_name = "Sync Complete"
+                if job.total_files > 0:
+                    job.processed_files = job.total_files
             job.updated_at = time.time()
             payload = job.to_dict()
-        self._broadcast({"type": "progress", "data": payload})
+        if payload is not None:
+            self._broadcast({"type": "progress", "data": payload})
 
     def cancel_job(self, repo_id: int) -> bool:
+        payload = None
         with self._lock:
             job = self.jobs.get(repo_id)
-            if job and job.status == "syncing":
+            if job and job.status in ("syncing", "pending"):
                 job.cancelled = True
                 job.status = "error"
                 job.error = "Sync cancelled by user"
                 job.updated_at = time.time()
                 payload = job.to_dict()
-                self._broadcast({"type": "progress", "data": payload})
-                return True
+        if payload is not None:
+            self._broadcast({"type": "progress", "data": payload})
+            return True
         return False
 
     def is_cancelled(self, repo_id: int) -> bool:
