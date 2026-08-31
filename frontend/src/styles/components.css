@@ -455,6 +455,14 @@ input:focus, select:focus, textarea:focus {
     align-items: flex-start;
     gap: 4px;
   }
+  .sync-progress-container {
+    min-width: unset;
+    max-width: 100%;
+    width: 100%;
+  }
+  .sync-file-caption {
+    max-width: 100%;
+  }
 }
 
 @keyframes drawer-slide-down {
@@ -1029,6 +1037,70 @@ input:focus, select:focus, textarea:focus {
 
 .sync-progress-bar-fill.fill-error {
     background: #ef4444;
+}
+
+/* Repo Table Live Sync Progress Indicator */
+.sync-progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 170px;
+    max-width: 250px;
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.sync-progress-container:hover {
+    opacity: 0.92;
+}
+
+.sync-progress-container:focus-visible {
+    outline: 2px solid var(--primary);
+    border-radius: 6px;
+}
+
+.progress-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.sync-progress-bar-wrapper {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.sync-file-caption {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: var(--font-family-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 250px;
+    display: flex;
+    align-items: center;
+}
+
+.sync-file-caption code {
+    font-size: 0.72rem;
+    padding: 1px 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
 }
 
 /* Stepper Section */

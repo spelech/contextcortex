@@ -349,7 +349,12 @@ describe('GitRepoManager Component', () => {
 
   it('handles errors when loading repos, adding repo, syncing repo, and deleting repo', async () => {
     // 1. Error on loadRepos
-    (globalThis as any).fetch = vi.fn().mockRejectedValueOnce(new Error('Network offline'));
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url === '/admin/api/repos') {
+        return Promise.reject(new Error('Network offline'));
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
     render(
       <ToastProvider>
         <GitRepoManager refreshStats={vi.fn()} />
@@ -426,6 +431,65 @@ describe('GitRepoManager Component', () => {
     expect(mobileSyncBtns.length).toBeGreaterThan(0);
     const mobileWebhookBtns = screen.getAllByRole('button', { name: /webhook/i });
     expect(mobileWebhookBtns.length).toBeGreaterThan(0);
+  });
+
+  it('opens and closes RepoSyncDrawer when Live Logs button is clicked', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/sync-status')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            1: {
+              repo_id: 1,
+              repo_name: 'knowledge-rag-mcp',
+              status: 'syncing',
+              step: 3,
+              total_steps: 5,
+              step_name: 'Computing File Delta & Scanning',
+              current_file: 'src/indexer.ts',
+              processed_files: 10,
+              total_files: 25,
+              percent: 40,
+              started_at: Date.now() - 10000,
+              updated_at: Date.now(),
+              logs: [{ timestamp: '12:00:00', level: 'INFO', message: 'Scanning files' }],
+            }
+          })
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => mockRepos
+      });
+    });
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
+    });
+
+    // Click Logs button for knowledge-rag-mcp
+    const logButtons = screen.getAllByTitle('View Ingestion Logs');
+    fireEvent.click(logButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/knowledge-rag-mcp Ingestion Progress & Live Logs/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Computing File Delta & Scanning/i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Scanning files/i)).toBeInTheDocument();
+    });
+
+    // Close drawer via close button
+    const closeBtn = screen.getByRole('button', { name: /Close sync drawer/i });
+    fireEvent.click(closeBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText(/knowledge-rag-mcp Ingestion Progress & Live Logs/i)).not.toBeInTheDocument();
+    });
   });
 });
 

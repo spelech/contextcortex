@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **781 Automated Tests** (560 Pytest Backend + 195 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **790 Automated Tests** (560 Pytest Backend + 204 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -1085,7 +1085,7 @@ and leaves the prior indexed state intact without data loss._
 - handles provider switch to API and updates form fields
 - handles changes to CPU threads and batch size
 
-#### `GitRepoManager.test.tsx` (11 tests)
+#### `GitRepoManager.test.tsx` (12 tests)
 - renders repository list with status badges, auto-sync buttons, and details
 - shows empty state when no repositories are registered
 - opens modal, handles cancel, and submits new repository registration
@@ -1097,6 +1097,7 @@ and leaves the prior indexed state intact without data loss._
 - triggers repo deletion, calls refreshStats, and removes repo optimistically
 - handles errors when loading repos, adding repo, syncing repo, and deleting repo
 - renders mobile cards for repositories with action buttons and auto-sync toggles
+- opens and closes RepoSyncDrawer when Live Logs button is clicked
 
 #### `IngestionCatalogViewer.test.tsx` (4 tests)
 - renders summary catalog with git repos, monitored paths, and local storage stats
@@ -1141,6 +1142,16 @@ and leaves the prior indexed state intact without data loss._
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
 - renders system specs with responsive word wrapping and badge elements
+
+#### `RepoListTable.test.tsx` (8 tests)
+- renders empty state when repos array is empty
+- renders repos with standard statuses (synced, error, pending)
+- renders multi-phase progress badge, progress bar, and active file caption when syncing
+- clicking progress badge or progress bar container calls onOpenSyncDrawer with repo id
+- renders Live Logs button in actions and triggers onOpenSyncDrawer on click
+- handles onSync, onToggleAutoSync, onOpenWebhook, and onDelete callbacks
+- renders fallback progress information when sync job is syncing but without active job state
+- renders mobile card with progress bar, active file caption, and logs action button
 
 #### `RepoSyncDrawer.test.tsx` (21 tests)
 - does not render anything when isOpen is false

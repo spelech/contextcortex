@@ -15,14 +15,27 @@ export function useGitSyncStream(): UseGitSyncStreamReturn {
   const fetchInitialStatus = useCallback(async () => {
     try {
       const res = await fetch('/admin/api/repos/sync-status');
-      if (res.ok) {
+      if (res && res.ok) {
         const snapshot = await res.json();
-        if (snapshot && typeof snapshot === 'object') {
+        if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
           const states: Record<number, GitSyncJob> = {};
           Object.entries(snapshot).forEach(([id, job]) => {
-            states[Number(id)] = job as GitSyncJob;
+            const j = job as any;
+            if (j && (j.repo_id != null || j.step != null || j.status != null)) {
+              states[Number(id)] = j as GitSyncJob;
+            }
           });
           setSyncStates((prev) => ({ ...prev, ...states }));
+        } else if (Array.isArray(snapshot)) {
+          const states: Record<number, GitSyncJob> = {};
+          snapshot.forEach((item: any) => {
+            if (item && item.repo_id != null && (item.step != null || item.status === 'syncing')) {
+              states[item.repo_id] = item as GitSyncJob;
+            }
+          });
+          if (Object.keys(states).length > 0) {
+            setSyncStates((prev) => ({ ...prev, ...states }));
+          }
         }
       }
     } catch (err) {
@@ -32,6 +45,10 @@ export function useGitSyncStream(): UseGitSyncStreamReturn {
 
   useEffect(() => {
     fetchInitialStatus();
+
+    if (typeof EventSource === 'undefined') {
+      return;
+    }
 
     let es: EventSource | null = null;
     try {
