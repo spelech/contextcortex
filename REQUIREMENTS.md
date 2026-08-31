@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **752 Automated Tests** (552 Pytest Backend + 174 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **760 Automated Tests** (560 Pytest Backend + 174 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -546,6 +546,16 @@ classDiagram
 - `test_tracker_snapshots`
 - `test_tracker_nonexistent_repo_safe_handling`
 - `test_tracker_subscription_and_broadcast`
+
+#### `tests/backend/test_git_sync_api.py` (8 tests)
+- `test_get_sync_status_single_repo_found`
+- `test_get_sync_status_single_repo_not_found`
+- `test_get_sync_status_all_repos`
+- `test_cancel_sync_endpoint_success`
+- `test_cancel_sync_endpoint_not_syncing_or_invalid`
+- `test_sse_stream_initial_snapshot_and_headers`
+- `test_sse_stream_live_events_and_unsubscription`
+- `test_sse_stream_keep_alive_ping`
 
 #### `tests/backend/test_git_syncer_progress.py` (8 tests)
 - `test_git_syncer_reports_stages_up_to_date`
