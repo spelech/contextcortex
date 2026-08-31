@@ -945,3 +945,273 @@ input:focus, select:focus, textarea:focus {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
+/* Git Repository Sync Drawer & Terminal */
+.sync-drawer-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(6px);
+    display: flex;
+    justify-content: flex-end;
+    z-index: 1100;
+}
+
+.sync-drawer {
+    width: 620px;
+    max-width: 95vw;
+    height: 100vh;
+    background: var(--bg-card, #111827);
+    border-left: 1px solid var(--border-card);
+    display: flex;
+    flex-direction: column;
+    box-shadow: -10px 0 35px rgba(0, 0, 0, 0.55);
+    animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sync-drawer-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border-card);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.sync-drawer-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.sync-drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+/* Progress Section */
+.sync-progress-section {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-card);
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+
+.sync-progress-bar-container {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.sync-progress-bar-fill {
+    height: 100%;
+    transition: width 0.3s ease, background 0.3s ease;
+    border-radius: 4px;
+}
+
+.sync-progress-bar-fill.fill-active {
+    background: var(--primary);
+}
+
+.sync-progress-bar-fill.fill-success {
+    background: #10b981;
+}
+
+.sync-progress-bar-fill.fill-error {
+    background: #ef4444;
+}
+
+/* Stepper Section */
+.sync-stepper-container {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-card);
+    border-radius: 8px;
+    padding: 14px 16px;
+}
+
+.sync-stepper-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sync-stepper-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    transition: background 0.15s ease;
+}
+
+.sync-stepper-item.item-active {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.sync-stepper-item.item-completed {
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.sync-stepper-item.item-error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.sync-stepper-icon {
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    min-width: 18px;
+}
+
+.sync-stepper-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.88rem;
+    color: var(--text);
+}
+
+.sync-stepper-details {
+    font-size: 0.8rem;
+    margin-top: 4px;
+}
+
+.sync-current-file {
+    font-family: var(--font-family-mono);
+    font-size: 0.78rem;
+    color: var(--accent, #60a5fa);
+    word-break: break-all;
+}
+
+/* Terminal Section */
+.sync-terminal-section {
+    display: flex;
+    flex-direction: column;
+    background: #0d1117;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 260px;
+    flex: 1;
+}
+
+.sync-terminal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: #161b22;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.sync-terminal-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.sync-autoscroll-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.sync-terminal-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: #11161d;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sync-terminal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 14px;
+    font-family: var(--font-family-mono, monospace);
+    font-size: 0.8rem;
+    max-height: 380px;
+    min-height: 180px;
+    color: #e6edf3;
+}
+
+.sync-terminal-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 160px;
+    color: #8b949e;
+    font-size: 0.85rem;
+}
+
+.sync-terminal-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sync-terminal-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.45;
+    word-break: break-all;
+}
+
+.log-time {
+    color: #8b949e;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.log-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.log-badge.level-info {
+    background: rgba(56, 189, 248, 0.2);
+    color: #38bdf8;
+}
+
+.log-badge.level-warn {
+    background: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+}
+
+.log-badge.level-error {
+    background: rgba(248, 113, 113, 0.2);
+    color: #f87171;
+}
+
+.log-msg {
+    color: #e6edf3;
+    flex: 1;
+}
+

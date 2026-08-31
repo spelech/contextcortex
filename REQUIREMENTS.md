@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **760 Automated Tests** (560 Pytest Backend + 174 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **781 Automated Tests** (560 Pytest Backend + 195 Vitest Frontend + 26 Playwright E2E).
 
 ---
 
@@ -1141,6 +1141,29 @@ and leaves the prior indexed state intact without data loss._
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
 - renders system specs with responsive word wrapping and badge elements
+
+#### `RepoSyncDrawer.test.tsx` (21 tests)
+- does not render anything when isOpen is false
+- renders drawer header with title, status badge, and elapsed timer
+- renders close button and closes drawer when clicked or backdrop clicked
+- renders 5-stage stepper with completed, active, and pending steps
+- renders all 5 stages as completed when status is synced
+- renders error state and last error message when status is error
+- shows and calls onCancelSync button when status is syncing
+- renders log messages with level styling and handles search filter
+- shows empty state when no logs exist
+- copies logs to clipboard when Copy Logs button is clicked
+- toggles autoscroll checkbox in terminal toolbar
+- connects to SSE endpoint and seeds initial snapshot via init event
+- init
+- updates job progress upon receiving progress event
+- init
+- progress
+- appends log entries upon receiving log event
+- init
+- log
+- cancels sync by calling /admin/api/repos/{id}/cancel-sync
+- closes EventSource on unmount
 
 #### `SearchInspector.test.tsx` (6 tests)
 - renders initial prompt and inputs
