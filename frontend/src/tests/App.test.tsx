@@ -28,7 +28,18 @@ describe('App Component', () => {
           json: async () => mockStats
         } as Response);
       }
-      if (url.includes('/admin/api/repos')) {
+      if (url.includes('/admin/api/navigator/tree')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            repo: '__all__',
+            tree: [],
+            total_files: 0,
+            total_symbols: 0
+          })
+        } as Response);
+      }
+      if (url.includes('/admin/api/repositories') || url.includes('/admin/api/repos')) {
         return Promise.resolve({
           ok: true,
           json: async () => []
@@ -98,11 +109,11 @@ describe('App Component', () => {
       </ToastProvider>
     );
 
-    // Switch to Topology
-    const topologyTab = screen.getByRole('button', { name: /Topology/i });
-    fireEvent.click(topologyTab);
+    // Switch to Navigator
+    const navigatorTab = screen.getByRole('button', { name: /Navigator/i });
+    fireEvent.click(navigatorTab);
     await waitFor(() => {
-      expect(screen.getByRole('group', { name: 'Architectural Presets' })).toBeInTheDocument();
+      expect(screen.getByTestId('code-navigator-container')).toBeInTheDocument();
     });
 
     // Switch to Git Repositories
