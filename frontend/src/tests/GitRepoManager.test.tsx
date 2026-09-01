@@ -491,5 +491,36 @@ describe('GitRepoManager Component', () => {
       expect(screen.queryByText(/knowledge-rag-mcp Ingestion Progress & Live Logs/i)).not.toBeInTheDocument();
     });
   });
+
+  it('displays loading state initially and then renders loaded repositories seamlessly', async () => {
+    let resolveFetch: any;
+    const fetchPromise = new Promise((resolve) => {
+      resolveFetch = resolve;
+    });
+
+    (globalThis as any).fetch = vi.fn().mockReturnValue(fetchPromise);
+
+    render(
+      <ToastProvider>
+        <GitRepoManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    // Should immediately show loading state rather than empty registered message
+    expect(screen.getByTestId('repo-loading-state')).toBeInTheDocument();
+    expect(screen.getByTestId('repo-loading-state-mobile')).toBeInTheDocument();
+    expect(screen.queryByText(/No Git repositories registered/i)).not.toBeInTheDocument();
+
+    // Now resolve the fetch with mock repos
+    resolveFetch({
+      ok: true,
+      json: async () => mockRepos,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('repo-loading-state')).not.toBeInTheDocument();
+      expect(screen.getAllByText('knowledge-rag-mcp')[0]).toBeInTheDocument();
+    });
+  });
 });
 

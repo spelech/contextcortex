@@ -149,4 +149,31 @@ describe('Overview Component', () => {
     const specRows = document.querySelectorAll('.spec-row');
     expect(specRows.length).toBeGreaterThan(0);
   });
+
+  it('renders live vector database status badge when vector_db_status is provided', () => {
+    const statsWithHealth: Stats = {
+      ...sampleStats,
+      vector_db_status: 'Healthy'
+    };
+
+    const { rerender } = render(
+      <ToastProvider>
+        <Overview stats={statsWithHealth} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    const badge = screen.getByTestId('overview-vector-db-status');
+    expect(badge).toHaveTextContent('Healthy');
+    expect(badge).toHaveClass('badge-success');
+
+    rerender(
+      <ToastProvider>
+        <Overview stats={{ ...statsWithHealth, vector_db_status: 'Unhealthy' }} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    const unhealthyBadge = screen.getByTestId('overview-vector-db-status');
+    expect(unhealthyBadge).toHaveTextContent('Unhealthy');
+    expect(unhealthyBadge).toHaveClass('badge-danger');
+  });
 });

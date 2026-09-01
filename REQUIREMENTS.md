@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **798 Automated Tests** (560 Pytest Backend + 204 Vitest Frontend + 34 Playwright E2E).
+**Test Verification Baseline:** **823 Automated Tests** (560 Pytest Backend + 222 Vitest Frontend + 41 Playwright E2E).
 
 ---
 
@@ -1061,11 +1061,13 @@ and leaves the prior indexed state intact without data loss._
 
 ### 6.2 Frontend Vitest Tests (`frontend/src/tests/`)
 
-#### `App.test.tsx` (4 tests)
+#### `App.test.tsx` (6 tests)
 - renders header, status indicators, and default Overview tab
 - switches between tabs on navigation click
 - renders Syncing... engine state badge when is_indexing is true
 - toggles mobile navigation drawer and closes upon tab selection
+- renders vector database health badge in header when vector_db_status is present
+- renders ChromaDB provider and unhealthy status badge in header
 
 #### `DiagnosticsViewer.test.tsx` (10 tests)
 - renders log records, badges, and controls
@@ -1085,7 +1087,7 @@ and leaves the prior indexed state intact without data loss._
 - handles provider switch to API and updates form fields
 - handles changes to CPU threads and batch size
 
-#### `GitRepoManager.test.tsx` (12 tests)
+#### `GitRepoManager.test.tsx` (13 tests)
 - renders repository list with status badges, auto-sync buttons, and details
 - shows empty state when no repositories are registered
 - opens modal, handles cancel, and submits new repository registration
@@ -1098,6 +1100,7 @@ and leaves the prior indexed state intact without data loss._
 - handles errors when loading repos, adding repo, syncing repo, and deleting repo
 - renders mobile cards for repositories with action buttons and auto-sync toggles
 - opens and closes RepoSyncDrawer when Live Logs button is clicked
+- displays loading state initially and then renders loaded repositories seamlessly
 
 #### `IngestionCatalogViewer.test.tsx` (4 tests)
 - renders summary catalog with git repos, monitored paths, and local storage stats
@@ -1105,7 +1108,7 @@ and leaves the prior indexed state intact without data loss._
 - toggles detail level to detailed and renders ingested files list
 - applies search and extension filters
 
-#### `LocalPathManager.test.tsx` (7 tests)
+#### `LocalPathManager.test.tsx` (8 tests)
 - renders configured paths correctly
 - renders mobile cards for local search paths with delete button
 - supports folder navigation drilling and parent directory climbing in browser
@@ -1113,6 +1116,7 @@ and leaves the prior indexed state intact without data loss._
 - customizes repo alias, category, and recursive options before saving and refreshes stats
 - deletes path when delete button is confirmed and refreshes stats
 - handles errors when loading paths, adding path, deleting path, and browsing
+- renders loading state initially and transitions to empty state when no paths are configured
 
 #### `LocalStorageManager.test.tsx` (6 tests)
 - renders storage header, upload button, and tree view
@@ -1134,7 +1138,7 @@ and leaves the prior indexed state intact without data loss._
 - filters neighbor nodes when typeFilters are provided
 - renders direct focal node selector and allows picking any file/node
 
-#### `Overview.test.tsx` (7 tests)
+#### `Overview.test.tsx` (8 tests)
 - renders loading state when stats is null
 - renders metrics, specs, and top keywords accurately
 - renders ChromaDB vector store specs correctly
@@ -1142,9 +1146,11 @@ and leaves the prior indexed state intact without data loss._
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
 - renders system specs with responsive word wrapping and badge elements
+- renders live vector database status badge when vector_db_status is provided
 
-#### `RepoListTable.test.tsx` (8 tests)
-- renders empty state when repos array is empty
+#### `RepoListTable.test.tsx` (10 tests)
+- renders loading state when isLoading is true and repos array is empty
+- renders empty state when not loading and repos array is empty
 - renders repos with standard statuses (synced, error, pending)
 - renders multi-phase progress badge, progress bar, and active file caption when syncing
 - clicking progress badge or progress bar container calls onOpenSyncDrawer with repo id
@@ -1152,6 +1158,7 @@ and leaves the prior indexed state intact without data loss._
 - handles onSync, onToggleAutoSync, onOpenWebhook, and onDelete callbacks
 - renders fallback progress information when sync job is syncing but without active job state
 - renders mobile card with progress bar, active file caption, and logs action button
+- renders provider icons for GitLab, Gitea, Bitbucket, and Generic Git
 
 #### `RepoSyncDrawer.test.tsx` (21 tests)
 - does not render anything when isOpen is false
@@ -1184,7 +1191,7 @@ and leaves the prior indexed state intact without data loss._
 - performs doc search with repo filter and renders documentation hits
 - renders search query form and hit card headers with responsive classes
 
-#### `Settings.test.tsx` (28 tests)
+#### `Settings.test.tsx` (29 tests)
 - renders vector database panel, auto-sync panel, multi-provider token boxes, rate limits, and host vault list
 - handles empty stats or fallback provider auth structure and vector store load error
 - switches vector store form fields between embedded and remote modes and changes default paths/urls
@@ -1213,6 +1220,7 @@ and leaves the prior indexed state intact without data loss._
 - renders embedding engine settings panel with current CPU threads, batch size, and system hardware
 - updates thread cap and batch size and saves embedding settings
 - handles embedding save failure and load errors gracefully
+- dynamically syncs vectorStore state when stats prop updates
 
 #### `ThemeSettings.test.tsx` (7 tests)
 - renders theme options with Deep Ocean as default when no storage exists
@@ -1303,6 +1311,18 @@ and leaves the prior indexed state intact without data loss._
 - calls onReRelax when clicking Re-Relax Layout button
 - calls onResetDefaults when clicking Reset Defaults button
 
+#### `VectorStoreSettings.test.tsx` (10 tests)
+- renders loading placeholder when isLoadingVs is true and vectorStore is null
+- renders fallback when not loading and vectorStore is null
+- renders active vector backend specifications correctly for Qdrant Embedded
+- renders active vector backend specifications correctly for Chroma Remote with Unhealthy status
+- handles provider and mode changes
+- handles storage path and collection input updates in embedded mode
+- handles remote url input update in remote mode
+- renders feedback banners for success and error states
+- triggers test connection and switch backend actions
+- disables buttons and shows spinner during testing or switching
+
 ### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/`)
 
 - 1. navigates through all tabs including Diagnostics & Logs
@@ -1337,5 +1357,12 @@ and leaves the prior indexed state intact without data loss._
 - 6. displays completed synced state with all 5 stages marked complete and 100% progress
 - 7. triggers sync action and handles cancel sync from drawer
 - 8. validates responsive layout containment on desktop and mobile viewports
+- 1. Overview Tab - Desktop Layout Audit (1080p)
+- 2. Overview Tab - Samsung Galaxy S25+ Mobile Layout & Touch Ergonomics
+- 3. Git Repositories Tab - Mobile Card Layout & Action Touch Targets
+- 4. Local Paths Tab - Mobile Card Layout Stability
+- 5. Settings Tab - Vector Store & Embedding Engine Layout Audit
+- 6. Diagnostics & Logs Tab - Log Container & Filter Layout Stability
+- 7. Add Repository Modal - Layout Shift & Center Alignment
 - navigates to Topology tab and renders graph controls
 - interacts with view types, search, node inspector drawer, and exports

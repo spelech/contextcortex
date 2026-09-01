@@ -2,6 +2,7 @@ import type { Repo, GitSyncJob } from '../../types';
 
 interface RepoListTableProps {
   repos: Repo[];
+  isLoading?: boolean;
   syncStates?: Record<number, GitSyncJob>;
   onSync: (id: number) => void;
   onToggleAutoSync: (id: number, current: boolean) => void;
@@ -12,6 +13,7 @@ interface RepoListTableProps {
 
 export function RepoListTable({
   repos,
+  isLoading,
   syncStates,
   onSync,
   onToggleAutoSync,
@@ -89,7 +91,14 @@ export function RepoListTable({
             </tr>
           </thead>
           <tbody>
-            {repos.length === 0 ? (
+            {isLoading && repos.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="empty-state" data-testid="repo-loading-state">
+                  <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+                  Loading repositories...
+                </td>
+              </tr>
+            ) : repos.length === 0 ? (
               <tr>
                 <td colSpan={9} className="empty-state">
                   No Git repositories registered. Click "Add Repository" to index a remote repo.
@@ -236,7 +245,12 @@ export function RepoListTable({
       </div>
 
       <div className="mobile-card-list">
-        {repos.length === 0 ? (
+        {isLoading && repos.length === 0 ? (
+          <div className="empty-state" data-testid="repo-loading-state-mobile">
+            <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+            Loading repositories...
+          </div>
+        ) : repos.length === 0 ? (
           <div className="empty-state">
             No Git repositories registered. Click "Add Repository" to index a remote repo.
           </div>

@@ -71,6 +71,15 @@ function App() {
                 <span>
                   {stats?.vector_store_provider === 'chroma' ? 'ChromaDB' : 'Qdrant'} ({(stats?.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded' : 'Remote'})
                 </span>
+                {stats?.vector_db_status && (
+                  <span
+                    className={`badge ${stats.vector_db_status === 'Healthy' ? 'badge-success' : 'badge-danger'}`}
+                    style={{ marginLeft: '6px', fontSize: '0.75rem', padding: '2px 6px' }}
+                    data-testid="vector-db-status-badge"
+                  >
+                    {stats.vector_db_status}
+                  </span>
+                )}
               </span>
             </div>
             <div className="status-item">

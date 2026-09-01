@@ -200,5 +200,63 @@ describe('App Component', () => {
     fireEvent.click(settingsTab);
     expect(nav).not.toHaveClass('drawer-open');
   });
+
+  it('renders vector database health badge in header when vector_db_status is present', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/admin/api/stats')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...mockStats,
+            vector_store_provider: 'qdrant',
+            vector_store_mode: 'remote',
+            vector_db_status: 'Healthy'
+          })
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Qdrant \(Remote\)/)).toBeInTheDocument();
+      expect(screen.getByTestId('vector-db-status-badge')).toHaveTextContent('Healthy');
+    });
+  });
+
+  it('renders ChromaDB provider and unhealthy status badge in header', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/admin/api/stats')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...mockStats,
+            vector_store_provider: 'chroma',
+            vector_store_mode: 'embedded',
+            vector_db_status: 'Unhealthy'
+          })
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => [] });
+    });
+
+    render(
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/ChromaDB \(Embedded\)/)).toBeInTheDocument();
+      const badge = screen.getByTestId('vector-db-status-badge');
+      expect(badge).toHaveTextContent('Unhealthy');
+      expect(badge).toHaveClass('badge-danger');
+    });
+  });
 });
 
