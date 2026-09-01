@@ -11,10 +11,12 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | Overview | Git Repositories |
 |:---:|:---:|
 | ![Overview](docs/assets/desktop_overview.png) | ![Git Repos](docs/assets/desktop_git-repos.png) |
-| **Search & Inspector** | **Local Paths** |
-| ![Search](docs/assets/desktop_search-inspector.png) | ![Local Paths](docs/assets/desktop_local-paths.png) |
-| **Settings** | **Diagnostics & Logs** |
-| ![Settings](docs/assets/desktop_settings.png) | ![Diagnostics](docs/assets/desktop_diagnostics.png) |
+| **Codebase Navigator** | **Search & Inspector** |
+| ![Codebase Navigator](docs/assets/desktop_codebase-navigator.png) | ![Search](docs/assets/desktop_search-inspector.png) |
+| **Local Paths** | **Settings** |
+| ![Local Paths](docs/assets/desktop_local-paths.png) | ![Settings](docs/assets/desktop_settings.png) |
+| **Diagnostics & Logs** | |
+| ![Diagnostics](docs/assets/desktop_diagnostics.png) | |
 
 </details>
 
@@ -77,10 +79,16 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - Granular multi-dimensional filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo_name`, `path_prefix`, and `file_extension`.
   - Flexible granularity (`summary` for totals and status; `detailed` for hierarchical file trees).
 - **Fast Deterministic Symbol Lookup**: Built-in symbol table (`ast_symbols`) powers instantaneous symbol searches (`find_symbol`) and file outlines (`get_file_outline`) without token bloat.
+- **High-Performance 3-Pane Codebase Navigator**:
+  - **Pane 1 (Files & Modules)**: Virtualized folder & file tree hierarchy with symbol/route counts, instant filtering, and one-click expand/collapse.
+  - **Pane 2 (Symbols & Routes)**: Language-aware AST symbol declarations with category chip filtering (`All`, `Functions`, `Classes`, `Routes`), signature previews, and search.
+  - **Pane 3 (Code Intelligence & Impact)**: Deep architectural intelligence displaying incoming callers, outgoing callees, imported modules, REST API route mappings (`POST`, `GET`, etc.), signature code blocks, docstrings, and one-click caller navigation jump.
+  - **Customizable Layout Density**: Persisted `Compact` (IDE density), `Balanced` (default), and `Spacious` (cards) modes with zero horizontal overflow across devices.
 - **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
 - **Multi-Theme Engine & Modern Tabbed Web Dashboard (`/admin/`)**:
   - **Appearance & Theme Settings**: Instant zero-latency switching between 4 distinct dark and light themes (**Deep Ocean**, **Midnight Blue**, **Lavender Haze**, and **Amber Warmth**) with live palette swatches and browser persistence.
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
+  - **Codebase Navigator**: High-performance 3-pane architectural file tree, AST symbol outline, and code impact/route inspector.
   - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, trigger shallow clone syncs, inspect commit SHAs, and manage sources.
   - **Local Paths**: Monitor local workspaces and notes vaults with recursive directory scanning and filesystem browser modal.
   - **Local Storage**: Managed file explorer, direct file upload modal with folder categorization, and file preview/replacement.
@@ -339,6 +347,13 @@ Connect any MCP client (VS Code, Cursor, Antigravity CLI, Claude Desktop, or Win
 ## 🌐 REST Administration APIs
 
 ContextCortex provides REST endpoints under `/admin/api/*` protected by RBAC authentication (`Role.VIEWER`, `Role.EDITOR`, `Role.ADMIN`):
+
+### Codebase Navigator (`/admin/api/navigator/*`)
+| Endpoint | Method | Required Role | Description |
+| :--- | :---: | :---: | :--- |
+| `/admin/api/navigator/tree` | `GET` | `viewer` | Returns repository file and directory hierarchy (`?repo=...`) with aggregate symbol and route counts. |
+| `/admin/api/navigator/file-outline` | `GET` | `viewer` | Returns language-aware AST symbol outline (`?filepath=...&repo=...`) and associated API routes. |
+| `/admin/api/navigator/symbol-impact` | `GET` | `viewer` | Returns comprehensive symbol impact intelligence (`?symbol_id=...` or `?name=...&filepath=...`) including callers, callees, imports, and route mappings. |
 
 ### Local Storage (`/admin/api/storage/*`)
 | Endpoint | Method | Required Role | Description |

@@ -22,7 +22,7 @@ flowchart TD
         SSE["SSE Transport (/sse, /messages/)"]
         HTTP["Streamable HTTP Transport (/mcp)"]
         WellKnown["RFC 9728 Protected Resource\n(/.well-known/oauth-protected-resource)"]
-        AdminAPI["Admin REST API Routers (app/api/routers/*)\n(repositories, settings, graph, auth, storage, ingestion)"]
+        AdminAPI["Admin REST API Routers (app/api/routers/*)\n(repositories, settings, navigator, auth, storage, ingestion)"]
         Webhooks["Webhook Ingestion (app/api/webhooks.py)"]
         LogBuffer["Diagnostic Ring Buffer (app/services/logger.py)"]
     end
@@ -74,6 +74,7 @@ flowchart TD
             TopoHelpers["helpers.py"]
         end
 
+        NavigatorSrv["Codebase Navigator Service (navigator.py)\n3-Pane Tree, AST Outline & Impact Engine"]
         LocalStorageSrv["Local Storage Service (local_storage.py)\nPath Traversal Defense & File Trees"]
         GitMgr["Universal Shallow Git Ingestion (git_manager.py)"]
         Embeddings["FastEmbed Engine (embeddings.py)\nDense (384d) + Sparse BM25"]
@@ -111,9 +112,12 @@ flowchart TD
     AdminAPI --> IndexingPkg
     AdminAPI --> VectorStorePkg
     AdminAPI --> TopologyPkg
+    AdminAPI --> NavigatorSrv
     AdminAPI --> Search
     AdminAPI --> LocalStorageSrv
     AdminAPI --> LogBuffer
+
+    NavigatorSrv --> DatabasePkg
 
     FastMCP --> Search
     FastMCP --> SymExtract
@@ -345,6 +349,36 @@ flowchart TD
   - `file_extension`: Filter by extension (e.g. `.md`, `.py`, `.ts`).
   - `detail_level`: `summary` for high-level repository stats, file counts, and symbol totals; `detailed` for comprehensive file-by-file inventories with doc types and languages.
 - **MCP Tool & REST Parity**: Exposes identical catalog querying functionality via FastMCP tool (`what_is_ingested`) and FastAPI endpoint (`GET /admin/api/ingestion/catalog`) guarded by `Role.VIEWER`.
+
+---
+
+### 13. High-Performance 3-Pane Codebase Navigator (`app/services/navigator.py` & `app/api/routers/navigator.py`)
+- **Architectural Motivation**: Replaces legacy 2D graph canvases with a structured, ultra-fast 3-pane navigation paradigm designed for instant codebase comprehension, symbol discovery, and architectural impact analysis.
+- **Three-Pane Layout Topology**:
+  - **Pane 1: Files & Modules (`NavigatorTree.tsx`)**:
+    - Queries `GET /admin/api/navigator/tree?repo=...`.
+    - Recursively organizes `indexed_files` into hierarchical directory trees with aggregate metrics (total symbol counts, detected API routes per folder/file).
+    - Features instant search filtering (auto-expanding ancestor directories), Expand All / Collapse All controls, and active file highlighting.
+  - **Pane 2: Symbols & Routes (`NavigatorOutline.tsx`)**:
+    - Queries `GET /admin/api/navigator/file-outline?filepath=...&repo=...`.
+    - Retrieves syntax-aware AST symbols from `ast_symbols` along with associated REST routes from `api_routes`.
+    - Provides category chip filtering (`All`, `Functions`, `Classes`, `Routes`) and real-time symbol search.
+    - Displays symbol kinds (function, class, struct, interface), start/end line numbers, and route method badges (`POST`, `GET`, etc.).
+  - **Pane 3: Code Intelligence & Impact Inspector (`NavigatorInspector.tsx`)**:
+    - Queries `GET /admin/api/navigator/symbol-impact?symbol_id=...` or `?name=...&filepath=...`.
+    - Aggregates multi-source intelligence from `ast_symbols`, `ast_relationships`, and `api_routes`.
+    - **4-Metric Impact Summary**: Count of incoming callers, outgoing callees, imported modules, and language scope.
+    - **API Route Mapping Card**: Method badge (`POST`, `GET`, `PUT`, `DELETE`), path pattern (`/v1/chat/completions`), and framework tag (`FastAPI`, `Express`, `Gin`, etc.).
+    - **Signature & Docstrings**: Syntax-highlighted code block and extracted documentation.
+    - **Interactive Relationship Cards**: Clickable caller cards with filename, symbol name, and line numbers. Clicking a caller triggers bidirectional navigation (updates tree selection, switches file outline, and activates the caller symbol).
+    - **Copy Permalink**: Generates and copies clean permalinks with file paths and line ranges.
+- **Multi-Density Layout Engine & Persistent UX**:
+  - `Balanced`: Default balanced layout optimized for standard desktop viewports.
+  - `Compact`: High-density IDE layout reducing font sizes and padding for large file trees and complex outlines.
+  - `Spacious`: Card-based layout with expanded line heights and spacious typography.
+  - Layout density and last selected repository are persisted in `localStorage`.
+- **Zero Horizontal Overflow & Responsive Adaptability**:
+  - Flexbox and grid CSS architecture with `min-width: 0`, `overflow-wrap: anywhere`, and nested vertical scroll containers ensuring zero horizontal viewport overflow across desktop (1080p), tablet, and mobile displays.
 
 ---
 

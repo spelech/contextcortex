@@ -151,7 +151,7 @@ contextcortex/
 ├── main.py                # FastAPI entry point, lifespan manager & FastMCP route mounting
 ├── app/                   # Modular architecture (all files < 450 LOC)
 │   ├── api/               # FastAPI REST routers
-│   │   ├── routers/       # Dedicated subrouters (repositories, settings, graph, auth, storage, ingestion)
+│   │   ├── routers/       # Dedicated subrouters (repositories, settings, navigator, auth, storage, ingestion)
 │   │   ├── routes.py      # Main router aggregator and health checks
 │   │   └── webhooks.py    # Multi-provider webhook endpoint and HMAC validation
 │   ├── mcp/               # FastMCP 2.0 dual-transport server
@@ -167,6 +167,7 @@ contextcortex/
 │       ├── indexing/      # Git/local syncers, file processor, state notifications
 │       ├── topology/      # Graph topology builder, node details, BFS helpers
 │       ├── vector_store/  # pgvector, Qdrant, and ChromaDB pluggable vector store implementations
+│       ├── navigator.py   # High-performance 3-pane codebase tree, outline & impact intelligence
 │       ├── local_storage.py# Safe path resolution, disk file persistence, and tree inspection
 │       ├── git_manager.py # Ephemeral shallow git clone, token masking, permalinks
 │       ├── embeddings.py  # FastEmbed dense (384d) & sparse BM25 multi-vector engine
@@ -175,8 +176,10 @@ contextcortex/
 │       ├── adr.py         # MADR / Nygard format ADR ingestion and lifecycle
 │       ├── architecture.py# Codebase entry point, language distribution synthesis
 │       └── logger.py      # In-memory 500-event ring buffer diagnostic logger
-├── tests/                 # Backend pytest test suite (415+ tests, 88% coverage)
+├── tests/                 # Backend pytest test suite (430+ tests, 88% coverage)
 │   ├── backend/           # Unit and integration test modules
+│   ├── test_navigator_router.py      # REST navigator endpoints tests
+│   ├── test_navigator_service.py     # Tree, outline, and impact service tests
 │   ├── test_local_storage_service.py # Path security and local disk storage tests
 │   ├── test_local_storage_indexing.py# Real-time incremental vector indexing tests
 │   ├── test_mcp_storage_tools.py     # manage_local_file and what_is_ingested tests
@@ -186,10 +189,12 @@ contextcortex/
 │   └── test_webhooks.py              # Multi-provider webhook tests
 ├── frontend/              # Web Admin Dashboard (React 19, TypeScript, Vite)
 │   ├── src/               # React components and modular sub-components
-│   │   ├── components/    # Sub-component trees (git/, settings/, topology/)
+│   │   ├── components/    # Sub-component trees (git/, settings/, topology/, navigator/)
+│   │   │   └── navigator/ # NavigatorToolbar, NavigatorTree, NavigatorOutline, NavigatorInspector
+│   │   ├── CodeNavigator.tsx          # 3-Pane Codebase Navigator main orchestrator
 │   │   ├── LocalStorageManager.tsx    # Managed storage file explorer and upload modal
 │   │   ├── IngestionCatalogViewer.tsx # Unified multi-source ingestion explorer
-│   │   ├── styles/        # Modular CSS stylesheets (base.css, components.css, topology.css)
+│   │   ├── styles/        # Modular CSS stylesheets (base.css, components.css, navigator.css)
 │   │   └── tests/         # Vitest component unit tests
 │   ├── e2e/               # Playwright E2E test specs (26 user journeys)
 │   └── dist/              # Compiled production distribution assets
@@ -281,13 +286,122 @@ Example configuration:
 | Read Local Storage File | `GET /admin/api/storage/file` | `manage_local_file (read)` | `Role.VIEWER` |
 | Browse Storage Directory Tree | `GET /admin/api/storage/tree` | - | `Role.VIEWER` |
 | Query Ingestion Catalog | `GET /admin/api/ingestion/catalog` | `what_is_ingested` | `Role.VIEWER` |
+| Repository Navigator Tree | `GET /admin/api/navigator/tree` | - | `Role.VIEWER` |
+| File Symbol Outline | `GET /admin/api/navigator/file-outline` | - | `Role.VIEWER` |
+| Symbol Impact Intelligence | `GET /admin/api/navigator/symbol-impact` | - | `Role.VIEWER` |
 | Sync Git Repository | `POST /admin/api/repositories/{id}/sync`| `sync_repository` | `Role.EDITOR` |
 | Manage ADRs | - | `manage_adr` (create/update) | `Role.EDITOR` |
 | Code & Document Searches | `POST /admin/api/search` | `search_code`, `search_docs` | `Role.VIEWER` |
 
+### Codebase Navigator Component Hierarchy
+The frontend architecture implements a modular 3-pane layout under `frontend/src/components/navigator/`:
+- **`CodeNavigator.tsx`**: Primary container handling repository selection state, file selection state, symbol selection state, and density modes (`Compact`, `Balanced`, `Spacious`).
+  - **`NavigatorToolbar.tsx`**: Top bar with repository dropdown selector, total file/symbol metric badges, layout density toggles, and reindexing status.
+  - **`NavigatorTree.tsx`**: Left pane rendering hierarchical directory/file tree with symbol and route count badges, debounced search filtering, expand/collapse all controls, and keyboard selection.
+  - **`NavigatorOutline.tsx`**: Middle pane rendering file-scoped AST symbols, category chips (`All`, `Functions`, `Classes`, `Routes`), signature badges, and line number indicators.
+  - **`NavigatorInspector.tsx`**: Right pane rendering symbol details, 4-metric summary grid (callers, callees, imports, scope), API route mapping cards, signature code blocks, docstrings, interactive relationship click-through cards, and copy permalink actions.
+
 ### REST Payload Schemas
 
-#### 1. File Upload (`POST /admin/api/storage/upload`)
+#### 1. Codebase Navigator Tree (`GET /admin/api/navigator/tree`)
+- **Query Parameters**: `repo` (optional, string, defaults to `__all__`).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "repo": "__all__",
+    "total_files": 42,
+    "total_symbols": 380,
+    "tree": [
+      {
+        "id": "dir:app",
+        "name": "app",
+        "is_dir": true,
+        "path": "app",
+        "symbol_count": 210,
+        "route_count": 18,
+        "children": [
+          {
+            "id": "file:app/api/routes.py",
+            "name": "routes.py",
+            "is_dir": false,
+            "path": "app/api/routes.py",
+            "language": "python",
+            "symbol_count": 12,
+            "route_count": 4
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+#### 2. File Outline (`GET /admin/api/navigator/file-outline`)
+- **Query Parameters**: `filepath` (required, string), `repo` (optional, string).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "repo": "contextcortex-core",
+    "filepath": "app/api/routers/chat.py",
+    "language": "python",
+    "symbols": [
+      {
+        "id": 101,
+        "name": "chat_completion_endpoint",
+        "full_symbol": "app.api.routers.chat.chat_completion_endpoint",
+        "kind": "function",
+        "start_line": 45,
+        "end_line": 85,
+        "signature": "async def chat_completion_endpoint(request: ChatCompletionRequest) -> ChatCompletionResponse:",
+        "route": {
+          "http_method": "POST",
+          "path_pattern": "/v1/chat/completions",
+          "framework": "FastAPI"
+        }
+      }
+    ]
+  }
+  ```
+
+#### 3. Symbol Impact (`GET /admin/api/navigator/symbol-impact`)
+- **Query Parameters**: `symbol_id` (optional, integer) or `name` + `filepath` (strings).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "symbol": {
+      "id": 101,
+      "name": "chat_completion_endpoint",
+      "full_symbol": "app.api.routers.chat.chat_completion_endpoint",
+      "kind": "function",
+      "filepath": "app/api/routers/chat.py",
+      "start_line": 45,
+      "end_line": 85,
+      "signature": "async def chat_completion_endpoint(request: ChatCompletionRequest) -> ChatCompletionResponse:",
+      "docstring": "Processes OpenAI-compatible chat completion requests.",
+      "language": "python",
+      "repo": "contextcortex-core"
+    },
+    "route": {
+      "http_method": "POST",
+      "path_pattern": "/v1/chat/completions",
+      "framework": "FastAPI"
+    },
+    "callers": [
+      {
+        "id": 501,
+        "source_symbol_id": 301,
+        "source_filepath": "tests/e2e/test_chat.py",
+        "source_symbol": "test_chat_completions_e2e",
+        "target_symbol": "chat_completion_endpoint",
+        "relationship_type": "CALLS",
+        "line_number": 28
+      }
+    ],
+    "callees": [],
+    "imports": []
+  }
+  ```
+
+#### 4. File Upload (`POST /admin/api/storage/upload`)
 - **Multipart Form**: `file` (binary), `path` (relative target path), optional `repo` (default `"local_storage"`), optional `category`.
 - **JSON Payload**:
   ```json
@@ -310,7 +424,7 @@ Example configuration:
   }
   ```
 
-#### 2. File Replace (`PUT /admin/api/storage/file`)
+#### 5. File Replace (`PUT /admin/api/storage/file`)
 - **JSON Payload**:
   ```json
   {
@@ -331,7 +445,7 @@ Example configuration:
   }
   ```
 
-#### 3. Ingestion Catalog Query (`GET /admin/api/ingestion/catalog`)
+#### 6. Ingestion Catalog Query (`GET /admin/api/ingestion/catalog`)
 - **Query Parameters**: `source_type` (`all`|`git`|`monitored_path`|`local_storage`), `repo_name`, `path_prefix`, `file_extension`, `detail_level` (`summary`|`detailed`).
 - **Response** (`200 OK`):
   ```json
