@@ -1,19 +1,23 @@
-import type { Repo } from '../../types';
+import type { Repo, GitSyncJob } from '../../types';
 
 interface RepoListTableProps {
   repos: Repo[];
+  syncStates?: Record<number, GitSyncJob>;
   onSync: (id: number) => void;
   onToggleAutoSync: (id: number, current: boolean) => void;
   onOpenWebhook: (repo: Repo) => void;
   onDelete: (id: number, name: string) => void;
+  onOpenSyncDrawer?: (repoId: number) => void;
 }
 
 export function RepoListTable({
   repos,
+  syncStates,
   onSync,
   onToggleAutoSync,
   onOpenWebhook,
   onDelete,
+  onOpenSyncDrawer,
 }: RepoListTableProps) {
   const getProviderIcon = (prov?: string) => {
     const p = (prov || 'github').toLowerCase();
@@ -22,6 +26,49 @@ export function RepoListTable({
     if (p === 'bitbucket') return <i className="fa-brands fa-bitbucket" style={{ color: '#2684ff', marginRight: '6px' }} title="Bitbucket" />;
     if (p === 'generic') return <i className="fa-solid fa-code-branch" style={{ color: 'var(--accent)', marginRight: '6px' }} title="Generic Git" />;
     return <i className="fa-brands fa-github" style={{ marginRight: '6px' }} title="GitHub" />;
+  };
+
+  const renderSyncProgress = (r: Repo, job?: GitSyncJob) => {
+    const step = job?.step || 1;
+    const totalSteps = job?.total_steps || 5;
+    const stepName = job?.step_name || 'Syncing...';
+    const percent = job?.percent ?? 0;
+    const currentFile = job?.current_file;
+
+    return (
+      <div
+        className="sync-progress-container"
+        onClick={() => onOpenSyncDrawer?.(r.id)}
+        role="button"
+        tabIndex={0}
+        style={{ cursor: 'pointer' }}
+        title="Click to view live ingestion progress & logs"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            onOpenSyncDrawer?.(r.id);
+          }
+        }}
+      >
+        <div className="progress-pill badge badge-warning">
+          <i className="fa-solid fa-spinner fa-spin"></i>
+          <span>
+            Step {step}/{totalSteps}: {stepName} ({percent}%)
+          </span>
+        </div>
+        <div className="sync-progress-bar-wrapper">
+          <div
+            className="sync-progress-bar-fill fill-active"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        {currentFile && (
+          <div className="sync-file-caption" title={currentFile}>
+            <i className="fa-solid fa-file-code" style={{ marginRight: '4px' }}></i>
+            <code>{currentFile}</code>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -51,6 +98,9 @@ export function RepoListTable({
             ) : (
               repos.map((r) => {
                 const isAutoSync = r.auto_sync !== false && r.auto_sync !== 0;
+                const job = syncStates?.[r.id];
+                const isSyncing = r.status === 'syncing' || job?.status === 'syncing';
+
                 return (
                   <tr key={r.id}>
                     <td>
@@ -62,7 +112,9 @@ export function RepoListTable({
                         href={r.url}
                         target="_blank"
                         rel="noreferrer"
+                        className="repo-url-link"
                         style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.85rem' }}
+                        title={r.url}
                       >
                         <i className="fa-solid fa-arrow-up-right-from-square"></i> {r.url}
                       </a>
@@ -78,16 +130,14 @@ export function RepoListTable({
                       )}
                     </td>
                     <td>
-                      {r.status === 'syncing' ? (
-                        <span className="badge badge-warning">
-                          <i className="fa-solid fa-spinner fa-spin"></i> Syncing
-                        </span>
-                      ) : r.status === 'error' ? (
+                      {isSyncing ? (
+                        renderSyncProgress(r, job)
+                      ) : r.status === 'error' || job?.status === 'error' ? (
                         <div>
-                          <span className="badge badge-danger" title={r.last_error || 'Sync failed'}>
+                          <span className="badge badge-danger" title={r.last_error || job?.error || 'Sync failed'}>
                             <i className="fa-solid fa-circle-exclamation"></i> Error
                           </span>
-                          {r.last_error && (
+                          {(r.last_error || job?.error) && (
                             <div
                               style={{
                                 fontSize: '0.75rem',
@@ -98,13 +148,13 @@ export function RepoListTable({
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap',
                               }}
-                              title={r.last_error}
+                              title={r.last_error || job?.error || ''}
                             >
-                              {r.last_error}
+                              {r.last_error || job?.error}
                             </div>
                           )}
                         </div>
-                      ) : r.status === 'pending' ? (
+                      ) : r.status === 'pending' || job?.status === 'pending' ? (
                         <span className="badge badge-primary">
                           <i className="fa-solid fa-clock"></i> Pending
                         </span>
@@ -147,6 +197,14 @@ export function RepoListTable({
                         <button
                           className="btn btn-secondary"
                           style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                          onClick={() => onOpenSyncDrawer?.(r.id)}
+                          title="View Ingestion Logs"
+                        >
+                          <i className="fa-solid fa-terminal"></i> Logs
+                        </button>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 8px', fontSize: '0.8rem' }}
                           onClick={() => onSync(r.id)}
                           title="Trigger Sync"
                         >
@@ -185,6 +243,9 @@ export function RepoListTable({
         ) : (
           repos.map((r) => {
             const isAutoSync = r.auto_sync !== false && r.auto_sync !== 0;
+            const job = syncStates?.[r.id];
+            const isSyncing = r.status === 'syncing' || job?.status === 'syncing';
+
             return (
               <div key={`card-${r.id}`} className="data-mobile-card">
                 <div className="data-mobile-card-header">
@@ -192,24 +253,28 @@ export function RepoListTable({
                     {getProviderIcon(r.provider)}
                     <strong style={{ fontSize: '1rem' }}>{r.name}</strong>
                   </div>
-                  {r.status === 'syncing' ? (
-                    <span className="badge badge-warning">
-                      <i className="fa-solid fa-spinner fa-spin"></i> Syncing
-                    </span>
-                  ) : r.status === 'error' ? (
-                    <span className="badge badge-danger" title={r.last_error || 'Sync failed'}>
-                      <i className="fa-solid fa-circle-exclamation"></i> Error
-                    </span>
-                  ) : r.status === 'pending' ? (
-                    <span className="badge badge-primary">
-                      <i className="fa-solid fa-clock"></i> Pending
-                    </span>
-                  ) : (
-                    <span className="badge badge-success">
-                      <i className="fa-solid fa-check"></i> Synced
-                    </span>
+                  {!isSyncing && (
+                    r.status === 'error' || job?.status === 'error' ? (
+                      <span className="badge badge-danger" title={r.last_error || job?.error || 'Sync failed'}>
+                        <i className="fa-solid fa-circle-exclamation"></i> Error
+                      </span>
+                    ) : r.status === 'pending' || job?.status === 'pending' ? (
+                      <span className="badge badge-primary">
+                        <i className="fa-solid fa-clock"></i> Pending
+                      </span>
+                    ) : (
+                      <span className="badge badge-success">
+                        <i className="fa-solid fa-check"></i> Synced
+                      </span>
+                    )
                   )}
                 </div>
+
+                {isSyncing && (
+                  <div style={{ margin: '4px 0 2px 0' }}>
+                    {renderSyncProgress(r, job)}
+                  </div>
+                )}
 
                 <div className="data-mobile-card-body">
                   <div>
@@ -238,27 +303,36 @@ export function RepoListTable({
                       className={`badge ${isAutoSync ? 'badge-success' : 'badge-danger'}`}
                       style={{ cursor: 'pointer', padding: '2px 6px', fontSize: '0.75rem' }}
                       onClick={() => onToggleAutoSync(r.id, isAutoSync)}
+                      title={`Auto-Sync: ${isAutoSync ? 'ON' : 'OFF'} (Click to toggle)`}
+                      aria-label={`Toggle auto-sync for ${r.name}`}
                     >
                       {isAutoSync ? 'ON' : 'OFF'}
                     </button>
                   </div>
                   <div>
                     <span className="data-label">Files:</span>
-                    {(r.file_count || 0).toLocaleString()}
+                    {(r.file_count || 0).toLocaleString()} files
                   </div>
                   <div>
                     <span className="data-label">Last Synced:</span>
                     {r.last_synced || 'Never'}
                   </div>
-                  {r.last_error && (
+                  {!isSyncing && (r.last_error || job?.error) && (
                     <div style={{ color: 'var(--danger)', fontSize: '0.75rem' }}>
                       <span className="data-label">Error:</span>
-                      {r.last_error}
+                      {r.last_error || job?.error}
                     </div>
                   )}
                 </div>
 
                 <div className="data-mobile-card-actions">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => onOpenSyncDrawer?.(r.id)}
+                    title="View Ingestion Logs"
+                  >
+                    <i className="fa-solid fa-terminal"></i> Logs
+                  </button>
                   <button
                     className="btn btn-secondary"
                     onClick={() => onSync(r.id)}

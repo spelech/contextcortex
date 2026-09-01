@@ -330,3 +330,27 @@ export interface IngestionCatalogData {
   files: IngestionDetailedFile[];
 }
 
+export interface SyncLogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+export interface GitSyncJob {
+  repo_id: number;
+  repo_name: string;
+  status: 'pending' | 'syncing' | 'synced' | 'error';
+  step: number;
+  total_steps: number;
+  step_name: string;
+  current_file?: string | null;
+  processed_files: number;
+  total_files: number;
+  percent: number;
+  started_at: number;
+  updated_at: number;
+  error?: string | null;
+  logs: SyncLogEntry[];
+  cancelled?: boolean;
+}
+

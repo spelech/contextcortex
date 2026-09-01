@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **734 Automated Tests** (534 Pytest Backend + 174 Vitest Frontend + 26 Playwright E2E).
+**Test Verification Baseline:** **798 Automated Tests** (560 Pytest Backend + 204 Vitest Frontend + 34 Playwright E2E).
 
 ---
 
@@ -535,6 +535,38 @@ classDiagram
 - `test_check_github_rate_limit_non_200`
 - `test_check_github_rate_limit_exception`
 
+#### `tests/backend/test_git_progress.py` (10 tests)
+- `test_job_dataclass_defaults_and_to_dict`
+- `test_tracker_singleton`
+- `test_tracker_job_lifecycle`
+- `test_tracker_finish_job_with_error`
+- `test_tracker_log_ring_buffer_limit`
+- `test_tracker_job_reset`
+- `test_tracker_cancellation`
+- `test_tracker_snapshots`
+- `test_tracker_nonexistent_repo_safe_handling`
+- `test_tracker_subscription_and_broadcast`
+
+#### `tests/backend/test_git_sync_api.py` (8 tests)
+- `test_get_sync_status_single_repo_found`
+- `test_get_sync_status_single_repo_not_found`
+- `test_get_sync_status_all_repos`
+- `test_cancel_sync_endpoint_success`
+- `test_cancel_sync_endpoint_not_syncing_or_invalid`
+- `test_sse_stream_initial_snapshot_and_headers`
+- `test_sse_stream_live_events_and_unsubscription`
+- `test_sse_stream_keep_alive_ping`
+
+#### `tests/backend/test_git_syncer_progress.py` (8 tests)
+- `test_git_syncer_reports_stages_up_to_date`
+- `test_git_syncer_clone_failure`
+- `test_git_syncer_empty_delta`
+- `test_git_syncer_full_5_stage_sync`
+- `test_git_syncer_cancellation_during_stage_4`
+- `test_git_syncer_unexpected_exception`
+- `test_git_syncer_nonexistent_repo`
+- `test_git_progress_tracker_pending_cancellation`
+
 #### `tests/backend/test_indexer_and_embeddings.py` (25 tests)
 - `test_embeddings_generation`
 - `test_empty_embeddings_batches`
@@ -1053,7 +1085,7 @@ and leaves the prior indexed state intact without data loss._
 - handles provider switch to API and updates form fields
 - handles changes to CPU threads and batch size
 
-#### `GitRepoManager.test.tsx` (11 tests)
+#### `GitRepoManager.test.tsx` (12 tests)
 - renders repository list with status badges, auto-sync buttons, and details
 - shows empty state when no repositories are registered
 - opens modal, handles cancel, and submits new repository registration
@@ -1065,6 +1097,7 @@ and leaves the prior indexed state intact without data loss._
 - triggers repo deletion, calls refreshStats, and removes repo optimistically
 - handles errors when loading repos, adding repo, syncing repo, and deleting repo
 - renders mobile cards for repositories with action buttons and auto-sync toggles
+- opens and closes RepoSyncDrawer when Live Logs button is clicked
 
 #### `IngestionCatalogViewer.test.tsx` (4 tests)
 - renders summary catalog with git repos, monitored paths, and local storage stats
@@ -1109,6 +1142,39 @@ and leaves the prior indexed state intact without data loss._
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
 - renders system specs with responsive word wrapping and badge elements
+
+#### `RepoListTable.test.tsx` (8 tests)
+- renders empty state when repos array is empty
+- renders repos with standard statuses (synced, error, pending)
+- renders multi-phase progress badge, progress bar, and active file caption when syncing
+- clicking progress badge or progress bar container calls onOpenSyncDrawer with repo id
+- renders Live Logs button in actions and triggers onOpenSyncDrawer on click
+- handles onSync, onToggleAutoSync, onOpenWebhook, and onDelete callbacks
+- renders fallback progress information when sync job is syncing but without active job state
+- renders mobile card with progress bar, active file caption, and logs action button
+
+#### `RepoSyncDrawer.test.tsx` (21 tests)
+- does not render anything when isOpen is false
+- renders drawer header with title, status badge, and elapsed timer
+- renders close button and closes drawer when clicked or backdrop clicked
+- renders 5-stage stepper with completed, active, and pending steps
+- renders all 5 stages as completed when status is synced
+- renders error state and last error message when status is error
+- shows and calls onCancelSync button when status is syncing
+- renders log messages with level styling and handles search filter
+- shows empty state when no logs exist
+- copies logs to clipboard when Copy Logs button is clicked
+- toggles autoscroll checkbox in terminal toolbar
+- connects to SSE endpoint and seeds initial snapshot via init event
+- init
+- updates job progress upon receiving progress event
+- init
+- progress
+- appends log entries upon receiving log event
+- init
+- log
+- cancels sync by calling /admin/api/repos/{id}/cancel-sync
+- closes EventSource on unmount
 
 #### `SearchInspector.test.tsx` (6 tests)
 - renders initial prompt and inputs
@@ -1263,5 +1329,13 @@ and leaves the prior indexed state intact without data loss._
 - 22. toggles repository auto-sync ON/OFF with optimistic UI update and toast confirmation
 - 23. opens Webhook setup modal, displays copyable endpoint, and shows provider setup guides
 - 24. configures auto-sync polling schedule and manages global webhook secret in Settings
+- 1. renders multi-stage progress chip, percentage, and current file in table and mobile card
+- 2. opens RepoSyncDrawer when clicking progress chip and renders 5-stage checklist and overall progress
+- 3. opens RepoSyncDrawer via
+- 4. dismisses RepoSyncDrawer via close button and backdrop click
+- 5. displays error state in drawer with highlighted failing step and error details
+- 6. displays completed synced state with all 5 stages marked complete and 100% progress
+- 7. triggers sync action and handles cancel sync from drawer
+- 8. validates responsive layout containment on desktop and mobile viewports
 - navigates to Topology tab and renders graph controls
 - interacts with view types, search, node inspector drawer, and exports

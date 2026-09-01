@@ -5,13 +5,18 @@ import { useToast } from './ToastContext';
 import { AddRepoModal } from './components/git/AddRepoModal';
 import { WebhookModal } from './components/git/WebhookModal';
 import { RepoListTable } from './components/git/RepoListTable';
+import { RepoSyncDrawer } from './components/git/RepoSyncDrawer';
+import { useGitSyncStream } from './hooks/useGitSyncStream';
 
 export default function GitRepoManager({ refreshStats }: { refreshStats: () => void }) {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [webhookModalRepo, setWebhookModalRepo] = useState<Repo | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [activeDrawerRepoId, setActiveDrawerRepoId] = useState<number | null>(null);
   const toast = useToast();
+
+  const { syncStates, cancelSync } = useGitSyncStream();
 
   // Modal form fields
   const [alias, setAlias] = useState('');
@@ -157,6 +162,10 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
     }
   };
 
+  const activeJob = activeDrawerRepoId !== null ? syncStates[activeDrawerRepoId] : null;
+  const selectedRepo = repos.find((r) => r.id === activeDrawerRepoId);
+  const selectedRepoName = selectedRepo?.name || activeJob?.repo_name || '';
+
   return (
     <div className="tab-content active">
       <div className="glass-card">
@@ -174,10 +183,12 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
 
         <RepoListTable
           repos={repos}
+          syncStates={syncStates}
           onSync={syncRepo}
           onToggleAutoSync={toggleAutoSync}
           onOpenWebhook={(repo) => setWebhookModalRepo(repo)}
           onDelete={deleteRepo}
+          onOpenSyncDrawer={(id) => setActiveDrawerRepoId(id)}
         />
 
         <AddRepoModal
@@ -204,6 +215,15 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
           onClose={() => setWebhookModalRepo(null)}
           onCopyUrl={handleCopyUrl}
           copiedUrl={copiedUrl}
+        />
+
+        <RepoSyncDrawer
+          isOpen={activeDrawerRepoId !== null}
+          onClose={() => setActiveDrawerRepoId(null)}
+          repoId={activeDrawerRepoId}
+          repoName={selectedRepoName}
+          job={activeJob}
+          onCancelSync={cancelSync}
         />
       </div>
     </div>

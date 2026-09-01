@@ -4,15 +4,17 @@ import json
 import sqlite3
 import threading
 import logging
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.models.schemas import RepoConfig, LocalPathConfig, AutoSyncToggleRequest, SearchRequest
 import app.services.database as db_service
 import app.services.vector_store as vs_service
 import app.services.indexing as idx_service
 import app.services.search as search_service
+from app.services.indexing.git_progress import progress_tracker
 
 logger = logging.getLogger("contextcortex.api")
 
@@ -101,6 +103,59 @@ async def api_sync_repo(repo_id: int):
     except Exception as e:
         logger.error(f"Error syncing repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+STREAM_KEEPALIVE_TIMEOUT = 15.0
+
+@router.get("/admin/api/repos/sync-status")
+async def api_get_all_sync_status():
+    return progress_tracker.get_snapshot()
+
+@router.get("/admin/api/repos/sync/stream")
+async def api_stream_repo_sync(request: Request):
+    queue = progress_tracker.subscribe()
+
+    async def event_generator():
+        try:
+            init_snapshot = progress_tracker.get_snapshot()
+            yield f"event: init\ndata: {json.dumps(init_snapshot)}\n\n"
+
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=STREAM_KEEPALIVE_TIMEOUT)
+                    evt_type = event.get("type", "progress")
+                    yield f"event: {evt_type}\ndata: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive ping\n\n"
+                except asyncio.CancelledError:
+                    break
+        except Exception as e:
+            logger.error(f"Error in sync stream: {e}")
+        finally:
+            progress_tracker.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+@router.get("/admin/api/repos/{repo_id}/sync-status")
+async def api_get_repo_sync_status(repo_id: int):
+    snapshot = progress_tracker.get_snapshot(repo_id)
+    if not snapshot:
+        return JSONResponse(status_code=404, content={"error": f"No active sync job for repo {repo_id}"})
+    return snapshot
+
+@router.post("/admin/api/repos/{repo_id}/cancel-sync")
+async def api_cancel_repo_sync(repo_id: int):
+    cancelled = progress_tracker.cancel_job(repo_id)
+    if not cancelled:
+        return JSONResponse(status_code=400, content={"error": f"Repo {repo_id} is not currently syncing"})
+    return {"status": "cancelled", "repo_id": repo_id}
 
 @router.delete("/admin/api/repos/{repo_id}")
 async def api_delete_repo(repo_id: int):

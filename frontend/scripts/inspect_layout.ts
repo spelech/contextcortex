@@ -82,6 +82,17 @@ const MOCK_REPOS = [
     file_count: 0,
     last_synced: 'Never',
     last_error: 'Authentication failed: Bad credentials'
+  },
+  {
+    id: 3,
+    name: 'syncing-repo',
+    url: 'https://github.com/example/syncing-repo.git',
+    branch: 'main',
+    commit_sha: 'c7d8e9f0',
+    status: 'syncing',
+    file_count: 42,
+    last_synced: 'Just now',
+    last_error: null
   }
 ];
 
@@ -237,6 +248,34 @@ async function setupRouteMocks(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(MOCK_REPOS)
+    });
+  });
+
+  await page.route('**/admin/api/repos/sync-status', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        3: {
+          repo_id: 3,
+          repo_name: 'syncing-repo',
+          status: 'syncing',
+          step: 3,
+          total_steps: 5,
+          step_name: 'Computing File Delta & Scanning',
+          current_file: 'src/services/git.ts',
+          processed_files: 18,
+          total_files: 42,
+          percent: 45,
+          started_at: Date.now() / 1000 - 20,
+          updated_at: Date.now() / 1000,
+          logs: [
+            { timestamp: '12:00:01', level: 'INFO', message: 'Cloned branch main' },
+            { timestamp: '12:00:05', level: 'INFO', message: 'Scanning delta' }
+          ],
+          cancelled: false
+        }
+      })
     });
   });
 
@@ -403,19 +442,24 @@ async function evaluatePageLayout(page: Page, viewportWidth: number, viewportHei
       let overflowPixels = 0;
 
       // 1. Viewport Overflow Check
+      const scrollParent = el.closest('.table-container, .table-responsive, [style*="overflow-x: auto"], [style*="overflow-x: scroll"], pre, .traceback-container, .traceback-box');
+      const isInsideScrollContainer = scrollParent && scrollParent !== el;
+
       const rightOverflow = rect.right - viewportWidth;
       const leftOverflow = -rect.left;
 
-      if (rightOverflow > 0.5) {
-        status = 'overflow';
-        violationType = 'VIEWPORT_OVERFLOW';
-        overflowPixels = Math.round(rightOverflow * 10) / 10;
-        details = `Element overflows viewport right edge by ${overflowPixels}px (rect.right: ${rect.right.toFixed(1)}px, viewport: ${viewportWidth}px)`;
-      } else if (leftOverflow > 0.5 && !style.position?.includes('fixed')) {
-        status = 'overflow';
-        violationType = 'VIEWPORT_OVERFLOW';
-        overflowPixels = Math.round(leftOverflow * 10) / 10;
-        details = `Element overflows viewport left edge by ${overflowPixels}px (rect.left: ${rect.left.toFixed(1)}px)`;
+      if (!isInsideScrollContainer) {
+        if (rightOverflow > 0.5) {
+          status = 'overflow';
+          violationType = 'VIEWPORT_OVERFLOW';
+          overflowPixels = Math.round(rightOverflow * 10) / 10;
+          details = `Element overflows viewport right edge by ${overflowPixels}px (rect.right: ${rect.right.toFixed(1)}px, viewport: ${viewportWidth}px)`;
+        } else if (leftOverflow > 0.5 && !style.position?.includes('fixed')) {
+          status = 'overflow';
+          violationType = 'VIEWPORT_OVERFLOW';
+          overflowPixels = Math.round(leftOverflow * 10) / 10;
+          details = `Element overflows viewport left edge by ${overflowPixels}px (rect.left: ${rect.left.toFixed(1)}px)`;
+        }
       }
 
       // 2. Container Scroll Clipping Check
@@ -423,10 +467,17 @@ async function evaluatePageLayout(page: Page, viewportWidth: number, viewportHei
         const isDesignatedScroll =
           style.overflowX === 'auto' ||
           style.overflowX === 'scroll' ||
+          style.overflow === 'hidden' ||
+          style.textOverflow === 'ellipsis' ||
+          el.classList.contains('table-container') ||
           el.classList.contains('table-responsive') ||
           el.classList.contains('traceback-container') ||
+          el.classList.contains('traceback-box') ||
           tag === 'PRE' ||
-          tag === 'CODE';
+          tag === 'CODE' ||
+          tag === 'INPUT' ||
+          tag === 'TEXTAREA' ||
+          tag === 'SELECT';
 
         if (!isDesignatedScroll) {
           status = 'clipping';

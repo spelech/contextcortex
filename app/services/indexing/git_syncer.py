@@ -4,6 +4,7 @@ import logging
 import gc
 import sys
 import hashlib
+import time
 from typing import List, Dict, Any, Tuple, Optional
 
 import app.services.indexing.local_syncer as local_syncer
@@ -17,6 +18,7 @@ import app.services.git_manager as gm_service
 from app.services.git_manager import *
 import app.services.vector_store as vs_service
 from app.services.vector_store import VectorStoreManager
+from app.services.indexing.git_progress import progress_tracker
 from app.services.indexing.state import (
     VAULT_PATH, CHUNK_SIZE, CHUNK_OVERLAP,
     indexing_lock, is_indexing,
@@ -107,27 +109,45 @@ def sync_single_git_repo(repo_id: int):
         per_repo_user = repo_row["auth_user"] if "auth_user" in repo_row.keys() else None
         provider = repo_row["provider"] if "provider" in repo_row.keys() else None
 
+        progress_tracker.get_or_create_job(repo_id, repo_name)
+
         effective_token, effective_user, token_source = db_service.get_effective_git_token(
             git_url, 
             override_token=per_repo_token, 
             override_user=per_repo_user, 
             provider=provider
         )
+        safe_url = gm_service.sanitize_url_for_logging(git_url)
 
+        # Stage 1: Connecting & Remote Check
+        progress_tracker.update_step(repo_id, 1, "Checking Remote Repository Ref", pct=10)
+        progress_tracker.log(repo_id, "INFO", f"Checking remote ref for '{repo_name}' ({safe_url})...")
         logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url}, provider: {provider or 'auto'}, auth: {token_source})...")
         remote_sha = gm_service.get_remote_head_sha(git_url, branch, token=effective_token, username=effective_user, provider=provider)
         if remote_sha and repo_row["commit_sha"] == remote_sha:
-            logger.info(f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone.")
+            msg = f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone."
+            logger.info(msg)
+            progress_tracker.log(repo_id, "INFO", msg)
             with db_service.get_db_connection() as conn:
                 conn.execute("UPDATE git_repositories SET status = 'synced', last_synced = CURRENT_TIMESTAMP WHERE id = ?", (repo_id,))
                 conn.commit()
+            progress_tracker.finish_job(repo_id, "synced")
             return
 
-        # Update status to syncing
+        if progress_tracker.is_cancelled(repo_id):
+            logger.info(f"Sync cancelled for repo '{repo_name}'")
+            progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
+            return
+
+        # Stage 2: Shallow Cloning
         with db_service.get_db_connection() as conn:
             conn.execute("UPDATE git_repositories SET status = 'syncing' WHERE id = ?", (repo_id,))
             conn.commit()
 
+        progress_tracker.update_step(repo_id, 2, "Shallow Cloning Repository", pct=25)
+        progress_tracker.log(repo_id, "INFO", f"Cloning branch '{branch}' to ephemeral directory...")
+
+        clone_start = time.time()
         clone_res = gm_service.shallow_clone_repo(
             git_url, 
             branch, 
@@ -141,28 +161,54 @@ def sync_single_git_repo(repo_id: int):
         err = clone_res.error
         
         if err or not temp_dir:
-            logger.error(f"Failed to clone repo '{repo_name}': {err}")
+            err_msg = f"Failed to clone repo '{repo_name}': {err}"
+            logger.error(err_msg)
+            progress_tracker.log(repo_id, "ERROR", err_msg)
             with db_service.get_db_connection() as conn:
                 conn.execute("UPDATE git_repositories SET status = 'error', last_error = ? WHERE id = ?", (err or "Unknown clone error", repo_id))
                 conn.commit()
+            progress_tracker.finish_job(repo_id, "error", err or "Unknown clone error")
             return
 
+        clone_duration = round(time.time() - clone_start, 2)
+        progress_tracker.log(repo_id, "INFO", f"Cloned successfully in {clone_duration}s (@ {commit_sha[:8] if commit_sha else 'head'})")
+
+        if progress_tracker.is_cancelled(repo_id):
+            logger.info(f"Sync cancelled for repo '{repo_name}' after clone")
+            progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
+            return
+
+        # Stage 3: Computing File Delta & Scanning
+        progress_tracker.update_step(repo_id, 3, "Computing File Delta & Scanning", pct=40)
         added_files, modified_files, deleted_filepaths, unchanged_files = compute_git_repo_delta(temp_dir, repo_name)
         total_delta = len(added_files) + len(modified_files) + len(deleted_filepaths)
+        delta_msg = (
+            f"Delta computed: +{len(added_files)} added, ~{len(modified_files)} modified, "
+            f"-{len(deleted_filepaths)} deleted, {len(unchanged_files)} unchanged"
+        )
         logger.info(
             f"Git delta computed for '{repo_name}': {len(added_files)} added, "
             f"{len(modified_files)} modified, {len(deleted_filepaths)} deleted, {len(unchanged_files)} unchanged"
         )
+        progress_tracker.log(repo_id, "INFO", delta_msg)
 
         if total_delta == 0:
-            logger.info(f"Repo '{repo_name}' delta is empty (all {len(unchanged_files)} files unchanged). Updating commit SHA.")
+            msg = f"Repo '{repo_name}' delta is empty (all {len(unchanged_files)} files unchanged). Updating commit SHA."
+            logger.info(msg)
+            progress_tracker.log(repo_id, "INFO", msg)
             with db_service.get_db_connection() as conn:
                 conn.execute(
                     "UPDATE git_repositories SET status = 'synced', last_error = NULL, commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
                     (commit_sha, repo_id)
                 )
                 conn.commit()
+            progress_tracker.finish_job(repo_id, "synced")
             idx_state.trigger_list_changed_notification()
+            return
+
+        if progress_tracker.is_cancelled(repo_id):
+            logger.info(f"Sync cancelled for repo '{repo_name}' after delta scan")
+            progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
             return
 
         # Delete old vector points & SQLite rows ONLY for modified and deleted files
@@ -192,6 +238,7 @@ def sync_single_git_repo(repo_id: int):
         files_to_sync = added_files + modified_files
         total_files = len(files_to_sync)
         logger.info(f"Ingesting {total_files} added/modified files for repo '{repo_name}'...")
+        progress_tracker.log(repo_id, "INFO", f"Ingesting {total_files} added/modified files...")
 
         BATCH_SIZE = 25
         batch_points = []
@@ -204,8 +251,18 @@ def sync_single_git_repo(repo_id: int):
         total_vectors_count = 0
         total_symbols_count = 0
 
+        # Stage 4: Parsing AST & Routes
         for idx, full_path in enumerate(files_to_sync):
+            if progress_tracker.is_cancelled(repo_id):
+                logger.info(f"Sync cancelled for repo '{repo_name}' during file ingestion at file {idx+1}/{total_files}")
+                progress_tracker.log(repo_id, "WARN", f"Sync cancelled by user at file {idx+1}/{total_files}")
+                return
+
             rel_path = os.path.relpath(full_path, temp_dir)
+            progress_tracker.update_step(
+                repo_id, 4, f"Parsing Files ({idx+1}/{total_files})",
+                current_file=rel_path, processed=idx+1, total=total_files
+            )
             doc_type = "code" if is_code_file(full_path) else "doc"
             lang = detect_language(full_path)
             db_filepath = f"{repo_name}://{rel_path}"
@@ -234,12 +291,18 @@ def sync_single_git_repo(repo_id: int):
                 batch_relationships.extend(rels)
                 batch_indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash))
 
+                progress_tracker.log(
+                    repo_id, "INFO",
+                    f"[{idx+1}/{total_files}] Ingested {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)"
+                )
+
                 if (idx + 1) % 10 == 0 or (idx + 1) == total_files:
                     pct = int(((idx + 1) / total_files) * 100)
                     logger.info(f"[{idx+1}/{total_files}] ({pct}%) Ingesting {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
 
             except Exception as fe:
                 logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
+                progress_tracker.log(repo_id, "ERROR", f"Error parsing {rel_path}: {fe}")
 
             # Flush batch every BATCH_SIZE files or on the last file
             if (idx + 1) % BATCH_SIZE == 0 or (idx + 1) == total_files:
@@ -323,6 +386,8 @@ def sync_single_git_repo(repo_id: int):
 
                 gc.collect()
 
+        # Stage 5: Vector Indexing & Cleanup
+        progress_tracker.update_step(repo_id, 5, "Upserting Embeddings & Finalizing", pct=90)
         with db_service.get_db_connection() as conn:
             conn.execute(
                 "UPDATE git_repositories SET status = 'synced', last_error = NULL, commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
@@ -330,11 +395,16 @@ def sync_single_git_repo(repo_id: int):
             )
             conn.commit()
 
-        logger.info(f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Delta: +{len(added_files)} ~{len(modified_files)} -{len(deleted_filepaths)}. Vectors: {total_vectors_count}, Symbols: {total_symbols_count}")
+        success_msg = f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Delta: +{len(added_files)} ~{len(modified_files)} -{len(deleted_filepaths)}. Vectors: {total_vectors_count}, Symbols: {total_symbols_count}"
+        logger.info(success_msg)
+        progress_tracker.log(repo_id, "INFO", success_msg)
+        progress_tracker.finish_job(repo_id, "synced")
         idx_state.trigger_list_changed_notification()
 
     except Exception as e:
         logger.error(f"Unexpected error during repo sync for '{repo_name}': {e}")
+        progress_tracker.log(repo_id, "ERROR", f"Sync failed: {str(e)}")
+        progress_tracker.finish_job(repo_id, "error", str(e))
         try:
             with db_service.get_db_connection() as conn:
                 conn.execute("UPDATE git_repositories SET status = 'error', last_error = ? WHERE id = ?", (str(e), repo_id))
