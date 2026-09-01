@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **823 Automated Tests** (560 Pytest Backend + 222 Vitest Frontend + 41 Playwright E2E).
+**Test Verification Baseline:** **875 Automated Tests** (577 Pytest Backend + 252 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -636,6 +636,27 @@ classDiagram
 - `test_process_file_content_with_custom_provider`
 - `test_sync_single_git_repo_triggers_notification`
 
+#### `tests/backend/test_navigator_router.py` (8 tests)
+- `test_db`
+- `test_api_get_navigator_tree_all`
+- `test_api_get_navigator_tree_specific_repo`
+- `test_api_get_navigator_tree_not_found`
+- `test_api_get_file_outline_success`
+- `test_api_get_file_outline_empty`
+- `test_api_get_symbol_impact_success`
+- `test_api_get_symbol_impact_not_found`
+
+#### `tests/backend/test_navigator_service.py` (9 tests)
+- `test_db`
+- `test_navigator_tree_construction`
+- `test_navigator_tree_all_repos`
+- `test_navigator_tree_nonexistent_repo`
+- `test_navigator_tree_empty_existing_repo`
+- `test_file_outline_retrieval`
+- `test_file_outline_with_route_mapping_and_cleaning`
+- `test_symbol_impact_retrieval`
+- `test_symbol_impact_not_found`
+
 #### `tests/backend/test_schemas.py` (2 tests)
 - `test_code_symbol_creation`
 - `test_search_request_defaults`
@@ -1069,6 +1090,13 @@ and leaves the prior indexed state intact without data loss._
 - renders vector database health badge in header when vector_db_status is present
 - renders ChromaDB provider and unhealthy status badge in header
 
+#### `CodeNavigator.test.tsx` (5 tests)
+- renders toolbar, 3-pane layout, and fetches initial tree data
+- handles density mode switching and persists to localStorage
+- loads file outline on file selection and symbol impact on symbol selection
+- supports caller click-through navigation jumping to caller file and symbol
+- handles repo switcher change and re-fetches tree
+
 #### `DiagnosticsViewer.test.tsx` (10 tests)
 - renders log records, badges, and controls
 - filters logs by log level buttons
@@ -1125,6 +1153,37 @@ and leaves the prior indexed state intact without data loss._
 - opens preview modal, displays file text, and closes modal
 - replaces file content, updates vector store, and provides feedback
 - deletes file upon confirmation and refreshes list and stats
+
+#### `NavigatorInspector.test.tsx` (8 tests)
+- renders empty placeholder when no symbol is selected
+- renders symbol metadata and metrics
+- renders route details card
+- renders signature code and docstring
+- copies permalink to clipboard on button click
+- calls onSelectCaller when a caller is clicked for click-through navigation
+- renders outgoing callees and imports
+- renders loading state when loading is true
+
+#### `NavigatorOutline.test.tsx` (8 tests)
+- renders empty placeholder when outline is null or empty
+- renders file header with filepath and symbols
+- renders route badges for route symbols
+- filters symbols by category chips
+- filters symbols using the search input
+- calls onSelectSymbol when a symbol item is clicked
+- highlights the selected symbol card
+- renders loading skeleton when loading is true
+
+#### `NavigatorTree.test.tsx` (9 tests)
+- renders directory nodes and root files
+- expands and collapses directory nodes on click
+- displays symbol count and route count badges
+- calls onSelectFile when a file node is clicked
+- highlights the selected file
+- filters nodes based on search input
+- handles expand all and collapse all buttons
+- supports keyboard navigation up/down/enter
+- renders loading state when loading is true
 
 #### `NeighborhoodView.test.tsx` (10 tests)
 - renders breadcrumb trail, focal node, and incoming/outgoing columns
@@ -1364,5 +1423,10 @@ and leaves the prior indexed state intact without data loss._
 - 5. Settings Tab - Vector Store & Embedding Engine Layout Audit
 - 6. Diagnostics & Logs Tab - Log Container & Filter Layout Stability
 - 7. Add Repository Modal - Layout Shift & Center Alignment
-- navigates to Topology tab and renders graph controls
-- interacts with view types, search, node inspector drawer, and exports
+- 1. Navigation and Initial Load: mounts CodeNavigator container, toolbar, and stats
+- 2. File Tree Interaction: hierarchical structure, expand/collapse, and search filtering
+- 3. Symbol Outline & Category Filtering: loads symbols, filters by category chips, and searches
+- 4. Impact Inspector & Route Details: displays metrics, route card, signature, and copy permalink
+- 5. Caller Click-Through Navigation: jumps from caller card in inspector to caller file and symbol
+- 6. Density Mode Toggling: toggles Compact, Balanced, and Spacious layout modes
+- 7. Responsive Layout Audit: zero overflow and stable 3-pane layout across viewports
