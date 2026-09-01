@@ -46,6 +46,25 @@ describe('App Component', () => {
           json: async () => []
         } as Response);
       }
+      if (url.includes('/admin/api/storage/tree')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ root: '/app/data/storage', current_folder: '', directories: [], files: [] })
+        } as Response);
+      }
+      if (url.includes('/admin/api/ingestion/catalog')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            source_type: 'all',
+            detail_level: 'summary',
+            git_repositories: [],
+            monitored_paths: [],
+            local_storage: { root_path: '/app/data/storage', file_count: 0 },
+            files: []
+          })
+        } as Response);
+      }
       return Promise.resolve({
         ok: true,
         json: async () => ({})
@@ -100,6 +119,20 @@ describe('App Component', () => {
       expect(screen.getByText('Monitored Local Paths')).toBeInTheDocument();
     });
 
+    // Switch to Local Storage
+    const storageTab = screen.getByRole('button', { name: /Local Storage/i });
+    fireEvent.click(storageTab);
+    await waitFor(() => {
+      expect(screen.getByText('Local Storage Explorer')).toBeInTheDocument();
+    });
+
+    // Switch to Ingestion Catalog
+    const catalogTab = screen.getByRole('button', { name: /Ingestion Catalog/i });
+    fireEvent.click(catalogTab);
+    await waitFor(() => {
+      expect(screen.getByText('Unified Ingestion Catalog')).toBeInTheDocument();
+    });
+
     // Switch to Search & Inspector
     const searchTab = screen.getByRole('button', { name: /Search & Inspector/i });
     fireEvent.click(searchTab);
@@ -121,6 +154,7 @@ describe('App Component', () => {
       expect(screen.getByText('Diagnostics & Server Logs')).toBeInTheDocument();
     });
   });
+
 
   it('renders Syncing... engine state badge when is_indexing is true', async () => {
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {

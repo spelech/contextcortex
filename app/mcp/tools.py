@@ -26,6 +26,8 @@ from app.mcp.handlers import (
     handle_search_infrastructure_docs,
     handle_get_architecture,
     handle_manage_adr,
+    handle_manage_local_file,
+    handle_what_is_ingested,
 )
 
 logger = logging.getLogger("contextcortex.mcp")
@@ -109,6 +111,18 @@ def register_mcp_tools_and_resources(server=None):
             name="manage_adr",
             description="Manage Architecture Decision Records (ADRs): read, create, update, supersede, or search records across repositories."
         )(handle_manage_adr)
+
+    if "manage_local_file" not in existing_tools:
+        server.tool(
+            name="manage_local_file",
+            description="Manage files in ContextCortex local storage: upload, replace, read, or delete files with immediate vector indexing."
+        )(handle_manage_local_file)
+
+    if "what_is_ingested" not in existing_tools:
+        server.tool(
+            name="what_is_ingested",
+            description="Inspect all ingested Git repositories, monitored local paths, and uploaded local storage files with optional filtering and detailed file trees."
+        )(handle_what_is_ingested)
 
     existing_resources = {str(r.uri) for r in server._resource_manager.list_resources()}
     if "knowledge://catalog/summary" not in existing_resources:

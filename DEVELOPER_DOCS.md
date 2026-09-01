@@ -1,4 +1,4 @@
-# Developer Documentation: ContextCortex (v2.11.0)
+# Developer Documentation: ContextCortex (v2.12.0)
 
 This document provides instructions for developing, testing, configuring, and running ContextCortex locally.
 
@@ -124,7 +124,10 @@ pytest -v tests/backend/test_requirements_sync.py
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `VECTOR_STORE_PROVIDER` | Vector database backend (`qdrant` or `chroma`) | `qdrant` |
+| `DATABASE_URL` | SQLAlchemy connection string (e.g. `postgresql+psycopg://...` or `sqlite:///...`) | `sqlite:////app/data/index_cache.db` |
+| `LOCAL_STORAGE_PATH` | Storage directory for managed local storage file uploads | `/app/data/storage` |
+| `AUTH_ENABLED` | Enable MCP 2026-07-28 OAuth 2.1 & API Key RBAC | `false` |
+| `VECTOR_STORE_PROVIDER` | Vector database backend (`pgvector`, `qdrant`, or `chroma`) | `qdrant` |
 | `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` |
 | `COLLECTION_NAME` | Vector collection name | `knowledge_rag_v1` |
 | `QDRANT_URL` | URL to the remote Qdrant vector database | `http://localhost:6333` |
@@ -148,21 +151,23 @@ contextcortex/
 ├── main.py                # FastAPI entry point, lifespan manager & FastMCP route mounting
 ├── app/                   # Modular architecture (all files < 450 LOC)
 │   ├── api/               # FastAPI REST routers
-│   │   ├── routers/       # Dedicated subrouters (repositories.py, settings.py, graph.py)
+│   │   ├── routers/       # Dedicated subrouters (repositories, settings, graph, auth, storage, ingestion)
 │   │   ├── routes.py      # Main router aggregator and health checks
 │   │   └── webhooks.py    # Multi-provider webhook endpoint and HMAC validation
 │   ├── mcp/               # FastMCP 2.0 dual-transport server
-│   │   ├── handlers/      # Modular tool handlers (search, symbol, repo, route, architecture)
+│   │   ├── handlers/      # Modular tool handlers (search, symbol, repo, route, architecture, storage)
 │   │   ├── mcp_server.py  # FastMCP server lifecycle & session registry
 │   │   └── tools.py       # Tool registry and handler dispatcher
 │   ├── models/            # Pydantic schema validation models
 │   │   └── schemas.py     # Request/response schemas for APIs and MCP
 │   └── services/          # Modular business logic services
+│       ├── auth/          # RBAC engine, JWT validator, API key lifecycle, models
 │       ├── chunking/      # Tree-sitter loaders, token chunkers, AST/route extractors
-│       ├── database/      # SQLite WAL connection, credential vault, ADRs, sync configs
+│       ├── database/      # Relational schema, engine pool, credential vault, ADRs, sync configs
 │       ├── indexing/      # Git/local syncers, file processor, state notifications
 │       ├── topology/      # Graph topology builder, node details, BFS helpers
-│       ├── vector_store/  # Qdrant and ChromaDB pluggable vector store implementations
+│       ├── vector_store/  # pgvector, Qdrant, and ChromaDB pluggable vector store implementations
+│       ├── local_storage.py# Safe path resolution, disk file persistence, and tree inspection
 │       ├── git_manager.py # Ephemeral shallow git clone, token masking, permalinks
 │       ├── embeddings.py  # FastEmbed dense (384d) & sparse BM25 multi-vector engine
 │       ├── search.py      # Hybrid search & Reciprocal Rank Fusion (RRF) reranker
@@ -170,15 +175,22 @@ contextcortex/
 │       ├── adr.py         # MADR / Nygard format ADR ingestion and lifecycle
 │       ├── architecture.py# Codebase entry point, language distribution synthesis
 │       └── logger.py      # In-memory 500-event ring buffer diagnostic logger
-├── tests/                 # Backend pytest test suite (277 tests, 88% coverage)
+├── tests/                 # Backend pytest test suite (415+ tests, 88% coverage)
 │   ├── backend/           # Unit and integration test modules
-│   ├── test_poller.py     # Background poller tests
-│   └── test_webhooks.py   # Multi-provider webhook tests
+│   ├── test_local_storage_service.py # Path security and local disk storage tests
+│   ├── test_local_storage_indexing.py# Real-time incremental vector indexing tests
+│   ├── test_mcp_storage_tools.py     # manage_local_file and what_is_ingested tests
+│   ├── test_storage_api_routes.py    # REST storage and ingestion endpoint tests
+│   ├── test_auth_service.py          # Authentication and API key service tests
+│   ├── test_poller.py                # Background poller tests
+│   └── test_webhooks.py              # Multi-provider webhook tests
 ├── frontend/              # Web Admin Dashboard (React 19, TypeScript, Vite)
 │   ├── src/               # React components and modular sub-components
 │   │   ├── components/    # Sub-component trees (git/, settings/, topology/)
+│   │   ├── LocalStorageManager.tsx    # Managed storage file explorer and upload modal
+│   │   ├── IngestionCatalogViewer.tsx # Unified multi-source ingestion explorer
 │   │   ├── styles/        # Modular CSS stylesheets (base.css, components.css, topology.css)
-│   │   └── tests/         # Vitest component unit tests (82 tests, 87% coverage)
+│   │   └── tests/         # Vitest component unit tests
 │   ├── e2e/               # Playwright E2E test specs (26 user journeys)
 │   └── dist/              # Compiled production distribution assets
 ├── requirements.txt       # Python dependencies
@@ -205,7 +217,10 @@ Example configuration (`claude_desktop_config.json` / Cursor / Antigravity):
 {
   "mcpServers": {
     "contextcortex-sse": {
-      "url": "http://localhost:3000/sse"
+      "url": "http://localhost:3000/sse",
+      "headers": {
+        "Authorization": "Bearer cc_live_your_api_key_here"
+      }
     }
   }
 }
@@ -219,24 +234,30 @@ Example configuration:
 {
   "mcpServers": {
     "contextcortex-http": {
-      "url": "http://localhost:3000/mcp"
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer cc_live_your_api_key_here"
+      }
     }
   }
 }
 ```
 
-### Available MCP Tools (11 Tools):
-- `search_code(query="JWT authentication handler", repo="backend-api")`
-- `search_docs(query="caddy reverse proxy configuration")`
-- `find_symbol(name="extract_symbols_and_chunks", exact=true)`
-- `get_file_outline(filepath="app/services/search.py")`
-- `list_repositories()`
-- `sync_repository(repo="backend-api")`
-- `index_status()`
-- `get_architecture(repo="backend-api")`
-- `manage_adr(action="list", repo="backend-api")`
-- `get_code_routes(repo="backend-api")`
-- `trace_call_path(target="authenticate_user", repo="backend-api")`
+### Available MCP Tools (14 Tools):
+- `search_code(query="JWT authentication handler", repo="backend-api")` [Role: `viewer`]
+- `search_docs(query="caddy reverse proxy configuration")` [Role: `viewer`]
+- `find_symbol(name="extract_symbols_and_chunks", exact=true)` [Role: `viewer`]
+- `trace_path(target="authenticate_user", repo="backend-api")` [Role: `viewer`]
+- `find_routes(repo="backend-api")` [Role: `viewer`]
+- `find_api_callers(target="/api/v1/auth/login")` [Role: `viewer`]
+- `get_file_outline(filepath="app/services/search.py")` [Role: `viewer`]
+- `list_repositories()` [Role: `viewer`]
+- `sync_repository(repo="backend-api")` [Role: `editor`]
+- `index_status()` [Role: `viewer`]
+- `get_architecture(repo="backend-api")` [Role: `viewer`]
+- `manage_adr(action="list", repo="backend-api")` [Role: `editor`]
+- `manage_local_file(action="upload", file_path="notes/spec.md", content="# Spec")` [Role: `editor` for mutations, `viewer` for read]
+- `what_is_ingested(source_type="all", detail_level="summary")` [Role: `viewer`]
 
 ### Available MCP Resources:
 - `knowledge://catalog/summary`
@@ -244,3 +265,103 @@ Example configuration:
 ### Available MCP Prompts:
 - `search_infrastructure_docs(topic="docker-compose network topology")`
 - `find_implementation_symbol(symbol="execute_hybrid_search")`
+
+---
+
+## 🌐 REST API Specifications & RBAC Matrix
+
+### Role-Based Access Control (RBAC) Matrix
+| Resource / Operation | HTTP Endpoint | MCP Tool | Required Role |
+| :--- | :--- | :--- | :---: |
+| List / Search API Keys | `GET /admin/api/auth/keys` | - | `Role.ADMIN` |
+| Create / Revoke API Keys | `POST/DELETE /admin/api/auth/keys` | - | `Role.ADMIN` |
+| Upload Local Storage File | `POST /admin/api/storage/upload` | `manage_local_file (upload)` | `Role.EDITOR` |
+| Replace Local Storage File | `PUT /admin/api/storage/file` | `manage_local_file (replace)` | `Role.EDITOR` |
+| Delete Local Storage File | `DELETE /admin/api/storage/file` | `manage_local_file (delete)` | `Role.EDITOR` |
+| Read Local Storage File | `GET /admin/api/storage/file` | `manage_local_file (read)` | `Role.VIEWER` |
+| Browse Storage Directory Tree | `GET /admin/api/storage/tree` | - | `Role.VIEWER` |
+| Query Ingestion Catalog | `GET /admin/api/ingestion/catalog` | `what_is_ingested` | `Role.VIEWER` |
+| Sync Git Repository | `POST /admin/api/repositories/{id}/sync`| `sync_repository` | `Role.EDITOR` |
+| Manage ADRs | - | `manage_adr` (create/update) | `Role.EDITOR` |
+| Code & Document Searches | `POST /admin/api/search` | `search_code`, `search_docs` | `Role.VIEWER` |
+
+### REST Payload Schemas
+
+#### 1. File Upload (`POST /admin/api/storage/upload`)
+- **Multipart Form**: `file` (binary), `path` (relative target path), optional `repo` (default `"local_storage"`), optional `category`.
+- **JSON Payload**:
+  ```json
+  {
+    "path": "rfcs/caching-v2.md",
+    "content": "# RFC: Caching Architecture v2\n\nDesign notes...",
+    "repo": "local_storage",
+    "category": "rfcs"
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "status": "success",
+    "rel_path": "rfcs/caching-v2.md",
+    "repo": "local_storage",
+    "category": "rfcs",
+    "size_bytes": 1240,
+    "chunks_indexed": 3
+  }
+  ```
+
+#### 2. File Replace (`PUT /admin/api/storage/file`)
+- **JSON Payload**:
+  ```json
+  {
+    "path": "rfcs/caching-v2.md",
+    "content": "# Updated RFC: Caching Architecture v2\n\nRevised design...",
+    "repo": "local_storage",
+    "category": "rfcs"
+  }
+  ```
+- **Response** (`200 OK`):
+  ```json
+  {
+    "status": "success",
+    "rel_path": "rfcs/caching-v2.md",
+    "repo": "local_storage",
+    "size_bytes": 1410,
+    "chunks_indexed": 4
+  }
+  ```
+
+#### 3. Ingestion Catalog Query (`GET /admin/api/ingestion/catalog`)
+- **Query Parameters**: `source_type` (`all`|`git`|`monitored_path`|`local_storage`), `repo_name`, `path_prefix`, `file_extension`, `detail_level` (`summary`|`detailed`).
+- **Response** (`200 OK`):
+  ```json
+  {
+    "source_type": "all",
+    "detail_level": "summary",
+    "git_repositories": [
+      {
+        "id": 1,
+        "name": "contextcortex",
+        "url": "https://github.com/spelech/contextcortex",
+        "branch": "main",
+        "commit_sha": "a7c8950...",
+        "provider": "github",
+        "status": "synced",
+        "file_count": 42
+      }
+    ],
+    "monitored_paths": [],
+    "local_storage": {
+      "root_path": "/app/data/storage",
+      "file_count": 5,
+      "tree": {
+        "root": "/app/data/storage",
+        "current_folder": "",
+        "directories": [{"name": "rfcs", "rel_path": "rfcs", "abs_path": "/app/data/storage/rfcs"}],
+        "files": [{"name": "spec.md", "rel_path": "rfcs/spec.md", "abs_path": "/app/data/storage/rfcs/spec.md", "size_bytes": 1024, "mtime": 1724800000.0}]
+      }
+    },
+    "files": []
+  }
+  ```
+
