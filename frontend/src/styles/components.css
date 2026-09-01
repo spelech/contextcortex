@@ -83,13 +83,16 @@ code, .code {
 
 .table-container {
     overflow-x: auto;
+    max-width: 100%;
     margin-top: 10px;
+    -webkit-overflow-scrolling: touch;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.9rem;
+    table-layout: auto;
 }
 
 th {
@@ -98,12 +101,23 @@ th {
     color: var(--text-muted);
     font-weight: 600;
     border-bottom: 1px solid var(--border-card);
+    white-space: nowrap;
 }
 
 td {
     padding: 14px;
     border-bottom: 1px solid var(--border-card);
     color: var(--text);
+}
+
+td a.repo-url-link,
+td a[href*="http"] {
+    display: inline-block;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
 }
 
 tr:hover td {
@@ -187,15 +201,28 @@ tr:hover td {
 .form-row {
     display: flex;
     gap: 14px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.form-row > .form-group {
+    flex: 1;
+    min-width: 0;
 }
 
 .form-row-3col {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     gap: 12px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
-input[type="text"], input[type="url"], input[type="password"], select, textarea {
+.form-row-3col > .form-group {
+    min-width: 0;
+}
+
+input[type="text"], input[type="url"], input[type="password"], input[type="number"], select, textarea {
     background: var(--code-bg);
     border: 1px solid var(--border-card);
     color: var(--text);
@@ -205,6 +232,10 @@ input[type="text"], input[type="url"], input[type="password"], select, textarea 
     font-size: 0.9rem;
     outline: none;
     transition: border-color 0.2s ease;
+    width: 100%;
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
 }
 
 input:focus, select:focus, textarea:focus {
@@ -399,6 +430,18 @@ input:focus, select:focus, textarea:focus {
   }
   .dashboard-container {
     padding: 16px 12px;
+    max-width: 100vw;
+    box-sizing: border-box;
+  }
+  .vs-box {
+    padding: 16px 12px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .glass-card {
+    padding: 18px 14px;
+    max-width: 100%;
+    box-sizing: border-box;
   }
   .desktop-table-view {
     display: none;
@@ -839,6 +882,9 @@ input:focus, select:focus, textarea:focus {
     grid-template-columns: 1fr 1fr;
     gap: 20px;
     margin-top: 16px;
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
 }
 
 @media (max-width: 960px) {
@@ -852,6 +898,10 @@ input:focus, select:focus, textarea:focus {
     padding: 20px;
     border-radius: 10px;
     border: 1px solid var(--border-card);
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .vs-box h3 {
@@ -1046,8 +1096,10 @@ input:focus, select:focus, textarea:focus {
     display: flex;
     flex-direction: column;
     gap: 5px;
-    min-width: 170px;
-    max-width: 250px;
+    min-width: 140px;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
     cursor: pointer;
     user-select: none;
     transition: opacity 0.2s ease, transform 0.15s ease;
@@ -1071,9 +1123,17 @@ input:focus, select:focus, textarea:focus {
     padding: 3px 8px;
     border-radius: 12px;
     white-space: nowrap;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.progress-pill > span {
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
 }
 
 .sync-progress-bar-wrapper {
@@ -1091,7 +1151,8 @@ input:focus, select:focus, textarea:focus {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 250px;
+    max-width: 100%;
+    min-width: 0;
     display: flex;
     align-items: center;
 }

@@ -112,7 +112,9 @@ export function RepoListTable({
                         href={r.url}
                         target="_blank"
                         rel="noreferrer"
+                        className="repo-url-link"
                         style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '0.85rem' }}
+                        title={r.url}
                       >
                         <i className="fa-solid fa-arrow-up-right-from-square"></i> {r.url}
                       </a>

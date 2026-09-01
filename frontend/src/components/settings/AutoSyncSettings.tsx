@@ -111,15 +111,15 @@ export function AutoSyncSettings({
             </div>
           </div>
 
-          <div className="form-group" style={{ marginTop: '14px' }}>
+          <div className="form-group" style={{ marginTop: '14px', minWidth: 0, width: '100%' }}>
             <label htmlFor="auto-sync-webhook-url">Incoming Webhook Payload URL</label>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', minWidth: 0, width: '100%' }}>
               <input
                 id="auto-sync-webhook-url"
                 type="text"
                 readOnly
                 value={fullWebhookUrl}
-                style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem', flex: 1 }}
+                style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem', flex: 1, minWidth: 0, width: '100%' }}
                 aria-label="Webhook Payload URL"
               />
               <button
