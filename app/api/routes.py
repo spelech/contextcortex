@@ -41,6 +41,7 @@ from app.api.routers.graph import router as graph_router
 from app.api.routers.auth import router as auth_router, get_current_auth, require_role
 from app.api.routers.storage import router as storage_router
 from app.api.routers.ingestion import router as ingestion_router
+from app.api.routers.navigator import router as navigator_router
 
 logger = logging.getLogger("contextcortex.api")
 
@@ -52,6 +53,7 @@ router.include_router(graph_router)
 router.include_router(auth_router)
 router.include_router(storage_router)
 router.include_router(ingestion_router)
+router.include_router(navigator_router)
 
 __all__ = [
     "router",
