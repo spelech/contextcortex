@@ -10,6 +10,7 @@ import { useGitSyncStream } from './hooks/useGitSyncStream';
 
 export default function GitRepoManager({ refreshStats }: { refreshStats: () => void }) {
   const [repos, setRepos] = useState<Repo[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [webhookModalRepo, setWebhookModalRepo] = useState<Repo | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
@@ -35,10 +36,12 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
         return;
       }
       const data = await response.json();
-      setRepos(data);
+      setRepos(Array.isArray(data) ? data : []);
     } catch (e: any) {
       toast.error('Error loading repos: ' + e.message);
       console.error('Error loading repos:', e);
+    } finally {
+      setIsLoading(false);
     }
   }, [toast]);
 
@@ -183,6 +186,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
 
         <RepoListTable
           repos={repos}
+          isLoading={isLoading}
           syncStates={syncStates}
           onSync={syncRepo}
           onToggleAutoSync={toggleAutoSync}

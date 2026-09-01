@@ -1165,5 +1165,45 @@ describe('Settings Component', () => {
 
     consoleSpy.mockRestore();
   });
+
+  it('dynamically syncs vectorStore state when stats prop updates', async () => {
+    setupDefaultMocks();
+
+    const { rerender } = render(
+      <ToastProvider>
+        <Settings stats={mockStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Qdrant')).toBeInTheDocument();
+    });
+
+    // Update stats with new vector store config
+    const updatedStats: Stats = {
+      ...mockStats,
+      vector_store: {
+        provider: 'chroma',
+        mode: 'remote',
+        storage_path: null,
+        url: 'http://chroma-live:8000',
+        collection: 'live_vectors',
+        healthy: true,
+        points_count: 5000,
+      }
+    };
+
+    rerender(
+      <ToastProvider>
+        <Settings stats={updatedStats} refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('ChromaDB')).toBeInTheDocument();
+      expect(screen.getByText('5,000')).toBeInTheDocument();
+      expect(screen.getByText('live_vectors')).toBeInTheDocument();
+    });
+  });
 });
 

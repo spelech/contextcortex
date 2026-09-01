@@ -291,4 +291,35 @@ describe('LocalPathManager Component', () => {
       expect(screen.getByText(/Failed to delete path: Delete denied/i)).toBeInTheDocument();
     });
   });
+
+  it('renders loading state initially and transitions to empty state when no paths are configured', async () => {
+    let resolveFetch: any;
+    const fetchPromise = new Promise((resolve) => {
+      resolveFetch = resolve;
+    });
+
+    (globalThis as any).fetch = vi.fn().mockReturnValue(fetchPromise);
+
+    render(
+      <ToastProvider>
+        <LocalPathManager refreshStats={vi.fn()} />
+      </ToastProvider>
+    );
+
+    // Shows loading state initially
+    expect(screen.getByTestId('path-loading-state')).toBeInTheDocument();
+    expect(screen.getByTestId('path-loading-state-mobile')).toBeInTheDocument();
+    expect(screen.queryByText('No local search paths configured.')).not.toBeInTheDocument();
+
+    // Resolves with empty array
+    resolveFetch({
+      ok: true,
+      json: async () => []
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('path-loading-state')).not.toBeInTheDocument();
+      expect(screen.getAllByText('No local search paths configured.')[0]).toBeInTheDocument();
+    });
+  });
 });

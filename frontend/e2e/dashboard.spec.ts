@@ -11,6 +11,7 @@ const mockStats = {
   vector_store_provider: 'qdrant',
   vector_store_mode: 'embedded',
   vector_store_collection: 'knowledge_rag_v1',
+  vector_db_status: 'Healthy',
   rate_limit: { remaining: 5000, limit: 5000 },
   top_keywords: ['fastapi', 'tree-sitter', 'qdrant'],
   is_indexing: false,
@@ -180,6 +181,22 @@ test.beforeEach(async ({ page }) => {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ status: 'syncing' })
+    });
+  });
+
+  await page.route('**/admin/api/repos/sync-status', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({})
+    });
+  });
+
+  await page.route('**/admin/api/repos/sync/stream', async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/event-stream',
+      body: 'event: init\ndata: {}\n\n'
     });
   });
 
@@ -360,11 +377,13 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
 
-test('1. navigates through all tabs including Diagnostics & Logs', async ({ page }) => {
+test('1. navigates through all tabs including Diagnostics & Logs', async ({ page, isMobile }) => {
   // Header and engine state
   await expect(page.locator('h1', { hasText: 'ContextCortex' })).toBeVisible();
   await expect(page.getByText(/v2\.\d+\.\d+/)).toBeVisible();
   await expect(page.getByText('knowledge_rag_v1')).toBeVisible();
+  await expect(page.locator('.header-status')).toContainText('Qdrant (Embedded)');
+  await expect(page.locator('.header-status')).toContainText('Healthy');
 
   // Overview tab
   await expect(page.getByText('System & Embedding Specs')).toBeVisible();
@@ -376,6 +395,11 @@ test('1. navigates through all tabs including Diagnostics & Logs', async ({ page
   // Git Repositories tab
   await navigateToTab(page, 'Git Repositories');
   await expect(page.getByText('Registered Git Repositories')).toBeVisible();
+  if (isMobile) {
+    await expect(page.locator('.mobile-card-list').getByText('knowledge-rag-mcp', { exact: true })).toBeVisible();
+  } else {
+    await expect(page.locator('.desktop-table-view').getByText('knowledge-rag-mcp', { exact: true })).toBeVisible();
+  }
 
   // Local Paths tab
   await navigateToTab(page, 'Local Paths');

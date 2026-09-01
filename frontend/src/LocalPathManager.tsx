@@ -5,6 +5,7 @@ import { useToast } from './ToastContext';
 
 export default function LocalPathManager({ refreshStats }: { refreshStats: () => void }) {
   const [paths, setPaths] = useState<LocalPath[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const toast = useToast();
   const [isPathModalOpen, setIsPathModalOpen] = useState(false);
   const [isBrowserOpen, setIsBrowserOpen] = useState(false);
@@ -31,6 +32,8 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
     } catch (e: any) {
       toast.error('Error loading paths: ' + e.message);
       console.error('Error loading paths:', e);
+    } finally {
+      setIsLoading(false);
     }
   }, [toast]);
 
@@ -147,7 +150,14 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
               </tr>
             </thead>
             <tbody>
-              {paths.length === 0 ? (
+              {isLoading && paths.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="empty-state" data-testid="path-loading-state">
+                    <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+                    Loading local paths...
+                  </td>
+                </tr>
+              ) : paths.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="empty-state">No local search paths configured.</td>
                 </tr>
@@ -173,7 +183,12 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
         </div>
 
         <div className="mobile-card-list">
-          {paths.length === 0 ? (
+          {isLoading && paths.length === 0 ? (
+            <div className="empty-state" data-testid="path-loading-state-mobile">
+              <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+              Loading local paths...
+            </div>
+          ) : paths.length === 0 ? (
             <div className="empty-state">No local search paths configured.</div>
           ) : (
             paths.map(p => (

@@ -61,9 +61,19 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
           <div className="specs-list">
             <div className="spec-row">
               <span>Vector Database:</span>
-              <span className="badge badge-accent">
-                {stats.vector_store_provider === 'chroma' ? 'ChromaDB' : 'Qdrant'} ({(stats.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded Disk' : 'Remote Server'})
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="badge badge-accent">
+                  {stats.vector_store_provider === 'chroma' ? 'ChromaDB' : 'Qdrant'} ({(stats.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded Disk' : 'Remote Server'})
+                </span>
+                {stats.vector_db_status && (
+                  <span
+                    className={`badge ${stats.vector_db_status === 'Healthy' ? 'badge-success' : 'badge-danger'}`}
+                    data-testid="overview-vector-db-status"
+                  >
+                    {stats.vector_db_status}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="spec-row">
               <span>Dense Embedding Model:</span>

@@ -2,7 +2,6 @@
   "name": "contextcortex-frontend",
   "private": true,
   "version": "2.11.0",
-
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader native",
@@ -12,6 +11,7 @@
     "test": "vitest run --configLoader native",
     "test:coverage": "vitest run --coverage --configLoader native",
     "test:e2e": "playwright test",
+    "test:layout": "playwright test e2e/layout-inspector.spec.ts",
     "inspect:layout": "node --experimental-strip-types scripts/inspect_layout.ts"
   },
   "dependencies": {
@@ -29,6 +29,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.1.1",
     "oxlint": "^1.75.0",
+    "playwright-layout-inspector": "github:spelech/playwright-layout-inspector",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",
     "vite-plugin-theme-editor": "github:spelech/vite-plugin-theme-editor",

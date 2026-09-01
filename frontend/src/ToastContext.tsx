@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 import type { ReactNode } from 'react';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -33,17 +33,33 @@ let toastCounter = 0;
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  const timeoutsRef = useState(() => new Map<number, any>())[0];
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.forEach((timer) => clearTimeout(timer));
+      timeoutsRef.clear();
+    };
+  }, [timeoutsRef]);
+
   const dismiss = useCallback((id: number) => {
+    const timer = timeoutsRef.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timeoutsRef.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  }, [timeoutsRef]);
 
   const addToast = useCallback((message: string, type: ToastType = 'info') => {
     const id = ++toastCounter;
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      timeoutsRef.delete(id);
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
-  }, []);
+    timeoutsRef.set(id, timer);
+  }, [timeoutsRef]);
 
   const toast = useMemo(
     () => ({

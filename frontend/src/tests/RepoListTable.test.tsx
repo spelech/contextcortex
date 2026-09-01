@@ -68,10 +68,26 @@ const mockSyncStates: Record<number, GitSyncJob> = {
 };
 
 describe('RepoListTable Component', () => {
-  it('renders empty state when repos array is empty', () => {
+  it('renders loading state when isLoading is true and repos array is empty', () => {
     render(
       <RepoListTable
         repos={[]}
+        isLoading={true}
+        onSync={vi.fn()}
+        onToggleAutoSync={vi.fn()}
+        onOpenWebhook={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText(/Loading repositories\.\.\./i)[0]).toBeInTheDocument();
+  });
+
+  it('renders empty state when not loading and repos array is empty', () => {
+    render(
+      <RepoListTable
+        repos={[]}
+        isLoading={false}
         onSync={vi.fn()}
         onToggleAutoSync={vi.fn()}
         onOpenWebhook={vi.fn()}
@@ -252,5 +268,29 @@ describe('RepoListTable Component', () => {
     const mobileSyncCard = mobileCards[1];
     expect(mobileSyncCard.textContent).toContain('Step 4/5');
     expect(mobileSyncCard.textContent).toContain('src/components/Dashboard.tsx');
+  });
+
+  it('renders provider icons for GitLab, Gitea, Bitbucket, and Generic Git', () => {
+    const diverseRepos: Repo[] = [
+      { id: 10, name: 'gl-repo', url: 'https://gitlab.com/repo.git', branch: 'main', status: 'synced', provider: 'gitlab' },
+      { id: 11, name: 'gt-repo', url: 'https://gitea.com/repo.git', branch: 'main', status: 'synced', provider: 'gitea' },
+      { id: 12, name: 'bb-repo', url: 'https://bitbucket.org/repo.git', branch: 'main', status: 'synced', provider: 'bitbucket' },
+      { id: 13, name: 'gen-repo', url: 'https://git.custom.org/repo.git', branch: 'main', status: 'synced', provider: 'generic' },
+    ];
+
+    render(
+      <RepoListTable
+        repos={diverseRepos}
+        onSync={vi.fn()}
+        onToggleAutoSync={vi.fn()}
+        onOpenWebhook={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByTitle('GitLab').length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle('Gitea / Forgejo').length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle('Bitbucket').length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle('Generic Git').length).toBeGreaterThan(0);
   });
 });

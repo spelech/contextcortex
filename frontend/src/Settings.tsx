@@ -136,6 +136,26 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
     loadEmbeddingConfig();
   }, [loadHostCredentials, loadVectorStore, loadAutoSyncSettings, loadEmbeddingConfig]);
 
+  useEffect(() => {
+    if (stats?.vector_store) {
+      setVectorStore(stats.vector_store);
+      if (stats.vector_store.provider) setVsProvider(stats.vector_store.provider);
+      if (stats.vector_store.mode) setVsMode(stats.vector_store.mode);
+      if (stats.vector_store.storage_path) setVsStoragePath(stats.vector_store.storage_path);
+      if (stats.vector_store.url) setVsUrl(stats.vector_store.url);
+      if (stats.vector_store.collection) setVsCollection(stats.vector_store.collection);
+    } else if (stats?.vector_store_provider) {
+      setVectorStore((prev) => prev ? {
+        ...prev,
+        provider: (stats.vector_store_provider as any) || prev.provider,
+        mode: (stats.vector_store_mode as any) || prev.mode,
+        collection: stats.vector_store_collection || prev.collection,
+        points_count: stats.points_count ?? prev.points_count,
+        healthy: stats.vector_db_status ? stats.vector_db_status === 'Healthy' : prev.healthy,
+      } : null);
+    }
+  }, [stats]);
+
   const handleSaveEmbeddingSettings = async (e: FormEvent) => {
     e.preventDefault();
     setIsSavingEmb(true);
