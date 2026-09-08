@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 import sys
@@ -7,6 +8,7 @@ from pydantic import Field
 from app.services.auth import enforce_tool_permission, Role, ForbiddenError
 from app.services.local_storage import get_local_storage_service
 from app.services.database import get_db_connection
+from app.services.pdf_extractor import extract_pdf_pages
 
 logger = logging.getLogger("contextcortex.mcp")
 
@@ -17,13 +19,13 @@ def _get_tools_attr(name, default):
 
 
 async def handle_manage_local_file(
-    action: Annotated[str, Field(description="Action to perform: 'upload', 'replace', 'delete', or 'read'")],
+    action: Annotated[str, Field(description="Action to perform: 'upload', 'replace', 'delete', 'read', or 'preview'")],
     file_path: Annotated[str, Field(description="Relative path of file in local storage (e.g. 'docs/spec.md')")],
     content: Annotated[Optional[str], Field(description="Content to write for upload or replace actions")] = None,
     repo: Annotated[str, Field(description="Repository or namespace tag (default: 'local_storage')")] = "local_storage",
     category: Annotated[Optional[str], Field(description="Category tag for document")] = None
 ) -> str:
-    """Manage files in ContextCortex local storage: upload, replace, read, or delete files with immediate vector indexing."""
+    """Manage files in ContextCortex local storage: upload, replace, read, preview, or delete files with immediate vector indexing."""
     try:
         storage = _get_tools_attr("get_local_storage_service", get_local_storage_service)()
         act = (action or "").strip().lower()
@@ -50,9 +52,45 @@ async def handle_manage_local_file(
             return f"Successfully deleted `{file_path}` and purged associated vector embeddings."
         elif act == "read":
             res = storage.read_file_content(file_path)
+            if res.get("is_pdf"):
+                return res["content"]
             return f"### File: `{res['rel_path']}` ({res['size_bytes']} bytes)\n\n```\n{res['content']}\n```"
+        elif act == "preview":
+            if not file_path or not file_path.strip():
+                return "Error: 'file_path' parameter is required for action 'preview'."
+            abs_path = storage.resolve_safe_path(file_path)
+            if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+                raise FileNotFoundError(f"File '{file_path}' does not exist in local storage.")
+
+            if file_path.lower().endswith(".pdf") or abs_path.lower().endswith(".pdf"):
+                pdf_extractor_fn = _get_tools_attr("extract_pdf_pages", extract_pdf_pages)
+                pdf_res = pdf_extractor_fn(abs_path, filename=os.path.basename(file_path), ocr_fallback=False)
+                first_page_text = pdf_res.pages[0].text[:1000] if pdf_res.pages else ""
+                return (
+                    f"### PDF Extraction Preview: {file_path}\n"
+                    f"- **Total Pages:** {pdf_res.total_pages}\n"
+                    f"- **Total Characters:** {pdf_res.total_characters}\n"
+                    f"- **OCR Applied Pages:** {pdf_res.ocr_pages_count}\n"
+                    f"- **Sample Chunks:** {len(pdf_res.preview_chunks)}\n\n"
+                    f"#### Page 1:\n"
+                    f"{first_page_text}"
+                )
+            else:
+                with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                    text_content = f.read()
+                line_count = len(text_content.splitlines())
+                char_count = len(text_content)
+                preview_sample = text_content[:1000]
+                return (
+                    f"### File Preview: {file_path}\n"
+                    f"- **Line Count:** {line_count}\n"
+                    f"- **Character Count:** {char_count}\n\n"
+                    f"```\n"
+                    f"{preview_sample}\n"
+                    f"```"
+                )
         else:
-            return f"Error: Unsupported action '{action}'. Valid actions are 'upload', 'replace', 'delete', 'read'."
+            return f"Error: Unsupported action '{action}'. Valid actions are 'upload', 'replace', 'delete', 'read', 'preview'."
     except ForbiddenError as e:
         logger.warning(f"Forbidden error executing manage_local_file ({action}): {e}")
         return f"Forbidden: {str(e)}"
