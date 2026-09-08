@@ -556,3 +556,10 @@ erDiagram
     AST_SYMBOLS ||--o{ AST_RELATIONSHIPS : "source"
 ```
 
+---
+
+## 📚 Documentation Reference
+
+This architecture specification complies with the **ASD-STE100 Simplified Technical English (Issue 9)** standard.
+
+Interactive system design diagrams, sequence flows, and component layouts are available on the [VitePress Documentation Site](https://spelech.github.io/contextcortex/architecture/).
