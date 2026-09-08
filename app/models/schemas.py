@@ -170,6 +170,8 @@ class EmbeddingSettingsRequest(BaseModel):
     batch_size: Optional[int] = Field(default=None, ge=1, le=1024)
     litellm_url: Optional[str] = None
     litellm_api_key: Optional[str] = None
+    vision_ocr_model: Optional[str] = None
+    chat_model: Optional[str] = None
 
 # Topology Graph Models
 class TopologyNode(BaseModel):

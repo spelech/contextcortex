@@ -44,7 +44,9 @@ const mockEmbeddingConfig: EmbeddingConfig = {
   batch_size: 32,
   system_cpus: 8,
   system_memory_gb: 16.0,
-  litellm_url: 'http://litellm:4000/v1'
+  litellm_url: 'http://litellm:4000/v1',
+  vision_ocr_model: 'gemini-2.5-flash',
+  chat_model: 'gemini-2.5-flash',
 };
 
 const mockHostCreds: GitHostCredential[] = [
@@ -1118,7 +1120,9 @@ describe('Settings Component', () => {
             threads: 4,
             batch_size: 64,
             dense_model: 'BAAI/bge-small-en-v1.5',
-            sparse_model: 'Qdrant/bm25'
+            sparse_model: 'Qdrant/bm25',
+            vision_ocr_model: 'gemini-2.5-flash',
+            chat_model: 'gemini-2.5-flash'
           })
         })
       );

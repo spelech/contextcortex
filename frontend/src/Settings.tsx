@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { FormEvent } from 'react';
-import type { Stats, GitHostCredential, VectorStoreConfig, AutoSyncSettings, EmbeddingConfig } from './types';
+import type { Stats, GitHostCredential, VectorStoreConfig, AutoSyncSettings, EmbeddingConfig, ModelDiscoveryResult } from './types';
 import { useToast } from './ToastContext';
 import { VectorStoreSettings } from './components/settings/VectorStoreSettings';
 import { EmbeddingSettings } from './components/settings/EmbeddingSettings';
@@ -55,6 +55,11 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
   const [embDenseModel, setEmbDenseModel] = useState('BAAI/bge-small-en-v1.5');
   const [embSparseModel, setEmbSparseModel] = useState('Qdrant/bm25');
   const [embLitellmUrl, setEmbLitellmUrl] = useState('http://litellm:4000/v1');
+  const [embLitellmApiKey, setEmbLitellmApiKey] = useState('');
+  const [embVisionOcrModel, setEmbVisionOcrModel] = useState('gemini-2.5-flash');
+  const [embChatModel, setEmbChatModel] = useState('gemini-2.5-flash');
+  const [discoveryResult, setDiscoveryResult] = useState<ModelDiscoveryResult | null>(null);
+  const [isDiscovering, setIsDiscovering] = useState(false);
 
   const toast = useToast();
 
@@ -121,6 +126,9 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         if (data.dense_model) setEmbDenseModel(data.dense_model);
         if (data.sparse_model) setEmbSparseModel(data.sparse_model);
         if (data.litellm_url) setEmbLitellmUrl(data.litellm_url);
+        if (data.litellm_api_key) setEmbLitellmApiKey(data.litellm_api_key);
+        if (data.vision_ocr_model) setEmbVisionOcrModel(data.vision_ocr_model);
+        if (data.chat_model) setEmbChatModel(data.chat_model);
       }
     } catch (e: any) {
       console.error('Failed to load embedding config:', e);
@@ -156,6 +164,36 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
     }
   }, [stats]);
 
+  const handleDiscoverModels = async () => {
+    setIsDiscovering(true);
+    try {
+      const params = new URLSearchParams();
+      if (embLitellmUrl) params.set('url', embLitellmUrl.trim());
+      if (embLitellmApiKey) params.set('api_key', embLitellmApiKey.trim());
+      const res = await fetch(`/admin/api/models/discover?${params.toString()}`);
+      const data: ModelDiscoveryResult = await res.json();
+      setDiscoveryResult(data);
+      if (data.status === 'success') {
+        toast.success(`Discovered ${data.total_models} models from LiteLLM`);
+      } else {
+        toast.error(data.message || 'Failed to discover models from LiteLLM');
+      }
+    } catch (e: any) {
+      setDiscoveryResult({
+        status: 'error',
+        total_models: 0,
+        models: [],
+        embedding_models: [],
+        vision_models: [],
+        chat_models: [],
+        message: e.message || 'Network error discovering models',
+      });
+      toast.error(`Error discovering models: ${e.message}`);
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
+
   const handleSaveEmbeddingSettings = async (e: FormEvent) => {
     e.preventDefault();
     setIsSavingEmb(true);
@@ -167,6 +205,9 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         dense_model: embDenseModel.trim() || undefined,
         sparse_model: embSparseModel.trim() || undefined,
         litellm_url: embProvider === 'api' ? embLitellmUrl.trim() || undefined : undefined,
+        litellm_api_key: embProvider === 'api' ? embLitellmApiKey.trim() || undefined : undefined,
+        vision_ocr_model: embVisionOcrModel.trim() || undefined,
+        chat_model: embChatModel.trim() || undefined,
       };
       const res = await fetch('/admin/api/settings/embedding', {
         method: 'POST',
@@ -496,6 +537,15 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         setEmbSparseModel={setEmbSparseModel}
         embLitellmUrl={embLitellmUrl}
         setEmbLitellmUrl={setEmbLitellmUrl}
+        embLitellmApiKey={embLitellmApiKey}
+        setEmbLitellmApiKey={setEmbLitellmApiKey}
+        embVisionOcrModel={embVisionOcrModel}
+        setEmbVisionOcrModel={setEmbVisionOcrModel}
+        embChatModel={embChatModel}
+        setEmbChatModel={setEmbChatModel}
+        discoveryResult={discoveryResult}
+        isDiscovering={isDiscovering}
+        onDiscoverModels={handleDiscoverModels}
         onSaveEmbeddingSettings={handleSaveEmbeddingSettings}
       />
 

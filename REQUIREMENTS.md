@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **905 Automated Tests** (598 Pytest Backend + 261 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **923 Automated Tests** (611 Pytest Backend + 266 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -949,6 +949,15 @@ persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
 
+#### `tests/test_litellm_service.py` (7 tests)
+- `test_discover_models_success`
+- `test_discover_models_timeout`
+- `test_discover_models_connect_error`
+- `test_discover_models_http_401_unauthorized`
+- `test_discover_models_http_500_error`
+- `test_discover_models_url_normalization`
+- `test_discover_models_default_resolution`
+
 #### `tests/test_local_storage_indexing.py` (4 tests)
 - `test_incremental_indexing_on_save`
 - `test_incremental_indexing_code_file`
@@ -979,6 +988,16 @@ and leaves the prior indexed state intact without data loss._
 - `test_what_is_ingested_summary_and_filters`
 - `test_what_is_ingested_detailed_with_data`
 - `test_tool_registration`
+
+#### `tests/test_model_discovery_api.py` (2 tests)
+- `test_api_discover_models_endpoint`
+- `test_api_embedding_settings_get_and_post_with_models`
+
+#### `tests/test_model_metadata_persistence.py` (4 tests)
+- `test_embedding_db_config_defaults`
+- `test_env_variable_fallbacks`
+- `test_set_embedding_db_config_persists_to_system_metadata`
+- `test_update_embedding_config_service`
 
 #### `tests/test_pdf_extractor.py` (8 tests)
 - `test_extract_digital_pdf_text`
@@ -1138,11 +1157,16 @@ and leaves the prior indexed state intact without data loss._
 - displays error toast when log fetching fails
 - renders responsive layout elements for toolbar, search input, and log entry stream
 
-#### `EmbeddingSettings.test.tsx` (4 tests)
+#### `EmbeddingSettings.test.tsx` (9 tests)
 - renders loading state when embedding configuration is not yet loaded
 - renders active status with hardware metrics and local model parameters
 - handles provider switch to API and updates form fields
 - handles changes to CPU threads and batch size
+- renders model discovery controls and triggers onDiscoverModels when button clicked
+- renders discovered model dropdowns and allows selecting models
+- displays discovery error banner when LiteLLM is unreachable
+- switches to manual input when Custom is selected from dropdown or link clicked
+- disables discover button and shows spinner while isDiscovering is true
 
 #### `GitRepoManager.test.tsx` (13 tests)
 - renders repository list with status badges, auto-sync buttons, and details

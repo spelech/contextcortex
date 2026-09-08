@@ -94,7 +94,7 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - **Local Storage**: Managed file explorer, direct file upload modal with folder categorization, and file preview/replacement.
   - **Ingestion Catalog**: Unified multi-source explorer with source type filters, repository lookup, and file listings.
   - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews, target type toggle (Code vs Docs), and syntax highlighted results.
-  - **Settings**: Vector Database manager (pgvector, Qdrant, & ChromaDB switcher & connection tester), multi-provider token cards, GitHub rate limit monitor, and interactive Custom Git Host Credential Vault table/modal.
+  - **Settings**: Vector Database manager (pgvector, Qdrant, & ChromaDB switcher & connection tester), LiteLLM Model Discovery with dynamic categorized model dropdowns (Embeddings, Vision OCR, and Chat models), multi-provider token cards, GitHub rate limit monitor, and interactive Custom Git Host Credential Vault table/modal.
   - **Diagnostics & Logs**: Real-time log viewer with level filtering (ALL, INFO, WARNING, ERROR, DEBUG), keyword search, traceback modal/drawer, and buffer clearing.
 
 ---

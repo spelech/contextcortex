@@ -18,6 +18,7 @@ import app.services.logger as log_service
 import app.services.vector_store as vs_service
 import app.services.indexing as idx_service
 import app.services.embeddings as emb_service
+import app.services.litellm_service as litellm_service
 
 logger = logging.getLogger("contextcortex.api")
 
@@ -116,6 +117,8 @@ async def api_get_stats():
             "embedding_provider": emb_cfg["provider"],
             "dense_model": emb_cfg["dense_model"],
             "sparse_model": emb_cfg["sparse_model"],
+            "vision_ocr_model": emb_cfg.get("vision_ocr_model"),
+            "chat_model": emb_cfg.get("chat_model"),
             "embedding_threads": emb_cfg["threads"],
             "embedding_batch_size": emb_cfg["batch_size"],
             "system_cpus": emb_cfg.get("system_cpus", 2),
@@ -319,6 +322,15 @@ async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
         logger.error(f"Error switching vector store backend: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
 
+@router.get("/admin/api/models/discover")
+async def api_discover_models(url: Optional[str] = None, api_key: Optional[str] = None):
+    try:
+        res = await litellm_service.discover_models(url=url, api_key=api_key)
+        return res
+    except Exception as e:
+        logger.error(f"Error discovering models: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
+
 @router.get("/admin/api/settings/embedding")
 async def api_get_embedding_settings():
     try:
@@ -339,6 +351,8 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
             batch_size=payload.batch_size,
             litellm_url=payload.litellm_url,
             litellm_api_key=payload.litellm_api_key,
+            vision_ocr_model=payload.vision_ocr_model,
+            chat_model=payload.chat_model,
         )
         return {
             "status": "success",
