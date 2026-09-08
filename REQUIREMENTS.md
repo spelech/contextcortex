@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **918 Automated Tests** (611 Pytest Backend + 261 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **921 Automated Tests** (611 Pytest Backend + 264 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -1157,11 +1157,14 @@ and leaves the prior indexed state intact without data loss._
 - displays error toast when log fetching fails
 - renders responsive layout elements for toolbar, search input, and log entry stream
 
-#### `EmbeddingSettings.test.tsx` (4 tests)
+#### `EmbeddingSettings.test.tsx` (7 tests)
 - renders loading state when embedding configuration is not yet loaded
 - renders active status with hardware metrics and local model parameters
 - handles provider switch to API and updates form fields
 - handles changes to CPU threads and batch size
+- renders model discovery controls and triggers onDiscoverModels when button clicked
+- renders discovered model dropdowns and allows selecting models
+- displays discovery error banner when LiteLLM is unreachable
 
 #### `GitRepoManager.test.tsx` (13 tests)
 - renders repository list with status badges, auto-sync buttons, and details
