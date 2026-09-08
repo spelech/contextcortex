@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **875 Automated Tests** (577 Pytest Backend + 252 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **905 Automated Tests** (598 Pytest Backend + 261 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -567,6 +567,10 @@ classDiagram
 - `test_git_syncer_nonexistent_repo`
 - `test_git_progress_tracker_pending_cancellation`
 
+#### `tests/backend/test_health_check_status.py` (2 tests)
+- `test_api_stats_reports_healthy_when_store_is_healthy`
+- `test_api_stats_reports_unhealthy_when_store_fails`
+
 #### `tests/backend/test_indexer_and_embeddings.py` (25 tests)
 - `test_embeddings_generation`
 - `test_empty_embeddings_batches`
@@ -960,6 +964,13 @@ and leaves the prior indexed state intact without data loss._
 - `test_get_file_tree`
 - `test_get_local_storage_service_singleton`
 
+#### `tests/test_mcp_pdf_tools.py` (5 tests)
+- `test_mcp_manage_local_file_preview_pdf`
+- `test_mcp_manage_local_file_read_pdf`
+- `test_mcp_manage_local_file_preview_markdown`
+- `test_mcp_manage_local_file_preview_nonexistent`
+- `test_mcp_manage_local_file_preview_missing_path`
+
 #### `tests/test_mcp_storage_tools.py` (7 tests)
 - `test_manage_local_file_upload_and_read`
 - `test_manage_local_file_replace_and_delete`
@@ -968,6 +979,24 @@ and leaves the prior indexed state intact without data loss._
 - `test_what_is_ingested_summary_and_filters`
 - `test_what_is_ingested_detailed_with_data`
 - `test_tool_registration`
+
+#### `tests/test_pdf_extractor.py` (8 tests)
+- `test_extract_digital_pdf_text`
+- `test_extract_scanned_pdf_triggers_vision_ocr`
+- `test_extract_corrupted_pdf_raises_value_error`
+- `test_extract_nonexistent_file_raises_file_not_found`
+- `test_extract_real_pdf_asd_ste100`
+- `test_call_vision_ocr_unit`
+- `test_extract_pdf_ocr_failure_graceful_recovery`
+- `test_extract_oversized_pdf_raises_value_error`
+
+#### `tests/test_pdf_storage_api.py` (6 tests)
+- `test_pdf_preview_endpoint`
+- `test_pdf_preview_validation_errors`
+- `test_pdf_preview_oversized`
+- `test_pdf_upload_and_indexing`
+- `test_pdf_read_file_content`
+- `test_real_asd_ste100_pdf_preview_or_indexing`
 
 #### `tests/test_pgvector_store.py` (54 tests)
 - `TestPgVectorStoreImports::test_import_pgvector_store`
@@ -1146,13 +1175,15 @@ and leaves the prior indexed state intact without data loss._
 - handles errors when loading paths, adding path, deleting path, and browsing
 - renders loading state initially and transitions to empty state when no paths are configured
 
-#### `LocalStorageManager.test.tsx` (6 tests)
+#### `LocalStorageManager.test.tsx` (8 tests)
 - renders storage header, upload button, and tree view
 - supports folder navigation drilling and climbing back
 - opens upload modal, submits new file with custom category, and refreshes stats
 - opens preview modal, displays file text, and closes modal
 - replaces file content, updates vector store, and provides feedback
 - deletes file upon confirmation and refreshes list and stats
+- renders PDF files with red PDF icon in files table
+- intercepts .pdf upload, fetches preview data, opens PdfPreviewModal, and ingests on confirm
 
 #### `NavigatorInspector.test.tsx` (8 tests)
 - renders empty placeholder when no symbol is selected
@@ -1206,6 +1237,15 @@ and leaves the prior indexed state intact without data loss._
 - handles reindex API error gracefully
 - renders system specs with responsive word wrapping and badge elements
 - renders live vector database status badge when vector_db_status is provided
+
+#### `PdfPreviewModal.test.tsx` (7 tests)
+- renders header, document metrics, and default page text tab
+- navigates through pages using Next and Prev buttons
+- allows jumping to a specific page via page select dropdown
+- toggles to sample vector chunks tab and displays chunk cards
+- calls onConfirm when clicking Confirm & Ingest to Vector DB
+- shows loading state on confirm button when isIngesting is true
+- calls onCancel when clicking Cancel or close button
 
 #### `RepoListTable.test.tsx` (10 tests)
 - renders loading state when isLoading is true and repos array is empty
