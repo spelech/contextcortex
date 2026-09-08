@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **923 Automated Tests** (611 Pytest Backend + 266 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **925 Automated Tests** (611 Pytest Backend + 268 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -1199,7 +1199,7 @@ and leaves the prior indexed state intact without data loss._
 - handles errors when loading paths, adding path, deleting path, and browsing
 - renders loading state initially and transitions to empty state when no paths are configured
 
-#### `LocalStorageManager.test.tsx` (8 tests)
+#### `LocalStorageManager.test.tsx` (10 tests)
 - renders storage header, upload button, and tree view
 - supports folder navigation drilling and climbing back
 - opens upload modal, submits new file with custom category, and refreshes stats
@@ -1208,6 +1208,8 @@ and leaves the prior indexed state intact without data loss._
 - deletes file upon confirmation and refreshes list and stats
 - renders PDF files with red PDF icon in files table
 - intercepts .pdf upload, fetches preview data, opens PdfPreviewModal, and ingests on confirm
+- displays PDF notice and hides text textarea when upload path is a PDF
+- prevents direct text replacement of PDF files in replace modal
 
 #### `NavigatorInspector.test.tsx` (8 tests)
 - renders empty placeholder when no symbol is selected

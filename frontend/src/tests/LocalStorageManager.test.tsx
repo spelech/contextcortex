@@ -447,5 +447,77 @@ describe('LocalStorageManager', () => {
       expect(screen.getByText(/PDF uploaded and indexed \(3 chunks\)/i)).toBeInTheDocument();
     });
   });
+
+  it('displays PDF notice and hides text textarea when upload path is a PDF', async () => {
+    render(
+      <ToastProvider>
+        <LocalStorageManager />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Upload File')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Upload File/i }));
+    expect(screen.getByLabelText(/File Content/i)).toBeInTheDocument();
+
+    // Type a .pdf path
+    const pathInput = screen.getByLabelText(/Relative File Path/i);
+    fireEvent.change(pathInput, { target: { value: 'docs/ASD-STE100.pdf' } });
+
+    // The textarea should now be hidden and the PDF alert displayed
+    expect(screen.queryByLabelText(/File Content/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/PDF Document Selected:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Binary PDF content cannot be edited manually as text/i)).toBeInTheDocument();
+  });
+
+  it('prevents direct text replacement of PDF files in replace modal', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/admin/api/storage/tree')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ...mockRootTree,
+            files: [
+              {
+                name: 'ASD-STE100.pdf',
+                rel_path: 'ASD-STE100.pdf',
+                size_bytes: 3200000,
+                mtime: 1700000000,
+                category: 'docs',
+                repo: 'local_storage',
+                is_dir: false
+              }
+            ]
+          })
+        } as Response);
+      }
+      return Promise.reject(new Error('Unknown endpoint: ' + url));
+    });
+
+    render(
+      <ToastProvider>
+        <LocalStorageManager />
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText('ASD-STE100.pdf')[0]).toBeInTheDocument();
+    });
+
+    // Open replace modal for ASD-STE100.pdf
+    const replaceBtn = screen.getAllByTitle('Replace File')[0];
+    fireEvent.click(replaceBtn);
+
+    expect(screen.getByText('Replace File: ASD-STE100.pdf')).toBeInTheDocument();
+    expect(screen.getByText(/PDF Replacement:/i)).toBeInTheDocument();
+    expect(screen.getByText(/cannot be edited as plain text/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/File Content/i)).not.toBeInTheDocument();
+
+    // Save button should be disabled
+    const saveBtn = screen.getByRole('button', { name: /Save & Re-Index/i });
+    expect(saveBtn).toBeDisabled();
+  });
 });
 

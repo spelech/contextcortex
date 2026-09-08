@@ -211,7 +211,8 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
     const target = currentFolder ? `${currentFolder}/${file.name}` : file.name;
     setUploadPath(target);
 
-    if (file.name.toLowerCase().endsWith('.pdf')) {
+    if (file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf') {
+      setUploadContent('');
       previewPdfUpload(file, target, uploadRepo, uploadCategory);
       return;
     }
@@ -303,6 +304,10 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
     setReplaceTargetFile(file);
     setReplaceCategory('');
     setIsReplaceModalOpen(true);
+    if (file.rel_path.toLowerCase().endsWith('.pdf')) {
+      setReplaceContent('');
+      return;
+    }
     try {
       const res = await fetch(`/admin/api/storage/file?path=${encodeURIComponent(file.rel_path)}`);
       const data = await res.json();
@@ -319,6 +324,11 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
   const handleSaveReplace = async (e: FormEvent) => {
     e.preventDefault();
     if (!replaceTargetFile) return;
+
+    if (replaceTargetFile.rel_path.toLowerCase().endsWith('.pdf')) {
+      toast.error('PDF files cannot be edited directly via text editor. Upload a new PDF file instead.');
+      return;
+    }
 
     setIsReplacing(true);
     try {
@@ -690,17 +700,24 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
                 </div>
               </div>
 
-              <div className="form-group">
-                <label htmlFor="upload-content">File Content (Optional if file uploaded directly)</label>
-                <textarea
-                  id="upload-content"
-                  rows={8}
-                  placeholder="# Enter or paste text content here..."
-                  value={uploadContent}
-                  onChange={(e) => setUploadContent(e.target.value)}
-                  style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem' }}
-                />
-              </div>
+              {(selectedFileObj?.name.toLowerCase().endsWith('.pdf') || selectedFileObj?.type === 'application/pdf' || uploadPath.trim().toLowerCase().endsWith('.pdf')) ? (
+                <div className="alert alert-info" style={{ margin: '12px 0', padding: '12px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid var(--primary)', borderRadius: '6px', fontSize: '0.85rem' }}>
+                  <i className="fa-solid fa-file-pdf" style={{ color: '#ef4444', marginRight: '8px' }}></i>
+                  <strong>PDF Document Selected:</strong> Binary PDF content cannot be edited manually as text. Extracted text, page segmentation, and vector chunks will be previewed in the extraction modal before ingestion.
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label htmlFor="upload-content">File Content (Optional if file uploaded directly)</label>
+                  <textarea
+                    id="upload-content"
+                    rows={8}
+                    placeholder="# Enter or paste text content here..."
+                    value={uploadContent}
+                    onChange={(e) => setUploadContent(e.target.value)}
+                    style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem' }}
+                  />
+                </div>
+              )}
 
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsUploadModalOpen(false)}>
@@ -779,24 +796,31 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
                 />
               </div>
 
-              <div className="form-group">
-                <label htmlFor="replace-content">File Content</label>
-                <textarea
-                  id="replace-content"
-                  rows={10}
-                  required
-                  placeholder="Updated file text..."
-                  value={replaceContent}
-                  onChange={(e) => setReplaceContent(e.target.value)}
-                  style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem' }}
-                />
-              </div>
+              {replaceTargetFile.rel_path.toLowerCase().endsWith('.pdf') ? (
+                <div className="alert alert-warning" style={{ margin: '14px 0', padding: '12px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', fontSize: '0.85rem' }}>
+                  <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '8px', color: '#f59e0b' }}></i>
+                  <strong>PDF Replacement:</strong> PDF documents contain binary page streams and cannot be edited as plain text. To replace this document, please upload a new <code>.pdf</code> file using the "Upload File" tool.
+                </div>
+              ) : (
+                <div className="form-group">
+                  <label htmlFor="replace-content">File Content</label>
+                  <textarea
+                    id="replace-content"
+                    rows={10}
+                    required
+                    placeholder="Updated file text..."
+                    value={replaceContent}
+                    onChange={(e) => setReplaceContent(e.target.value)}
+                    style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem' }}
+                  />
+                </div>
+              )}
 
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsReplaceModalOpen(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={isReplacing}>
+                <button type="submit" className="btn btn-primary" disabled={isReplacing || replaceTargetFile.rel_path.toLowerCase().endsWith('.pdf')}>
                   <i className={`fa-solid ${isReplacing ? 'fa-spinner fa-spin' : 'fa-save'}`}></i> Save & Re-Index
                 </button>
               </div>
