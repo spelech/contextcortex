@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **916 Automated Tests** (609 Pytest Backend + 261 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **918 Automated Tests** (611 Pytest Backend + 261 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -988,6 +988,10 @@ and leaves the prior indexed state intact without data loss._
 - `test_what_is_ingested_summary_and_filters`
 - `test_what_is_ingested_detailed_with_data`
 - `test_tool_registration`
+
+#### `tests/test_model_discovery_api.py` (2 tests)
+- `test_api_discover_models_endpoint`
+- `test_api_embedding_settings_get_and_post_with_models`
 
 #### `tests/test_model_metadata_persistence.py` (4 tests)
 - `test_embedding_db_config_defaults`
