@@ -29,6 +29,7 @@ def _get_indexer_attr(name, default):
 
 
 MAX_FILE_SIZE_BYTES = 500 * 1024  # 500 KB limit for binary/minified files
+from app.services.pdf_extractor import MAX_PDF_SIZE_BYTES
 
 
 def compute_text_hash(text: str) -> str:
@@ -174,8 +175,11 @@ def process_file_content(
     folder = os.path.dirname(rel_path) or "root"
     category = category_override or folder
 
-    if content and len(content.encode("utf-8")) > MAX_FILE_SIZE_BYTES:
-        logger.warning(f"Skipping file {filepath} exceeding 500KB size limit ({len(content.encode('utf-8'))} bytes)")
+    is_pdf_file = doc_type == "pdf" or filepath.lower().endswith(".pdf")
+    size_limit = MAX_PDF_SIZE_BYTES if is_pdf_file else MAX_FILE_SIZE_BYTES
+    if content and len(content.encode("utf-8")) > size_limit:
+        limit_desc = f"{MAX_PDF_SIZE_BYTES // (1024*1024)}MB" if is_pdf_file else "500KB"
+        logger.warning(f"Skipping file {filepath} exceeding {limit_desc} size limit ({len(content.encode('utf-8'))} bytes)")
         mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
         summary_tuple = (
             filepath,
@@ -190,7 +194,7 @@ def process_file_content(
         )
         return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
 
-    if doc_type == "doc":
+    if doc_type in ("doc", "pdf"):
         if filepath.endswith((".md", ".txt")):
             # Check if file is in standard ADR directories or follows ADR naming
             norm_rel = rel_path.replace("\\", "/").lower()
@@ -234,6 +238,9 @@ def process_file_content(
 
         if texts_to_embed:
             batch_vecs = _resolve_cached_or_compute_embeddings(valid_chunks, texts_to_embed)
+            total_pages_list = [int(m) for m in re.findall(r"^# Page (\d+)", content, re.MULTILINE)]
+            max_page = max(total_pages_list) if total_pages_list else 1
+
             for idx, chunk in enumerate(valid_chunks):
                 point_id = get_chunk_uuid(repo, rel_path, idx)
                 github_url = format_git_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"), provider=provider)
@@ -243,6 +250,17 @@ def process_file_content(
                 s_indices = bv.get("sparse_indices")
                 s_values = bv.get("sparse_values")
 
+                chunk_meta = {}
+                if is_pdf_file:
+                    page_match = re.search(r"Page\s+(\d+)", chunk.get("heading", ""))
+                    page_num = int(page_match.group(1)) if page_match else 1
+                    chunk_meta = {
+                        "page_number": page_num,
+                        "total_pages": max_page,
+                        "headings": headings,
+                        "doc_type": "pdf"
+                    }
+
                 points.append(VectorDocument(
                     id=point_id,
                     text=chunk["content"].strip(),
@@ -250,7 +268,7 @@ def process_file_content(
                     sparse_indices=s_indices,
                     sparse_values=s_values,
                     repo=repo,
-                    doc_type="doc",
+                    doc_type="pdf" if is_pdf_file else "doc",
                     path=filepath,
                     rel_path=rel_path,
                     title=title,
@@ -262,6 +280,7 @@ def process_file_content(
                     end_line=chunk.get("end_line", 1),
                     github_url=github_url,
                     permalink_url=github_url,
+                    metadata=chunk_meta,
                 ))
 
     else: # Code file

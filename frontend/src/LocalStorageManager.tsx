@@ -4,9 +4,11 @@ import type {
   StorageTreeData,
   StorageFileItem,
   StorageDirectoryItem,
-  StorageFileContent
+  StorageFileContent,
+  PdfPreviewData
 } from './types';
 import { useToast } from './ToastContext';
+import PdfPreviewModal from './PdfPreviewModal';
 
 interface LocalStorageManagerProps {
   refreshStats?: () => void;
@@ -39,6 +41,16 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
   const [replaceContent, setReplaceContent] = useState('');
   const [replaceCategory, setReplaceCategory] = useState('');
   const [isReplacing, setIsReplacing] = useState(false);
+
+  // PDF Preview modal state
+  const [isPdfPreviewModalOpen, setIsPdfPreviewModalOpen] = useState(false);
+  const [isPdfPreviewLoading, setIsPdfPreviewLoading] = useState(false);
+  const [pdfPreviewData, setPdfPreviewData] = useState<PdfPreviewData | null>(null);
+  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+  const [pendingPdfPath, setPendingPdfPath] = useState('');
+  const [pendingPdfRepo, setPendingPdfRepo] = useState('local_storage');
+  const [pendingPdfCategory, setPendingPdfCategory] = useState('');
+  const [isPdfIngesting, setIsPdfIngesting] = useState(false);
 
   const formatBytes = (bytes: number) => {
     if (!bytes || bytes === 0) return '0 B';
@@ -117,10 +129,92 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
     }
   };
 
+  const previewPdfUpload = async (
+    file: File,
+    targetPath?: string,
+    repo?: string,
+    category?: string
+  ) => {
+    setIsPdfPreviewLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('ocr_fallback', 'true');
+
+      const res = await fetch('/admin/api/storage/pdf/preview', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate PDF preview');
+      }
+
+      setPendingPdfFile(file);
+      setPendingPdfPath(targetPath || (currentFolder ? `${currentFolder}/${file.name}` : file.name));
+      setPendingPdfRepo(repo || uploadRepo || 'local_storage');
+      setPendingPdfCategory(category || uploadCategory || '');
+      setPdfPreviewData(data);
+      setIsUploadModalOpen(false);
+      setIsPdfPreviewModalOpen(true);
+    } catch (err: any) {
+      toast.error(`PDF preview error: ${err.message}`);
+    } finally {
+      setIsPdfPreviewLoading(false);
+    }
+  };
+
+  const handleConfirmPdfIngest = async () => {
+    if (!pendingPdfFile) return;
+
+    setIsPdfIngesting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', pendingPdfFile);
+      formData.append('path', pendingPdfPath || pendingPdfFile.name);
+      formData.append('repo', pendingPdfRepo || 'local_storage');
+      if (pendingPdfCategory) {
+        formData.append('category', pendingPdfCategory);
+      }
+
+      const res = await fetch('/admin/api/storage/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to ingest PDF');
+      }
+
+      setIsPdfPreviewModalOpen(false);
+      setPendingPdfFile(null);
+      setPdfPreviewData(null);
+      const chunks = data.chunks_indexed ?? 0;
+      toast.success(`PDF uploaded and indexed (${chunks} chunks)`);
+      loadTree(currentFolder);
+      if (refreshStats) refreshStats();
+    } catch (err: any) {
+      toast.error(`PDF ingestion error: ${err.message}`);
+    } finally {
+      setIsPdfIngesting(false);
+    }
+  };
+
+  const handleCancelPdfPreview = () => {
+    setIsPdfPreviewModalOpen(false);
+    setPendingPdfFile(null);
+    setPdfPreviewData(null);
+  };
+
   const handleSelectedFile = (file: File) => {
     setSelectedFileObj(file);
     const target = currentFolder ? `${currentFolder}/${file.name}` : file.name;
     setUploadPath(target);
+
+    if (file.name.toLowerCase().endsWith('.pdf')) {
+      previewPdfUpload(file, target, uploadRepo, uploadCategory);
+      return;
+    }
 
     // Read text preview into uploadContent if file is text/readable
     const reader = new FileReader();
@@ -136,6 +230,11 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
     e.preventDefault();
     if (!uploadPath.trim()) {
       toast.error('File path is required');
+      return;
+    }
+
+    if (selectedFileObj && selectedFileObj.name.toLowerCase().endsWith('.pdf')) {
+      await previewPdfUpload(selectedFileObj, uploadPath.trim(), uploadRepo.trim(), uploadCategory.trim());
       return;
     }
 
@@ -393,47 +492,54 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
                   ))}
 
                   {/* Files */}
-                  {treeData.files.map((f: StorageFileItem) => (
-                    <tr key={f.rel_path}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <i className="fa-solid fa-file-lines" style={{ color: 'var(--primary)', fontSize: '1.05rem' }}></i>
-                          <span>{f.name}</span>
-                        </div>
-                      </td>
-                      <td><code>{f.rel_path}</code></td>
-                      <td><span className="badge badge-primary">{formatBytes(f.size_bytes)}</span></td>
-                      <td style={{ fontSize: '0.85rem' }}>{formatDate(f.mtime)}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', gap: '6px' }}>
-                          <button
-                            className="btn-icon"
-                            onClick={() => openPreviewModal(f)}
-                            title="Preview File"
-                            aria-label="Preview File"
-                          >
-                            <i className="fa-solid fa-eye"></i>
-                          </button>
-                          <button
-                            className="btn-icon"
-                            onClick={() => openReplaceModal(f)}
-                            title="Replace File"
-                            aria-label="Replace File"
-                          >
-                            <i className="fa-solid fa-file-pen"></i>
-                          </button>
-                          <button
-                            className="btn-icon btn-delete"
-                            onClick={() => handleDeleteFile(f)}
-                            title="Delete File"
-                            aria-label="Delete File"
-                          >
-                            <i className="fa-solid fa-trash-can"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {treeData.files.map((f: StorageFileItem) => {
+                    const isPdf = f.name.toLowerCase().endsWith('.pdf');
+                    return (
+                      <tr key={f.rel_path}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {isPdf ? (
+                              <i className="fa-solid fa-file-pdf text-red-500 mr-2" style={{ color: '#ef4444', fontSize: '1.05rem' }}></i>
+                            ) : (
+                              <i className="fa-solid fa-file-lines" style={{ color: 'var(--primary)', fontSize: '1.05rem' }}></i>
+                            )}
+                            <span>{f.name}</span>
+                          </div>
+                        </td>
+                        <td><code>{f.rel_path}</code></td>
+                        <td><span className="badge badge-primary">{formatBytes(f.size_bytes)}</span></td>
+                        <td style={{ fontSize: '0.85rem' }}>{formatDate(f.mtime)}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', gap: '6px' }}>
+                            <button
+                              className="btn-icon"
+                              onClick={() => openPreviewModal(f)}
+                              title="Preview File"
+                              aria-label="Preview File"
+                            >
+                              <i className="fa-solid fa-eye"></i>
+                            </button>
+                            <button
+                              className="btn-icon"
+                              onClick={() => openReplaceModal(f)}
+                              title="Replace File"
+                              aria-label="Replace File"
+                            >
+                              <i className="fa-solid fa-file-pen"></i>
+                            </button>
+                            <button
+                              className="btn-icon btn-delete"
+                              onClick={() => handleDeleteFile(f)}
+                              title="Delete File"
+                              aria-label="Delete File"
+                            >
+                              <i className="fa-solid fa-trash-can"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </>
               )}
             </tbody>
@@ -469,38 +575,45 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
                 </div>
               ))}
 
-              {treeData.files.map((f: StorageFileItem) => (
-                <div key={`m-${f.rel_path}`} className="data-mobile-card">
-                  <div className="data-mobile-card-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <i className="fa-solid fa-file-lines" style={{ color: 'var(--primary)' }}></i>
-                      <strong>{f.name}</strong>
+              {treeData.files.map((f: StorageFileItem) => {
+                const isPdf = f.name.toLowerCase().endsWith('.pdf');
+                return (
+                  <div key={`m-${f.rel_path}`} className="data-mobile-card">
+                    <div className="data-mobile-card-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {isPdf ? (
+                          <i className="fa-solid fa-file-pdf text-red-500 mr-2" style={{ color: '#ef4444' }}></i>
+                        ) : (
+                          <i className="fa-solid fa-file-lines" style={{ color: 'var(--primary)' }}></i>
+                        )}
+                        <strong>{f.name}</strong>
+                      </div>
+                      <span className="badge badge-primary">{formatBytes(f.size_bytes)}</span>
                     </div>
-                    <span className="badge badge-primary">{formatBytes(f.size_bytes)}</span>
-                  </div>
-                  <div className="data-mobile-card-body">
-                    <div>
-                      <span className="text-muted">Path: </span>
-                      <code>{f.rel_path}</code>
+                    <div className="data-mobile-card-body">
+                      <div>
+                        <span className="text-muted">Path: </span>
+                        <code>{f.rel_path}</code>
+                      </div>
+                      <div>
+                        <span className="text-muted">Modified: </span>
+                        <span>{formatDate(f.mtime)}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted">Modified: </span>
-                      <span>{formatDate(f.mtime)}</span>
+                    <div className="data-mobile-card-actions">
+                      <button className="btn btn-secondary" onClick={() => openPreviewModal(f)} title="Preview File">
+                        <i className="fa-solid fa-eye"></i> Preview
+                      </button>
+                      <button className="btn btn-secondary" onClick={() => openReplaceModal(f)} title="Replace File">
+                        <i className="fa-solid fa-file-pen"></i> Replace
+                      </button>
+                      <button className="btn btn-secondary btn-delete" onClick={() => handleDeleteFile(f)} title="Delete File">
+                        <i className="fa-solid fa-trash-can"></i> Delete
+                      </button>
                     </div>
                   </div>
-                  <div className="data-mobile-card-actions">
-                    <button className="btn btn-secondary" onClick={() => openPreviewModal(f)} title="Preview File">
-                      <i className="fa-solid fa-eye"></i> Preview
-                    </button>
-                    <button className="btn btn-secondary" onClick={() => openReplaceModal(f)} title="Replace File">
-                      <i className="fa-solid fa-file-pen"></i> Replace
-                    </button>
-                    <button className="btn btn-secondary btn-delete" onClick={() => handleDeleteFile(f)} title="Delete File">
-                      <i className="fa-solid fa-trash-can"></i> Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </>
           )}
         </div>
@@ -537,10 +650,17 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
                 <p style={{ margin: '4px 0', fontSize: '0.9rem' }}>
                   {selectedFileObj ? `Selected: ${selectedFileObj.name} (${formatBytes(selectedFileObj.size)})` : 'Drag & drop a file here, or click to browse'}
                 </p>
-                <span className="text-muted" style={{ fontSize: '0.75rem' }}>Supports Markdown, code, JSON, YAML, plain text (up to 500 KB)</span>
+                <span className="text-muted" style={{ fontSize: '0.75rem' }}>Supports Markdown, code, JSON, YAML, plain text, PDF (up to 50MB)</span>
+                {isPdfPreviewLoading && (
+                  <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--primary)' }}>
+                    <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>
+                    Extracting and analyzing PDF preview...
+                  </div>
+                )}
                 <input
                   id="storage-file-input"
                   type="file"
+                  accept=".md,.markdown,.txt,.json,.yaml,.yml,.sql,.html,.css,.pdf"
                   style={{ display: 'none' }}
                   onChange={handleFileInputChange}
                 />
@@ -683,6 +803,16 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
             </form>
           </div>
         </div>
+      )}
+
+      {/* PDF Extraction Preview Modal */}
+      {isPdfPreviewModalOpen && pdfPreviewData && (
+        <PdfPreviewModal
+          data={pdfPreviewData}
+          onConfirm={handleConfirmPdfIngest}
+          onCancel={handleCancelPdfPreview}
+          isIngesting={isPdfIngesting}
+        />
       )}
     </div>
   );

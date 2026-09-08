@@ -356,3 +356,27 @@ export interface GitSyncJob {
   cancelled?: boolean;
 }
 
+export interface PdfPage {
+  page_number: number;
+  text: string;
+  char_count: number;
+  ocr_applied: boolean;
+}
+
+export interface PdfChunkPreview {
+  chunk_index: number;
+  page_number: number;
+  heading: string;
+  char_count: number;
+  preview: string;
+}
+
+export interface PdfPreviewData {
+  filename: string;
+  total_pages: number;
+  total_characters: number;
+  ocr_pages_count: number;
+  pages: PdfPage[];
+  sample_chunks: PdfChunkPreview[];
+}
+

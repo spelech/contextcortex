@@ -115,7 +115,7 @@ def register_mcp_tools_and_resources(server=None):
     if "manage_local_file" not in existing_tools:
         server.tool(
             name="manage_local_file",
-            description="Manage files in ContextCortex local storage: upload, replace, read, or delete files with immediate vector indexing."
+            description="Manage files in ContextCortex local storage: upload, replace, read, preview, or delete files with immediate vector indexing."
         )(handle_manage_local_file)
 
     if "what_is_ingested" not in existing_tools:

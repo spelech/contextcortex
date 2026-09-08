@@ -61,9 +61,14 @@ async def api_get_stats():
             vector_db_status = "Unknown"
             try:
                 store = vs_service.get_vector_store()
+                check = store.health_check()
+                if isinstance(check, tuple) and len(check) >= 1:
+                    healthy = check[0]
+                else:
+                    healthy = bool(check)
                 stats = store.get_stats()
                 total_chunks = stats.get("points_count", 0)
-                vector_db_healthy = stats.get("healthy", False)
+                vector_db_healthy = bool(healthy)
                 vector_db_status = "Healthy" if vector_db_healthy else "Unhealthy"
             except Exception as e:
                 vector_db_status = f"Error: {e}"

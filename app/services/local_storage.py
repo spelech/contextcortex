@@ -8,6 +8,7 @@ import app.services.database as db_service
 import app.services.vector_store as vs_service
 from app.services.indexing.processor import process_file_content, MAX_FILE_SIZE_BYTES
 from app.services.indexing.state import trigger_list_changed_notification
+from app.services.pdf_extractor import extract_pdf_pages, MAX_PDF_SIZE_BYTES
 
 logger = logging.getLogger("contextcortex.storage")
 
@@ -62,11 +63,18 @@ class LocalStorageService:
         target_path = self.resolve_safe_path(rel_path)
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-        if isinstance(content, str):
-            with open(target_path, "w", encoding="utf-8") as f:
-                f.write(content)
-        else:
+        if isinstance(content, bytes):
             with open(target_path, "wb") as f:
+                f.write(content)
+        elif rel_path.lower().endswith(".pdf") and isinstance(content, str):
+            try:
+                with open(target_path, "wb") as f:
+                    f.write(content.encode("latin-1"))
+            except Exception:
+                with open(target_path, "wb") as f:
+                    f.write(content.encode("utf-8", errors="replace"))
+        else:
+            with open(target_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
         mtime = os.path.getmtime(target_path)
@@ -92,11 +100,16 @@ class LocalStorageService:
         if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
             raise FileNotFoundError(f"File '{rel_path}' not found on disk for indexing.")
 
-        with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-
-        doc_type = "doc" if abs_path.endswith((".md", ".txt", ".yaml", ".yml", ".json", ".html", ".css", ".sql")) else "code"
         cat = category or os.path.dirname(rel_path) or "root"
+
+        if abs_path.lower().endswith(".pdf"):
+            pdf_res = extract_pdf_pages(abs_path, filename=os.path.basename(rel_path), ocr_fallback=True)
+            content = "\n\n".join([f"# Page {p.page_number}\n{p.text}" for p in pdf_res.pages])
+            doc_type = "pdf"
+        else:
+            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            doc_type = "doc" if abs_path.endswith((".md", ".txt", ".yaml", ".yml", ".json", ".html", ".css", ".sql")) else "code"
 
         points, ast_symbols, summary_tuple, ast_rel, api_routes, api_calls = process_file_content(
             filepath=abs_path,
@@ -224,6 +237,21 @@ class LocalStorageService:
 
         size_bytes = os.path.getsize(target_path)
         mtime = os.path.getmtime(target_path)
+
+        if target_path.lower().endswith(".pdf"):
+            pdf_res = extract_pdf_pages(target_path, filename=os.path.basename(rel_path), ocr_fallback=False)
+            formatted_text = "\n\n".join([f"# Page {p.page_number}\n{p.text}" for p in pdf_res.pages])
+            return {
+                "status": "success",
+                "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
+                "abs_path": target_path,
+                "content": formatted_text,
+                "total_pages": pdf_res.total_pages,
+                "is_pdf": True,
+                "size_bytes": size_bytes,
+                "mtime": mtime
+            }
+
         try:
             with open(target_path, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
@@ -231,6 +259,7 @@ class LocalStorageService:
             text = ""
 
         return {
+            "status": "success",
             "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
             "abs_path": target_path,
             "content": text,
