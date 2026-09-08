@@ -6,6 +6,7 @@ from dataclasses import dataclass, asdict
 from typing import List, Dict, Any, Union, Optional
 import pymupdf
 from openai import OpenAI
+from app.services.database import get_vision_ocr_model
 
 logger = logging.getLogger("contextcortex.pdf")
 
@@ -34,7 +35,7 @@ class PdfExtractionResult:
         return asdict(self)
 
 
-def _call_vision_ocr(png_bytes: bytes, model_name: str = "gemini-2.0-flash") -> str:
+def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
     """Invokes LiteLLM / OpenAI compatible vision model to transcribe document page."""
     litellm_url = os.getenv("LITELLM_URL", "http://litellm:4000/v1").strip()
     litellm_key = os.getenv("LITELLM_API_KEY", "sk-default").strip()
@@ -48,8 +49,10 @@ def _call_vision_ocr(png_bytes: bytes, model_name: str = "gemini-2.0-flash") -> 
         "Preserve list structures and code blocks where applicable. Do not summarize or extrapolate."
     )
 
+    active_model = model_name or get_vision_ocr_model()
+
     response = client.chat.completions.create(
-        model=os.getenv("VISION_OCR_MODEL", model_name),
+        model=active_model,
         messages=[
             {"role": "system", "content": system_prompt},
             {

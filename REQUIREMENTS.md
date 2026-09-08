@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **905 Automated Tests** (598 Pytest Backend + 261 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **916 Automated Tests** (609 Pytest Backend + 261 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -949,6 +949,15 @@ persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
 
+#### `tests/test_litellm_service.py` (7 tests)
+- `test_discover_models_success`
+- `test_discover_models_timeout`
+- `test_discover_models_connect_error`
+- `test_discover_models_http_401_unauthorized`
+- `test_discover_models_http_500_error`
+- `test_discover_models_url_normalization`
+- `test_discover_models_default_resolution`
+
 #### `tests/test_local_storage_indexing.py` (4 tests)
 - `test_incremental_indexing_on_save`
 - `test_incremental_indexing_code_file`
@@ -979,6 +988,12 @@ and leaves the prior indexed state intact without data loss._
 - `test_what_is_ingested_summary_and_filters`
 - `test_what_is_ingested_detailed_with_data`
 - `test_tool_registration`
+
+#### `tests/test_model_metadata_persistence.py` (4 tests)
+- `test_embedding_db_config_defaults`
+- `test_env_variable_fallbacks`
+- `test_set_embedding_db_config_persists_to_system_metadata`
+- `test_update_embedding_config_service`
 
 #### `tests/test_pdf_extractor.py` (8 tests)
 - `test_extract_digital_pdf_text`

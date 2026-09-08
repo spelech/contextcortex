@@ -23,6 +23,8 @@ EMBEDDING_NUM_THREADS = _initial_cfg["threads"]
 EMBEDDING_BATCH_SIZE = _initial_cfg["batch_size"]
 LITELLM_URL = _initial_cfg["litellm_url"]
 LITELLM_API_KEY = _initial_cfg.get("litellm_api_key", os.getenv("LITELLM_API_KEY", "dummy"))
+VISION_OCR_MODEL = _initial_cfg.get("vision_ocr_model", os.getenv("VISION_OCR_MODEL", "gemini-2.5-flash"))
+CHAT_MODEL = _initial_cfg.get("chat_model", os.getenv("CHAT_MODEL", "gemini-2.5-flash"))
 
 _dense_model = None
 _sparse_model = None
@@ -38,10 +40,13 @@ def init_embeddings(
     batch_size: Optional[int] = None,
     litellm_url: Optional[str] = None,
     litellm_api_key: Optional[str] = None,
+    vision_ocr_model: Optional[str] = None,
+    chat_model: Optional[str] = None,
 ):
     global _dense_model, _sparse_model, _openai_client
     global EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
     global EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, LITELLM_URL, LITELLM_API_KEY
+    global VISION_OCR_MODEL, CHAT_MODEL
 
     cfg = _get_db_emb_config()
 
@@ -52,6 +57,8 @@ def init_embeddings(
     EMBEDDING_BATCH_SIZE = int(batch_size if batch_size is not None else cfg.get("batch_size", 32))
     LITELLM_URL = (litellm_url or cfg.get("litellm_url") or "http://litellm:4000/v1").strip()
     LITELLM_API_KEY = (litellm_api_key or cfg.get("litellm_api_key") or "dummy").strip()
+    VISION_OCR_MODEL = (vision_ocr_model or cfg.get("vision_ocr_model") or os.getenv("VISION_OCR_MODEL", "gemini-2.5-flash")).strip()
+    CHAT_MODEL = (chat_model or cfg.get("chat_model") or os.getenv("CHAT_MODEL", "gemini-2.5-flash")).strip()
 
     # Set underlying OpenMP / BLAS thread guard
     os.environ["OMP_NUM_THREADS"] = str(EMBEDDING_NUM_THREADS)
@@ -103,6 +110,8 @@ def get_embedding_config() -> Dict[str, Any]:
         "threads": EMBEDDING_NUM_THREADS,
         "batch_size": EMBEDDING_BATCH_SIZE,
         "litellm_url": LITELLM_URL,
+        "vision_ocr_model": VISION_OCR_MODEL,
+        "chat_model": CHAT_MODEL,
         "system_cpus": sys_res["cpus"],
         "system_memory_gb": sys_res["memory_gb"],
     }
@@ -115,6 +124,8 @@ def update_embedding_config(
     batch_size: Optional[int] = None,
     litellm_url: Optional[str] = None,
     litellm_api_key: Optional[str] = None,
+    vision_ocr_model: Optional[str] = None,
+    chat_model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Updates embedding configuration in SQLite and hot-reloads models in memory."""
     from app.services.database import set_embedding_db_config
@@ -126,6 +137,8 @@ def update_embedding_config(
         batch_size=batch_size,
         litellm_url=litellm_url,
         litellm_api_key=litellm_api_key,
+        vision_ocr_model=vision_ocr_model,
+        chat_model=chat_model,
     )
     init_embeddings(
         provider=provider,
@@ -135,6 +148,8 @@ def update_embedding_config(
         batch_size=batch_size,
         litellm_url=litellm_url,
         litellm_api_key=litellm_api_key,
+        vision_ocr_model=vision_ocr_model,
+        chat_model=chat_model,
     )
     return get_embedding_config()
 
