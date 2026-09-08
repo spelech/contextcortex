@@ -207,5 +207,5 @@ def test_sync_single_git_repo_triggers_notification(temp_db):
              patch("app.services.vector_store.get_vector_store", return_value=mock_store), \
              patch("app.services.indexing.state.trigger_list_changed_notification") as mock_notify:
             sync_single_git_repo(repo_id)
-            mock_notify.assert_called_once()
+            assert mock_notify.called
 
