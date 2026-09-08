@@ -5,8 +5,10 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, Request, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
 
+from dataclasses import asdict
 from app.services.local_storage import get_local_storage_service
 from app.services.auth import Role, enforce_tool_permission
+from app.services.pdf_extractor import extract_pdf_pages, MAX_PDF_SIZE_BYTES
 
 logger = logging.getLogger("contextcortex.api.storage")
 router = APIRouter()
@@ -16,6 +18,37 @@ class FileUploadPayload(BaseModel):
     content: str = Field(..., description="File text content")
     repo: Optional[str] = "local_storage"
     category: Optional[str] = None
+
+@router.post("/admin/api/storage/pdf/preview")
+async def api_preview_pdf(
+    file: UploadFile = File(...),
+    ocr_fallback: bool = Form(True)
+):
+    try:
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            return JSONResponse(status_code=400, content={"error": "File must be a .pdf document"})
+
+        content_bytes = await file.read()
+        if not content_bytes:
+            return JSONResponse(status_code=400, content={"error": "Empty file uploaded"})
+
+        if len(content_bytes) > MAX_PDF_SIZE_BYTES:
+            return JSONResponse(status_code=400, content={"error": f"PDF exceeds size limit of {MAX_PDF_SIZE_BYTES // (1024*1024)}MB"})
+
+        res = extract_pdf_pages(content_bytes, filename=file.filename, ocr_fallback=ocr_fallback)
+        return {
+            "filename": res.filename,
+            "total_pages": res.total_pages,
+            "total_characters": res.total_characters,
+            "ocr_pages_count": res.ocr_pages_count,
+            "pages": [asdict(p) for p in res.pages],
+            "sample_chunks": res.preview_chunks[:50]
+        }
+    except ValueError as ve:
+        return JSONResponse(status_code=400, content={"error": str(ve)})
+    except Exception as e:
+        logger.error(f"Error previewing PDF file: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @router.post("/admin/api/storage/upload")
 async def api_upload_storage_file(request: Request):
@@ -32,6 +65,8 @@ async def api_upload_storage_file(request: Request):
             if file and hasattr(file, "read"):
                 rel_path = path or getattr(file, "filename", "uploaded_file")
                 content_bytes = await file.read()
+                if rel_path.lower().endswith(".pdf") and len(content_bytes) > MAX_PDF_SIZE_BYTES:
+                    return JSONResponse(status_code=400, content={"error": f"PDF exceeds size limit of {MAX_PDF_SIZE_BYTES // (1024*1024)}MB"})
                 res = storage.save_file(rel_path, content_bytes, repo=repo, category=category)
                 return res
             elif path and form.get("content") is not None:
