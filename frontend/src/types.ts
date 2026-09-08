@@ -39,8 +39,30 @@ export interface EmbeddingConfig {
   batch_size: number;
   litellm_url?: string;
   litellm_api_key?: string;
+  vision_ocr_model?: string;
+  chat_model?: string;
   system_cpus?: number;
   system_memory_gb?: number;
+}
+
+export interface DiscoveredModel {
+  id: string;
+  object?: string;
+  created?: number;
+  owned_by?: string;
+  mode?: string;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
+}
+
+export interface ModelDiscoveryResult {
+  status: 'success' | 'error';
+  total_models: number;
+  models: DiscoveredModel[];
+  embedding_models: string[];
+  vision_models: string[];
+  chat_models: string[];
+  message?: string;
 }
 
 export interface AutoSyncSettings {

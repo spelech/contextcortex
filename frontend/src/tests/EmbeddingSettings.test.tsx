@@ -141,4 +141,136 @@ describe('EmbeddingSettings Component', () => {
     fireEvent.click(saveBtn);
     expect(onSave).toHaveBeenCalled();
   });
+
+  it('renders model discovery controls and triggers onDiscoverModels when button clicked', () => {
+    const onDiscover = vi.fn();
+    const setApiKey = vi.fn();
+
+    render(
+      <EmbeddingSettings
+        embeddingConfig={{ ...mockEmbeddingConfig, provider: 'api' }}
+        isLoadingEmb={false}
+        isSavingEmb={false}
+        embProvider="api"
+        setEmbProvider={vi.fn()}
+        embThreads={2}
+        setEmbThreads={vi.fn()}
+        embBatchSize={32}
+        setEmbBatchSize={vi.fn()}
+        embDenseModel="gemini-embedding-2"
+        setEmbDenseModel={vi.fn()}
+        embSparseModel="Qdrant/bm25"
+        setEmbSparseModel={vi.fn()}
+        embLitellmUrl="http://litellm:4000/v1"
+        setEmbLitellmUrl={vi.fn()}
+        embLitellmApiKey="sk-secret"
+        setEmbLitellmApiKey={setApiKey}
+        onDiscoverModels={onDiscover}
+        onSaveEmbeddingSettings={vi.fn()}
+      />
+    );
+
+    const apiKeyInput = screen.getByLabelText(/LiteLLM API Key/i);
+    expect(apiKeyInput).toBeInTheDocument();
+    fireEvent.change(apiKeyInput, { target: { value: 'sk-new-key' } });
+    expect(setApiKey).toHaveBeenCalledWith('sk-new-key');
+
+    const discoverBtn = screen.getByRole('button', { name: /Discover Models/i });
+    fireEvent.click(discoverBtn);
+    expect(onDiscover).toHaveBeenCalled();
+  });
+
+  it('renders discovered model dropdowns and allows selecting models', () => {
+    const setDense = vi.fn();
+    const setVision = vi.fn();
+    const setChat = vi.fn();
+
+    const mockDiscovery = {
+      status: 'success' as const,
+      total_models: 4,
+      models: [
+        { id: 'gemini-embedding-2', mode: 'embedding' },
+        { id: 'text-embedding-3-small', mode: 'embedding' },
+        { id: 'gemini-2.5-flash', mode: 'chat' },
+        { id: 'qwen3-vl-32b-instruct', mode: 'chat' }
+      ],
+      embedding_models: ['gemini-embedding-2', 'text-embedding-3-small'],
+      vision_models: ['gemini-2.5-flash', 'qwen3-vl-32b-instruct'],
+      chat_models: ['gemini-2.5-flash', 'qwen3-vl-32b-instruct']
+    };
+
+    render(
+      <EmbeddingSettings
+        embeddingConfig={{ ...mockEmbeddingConfig, provider: 'api' }}
+        isLoadingEmb={false}
+        isSavingEmb={false}
+        embProvider="api"
+        setEmbProvider={vi.fn()}
+        embThreads={2}
+        setEmbThreads={vi.fn()}
+        embBatchSize={32}
+        setEmbBatchSize={vi.fn()}
+        embDenseModel="gemini-embedding-2"
+        setEmbDenseModel={setDense}
+        embSparseModel="Qdrant/bm25"
+        setEmbSparseModel={vi.fn()}
+        embLitellmUrl="http://litellm:4000/v1"
+        setEmbLitellmUrl={vi.fn()}
+        embVisionOcrModel="gemini-2.5-flash"
+        setEmbVisionOcrModel={setVision}
+        embChatModel="gemini-2.5-flash"
+        setEmbChatModel={setChat}
+        discoveryResult={mockDiscovery}
+        onSaveEmbeddingSettings={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/4 models available/i)).toBeInTheDocument();
+
+    const denseSelect = screen.getByLabelText(/^Dense Embedding Model/i);
+    fireEvent.change(denseSelect, { target: { value: 'text-embedding-3-small' } });
+    expect(setDense).toHaveBeenCalledWith('text-embedding-3-small');
+
+    const visionSelect = screen.getByLabelText(/Vision AI OCR Model/i);
+    fireEvent.change(visionSelect, { target: { value: 'qwen3-vl-32b-instruct' } });
+    expect(setVision).toHaveBeenCalledWith('qwen3-vl-32b-instruct');
+
+    const chatSelect = screen.getByLabelText(/General Chat & Synthesis Model/i);
+    fireEvent.change(chatSelect, { target: { value: 'qwen3-vl-32b-instruct' } });
+    expect(setChat).toHaveBeenCalledWith('qwen3-vl-32b-instruct');
+  });
+
+  it('displays discovery error banner when LiteLLM is unreachable', () => {
+    render(
+      <EmbeddingSettings
+        embeddingConfig={{ ...mockEmbeddingConfig, provider: 'api' }}
+        isLoadingEmb={false}
+        isSavingEmb={false}
+        embProvider="api"
+        setEmbProvider={vi.fn()}
+        embThreads={2}
+        setEmbThreads={vi.fn()}
+        embBatchSize={32}
+        setEmbBatchSize={vi.fn()}
+        embDenseModel="BAAI/bge-small-en-v1.5"
+        setEmbDenseModel={vi.fn()}
+        embSparseModel="Qdrant/bm25"
+        setEmbSparseModel={vi.fn()}
+        embLitellmUrl="http://invalid:4000/v1"
+        setEmbLitellmUrl={vi.fn()}
+        discoveryResult={{
+          status: 'error',
+          total_models: 0,
+          models: [],
+          embedding_models: [],
+          vision_models: [],
+          chat_models: [],
+          message: 'Connection to http://invalid:4000/v1 timed out'
+        }}
+        onSaveEmbeddingSettings={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/Connection to http:\/\/invalid:4000\/v1 timed out/i)).toBeInTheDocument();
+  });
 });

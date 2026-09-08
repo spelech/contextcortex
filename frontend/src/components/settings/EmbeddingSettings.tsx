@@ -1,5 +1,5 @@
-import type { FormEvent } from 'react';
-import type { EmbeddingConfig } from '../../types';
+import { useState, type FormEvent } from 'react';
+import type { EmbeddingConfig, ModelDiscoveryResult } from '../../types';
 
 interface EmbeddingSettingsProps {
   embeddingConfig: EmbeddingConfig | null;
@@ -17,6 +17,15 @@ interface EmbeddingSettingsProps {
   setEmbSparseModel: (val: string) => void;
   embLitellmUrl: string;
   setEmbLitellmUrl: (val: string) => void;
+  embLitellmApiKey?: string;
+  setEmbLitellmApiKey?: (val: string) => void;
+  embVisionOcrModel?: string;
+  setEmbVisionOcrModel?: (val: string) => void;
+  embChatModel?: string;
+  setEmbChatModel?: (val: string) => void;
+  discoveryResult?: ModelDiscoveryResult | null;
+  isDiscovering?: boolean;
+  onDiscoverModels?: () => void;
   onSaveEmbeddingSettings: (e: FormEvent) => void;
 }
 
@@ -36,16 +45,34 @@ export function EmbeddingSettings({
   setEmbSparseModel,
   embLitellmUrl,
   setEmbLitellmUrl,
+  embLitellmApiKey = '',
+  setEmbLitellmApiKey,
+  embVisionOcrModel = 'gemini-2.5-flash',
+  setEmbVisionOcrModel,
+  embChatModel = 'gemini-2.5-flash',
+  setEmbChatModel,
+  discoveryResult = null,
+  isDiscovering = false,
+  onDiscoverModels,
   onSaveEmbeddingSettings,
 }: EmbeddingSettingsProps) {
   const systemCpus = embeddingConfig?.system_cpus || 2;
   const systemMemoryGb = embeddingConfig?.system_memory_gb || 4.0;
 
+  // Custom model text input toggles
+  const [customDense, setCustomDense] = useState(false);
+  const [customVision, setCustomVision] = useState(false);
+  const [customChat, setCustomChat] = useState(false);
+
+  const embeddingModels = discoveryResult?.embedding_models || [];
+  const visionModels = discoveryResult?.vision_models || [];
+  const chatModels = discoveryResult?.chat_models || [];
+
   return (
     <div className="glass-card">
       <h2><i className="fa-solid fa-microchip"></i> Embedding Engine &amp; Resource Limits</h2>
       <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>
-        Configure local FastEmbed (ONNX) resource limits, CPU thread concurrency, batch sizes, or remote API endpoints. Safe defaults limit CPU usage to prevent host exhaustion.
+        Configure local FastEmbed (ONNX) resource limits, CPU thread concurrency, or remote LiteLLM endpoints with dynamic model discovery for embeddings, Vision AI OCR, and chat synthesis.
       </p>
 
       <div className="vs-config-layout">
@@ -88,6 +115,14 @@ export function EmbeddingSettings({
                 <span>Sparse Model (BM25):</span>
                 <code>{embeddingConfig.sparse_model || 'Qdrant/bm25'}</code>
               </div>
+              <div className="spec-row">
+                <span>Vision AI OCR Model:</span>
+                <code>{embeddingConfig.vision_ocr_model || 'gemini-2.5-flash'}</code>
+              </div>
+              <div className="spec-row">
+                <span>Chat Completion Model:</span>
+                <code>{embeddingConfig.chat_model || 'gemini-2.5-flash'}</code>
+              </div>
               {embeddingConfig.provider === 'api' && (
                 <div className="spec-row">
                   <span>API Endpoint URL:</span>
@@ -102,7 +137,7 @@ export function EmbeddingSettings({
 
         {/* Configure Resource Limits Box */}
         <div className="vs-box">
-          <h3><i className="fa-solid fa-sliders"></i> Configure Resource Limits</h3>
+          <h3><i className="fa-solid fa-sliders"></i> Configure Models &amp; Resources</h3>
 
           <form onSubmit={onSaveEmbeddingSettings}>
             <div className="form-row">
@@ -153,7 +188,7 @@ export function EmbeddingSettings({
 
               {embProvider === 'api' ? (
                 <div className="form-group">
-                  <label htmlFor="emb-litellm-url">API Endpoint URL</label>
+                  <label htmlFor="emb-litellm-url">API Endpoint URL (LiteLLM)</label>
                   <input
                     id="emb-litellm-url"
                     type="text"
@@ -176,6 +211,106 @@ export function EmbeddingSettings({
               )}
             </div>
 
+            {/* LiteLLM Specific Connection & Discovery Controls */}
+            {embProvider === 'api' && (
+              <>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="emb-litellm-api-key">LiteLLM API Key (Optional / Bearer)</label>
+                    <input
+                      id="emb-litellm-api-key"
+                      type="password"
+                      value={embLitellmApiKey}
+                      onChange={e => setEmbLitellmApiKey?.(e.target.value)}
+                      placeholder="sk-..."
+                      autoComplete="off"
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      id="btn-discover-models"
+                      className="btn btn-secondary"
+                      onClick={onDiscoverModels}
+                      disabled={isDiscovering}
+                      style={{ height: '38px', whiteSpace: 'nowrap' }}
+                    >
+                      {isDiscovering ? (
+                        <><i className="fa-solid fa-spinner fa-spin"></i> Discovering...</>
+                      ) : (
+                        <><i className="fa-solid fa-bolt"></i> Discover Models</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Discovery Feedback Banner / Status */}
+                {discoveryResult && (
+                  <div style={{ marginBottom: '16px' }}>
+                    {discoveryResult.status === 'success' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', fontSize: '0.85rem' }}>
+                        <i className="fa-solid fa-circle-check" style={{ color: '#10b981' }}></i>
+                        <span>
+                          Connected to LiteLLM &mdash; <strong>{discoveryResult.total_models} models available</strong> ({embeddingModels.length} embedding, {visionModels.length} vision, {chatModels.length} chat)
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', fontSize: '0.85rem' }}>
+                        <i className="fa-solid fa-triangle-exclamation" style={{ color: '#ef4444' }}></i>
+                        <span>{discoveryResult.message || 'Could not connect to LiteLLM endpoint'}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Dense Model Selection with Discovery Dropdown */}
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label htmlFor="emb-dense-model" style={{ marginBottom: 0 }}>Dense Embedding Model</label>
+                    {embeddingModels.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn-link"
+                        onClick={() => setCustomDense(!customDense)}
+                        style={{ fontSize: '0.75rem', background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
+                      >
+                        {customDense ? '← Select from discovered' : 'Enter custom model →'}
+                      </button>
+                    )}
+                  </div>
+
+                  {!customDense && embeddingModels.length > 0 ? (
+                    <select
+                      id="emb-dense-model"
+                      value={embDenseModel}
+                      onChange={e => {
+                        if (e.target.value === '__custom__') {
+                          setCustomDense(true);
+                        } else {
+                          setEmbDenseModel(e.target.value);
+                        }
+                      }}
+                    >
+                      {embeddingModels.map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                      <option value="__custom__">Custom / Enter manually...</option>
+                    </select>
+                  ) : (
+                    <input
+                      id="emb-dense-model"
+                      type="text"
+                      value={embDenseModel}
+                      onChange={e => setEmbDenseModel(e.target.value)}
+                      placeholder="gemini-embedding-2"
+                    />
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Local Sparse BM25 Model */}
             {embProvider === 'local' && (
               <div className="form-group">
                 <label htmlFor="emb-sparse-model">Sparse BM25 Model</label>
@@ -189,6 +324,98 @@ export function EmbeddingSettings({
               </div>
             )}
 
+            {/* Vision AI OCR Model Selection */}
+            <div className="form-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label htmlFor="emb-vision-ocr-model" style={{ marginBottom: 0 }}>
+                  Vision AI OCR Model <span className="text-muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>(PDF Ingestion Fallback)</span>
+                </label>
+                {visionModels.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-link"
+                    onClick={() => setCustomVision(!customVision)}
+                    style={{ fontSize: '0.75rem', background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
+                  >
+                    {customVision ? '← Select from discovered' : 'Enter custom model →'}
+                  </button>
+                )}
+              </div>
+
+              {!customVision && visionModels.length > 0 ? (
+                <select
+                  id="emb-vision-ocr-model"
+                  value={embVisionOcrModel}
+                  onChange={e => {
+                    if (e.target.value === '__custom__') {
+                      setCustomVision(true);
+                    } else {
+                      setEmbVisionOcrModel?.(e.target.value);
+                    }
+                  }}
+                >
+                  {visionModels.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                  <option value="__custom__">Custom / Enter manually...</option>
+                </select>
+              ) : (
+                <input
+                  id="emb-vision-ocr-model"
+                  type="text"
+                  value={embVisionOcrModel}
+                  onChange={e => setEmbVisionOcrModel?.(e.target.value)}
+                  placeholder="gemini-2.5-flash"
+                />
+              )}
+            </div>
+
+            {/* General Chat / Completion Model Selection */}
+            <div className="form-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label htmlFor="emb-chat-model" style={{ marginBottom: 0 }}>
+                  General Chat &amp; Synthesis Model
+                </label>
+                {chatModels.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-link"
+                    onClick={() => setCustomChat(!customChat)}
+                    style={{ fontSize: '0.75rem', background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
+                  >
+                    {customChat ? '← Select from discovered' : 'Enter custom model →'}
+                  </button>
+                )}
+              </div>
+
+              {!customChat && chatModels.length > 0 ? (
+                <select
+                  id="emb-chat-model"
+                  value={embChatModel}
+                  onChange={e => {
+                    if (e.target.value === '__custom__') {
+                      setCustomChat(true);
+                    } else {
+                      setEmbChatModel?.(e.target.value);
+                    }
+                  }}
+                >
+                  {chatModels.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                  <option value="__custom__">Custom / Enter manually...</option>
+                </select>
+              ) : (
+                <input
+                  id="emb-chat-model"
+                  type="text"
+                  value={embChatModel}
+                  onChange={e => setEmbChatModel?.(e.target.value)}
+                  placeholder="gemini-2.5-flash"
+                />
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
               <button
                 type="submit"
@@ -198,7 +425,7 @@ export function EmbeddingSettings({
                 {isSavingEmb ? (
                   <><i className="fa-solid fa-spinner fa-spin"></i> Saving &amp; Applying...</>
                 ) : (
-                  <><i className="fa-solid fa-floppy-disk"></i> Save &amp; Apply Embedding Limits</>
+                  <><i className="fa-solid fa-floppy-disk"></i> Save &amp; Apply Embedding Limits &amp; Model Settings</>
                 )}
               </button>
             </div>
