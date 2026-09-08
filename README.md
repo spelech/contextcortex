@@ -402,7 +402,13 @@ curl -X POST http://localhost:3000/admin/api/auth/keys \
 
 ## 📚 Documentation & Specifications
 
-- [**Software Requirements Specification (`REQUIREMENTS.md`)**](REQUIREMENTS.md): Authoritative functional and non-functional requirements with test-traceability matrix and Mermaid ERD data models.
+The documentation follows the **ASD-STE100 Simplified Technical English (Issue 9)** standard for maximum clarity and technical precision.
+
+- [**Interactive Documentation Site (VitePress)**](https://spelech.github.io/contextcortex/): Complete user guide with component screenshots, interactive Mermaid architecture diagrams, REST API reference, and software requirements specification.
+  - Run locally: `npm run docs:dev`
+  - Build static site: `npm run docs:build`
+  - Preview production build: `npm run docs:preview`
+- [**Software Requirements Specification (`REQUIREMENTS.md`)**](REQUIREMENTS.md): Authoritative functional and non-functional requirements with test traceability matrix and Mermaid ERD data models.
 - [**System Architecture (`ARCHITECTURE.md`)**](ARCHITECTURE.md): FastMCP 2.0 transport topologies, component interaction diagrams, SQLAlchemy 2.0 schema ERD, and vector store data models.
 - [**Developer Documentation (`DEVELOPER_DOCS.md`)**](DEVELOPER_DOCS.md): Setup, configuration, development workflow, and testing guidelines.
 - [**Test Coverage Reports (`docs/TEST_COVERAGE.md`)**](docs/TEST_COVERAGE.md): Pytest, Vitest, and Playwright verification metrics.

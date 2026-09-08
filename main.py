@@ -116,6 +116,7 @@ class AuthMiddleware:
         if (
             path == "/.well-known/oauth-protected-resource"
             or path == "/health"
+            or path == "/healthz"
             or path == "/"
             or path.startswith("/assets")
             or (path.startswith("/admin") and not path.startswith("/admin/api"))
@@ -205,6 +206,7 @@ for route in mcp_server.streamable_http_app().routes:
 
 
 @app.get("/health")
+@app.get("/healthz")
 async def health():
     return JSONResponse(content={"status": "healthy"})
 

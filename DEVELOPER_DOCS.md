@@ -118,6 +118,18 @@ python3 scripts/generate_requirements.py
 pytest -v tests/backend/test_requirements_sync.py
 ```
 
+### VitePress Documentation Site (ASD-STE100 Compliant)
+```bash
+# Start local documentation dev server
+npm run docs:dev
+
+# Build production static documentation site
+npm run docs:build
+
+# Preview built production documentation site
+npm run docs:preview
+```
+
 ---
 
 ## ⚙️ Configuration Variables

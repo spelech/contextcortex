@@ -10,3 +10,7 @@ venv/
 .pytest_cache/
 htmlcov/
 *.log
+node_modules/
+.vitepress/dist/
+.vitepress/cache/
+dist/
