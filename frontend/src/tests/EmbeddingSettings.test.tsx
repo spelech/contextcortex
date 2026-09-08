@@ -273,4 +273,81 @@ describe('EmbeddingSettings Component', () => {
 
     expect(screen.getByText(/Connection to http:\/\/invalid:4000\/v1 timed out/i)).toBeInTheDocument();
   });
+
+  it('switches to manual input when Custom is selected from dropdown or link clicked', () => {
+    const setDense = vi.fn();
+    const mockDiscovery = {
+      status: 'success' as const,
+      total_models: 2,
+      models: [
+        { id: 'gemini-embedding-2', mode: 'embedding' },
+        { id: 'text-embedding-3-small', mode: 'embedding' }
+      ],
+      embedding_models: ['gemini-embedding-2', 'text-embedding-3-small'],
+      vision_models: [],
+      chat_models: []
+    };
+
+    render(
+      <EmbeddingSettings
+        embeddingConfig={{ ...mockEmbeddingConfig, provider: 'api' }}
+        isLoadingEmb={false}
+        isSavingEmb={false}
+        embProvider="api"
+        setEmbProvider={vi.fn()}
+        embThreads={2}
+        setEmbThreads={vi.fn()}
+        embBatchSize={32}
+        setEmbBatchSize={vi.fn()}
+        embDenseModel="gemini-embedding-2"
+        setEmbDenseModel={setDense}
+        embSparseModel="Qdrant/bm25"
+        setEmbSparseModel={vi.fn()}
+        embLitellmUrl="http://litellm:4000/v1"
+        setEmbLitellmUrl={vi.fn()}
+        discoveryResult={mockDiscovery}
+        onSaveEmbeddingSettings={vi.fn()}
+      />
+    );
+
+    // Click "Enter custom model →" button
+    const customToggleBtn = screen.getByRole('button', { name: /Enter custom model/i });
+    expect(customToggleBtn).toBeInTheDocument();
+    fireEvent.click(customToggleBtn);
+
+    // Should now be a text input instead of select
+    const manualInput = screen.getByPlaceholderText('gemini-embedding-2');
+    expect(manualInput.tagName.toLowerCase()).toBe('input');
+    fireEvent.change(manualInput, { target: { value: 'my-custom-model-id' } });
+    expect(setDense).toHaveBeenCalledWith('my-custom-model-id');
+  });
+
+  it('disables discover button and shows spinner while isDiscovering is true', () => {
+    render(
+      <EmbeddingSettings
+        embeddingConfig={{ ...mockEmbeddingConfig, provider: 'api' }}
+        isLoadingEmb={false}
+        isSavingEmb={false}
+        isDiscovering={true}
+        embProvider="api"
+        setEmbProvider={vi.fn()}
+        embThreads={2}
+        setEmbThreads={vi.fn()}
+        embBatchSize={32}
+        setEmbBatchSize={vi.fn()}
+        embDenseModel="gemini-embedding-2"
+        setEmbDenseModel={vi.fn()}
+        embSparseModel="Qdrant/bm25"
+        setEmbSparseModel={vi.fn()}
+        embLitellmUrl="http://litellm:4000/v1"
+        setEmbLitellmUrl={vi.fn()}
+        onSaveEmbeddingSettings={vi.fn()}
+      />
+    );
+
+    const discoverBtn = screen.getByRole('button', { name: /Discovering\.\.\./i });
+    expect(discoverBtn).toBeDisabled();
+    expect(screen.getByText(/Discovering\.\.\./i)).toBeInTheDocument();
+  });
 });
+
