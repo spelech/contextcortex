@@ -1,0 +1,198 @@
+name: CI Quality Gates
+
+on:
+  push:
+    branches: [ main, develop, 'feat/*', 'fix/*' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Stage 1: Release & Link Integrity Gate
+  release-verification:
+    name: Stage 1 - Release & Link Integrity Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run Version Synchronization & Link Integrity Gate
+        run: python3 scripts/verify_release.py --ci
+
+  # Stage 2A: Backend Build, Tests & Coverage
+  test-backend:
+    name: Stage 2A - Backend Build, Tests & Coverage (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest-cov
+
+      - name: Run Pytest Suite with Coverage
+        env:
+          AUTH_ENABLED: "false"
+          VECTOR_STORE_PROVIDER: "chroma"
+          CHROMA_STORAGE_PATH: "/tmp/chroma_test"
+          LOCAL_STORAGE_PATH: "/tmp/storage_test"
+        run: |
+          pytest -v --cov=app --cov-report=xml:coverage/python-coverage.xml --cov-report=term-missing
+
+      - name: Upload Backend Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-report
+          path: coverage/python-coverage.xml
+
+  # Stage 2B: Frontend Quality, Lint & Tests
+  test-frontend:
+    name: Stage 2B - Frontend Quality & Layout (Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Linter
+        run: npm run lint
+
+      - name: Run TypeScript Type Check
+        run: npx tsc -b
+
+      - name: Build Frontend Bundle
+        run: npm run build
+
+      - name: Run Vitest Unit & Component Tests
+        run: npm run test:coverage
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright Layout Inspector Audits
+        run: npm run test:layout
+
+  # Stage 2C: Documentation Quality & VitePress Build
+  test-docs:
+    name: Stage 2C - Documentation Quality & VitePress Build (Node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build VitePress Documentation
+        run: npm run docs:build
+
+  # Stage 3: Fullstack Integration Smoke Gate
+  smoke:
+    name: Stage 3 - Fullstack Integration Smoke Gate
+    runs-on: ubuntu-latest
+    needs: [release-verification, test-backend, test-frontend, test-docs]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install and build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+          cd ..
+
+      - name: Start ContextCortex Server & Probe Health
+        env:
+          AUTH_ENABLED: "false"
+          VECTOR_STORE_PROVIDER: "chroma"
+          CHROMA_STORAGE_PATH: "/tmp/smoke_chroma"
+          LOCAL_STORAGE_PATH: "/tmp/smoke_storage"
+          DATABASE_URL: "sqlite:////tmp/smoke_cache.db"
+        run: |
+          python3 main.py &
+          SERVER_PID=$!
+          echo "Started ContextCortex server with PID $SERVER_PID"
+
+          echo "Polling health check endpoint..."
+          SUCCESS=0
+          for i in {1..30}; do
+            if curl -s -f http://localhost:3000/healthz > /tmp/health_response.json; then
+              echo "✅ Health check responded with HTTP 200:"
+              cat /tmp/health_response.json
+              SUCCESS=1
+              break
+            fi
+            echo "Waiting for server to become ready ($i/30)..."
+            sleep 1
+          done
+
+          if [ $SUCCESS -ne 1 ]; then
+            echo "❌ Health check timed out!"
+            kill -9 $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Verifying RFC 9728 OAuth discovery endpoint..."
+          curl -s -f http://localhost:3000/.well-known/oauth-protected-resource || exit 1
+          echo "✅ RFC 9728 metadata verified."
+
+          echo "Gracefully terminating smoke server..."
+          kill $SERVER_PID 2>/dev/null || true
+          wait $SERVER_PID 2>/dev/null || true
+          echo "🎉 Stage 3 Fullstack Smoke Gate passed successfully."
