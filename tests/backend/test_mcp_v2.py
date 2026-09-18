@@ -61,6 +61,7 @@ async def test_fastmcp_tool_execution(temp_mcp_db):
         assert len(res) == 1
         assert "main.py" in res[0].text
         assert "demo-repo" in res[0].text
+        assert "Relevance Score: 0.0800 (8.0%)" in res[0].text
 
 
 @pytest.mark.asyncio

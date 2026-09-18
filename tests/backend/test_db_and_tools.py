@@ -124,6 +124,7 @@ async def test_handle_search_code():
         res = await handle_search_code(query="run server", repo="test-repo", language="python")
         assert "server.py" in res
         assert "run_server" in res
+        assert "Relevance Score: 0.0500 (5.0%)" in res
 
     # No results
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[]):
@@ -157,6 +158,7 @@ async def test_handle_search_docs():
         assert "arch.md" in res
         assert "Overview of architecture" in res
         assert "Source Link" in res
+        assert "Relevance Score: 0.0400 (4.0%)" in res
 
     # Empty query
     res_empty = await handle_search_docs(query="")
