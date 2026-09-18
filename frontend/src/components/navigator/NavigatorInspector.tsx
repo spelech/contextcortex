@@ -247,9 +247,16 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
                         {c.source_filepath && (
                           <span className="rel-filepath">{c.source_filepath}</span>
                         )}
-                        {c.line_number && (
+                        {c.all_lines ? (
+                          <span className="rel-line" title={`Lines: ${c.all_lines}`}>
+                            L{c.all_lines.includes(',') ? c.all_lines.split(',').slice(0, 3).join(', L') + (c.all_lines.split(',').length > 3 ? '...' : '') : c.all_lines}
+                          </span>
+                        ) : c.line_number ? (
                           <span className="rel-line">L{c.line_number}</span>
-                        )}
+                        ) : null}
+                        {c.call_count && c.call_count > 1 ? (
+                          <span className="rel-count-badge">{c.call_count} calls</span>
+                        ) : null}
                         {c.relationship_type && (
                           <span className="rel-type-tag">{c.relationship_type}</span>
                         )}
@@ -276,24 +283,48 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
                   {callees.map((callee, idx) => (
                     <div
                       key={callee.id ?? `callee-${idx}`}
-                      className="relation-item callee-item"
+                      data-testid={`callee-item-${callee.id ?? idx}`}
+                      className={`relation-item callee-item ${callee.target_filepath ? 'is-clickable' : ''}`}
                       onClick={() => {
-                        if (onSelectCallee) {
+                        if (callee.target_filepath && onSelectCallee) {
+                          onSelectCallee(callee.target_filepath, callee.target_symbol);
+                        }
+                      }}
+                      role={callee.target_filepath ? 'button' : undefined}
+                      tabIndex={callee.target_filepath ? 0 : undefined}
+                      title={callee.target_filepath ? `Jump to ${callee.target_symbol} in ${callee.target_filepath}` : undefined}
+                      onKeyDown={(e) => {
+                        if (callee.target_filepath && onSelectCallee && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
                           onSelectCallee(callee.target_filepath, callee.target_symbol);
                         }
                       }}
                     >
                       <div className="relation-top">
                         <span className="rel-symbol-name">{callee.target_symbol}</span>
-                        <span className="rel-type-badge">{callee.relationship_type || 'CALLS'}</span>
+                        <div className="rel-top-right">
+                          <span className="rel-type-badge">{callee.relationship_type || 'CALLS'}</span>
+                          {callee.target_filepath && (
+                            <span className="rel-jump-hint" aria-hidden="true">
+                              Jump ↗
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="relation-bottom">
                         {callee.target_filepath && (
                           <span className="rel-filepath">{callee.target_filepath}</span>
                         )}
-                        {callee.line_number && (
+                        {callee.all_lines ? (
+                          <span className="rel-line" title={`Lines: ${callee.all_lines}`}>
+                            L{callee.all_lines.includes(',') ? callee.all_lines.split(',').slice(0, 3).join(', L') + (callee.all_lines.split(',').length > 3 ? '...' : '') : callee.all_lines}
+                          </span>
+                        ) : callee.line_number ? (
                           <span className="rel-line">L{callee.line_number}</span>
-                        )}
+                        ) : null}
+                        {callee.call_count && callee.call_count > 1 ? (
+                          <span className="rel-count-badge">{callee.call_count} calls</span>
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -304,11 +335,18 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
                         <span className="rel-symbol-name">{imp.target_symbol}</span>
                         <span className="rel-type-badge import-badge">IMPORTS</span>
                       </div>
-                      {imp.line_number && (
-                        <div className="relation-bottom">
+                      <div className="relation-bottom">
+                        {imp.all_lines ? (
+                          <span className="rel-line" title={`Lines: ${imp.all_lines}`}>
+                            L{imp.all_lines.includes(',') ? imp.all_lines.split(',').slice(0, 3).join(', L') + (imp.all_lines.split(',').length > 3 ? '...' : '') : imp.all_lines}
+                          </span>
+                        ) : imp.line_number ? (
                           <span className="rel-line">L{imp.line_number}</span>
-                        </div>
-                      )}
+                        ) : null}
+                        {imp.import_count && imp.import_count > 1 ? (
+                          <span className="rel-count-badge">{imp.import_count} imports</span>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>

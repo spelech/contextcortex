@@ -162,6 +162,25 @@ describe('NavigatorInspector Component', () => {
     expect(screen.getByText('fastapi.APIRouter')).toBeInTheDocument();
   });
 
+  it('calls onSelectCallee when a clickable callee is clicked for cross-file navigation', () => {
+    const handleSelectCallee = vi.fn();
+    render(
+      <NavigatorInspector
+        impact={mockImpact}
+        onSelectCaller={vi.fn()}
+        onSelectCallee={handleSelectCallee}
+      />
+    );
+
+    const calleeItem = screen.getByTestId('callee-item-2');
+    fireEvent.click(calleeItem);
+
+    expect(handleSelectCallee).toHaveBeenCalledWith(
+      'app/services/llm_gateway.py',
+      'LiteLLMGateway.execute_call'
+    );
+  });
+
   it('renders loading state when loading is true', () => {
     render(
       <NavigatorInspector

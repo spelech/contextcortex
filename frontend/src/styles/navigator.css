@@ -972,11 +972,13 @@
   transition: all 0.15s;
 }
 
-.relation-item.caller-item {
+.relation-item.caller-item,
+.relation-item.callee-item.is-clickable {
   cursor: pointer;
 }
 
-.relation-item.caller-item:hover {
+.relation-item.caller-item:hover,
+.relation-item.callee-item.is-clickable:hover {
   background: rgba(8, 145, 178, 0.18);
   border-color: var(--accent, #14b8a6);
   transform: translateX(2px);
@@ -986,6 +988,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.rel-top-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .rel-symbol-name {
@@ -1029,6 +1037,16 @@
 .import-badge {
   background: rgba(168, 85, 247, 0.15);
   color: #c084fc;
+}
+
+.rel-count-badge {
+  font-size: 0.65rem;
+  background: rgba(20, 184, 166, 0.15);
+  color: var(--accent-light, #2dd4bf);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 500;
+  font-family: var(--font-family-mono, monospace);
 }
 
 .nav-no-items-text {
