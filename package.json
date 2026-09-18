@@ -18,7 +18,7 @@
   "bugs": {
     "url": "https://github.com/spelech/contextcortex/issues"
   },
-  "homepage": "https://github.com/spelech/contextcortex#readme",
+  "homepage": "https://spelech.github.io/contextcortex/",
   "devDependencies": {
     "mermaid": "^11.17.2",
     "vitepress": "^1.6.4",
