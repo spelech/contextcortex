@@ -157,8 +157,8 @@ class LocalStorageService:
             # Insert file summary
             if summary_tuple:
                 conn.execute(
-                    """INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, mtime)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    """INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     summary_tuple
                 )
 

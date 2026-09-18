@@ -164,7 +164,7 @@ def sync_local_paths():
                 )
             if all_summaries:
                 conn.executemany(
-                    "INSERT OR REPLACE INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     all_summaries
                 )
             if all_symbols:

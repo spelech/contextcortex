@@ -323,7 +323,7 @@ def sync_single_git_repo(repo_id: int):
                         batch_indexed_files.clear()
                     if batch_summaries:
                         conn.executemany(
-                            "INSERT OR REPLACE INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            "INSERT OR REPLACE INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                             batch_summaries
                         )
                         batch_summaries.clear()
