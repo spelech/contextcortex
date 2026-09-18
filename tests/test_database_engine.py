@@ -72,7 +72,7 @@ def test_sqlite_engine_initialization_and_crud(tmp_path):
 
     with get_connection(engine) as conn:
         conn.execute(
-            TABLES["system_metadata"].insert().values(key="version", value="2.13.0")
+            TABLES["system_metadata"].insert().values(key="version", value="2.14.0")
         )
         conn.commit()
 
@@ -81,7 +81,7 @@ def test_sqlite_engine_initialization_and_crud(tmp_path):
         ).mappings().fetchone()
 
         assert row is not None
-        assert row["value"] == "2.13.0"
+        assert row["value"] == "2.14.0"
 
 
 def test_sqlite_engine_seeds_default_prompts_and_configs(tmp_path):
