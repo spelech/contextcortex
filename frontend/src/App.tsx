@@ -99,15 +99,6 @@ function App() {
           <button className={`nav-tab ${activeTab === 'search-inspector' ? 'active' : ''}`} onClick={() => { setActiveTab('search-inspector'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-magnifying-glass"></i> Search & Inspector</button>
           <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-gear"></i> Settings</button>
           <button className={`nav-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => { setActiveTab('diagnostics'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-terminal"></i> Diagnostics & Logs</button>
-          <a
-            href="https://spelech.github.io/contextcortex/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="nav-tab nav-link-external"
-            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <i className="fa-solid fa-book-open"></i> Docs <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: '0.7rem', opacity: 0.7 }}></i>
-          </a>
         </nav>
 
         <main className="dashboard-main">
@@ -125,12 +116,7 @@ function App() {
 
 
         <footer className="dashboard-footer">
-          <p>
-            ContextCortex MCP &bull; Universal Code & Knowledge RAG &bull; 2026 &bull;{' '}
-            <a href="https://spelech.github.io/contextcortex/" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
-              Documentation
-            </a>
-          </p>
+          <p>ContextCortex MCP &bull; Universal Code & Knowledge RAG &bull; 2026</p>
         </footer>
       </div>
     </>
