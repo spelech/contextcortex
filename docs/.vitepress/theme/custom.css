@@ -1,0 +1,208 @@
+/* Mermaid Pan & Zoom and Fullscreen Modal Styles */
+
+.mermaid-panzoom-wrapper {
+  position: relative;
+  margin: 2rem 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background-color: var(--vp-c-bg-soft);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+  overflow: hidden;
+}
+
+.mermaid-panzoom-wrapper:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
+.mermaid-panzoom-viewport {
+  width: 100%;
+  min-height: 250px;
+  max-height: 650px;
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.mermaid-panzoom-viewport:active,
+.mermaid-panzoom-viewport.is-dragging {
+  cursor: grabbing !important;
+}
+
+.mermaid-panzoom-target {
+  display: inline-block;
+  transform-origin: 0 0;
+  transition: transform 0.05s ease-out;
+  will-change: transform;
+}
+
+.mermaid-panzoom-target svg {
+  display: block;
+  max-width: none !important;
+  height: auto !important;
+}
+
+/* Floating Toolbar */
+.mermaid-panzoom-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--vp-c-bg);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 20;
+  opacity: 0.85;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.mermaid-panzoom-wrapper:hover .mermaid-panzoom-toolbar {
+  opacity: 1;
+}
+
+.mermaid-toolbar-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--vp-c-text-2);
+  cursor: pointer;
+  padding: 0;
+  font-size: 15px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.mermaid-toolbar-btn:hover {
+  background-color: var(--vp-c-bg-mute);
+  color: var(--vp-c-brand-1);
+}
+
+.mermaid-toolbar-btn:active {
+  transform: scale(0.95);
+}
+
+.mermaid-scale-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--vp-c-text-3);
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.mermaid-panzoom-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  font-size: 0.72rem;
+  color: var(--vp-c-text-3);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.mermaid-panzoom-wrapper:hover .mermaid-panzoom-hint {
+  opacity: 1;
+}
+
+/* Fullscreen Lightbox Modal */
+.mermaid-fullscreen-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  animation: mermaidModalFadeIn 0.2s ease;
+}
+
+@keyframes mermaidModalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mermaid-modal-header {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  background: rgba(15, 23, 42, 0.75);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+}
+
+.mermaid-modal-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mermaid-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mermaid-modal-actions .mermaid-toolbar-btn {
+  color: #cbd5e1;
+}
+
+.mermaid-modal-actions .mermaid-toolbar-btn:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.mermaid-modal-viewport {
+  flex: 1;
+  width: 100%;
+  height: calc(100vh - 52px);
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mermaid-modal-viewport.is-dragging {
+  cursor: grabbing !important;
+}
+
+.mermaid-modal-target {
+  display: inline-block;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.mermaid-modal-target svg {
+  display: block;
+  max-width: none !important;
+  height: auto !important;
+}
