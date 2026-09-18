@@ -324,20 +324,18 @@ def get_chat_model() -> str:
 
 def ensure_file_summaries_columns(conn=None):
     """Ensures summary_text column exists on file_summaries table."""
-    def _migrate(c):
+    try:
+        raw_conn = get_db_connection()
         try:
-            cols = [r["name"] for r in c.execute("PRAGMA table_info(file_summaries)").fetchall()]
+            cols = [r["name"] for r in raw_conn.execute("PRAGMA table_info(file_summaries)").fetchall()]
             if cols and "summary_text" not in cols:
-                c.execute("ALTER TABLE file_summaries ADD COLUMN summary_text TEXT")
-                c.commit()
-        except Exception as e:
-            logger.debug(f"Migration error for file_summaries: {e}")
+                raw_conn.execute("ALTER TABLE file_summaries ADD COLUMN summary_text TEXT")
+                raw_conn.commit()
+        finally:
+            raw_conn.close()
+    except Exception as e:
+        logger.debug(f"Migration error for file_summaries: {e}")
 
-    if conn is not None:
-        _migrate(conn)
-    else:
-        with get_db_connection() as c:
-            _migrate(c)
 
 
 def get_file_settings() -> Dict[str, Any]:

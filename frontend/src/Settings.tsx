@@ -7,6 +7,8 @@ import { EmbeddingSettings } from './components/settings/EmbeddingSettings';
 import { AutoSyncSettings as AutoSyncSettingsComp } from './components/settings/AutoSyncSettings';
 import { GitCredentialsSettings } from './components/settings/GitCredentialsSettings';
 import { ThemeSettings } from './components/settings/ThemeSettings';
+import { FileSettings } from './components/settings/FileSettings';
+
 
 export default function Settings({ stats, refreshStats }: { stats: Stats | null; refreshStats: () => void }) {
   // Global Git Provider Auth State
@@ -594,6 +596,8 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         onSaveHostCredential={handleSaveHostCredential}
         onDeleteHostCredential={deleteHostCredential}
       />
+
+      <FileSettings />
     </div>
   );
 }
