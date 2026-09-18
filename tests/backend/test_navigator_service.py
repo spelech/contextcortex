@@ -249,15 +249,21 @@ def test_symbol_impact_retrieval(test_db):
     assert res["route"]["path_pattern"] == "/api/v1/root"
     assert res["route"]["http_method"] == "GET"
 
+    # Callers should only contain actual incoming callers (caller_fn calling root_handler)
+    # NOT outgoing calls made by root_handler itself
     assert "callers" in res
-    assert len(res["callers"]) >= 1
-    caller_targets = [c["target_symbol"] for c in res["callers"]]
-    assert "root_handler" in caller_targets or any(c["source_symbol_id"] == 1 for c in res["callers"])
+    assert len(res["callers"]) == 1
+    assert res["callers"][0]["source_symbol"] == "caller_fn"
+    assert res["callers"][0]["target_symbol"] == "root_handler"
+    for c in res["callers"]:
+        assert c["source_symbol"] != "root_handler"
 
+    # Callees should have resolved target_filepath from ast_symbols so cross-usage links work!
     assert "callees" in res
     assert len(res["callees"]) == 1
     assert res["callees"][0]["target_symbol"] == "compute_value"
     assert res["callees"][0]["relationship_type"] == "CALLS"
+    assert res["callees"][0]["target_filepath"] == "app/services/helper.py"
 
     assert "imports" in res
     assert len(res["imports"]) == 1
@@ -267,3 +273,95 @@ def test_symbol_impact_retrieval(test_db):
 def test_symbol_impact_not_found(test_db):
     res = get_symbol_impact("test-repo", 99999)
     assert res is None
+
+
+def test_no_outgoing_calls_in_callers(test_db):
+    # compute_value has 1 incoming caller (root_handler in app/main.py)
+    # and 0 callees / 0 imports
+    res = get_symbol_impact("test-repo", 2)
+    assert res is not None
+    assert res["symbol"]["name"] == "compute_value"
+    assert len(res["callers"]) == 1
+    assert res["callers"][0]["source_symbol"] == "root_handler"
+    assert res["callers"][0]["source_filepath"] == "app/main.py"
+    assert len(res["callees"]) == 0
+    assert len(res["imports"]) == 0
+
+
+def test_real_codebase_symbol_extraction_and_navigation(tmp_path):
+    from app.services.chunking import extract_symbols_and_chunks
+
+    db_file = str(tmp_path / "test_real_nav.db")
+    conn = sqlite3.connect(db_file)
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE git_repositories (id INTEGER PRIMARY KEY, name TEXT UNIQUE, url TEXT, enabled INTEGER DEFAULT 1, auto_sync INTEGER DEFAULT 1);
+        CREATE TABLE indexed_paths (id INTEGER PRIMARY KEY, path TEXT, repo TEXT, enabled INTEGER DEFAULT 1);
+        CREATE TABLE indexed_files (filepath TEXT PRIMARY KEY, repo TEXT, doc_type TEXT, language TEXT);
+        CREATE TABLE ast_symbols (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo TEXT, filepath TEXT, name TEXT, full_symbol TEXT, kind TEXT,
+            start_line INTEGER, end_line INTEGER, signature TEXT, language TEXT
+        );
+        CREATE TABLE ast_relationships (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo TEXT, source_symbol_id INTEGER, source_filepath TEXT,
+            source_symbol TEXT, target_symbol TEXT, relationship_type TEXT, line_number INTEGER
+        );
+        CREATE TABLE api_routes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo TEXT, filepath TEXT, framework TEXT, http_method TEXT, path_pattern TEXT,
+            handler_symbol TEXT, start_line INTEGER, end_line INTEGER
+        );
+    """)
+
+    repo = "contexthub_real"
+    conn.execute("INSERT INTO git_repositories (name, url) VALUES (?, ?)", (repo, "https://github.com/org/contexthub.git"))
+
+    real_files = ["app/services/navigator.py", "app/api/routers/navigator.py"]
+    sym_id_map = {}
+    for rf in real_files:
+        with open(rf, "r") as f:
+            code = f.read()
+        conn.execute("INSERT INTO indexed_files VALUES (?, ?, ?, ?)", (rf, repo, "code", "python"))
+        res = extract_symbols_and_chunks(code, rf, repo=repo)
+        for s in res.symbols:
+            cur = conn.execute(
+                "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (s.repo, s.filepath, s.name, s.full_symbol, s.kind, s.start_line, s.end_line, s.signature, s.language)
+            )
+            sym_id_map[(s.repo, s.filepath, s.name)] = cur.lastrowid
+        for r in res.relationships:
+            src_id = sym_id_map.get((r.repo, r.source_filepath, r.source_symbol))
+            conn.execute(
+                "INSERT INTO ast_relationships (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (r.repo, src_id, r.source_filepath, r.source_symbol, r.target_symbol, r.relationship_type, r.line_number)
+            )
+    conn.commit()
+    conn.close()
+
+    def get_conn():
+        c = sqlite3.connect(db_file)
+        c.row_factory = sqlite3.Row
+        return c
+
+    with patch("app.services.navigator.get_db_connection", side_effect=get_conn):
+        outline = get_file_outline(repo, "app/services/navigator.py")
+        assert outline is not None
+        assert len(outline["symbols"]) >= 4
+
+        target_sym = next(s for s in outline["symbols"] if s["name"] == "get_symbol_impact")
+        impact = get_symbol_impact(repo, target_sym["id"])
+        assert impact is not None
+
+        # Verify incoming callers contains api_get_symbol_impact
+        assert len(impact["callers"]) == 1
+        assert impact["callers"][0]["source_symbol"] == "api_get_symbol_impact"
+        assert impact["callers"][0]["source_filepath"] == "app/api/routers/navigator.py"
+
+        # Verify outgoing callees contains _clean_path resolved to app/services/navigator.py
+        clean_callee = next(cl for cl in impact["callees"] if cl["target_symbol"] == "_clean_path")
+        assert clean_callee["target_filepath"] == "app/services/navigator.py"
+        assert clean_callee["call_count"] >= 1
+
+
