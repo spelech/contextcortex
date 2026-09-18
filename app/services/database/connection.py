@@ -320,3 +320,54 @@ def get_chat_model() -> str:
     if stored and stored.strip():
         return stored.strip()
     return (os.getenv("CHAT_MODEL") or "gemini-2.5-flash").strip()
+
+
+def ensure_file_summaries_columns(conn=None):
+    """Ensures summary_text column exists on file_summaries table."""
+    def _migrate(c):
+        try:
+            cols = [r["name"] for r in c.execute("PRAGMA table_info(file_summaries)").fetchall()]
+            if cols and "summary_text" not in cols:
+                c.execute("ALTER TABLE file_summaries ADD COLUMN summary_text TEXT")
+                c.commit()
+        except Exception as e:
+            logger.debug(f"Migration error for file_summaries: {e}")
+
+    if conn is not None:
+        _migrate(conn)
+    else:
+        with get_db_connection() as c:
+            _migrate(c)
+
+
+def get_file_settings() -> Dict[str, Any]:
+    """Retrieves file reading and large file summarization settings."""
+    enabled_val = get_metadata("file_summary_enabled")
+    threshold_val = get_metadata("file_summary_threshold_kb")
+    max_size_val = get_metadata("file_summary_max_size_mb")
+    max_lines_val = get_metadata("file_read_max_lines")
+    model_val = get_metadata("file_summary_model")
+
+    return {
+        "summary_enabled": enabled_val != "0",
+        "summary_threshold_kb": int(threshold_val) if threshold_val and threshold_val.isdigit() else 500,
+        "summary_max_file_size_mb": int(max_size_val) if max_size_val and max_size_val.isdigit() else 10,
+        "read_file_max_lines": int(max_lines_val) if max_lines_val and max_lines_val.isdigit() else 2000,
+        "summary_chat_model": (model_val or get_chat_model()).strip(),
+    }
+
+
+def set_file_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Updates file reading and summarization settings."""
+    if "summary_enabled" in payload:
+        set_metadata("file_summary_enabled", "1" if payload["summary_enabled"] else "0")
+    if "summary_threshold_kb" in payload:
+        set_metadata("file_summary_threshold_kb", str(max(10, int(payload["summary_threshold_kb"]))))
+    if "summary_max_file_size_mb" in payload:
+        set_metadata("file_summary_max_size_mb", str(max(1, int(payload["summary_max_file_size_mb"]))))
+    if "read_file_max_lines" in payload:
+        set_metadata("file_read_max_lines", str(max(10, int(payload["read_file_max_lines"]))))
+    if "summary_chat_model" in payload and payload["summary_chat_model"]:
+        set_metadata("file_summary_model", str(payload["summary_chat_model"]).strip())
+    return get_file_settings()
+

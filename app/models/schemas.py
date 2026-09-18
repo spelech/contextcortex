@@ -51,6 +51,14 @@ class ApiClientCallRecord(BaseModel):
     line_number: int
     created_at: Optional[str] = None
 
+class FileSettingsRequest(BaseModel):
+    summary_enabled: Optional[bool] = None
+    summary_threshold_kb: Optional[int] = None
+    summary_max_file_size_mb: Optional[int] = None
+    read_file_max_lines: Optional[int] = None
+    summary_chat_model: Optional[str] = None
+
+
 class CodeSymbol(BaseModel):
     name: str
     full_symbol: str

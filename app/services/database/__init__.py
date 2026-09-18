@@ -38,6 +38,9 @@ from app.services.database.connection import (
     set_embedding_db_config,
     get_vision_ocr_model,
     get_chat_model,
+    get_file_settings,
+    set_file_settings,
+    ensure_file_summaries_columns,
 )
 from app.services.database.credentials import (
     list_git_host_credentials,
@@ -105,6 +108,9 @@ __all__ = [
     "set_embedding_db_config",
     "get_vision_ocr_model",
     "get_chat_model",
+    "get_file_settings",
+    "set_file_settings",
+    "ensure_file_summaries_columns",
     "list_git_host_credentials",
     "get_git_host_credential",
     "save_git_host_credential",

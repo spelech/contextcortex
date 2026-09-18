@@ -10,7 +10,8 @@ from fastapi.responses import JSONResponse
 from app.models.schemas import (
     TokenRequest, HostCredentialRequest,
     VectorStoreTestRequest, VectorStoreSwitchRequest,
-    AutoSyncSettingsRequest, EmbeddingSettingsRequest
+    AutoSyncSettingsRequest, EmbeddingSettingsRequest,
+    FileSettingsRequest
 )
 import app.services.database as db_service
 import app.services.git_manager as gm_service
@@ -362,4 +363,24 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
     except Exception as e:
         logger.error(f"Error updating embedding settings: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
+
+@router.get("/admin/api/settings/files")
+async def api_get_file_settings():
+    try:
+        cfg = db_service.get_file_settings()
+        return cfg
+    except Exception as e:
+        logger.error(f"Error reading file settings: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.post("/admin/api/settings/files")
+async def api_save_file_settings(payload: FileSettingsRequest):
+    try:
+        data = payload.model_dump(exclude_unset=True)
+        updated = db_service.set_file_settings(data)
+        return updated
+    except Exception as e:
+        logger.error(f"Error saving file settings: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
