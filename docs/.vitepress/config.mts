@@ -26,8 +26,23 @@ export default withMermaid(
             items: [
               { text: 'Overview', link: '/guide/' },
               { text: 'Getting Started', link: '/guide/getting-started' },
-              { text: 'User Guide (Screenshots)', link: '/guide/user-guide' },
               { text: 'Configuration', link: '/guide/configuration' }
+            ]
+          },
+          {
+            text: 'User Guide (Dashboard & Features)',
+            collapsed: false,
+            items: [
+              { text: 'User Guide Hub', link: '/guide/user-guide' },
+              { text: '1. Overview Dashboard', link: '/guide/user-guide/overview' },
+              { text: '2. Codebase Navigator', link: '/guide/user-guide/navigator' },
+              { text: '3. Search & Inspector', link: '/guide/user-guide/search' },
+              { text: '4. Git Repositories', link: '/guide/user-guide/git-repositories' },
+              { text: '5. Local Paths & Vaults', link: '/guide/user-guide/local-paths' },
+              { text: '6. Storage & PDF Ingestion', link: '/guide/user-guide/local-storage' },
+              { text: '7. Settings & Discovery', link: '/guide/user-guide/settings' },
+              { text: '8. Diagnostics & Logs', link: '/guide/user-guide/diagnostics' },
+              { text: '9. Appearance & Themes', link: '/guide/user-guide/themes' }
             ]
           }
         ],
