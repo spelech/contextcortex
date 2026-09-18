@@ -258,3 +258,10 @@ def get_file_reader_service(
     if reset or _file_reader_service is None:
         _file_reader_service = FileReaderService(storage_root=storage_root)
     return _file_reader_service
+
+
+def reset_file_reader_service():
+    """Resets the singleton instance for testing."""
+    global _file_reader_service
+    _file_reader_service = None
+

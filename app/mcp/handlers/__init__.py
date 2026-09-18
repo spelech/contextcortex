@@ -27,6 +27,10 @@ from app.mcp.handlers.storage_handlers import (
     handle_manage_local_file,
     handle_what_is_ingested,
 )
+from app.mcp.handlers.file_handlers import (
+    handle_read_file,
+    handle_summarize_file,
+)
 
 __all__ = [
     "handle_search_code",
@@ -46,4 +50,6 @@ __all__ = [
     "handle_manage_adr",
     "handle_manage_local_file",
     "handle_what_is_ingested",
+    "handle_read_file",
+    "handle_summarize_file",
 ]
