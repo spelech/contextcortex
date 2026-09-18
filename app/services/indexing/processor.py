@@ -191,18 +191,18 @@ def process_file_content(
 
     if is_pdf_file and content_bytes_len > MAX_PDF_SIZE_BYTES:
         logger.warning(f"Skipping PDF file {filepath} exceeding {MAX_PDF_SIZE_BYTES // (1024*1024)}MB limit")
-        mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
+        mtime = 0.0
         summary_tuple = (filepath, repo, title, folder, category, json.dumps([]), json.dumps([]), json.dumps([]), None, mtime)
         return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
 
     if not is_pdf_file and content_bytes_len > summary_max_size:
         logger.warning(f"Skipping file {filepath} exceeding {summary_max_size // (1024*1024)}MB max limit ({content_bytes_len} bytes)")
-        mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
+        mtime = 0.0
         summary_tuple = (filepath, repo, title, folder, category, json.dumps([]), json.dumps([]), json.dumps([]), None, mtime)
         return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
 
     if not is_pdf_file and content_bytes_len > summary_threshold:
-        mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
+        mtime = 0.0
         summary_text = None
         if summary_enabled:
             try:

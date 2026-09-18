@@ -371,7 +371,7 @@ async def api_get_file_settings():
         return cfg
     except Exception as e:
         logger.error(f"Error reading file settings: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to read file settings."})
 
 @router.post("/admin/api/settings/files")
 async def api_save_file_settings(payload: FileSettingsRequest):
@@ -381,6 +381,6 @@ async def api_save_file_settings(payload: FileSettingsRequest):
         return updated
     except Exception as e:
         logger.error(f"Error saving file settings: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to save file settings."})
 
 

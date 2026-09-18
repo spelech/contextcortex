@@ -35,14 +35,17 @@ async def api_read_file(
         )
         return res
     except ForbiddenError as fe:
-        return JSONResponse(status_code=403, content={"error": str(fe)})
+        logger.warning(f"Forbidden access reading file '{path}': {fe}")
+        return JSONResponse(status_code=403, content={"error": "Access denied. Path is outside allowed repositories."})
     except FileNotFoundError as fne:
-        return JSONResponse(status_code=404, content={"error": str(fne)})
+        logger.warning(f"File not found reading '{path}': {fne}")
+        return JSONResponse(status_code=404, content={"error": "File not found."})
     except ValueError as ve:
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        logger.warning(f"Validation error reading file '{path}': {ve}")
+        return JSONResponse(status_code=400, content={"error": "Invalid file parameters."})
     except Exception as e:
         logger.error(f"Error reading file '{path}': {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Internal server error reading file."})
 
 
 @router.post("/admin/api/files/summarize")
@@ -61,11 +64,14 @@ async def api_summarize_file(payload: FileSummarizePayload):
             "status": "success"
         }
     except ForbiddenError as fe:
-        return JSONResponse(status_code=403, content={"error": str(fe)})
+        logger.warning(f"Forbidden access summarizing file '{payload.path}': {fe}")
+        return JSONResponse(status_code=403, content={"error": "Access denied. Path is outside allowed repositories."})
     except FileNotFoundError as fne:
-        return JSONResponse(status_code=404, content={"error": str(fne)})
+        logger.warning(f"File not found summarizing '{payload.path}': {fne}")
+        return JSONResponse(status_code=404, content={"error": "File not found."})
     except ValueError as ve:
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        logger.warning(f"Validation error summarizing file '{payload.path}': {ve}")
+        return JSONResponse(status_code=400, content={"error": "Invalid file parameters."})
     except Exception as e:
         logger.error(f"Error summarizing file '{payload.path}': {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Internal server error summarizing file."})
