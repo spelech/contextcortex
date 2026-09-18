@@ -179,7 +179,7 @@ class AuthMiddleware:
             })
 
 
-app = FastAPI(title="ContextCortex", version="2.12.0", lifespan=lifespan)
+app = FastAPI(title="ContextCortex", version="2.13.0", lifespan=lifespan)
 app.add_middleware(AuthMiddleware)
 
 # Include API routes

@@ -1,6 +1,6 @@
 # Software Requirements Specification (SRS)
 
-This document establishes the Software Requirements Specification for ContextCortex (version 2.12.0).
+This document establishes the Software Requirements Specification for ContextCortex (version 2.13.0).
 
 This specification is written in accordance with the **ASD-STE100 Simplified Technical English (Issue 9)** standard and ISO/IEC/IEEE 29148 requirements engineering standards.
 
