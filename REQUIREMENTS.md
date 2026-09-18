@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **928 Automated Tests** (613 Pytest Backend + 269 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **934 Automated Tests** (619 Pytest Backend + 269 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -784,7 +784,7 @@ classDiagram
 - `test_test_connection_active_embedded` - _Verify test_connection succeeds on active embedded Qdrant store without file lock conflict._
 - `test_switch_same_embedded_directory` - _Verify switch_vector_store succeeds when switching collection on the same embedded Qdrant directory._
 
-#### `tests/backend/test_vector_store_qdrant.py` (26 tests)
+#### `tests/backend/test_vector_store_qdrant.py` (32 tests)
 - `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`
 - `TestQdrantVectorStoreInit::test_init_remote_success`
 - `TestQdrantVectorStoreInit::test_init_remote_fallback_to_embedded_on_connection_error`
@@ -795,6 +795,9 @@ classDiagram
 - `TestQdrantVectorStoreOperations::test_upsert_failure_handling_and_logging`
 - `TestQdrantVectorStoreOperations::test_upsert_dict_documents_auto_computes_vectors`
 - `TestQdrantVectorStoreOperations::test_search_dense_and_hybrid_rrf`
+- `TestQdrantVectorStoreOperations::test_search_weighted_score_fusion_range_and_boost`
+- `TestQdrantVectorStoreOperations::test_search_weighted_score_fusion_alpha_weighting`
+- `TestQdrantVectorStoreOperations::test_search_dense_fallback_without_sparse`
 - `TestQdrantVectorStoreOperations::test_delete_by_path`
 - `TestQdrantVectorStoreOperations::test_delete_by_repo`
 - `TestQdrantVectorStoreOperations::test_get_stats_and_health_check`
@@ -808,6 +811,9 @@ classDiagram
 - `test_upsert_failure_handling_and_logging`
 - `test_upsert_dict_documents_auto_computes_vectors`
 - `test_search_dense_and_hybrid_rrf`
+- `test_search_weighted_score_fusion_range_and_boost`
+- `test_search_weighted_score_fusion_alpha_weighting`
+- `test_search_dense_fallback_without_sparse`
 - `test_delete_by_path`
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
