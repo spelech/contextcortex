@@ -1,6 +1,6 @@
 {
   "name": "contextcortex",
-  "version": "2.13.0",
+  "version": "2.14.0",
   "description": "High-performance Model Context Protocol (MCP) server for syntax-aware code RAG and codebase navigation",
   "type": "module",
   "scripts": {

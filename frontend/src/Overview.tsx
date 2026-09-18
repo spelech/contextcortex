@@ -88,7 +88,7 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
               <span className="badge badge-accent">
                 {stats.vector_store_provider === 'chroma'
                   ? 'Dense Vector Cosine Similarity'
-                  : 'Dense + BM25 Reciprocal Rank Fusion (RRF)'}
+                  : 'Dense + BM25 Normalized Weighted Fusion'}
               </span>
             </div>
 

@@ -46,7 +46,7 @@ async def handle_search_code(
             link_url = p.get("permalink_url") or p.get("github_url")
             if link_url:
                 header += f"\nSource Link: {link_url}"
-            header += f"\nRRF Score: {hit.score:.4f}\n"
+            header += f"\nRelevance Score: {hit.score:.4f} ({hit.score * 100:.1f}%)\n"
 
             lang = p.get("language", "")
             block = f"{header}```{lang}\n{p.get('content')}\n```"
@@ -89,7 +89,7 @@ async def handle_search_docs(
             link_url = p.get("permalink_url") or p.get("github_url")
             if link_url:
                 header += f"\nSource Link: {link_url}"
-            header += f"\nRRF Score: {hit.score:.4f}\n"
+            header += f"\nRelevance Score: {hit.score:.4f} ({hit.score * 100:.1f}%)\n"
 
             block = f"{header}---\n{p.get('content')}"
             formatted.append(block)

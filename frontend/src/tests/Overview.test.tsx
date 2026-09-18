@@ -145,7 +145,7 @@ describe('Overview Component', () => {
       </ToastProvider>
     );
     expect(screen.getByText('System & Embedding Specs')).toBeInTheDocument();
-    expect(screen.getByText(/Dense \+ BM25 Reciprocal Rank Fusion/i)).toBeInTheDocument();
+    expect(screen.getByText(/Dense \+ BM25 Normalized Weighted Fusion/i)).toBeInTheDocument();
     const specRows = document.querySelectorAll('.spec-row');
     expect(specRows.length).toBeGreaterThan(0);
   });

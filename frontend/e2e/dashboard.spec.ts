@@ -734,7 +734,7 @@ test('8. executes hybrid search with target type toggle (code vs doc) and repo f
 
   await expect(page.getByText('app/api/auth.py')).toBeVisible();
   await expect(page.getByText('verify_token', { exact: true })).toBeVisible();
-  await expect(page.getByText('RRF Score: 0.0450')).toBeVisible();
+  await expect(page.getByText('Score: 4.5% (0.0450)')).toBeVisible();
   await expect(page.getByText('View on GitHub')).toBeVisible();
 
   // Toggle to Doc Search
@@ -746,7 +746,7 @@ test('8. executes hybrid search with target type toggle (code vs doc) and repo f
   expect(lastSearchPayload.type).toBe('doc');
 
   await expect(page.getByText('docs/architecture.md')).toBeVisible();
-  await expect(page.getByText('RRF Score: 0.0385')).toBeVisible();
+  await expect(page.getByText('Score: 3.9% (0.0385)')).toBeVisible();
   await expect(page.getByText('# System Architecture')).toBeVisible();
 });
 
@@ -1188,7 +1188,7 @@ test('20. [Mobile] performs search and renders responsive result item on mobile 
   await expect(resultCard).toBeVisible();
   await expect(resultCard.getByText('app/api/auth.py')).toBeVisible();
   await expect(resultCard.getByText('verify_token', { exact: true })).toBeVisible();
-  await expect(resultCard.getByText('RRF Score: 0.0450')).toBeVisible();
+  await expect(resultCard.getByText('Score: 4.5% (0.0450)')).toBeVisible();
   await expect(resultCard.getByText('View on GitHub')).toBeVisible();
   await expect(resultCard.locator('pre.search-hit-code')).toContainText('def verify_token');
 });
