@@ -96,6 +96,7 @@ file_summaries = Table(
     Column("tags", Text, nullable=True),
     Column("headings", Text, nullable=True),
     Column("keywords", Text, nullable=True),
+    Column("summary_text", Text, nullable=True),
     Column("mtime", Float, nullable=True),
 )
 

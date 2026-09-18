@@ -139,7 +139,8 @@ def test_process_file_content_file_size_guard():
         )
         mock_embed.assert_not_called()
 
-    assert points == []
+    # Normal code chunks are skipped; any produced point is a summary document
+    assert all(p.doc_type == "summary" for p in points)
     assert symbols == []
     assert rels == []
     assert routes == []

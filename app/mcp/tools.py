@@ -28,6 +28,8 @@ from app.mcp.handlers import (
     handle_manage_adr,
     handle_manage_local_file,
     handle_what_is_ingested,
+    handle_read_file,
+    handle_summarize_file,
 )
 
 logger = logging.getLogger("contextcortex.mcp")
@@ -123,6 +125,19 @@ def register_mcp_tools_and_resources(server=None):
             name="what_is_ingested",
             description="Inspect all ingested Git repositories, monitored local paths, and uploaded local storage files with optional filtering and detailed file trees."
         )(handle_what_is_ingested)
+
+    if "read_file" not in existing_tools:
+        server.tool(
+            name="read_file",
+            description="Read entire file content or bounded line ranges from monitored local directories or local storage with safety limits."
+        )(handle_read_file)
+
+    if "summarize_file" not in existing_tools:
+        server.tool(
+            name="summarize_file",
+            description="Retrieve an existing summary or generate a structured LLM executive summary for a large file."
+        )(handle_summarize_file)
+
 
     existing_resources = {str(r.uri) for r in server._resource_manager.list_resources()}
     if "knowledge://catalog/summary" not in existing_resources:

@@ -287,7 +287,15 @@ def init_db(vault_path: str = "/docs", engine: Optional[Engine] = None) -> Engin
     # Create all defined tables idempotently
     metadata.create_all(bind=eng)
 
+    try:
+        from app.services.database.connection import ensure_file_summaries_columns
+        with eng.connect() as conn:
+            ensure_file_summaries_columns(conn)
+    except Exception as me:
+        logger.debug(f"Column migration check: {me}")
+
     # Seed default data
     _seed_defaults(eng, vault_path=vault_path)
 
     return eng
+

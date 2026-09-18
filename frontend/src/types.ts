@@ -402,3 +402,12 @@ export interface PdfPreviewData {
   sample_chunks: PdfChunkPreview[];
 }
 
+export interface FileSettings {
+  summary_enabled: boolean;
+  summary_threshold_kb: number;
+  summary_max_file_size_mb: number;
+  read_file_max_lines: number;
+  summary_chat_model: string;
+}
+
+

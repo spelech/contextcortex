@@ -1,8 +1,8 @@
-# Software Requirements Specification: ContextCortex (v2.14.0)
+# Software Requirements Specification: ContextCortex (v2.15.0)
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **934 Automated Tests** (619 Pytest Backend + 269 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **968 Automated Tests** (651 Pytest Backend + 271 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -934,6 +934,29 @@ classDiagram
 - `test_embedding_cache_invalidation`
 - `test_embedding_cache_empty_inputs`
 
+#### `tests/test_file_mcp_and_api.py` (5 tests)
+- `test_env`
+- `test_mcp_handle_read_file`
+- `test_mcp_handle_summarize_file`
+- `test_api_read_file`
+- `test_api_summarize_file`
+
+#### `tests/test_file_reader.py` (8 tests)
+- `test_safe_path_resolution_local_storage`
+- `test_safe_path_resolution_indexed_paths`
+- `test_path_traversal_and_invalid_paths_rejected`
+- `test_read_text_file_full_and_line_slicing`
+- `test_read_file_capping_max_lines_and_truncation`
+- `test_binary_file_detection_and_rejection`
+- `test_read_nonexistent_file_raises_not_found`
+- `test_get_file_reader_service_singleton`
+
+#### `tests/test_file_settings.py` (4 tests)
+- `test_file_summaries_table_has_summary_text_column`
+- `test_file_settings_defaults`
+- `test_set_file_settings_persists`
+- `test_file_settings_api_endpoints`
+
 #### `tests/test_git_incremental.py` (6 tests)
 - `test_compute_git_repo_delta`
 - `test_compute_git_repo_delta_custom_extensions`
@@ -1100,11 +1123,30 @@ and leaves the prior indexed state intact without data loss._
 - `test_process_file_content_doc_caching`
 - `test_process_file_content_file_size_guard`
 
+#### `tests/test_processor_summarization.py` (3 tests)
+- `test_env`
+- `test_large_file_auto_summarization`
+- `test_large_file_disabled_summarization`
+
 #### `tests/test_storage_api_routes.py` (4 tests)
 - `test_storage_upload_and_get_file`
 - `test_storage_upload_multipart_and_put`
 - `test_storage_validation_and_errors`
 - `test_ingestion_catalog_endpoint`
+
+#### `tests/test_summarizer.py` (12 tests)
+- `test_db` - _Sets up an isolated SQLite database for summarizer testing._
+- `test_generate_file_summary_success`
+- `test_generate_file_summary_handles_litellm_exception`
+- `test_get_or_create_summary_returns_cached_summary`
+- `test_get_or_create_summary_cache_miss_reads_disk_and_persists`
+- `test_get_or_create_summary_force_refresh_updates_existing_cache`
+- `test_get_or_create_summary_litellm_failure_does_not_crash`
+- `test_get_summarizer_service_uses_settings_model`
+- `test_get_or_create_summary_nonexistent_file_raises_not_found`
+- `test_get_or_create_summary_vector_store_failure_resilience`
+- `test_get_or_create_summary_reads_via_file_reader`
+- `test_generate_file_summary_truncates_huge_content`
 
 #### `tests/test_webhooks.py` (12 tests)
 - `test_github_webhook_no_secret`
@@ -1175,6 +1217,10 @@ and leaves the prior indexed state intact without data loss._
 - displays discovery error banner when LiteLLM is unreachable
 - switches to manual input when Custom is selected from dropdown or link clicked
 - disables discover button and shows spinner while isDiscovering is true
+
+#### `FileSettings.test.tsx` (2 tests)
+- renders settings fields and loads data from api
+- submits updated settings when Save button is clicked
 
 #### `GitRepoManager.test.tsx` (13 tests)
 - renders repository list with status badges, auto-sync buttons, and details

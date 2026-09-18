@@ -418,7 +418,7 @@ describe('Settings Component', () => {
 
     // 1. Save empty (guard branch)
     fireEvent.click(saveBtns[0]);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(4); // Initial loads for hosts, vector store, auto-sync & embedding
+    expect(globalThis.fetch).toHaveBeenCalledTimes(5); // Initial loads for hosts, vector store, auto-sync, embedding & files
 
     // 2. Save GitHub token
     const ghInput = screen.getByPlaceholderText(/ghp_xxxx/i);

@@ -175,12 +175,51 @@ def process_file_content(
     folder = os.path.dirname(rel_path) or "root"
     category = category_override or folder
 
+    file_settings = {}
+    try:
+        from app.services.database.connection import get_file_settings
+        file_settings = get_file_settings()
+    except Exception:
+        pass
+
+    summary_enabled = file_settings.get("summary_enabled", True)
+    summary_threshold = file_settings.get("summary_threshold_kb", 500) * 1024
+    summary_max_size = file_settings.get("summary_max_file_size_mb", 10) * 1024 * 1024
+
     is_pdf_file = doc_type == "pdf" or filepath.lower().endswith(".pdf")
-    size_limit = MAX_PDF_SIZE_BYTES if is_pdf_file else MAX_FILE_SIZE_BYTES
-    if content and len(content.encode("utf-8")) > size_limit:
-        limit_desc = f"{MAX_PDF_SIZE_BYTES // (1024*1024)}MB" if is_pdf_file else "500KB"
-        logger.warning(f"Skipping file {filepath} exceeding {limit_desc} size limit ({len(content.encode('utf-8'))} bytes)")
-        mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
+    content_bytes_len = len(content.encode("utf-8")) if content else 0
+
+    if is_pdf_file and content_bytes_len > MAX_PDF_SIZE_BYTES:
+        logger.warning(f"Skipping PDF file {filepath} exceeding {MAX_PDF_SIZE_BYTES // (1024*1024)}MB limit")
+        mtime = 0.0
+        summary_tuple = (filepath, repo, title, folder, category, json.dumps([]), json.dumps([]), json.dumps([]), None, mtime)
+        return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
+
+    if not is_pdf_file and content_bytes_len > summary_max_size:
+        logger.warning(f"Skipping file {filepath} exceeding {summary_max_size // (1024*1024)}MB max limit ({content_bytes_len} bytes)")
+        mtime = 0.0
+        summary_tuple = (filepath, repo, title, folder, category, json.dumps([]), json.dumps([]), json.dumps([]), None, mtime)
+        return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
+
+    if not is_pdf_file and content_bytes_len > summary_threshold:
+        mtime = 0.0
+        summary_text = None
+        if summary_enabled:
+            try:
+                from app.services.summarizer import get_summarizer_service
+                summarizer = get_summarizer_service()
+                gen_summary, summary_doc = summarizer.generate_file_summary(
+                    filepath=filepath,
+                    content=content,
+                    repo=repo,
+                    category=category
+                )
+                summary_text = gen_summary or None
+                if summary_doc:
+                    points.append(summary_doc)
+            except Exception as se:
+                logger.warning(f"Auto-summarization failed for {filepath}: {se}")
+
         summary_tuple = (
             filepath,
             repo,
@@ -190,6 +229,7 @@ def process_file_content(
             json.dumps([]),
             json.dumps([]),
             json.dumps([]),
+            summary_text,
             mtime
         )
         return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
@@ -350,6 +390,7 @@ def process_file_content(
         json.dumps(tags),
         json.dumps(list(set(headings[:20]))),
         json.dumps(keywords),
+        None,
         mtime
     )
 
