@@ -211,6 +211,71 @@ class TestQdrantVectorStoreOperations:
         # Empty query returns empty list
         assert memory_store.search("") == []
 
+    def test_search_weighted_score_fusion_range_and_boost(self, memory_store):
+        doc1 = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="High performance docker container orchestration and deployment.",
+            repo="devops",
+            path="/docs/docker.md",
+            doc_type="doc"
+        )
+        doc2 = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Kubernetes cluster management without any docker keywords.",
+            repo="k8s",
+            path="/docs/k8s.md",
+            doc_type="doc"
+        )
+        memory_store.upsert_documents([doc1, doc2])
+
+        results = memory_store.search("docker container deployment", limit=5)
+        assert len(results) > 0
+        top = results[0]
+        # Score must be bounded in [0.0, 1.0]
+        assert 0.0 <= top.score <= 1.0
+        # The document matching both dense semantics and BM25 keywords should score significantly higher than RRF fractions
+        assert top.score >= 0.50
+        assert top.payload["repo"] == "devops"
+
+    def test_search_weighted_score_fusion_alpha_weighting(self, memory_store, monkeypatch):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Python async event loop and concurrency programming.",
+            repo="core",
+            path="/docs/async.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        # Test with high dense weight
+        monkeypatch.setenv("HYBRID_DENSE_WEIGHT", "0.9")
+        results_high_dense = memory_store.search("event loop concurrency", limit=5)
+        assert len(results_high_dense) == 1
+        score_high = results_high_dense[0].score
+        assert 0.0 <= score_high <= 1.0
+
+        # Test with low dense weight (higher sparse weight)
+        monkeypatch.setenv("HYBRID_DENSE_WEIGHT", "0.1")
+        results_low_dense = memory_store.search("event loop concurrency", limit=5)
+        assert len(results_low_dense) == 1
+        score_low = results_low_dense[0].score
+        assert 0.0 <= score_low <= 1.0
+
+    def test_search_dense_fallback_without_sparse(self, memory_store):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Pure dense search without sparse index present.",
+            repo="core",
+            path="/docs/dense.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        with patch("app.services.vector_store.qdrant_store.get_sparse_embedding", return_value=None):
+            results = memory_store.search("dense search", limit=5)
+            assert len(results) == 1
+            assert 0.0 <= results[0].score <= 1.0
+
+
+
     def test_delete_by_path(self, memory_store):
         doc1 = VectorDocument(
             id=str(uuid.uuid4()),
