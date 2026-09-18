@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **925 Automated Tests** (611 Pytest Backend + 268 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **928 Automated Tests** (613 Pytest Backend + 269 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -650,7 +650,7 @@ classDiagram
 - `test_api_get_symbol_impact_success`
 - `test_api_get_symbol_impact_not_found`
 
-#### `tests/backend/test_navigator_service.py` (9 tests)
+#### `tests/backend/test_navigator_service.py` (11 tests)
 - `test_db`
 - `test_navigator_tree_construction`
 - `test_navigator_tree_all_repos`
@@ -660,6 +660,8 @@ classDiagram
 - `test_file_outline_with_route_mapping_and_cleaning`
 - `test_symbol_impact_retrieval`
 - `test_symbol_impact_not_found`
+- `test_no_outgoing_calls_in_callers`
+- `test_real_codebase_symbol_extraction_and_navigation`
 
 #### `tests/backend/test_schemas.py` (2 tests)
 - `test_code_symbol_creation`
@@ -1211,7 +1213,7 @@ and leaves the prior indexed state intact without data loss._
 - displays PDF notice and hides text textarea when upload path is a PDF
 - prevents direct text replacement of PDF files in replace modal
 
-#### `NavigatorInspector.test.tsx` (8 tests)
+#### `NavigatorInspector.test.tsx` (9 tests)
 - renders empty placeholder when no symbol is selected
 - renders symbol metadata and metrics
 - renders route details card
@@ -1219,6 +1221,7 @@ and leaves the prior indexed state intact without data loss._
 - copies permalink to clipboard on button click
 - calls onSelectCaller when a caller is clicked for click-through navigation
 - renders outgoing callees and imports
+- calls onSelectCallee when a clickable callee is clicked for cross-file navigation
 - renders loading state when loading is true
 
 #### `NavigatorOutline.test.tsx` (8 tests)

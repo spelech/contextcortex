@@ -92,18 +92,35 @@ def get_navigator_tree(repo: str) -> Optional[Dict[str, Any]]:
 def get_file_outline(repo: str, filepath: str) -> Optional[Dict[str, Any]]:
     clean_fp = _clean_path(filepath)
     with get_db_connection() as conn:
-        where = " WHERE filepath LIKE ? " if repo == "__all__" else " WHERE repo = ? AND filepath LIKE ? "
-        params = [f"%{clean_fp}"] if repo == "__all__" else [repo, f"%{clean_fp}"]
-        
+        repo_filter = "" if repo == "__all__" else "repo = ? AND "
+        repo_params = [] if repo == "__all__" else [repo]
+
+        # First attempt exact filepath match (relative or with leading slash)
         symbols = conn.execute(
-            f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language FROM ast_symbols{where} ORDER BY start_line ASC",
-            params
+            f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language "
+            f"FROM ast_symbols WHERE {repo_filter}(filepath = ? OR filepath = ?) ORDER BY start_line ASC",
+            repo_params + [clean_fp, f"/{clean_fp}"]
         ).fetchall()
 
+        # If no exact match, fallback to slash-anchored suffix match to prevent cross-file symbol leakage
+        if not symbols:
+            symbols = conn.execute(
+                f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language "
+                f"FROM ast_symbols WHERE {repo_filter}(filepath LIKE ? OR filepath LIKE ?) ORDER BY start_line ASC",
+                repo_params + [f"%/{clean_fp}", f"%\\{clean_fp}"]
+            ).fetchall()
+
         routes = conn.execute(
-            f"SELECT id, framework, http_method, path_pattern, handler_symbol, start_line, end_line FROM api_routes{where}",
-            params
+            f"SELECT id, framework, http_method, path_pattern, handler_symbol, start_line, end_line "
+            f"FROM api_routes WHERE {repo_filter}(filepath = ? OR filepath = ?)",
+            repo_params + [clean_fp, f"/{clean_fp}"]
         ).fetchall()
+        if not routes:
+            routes = conn.execute(
+                f"SELECT id, framework, http_method, path_pattern, handler_symbol, start_line, end_line "
+                f"FROM api_routes WHERE {repo_filter}(filepath LIKE ? OR filepath LIKE ?)",
+                repo_params + [f"%/{clean_fp}", f"%\\{clean_fp}"]
+            ).fetchall()
 
     route_by_handler = {r["handler_symbol"]: dict(r) for r in routes if r["handler_symbol"]}
     route_by_line = {r["start_line"]: dict(r) for r in routes}
@@ -139,27 +156,105 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
         if not sym:
             return None
 
-        # Fetch incoming callers
-        callers = conn.execute(
-            "SELECT id, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number FROM ast_relationships WHERE target_symbol = ? OR source_symbol_id = ?",
-            (sym["name"], sym["id"])
-        ).fetchall()
+        sym_repo = sym["repo"]
+        target_repo = sym_repo if repo != "__all__" else "__all__"
+        repo_filter_clause = "" if target_repo == "__all__" else " AND r.repo = ?"
+        repo_params = [] if target_repo == "__all__" else [target_repo]
 
-        # Fetch outgoing dependencies
-        callees = conn.execute(
-            "SELECT id, target_symbol, relationship_type, line_number FROM ast_relationships WHERE source_symbol_id = ? AND relationship_type != 'IMPORTS'",
-            (sym["id"],)
-        ).fetchall()
+        # 1. Fetch incoming callers:
+        # Matches relationships where this symbol is called/used.
+        # Never includes outgoing calls made by this symbol.
+        # Resolves source_symbol_id from ast_symbols if missing, and groups multiple calls from same caller.
+        callers_query = f"""
+            SELECT 
+                MIN(r.id) as id,
+                COALESCE(r.source_symbol_id, src_sym.id) as source_symbol_id,
+                r.source_filepath,
+                r.source_symbol,
+                r.target_symbol,
+                r.relationship_type,
+                MIN(r.line_number) as line_number,
+                COUNT(*) as call_count,
+                GROUP_CONCAT(DISTINCT r.line_number) as all_lines
+            FROM ast_relationships r
+            LEFT JOIN (
+                SELECT id, repo, filepath, name, full_symbol,
+                       ROW_NUMBER() OVER (PARTITION BY repo, filepath, name ORDER BY id ASC) as rn
+                FROM ast_symbols
+            ) src_sym ON (
+                r.source_symbol_id = src_sym.id
+                OR (r.source_symbol = src_sym.name AND (r.source_filepath = src_sym.filepath OR r.source_filepath LIKE '%/' || src_sym.filepath) AND r.repo = src_sym.repo)
+            ) AND src_sym.rn = 1
+            WHERE (r.target_symbol = ? OR (r.target_symbol = ? AND ? != '')){repo_filter_clause}
+            GROUP BY r.source_filepath, r.source_symbol, r.relationship_type
+            ORDER BY r.source_filepath, MIN(r.line_number) ASC
+        """
+        full_sym = sym["full_symbol"] or ""
+        caller_params = [sym["name"], full_sym, full_sym] + repo_params
+        callers = conn.execute(callers_query, caller_params).fetchall()
 
-        imports = conn.execute(
-            "SELECT id, target_symbol, line_number FROM ast_relationships WHERE source_symbol_id = ? AND relationship_type = 'IMPORTS'",
-            (sym["id"],)
-        ).fetchall()
+        # 2. Fetch outgoing dependencies (callees):
+        # Matches calls originating from this symbol.
+        # Resolves target_filepath and target_symbol_id from ast_symbols so links work across usages!
+        # Groups repeated calls to the same target and sorts resolved codebase targets to the top.
+        callees_query = f"""
+            SELECT 
+                MIN(r.id) as id,
+                r.target_symbol,
+                r.relationship_type,
+                MIN(r.line_number) as line_number,
+                COUNT(*) as call_count,
+                GROUP_CONCAT(DISTINCT r.line_number) as all_lines,
+                tgt_sym.filepath as target_filepath,
+                tgt_sym.id as target_symbol_id
+            FROM ast_relationships r
+            LEFT JOIN (
+                SELECT id, repo, filepath, name, full_symbol,
+                       ROW_NUMBER() OVER (PARTITION BY repo, name ORDER BY id ASC) as rn
+                FROM ast_symbols
+            ) tgt_sym ON (
+                (r.target_symbol = tgt_sym.name OR r.target_symbol = tgt_sym.full_symbol)
+                AND (r.repo = tgt_sym.repo OR ? = '__all__')
+                AND tgt_sym.rn = 1
+            )
+            WHERE (r.source_symbol_id = ? OR (r.source_symbol = ? AND (r.source_filepath = ? OR r.source_filepath LIKE ?)))
+              AND r.relationship_type != 'IMPORTS'{repo_filter_clause}
+            GROUP BY r.target_symbol, r.relationship_type
+            ORDER BY 
+                CASE WHEN tgt_sym.filepath IS NOT NULL THEN 0 ELSE 1 END ASC,
+                MIN(r.line_number) ASC
+        """
+        callee_params = [target_repo, sym["id"], sym["name"], sym["filepath"], f"%/{_clean_path(sym['filepath'])}"] + repo_params
+        callees = conn.execute(callees_query, callee_params).fetchall()
 
-        route = conn.execute(
-            "SELECT framework, http_method, path_pattern FROM api_routes WHERE handler_symbol = ? OR (filepath LIKE ? AND start_line <= ? AND end_line >= ?)",
-            (sym["name"], f"%{_clean_path(sym['filepath'])}", sym["start_line"], sym["end_line"])
-        ).fetchone()
+        # 3. Fetch imports:
+        imports_query = f"""
+            SELECT 
+                MIN(r.id) as id, 
+                r.target_symbol, 
+                MIN(r.line_number) as line_number,
+                COUNT(*) as import_count,
+                GROUP_CONCAT(DISTINCT r.line_number) as all_lines
+            FROM ast_relationships r
+            WHERE (r.source_symbol_id = ? OR (r.source_symbol = ? AND (r.source_filepath = ? OR r.source_filepath LIKE ?)))
+              AND r.relationship_type = 'IMPORTS'{repo_filter_clause}
+            GROUP BY r.target_symbol
+            ORDER BY MIN(r.line_number) ASC
+        """
+        import_params = [sym["id"], sym["name"], sym["filepath"], f"%/{_clean_path(sym['filepath'])}"] + repo_params
+        imports = conn.execute(imports_query, import_params).fetchall()
+
+        # 4. Fetch API route mapping:
+        clean_sym_fp = _clean_path(sym["filepath"])
+        route_repo_clause = "" if target_repo == "__all__" else " AND repo = ?"
+        route_query = f"""
+            SELECT framework, http_method, path_pattern 
+            FROM api_routes 
+            WHERE (handler_symbol = ? OR (filepath = ? OR filepath = ? OR filepath LIKE ?))
+              AND start_line <= ? AND end_line >= ?{route_repo_clause}
+        """
+        route_params = [sym["name"], clean_sym_fp, f"/{clean_sym_fp}", f"%/{clean_sym_fp}", sym["start_line"], sym["end_line"]] + repo_params
+        route = conn.execute(route_query, route_params).fetchone()
 
     return {
         "symbol": dict(sym),

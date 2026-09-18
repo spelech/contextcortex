@@ -57,6 +57,8 @@ export interface SymbolCaller {
   target_symbol?: string;
   relationship_type?: string;
   line_number?: number | null;
+  call_count?: number;
+  all_lines?: string | null;
 }
 
 export interface SymbolCallee {
@@ -65,6 +67,8 @@ export interface SymbolCallee {
   target_filepath?: string;
   relationship_type?: string;
   line_number?: number | null;
+  call_count?: number;
+  all_lines?: string | null;
 }
 
 export interface SymbolImport {
@@ -72,6 +76,8 @@ export interface SymbolImport {
   target_symbol: string;
   relationship_type?: string;
   line_number?: number | null;
+  import_count?: number;
+  all_lines?: string | null;
 }
 
 export interface SymbolDetail {
