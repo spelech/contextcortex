@@ -6,7 +6,7 @@ import type { SearchHit } from '../types';
 
 const mockHits: SearchHit[] = [
   {
-    score: 0.0325,
+    score: 0.825,
     payload: {
       repo: 'knowledge-rag-mcp',
       rel_path: 'app/services/indexer.py',
@@ -64,7 +64,7 @@ describe('SearchInspector Component', () => {
       expect(screen.getByText('knowledge-rag-mcp')).toBeInTheDocument();
       expect(screen.getByText('app/services/indexer.py')).toBeInTheDocument();
       expect(screen.getByText('IndexerService.sync')).toBeInTheDocument();
-      expect(screen.getByText('RRF Score: 0.0325')).toBeInTheDocument();
+      expect(screen.getByText('Score: 82.5% (0.8250)')).toBeInTheDocument();
       expect(screen.getByText(/async def sync/)).toBeInTheDocument();
       expect(screen.getByText('View on GitHub')).toBeInTheDocument();
     });

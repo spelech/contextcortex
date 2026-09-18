@@ -113,7 +113,7 @@ export default function SearchInspector() {
                       })()}
                     </div>
                     <div>
-                      <span className="badge badge-success">RRF Score: {hit.score.toFixed(4)}</span>
+                      <span className="badge badge-success">Score: {(hit.score * 100).toFixed(1)}% ({hit.score.toFixed(4)})</span>
                     </div>
                   </div>
                   <pre className="search-hit-code">{p.content}</pre>
