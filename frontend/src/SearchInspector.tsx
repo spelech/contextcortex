@@ -41,7 +41,7 @@ export default function SearchInspector() {
     <div className="tab-content active">
       <div className="glass-card">
         <h2><i className="fa-solid fa-magnifying-glass"></i> Live Hybrid Search Inspector</h2>
-        <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>Test RRF search results across code and documentation directly from the browser.</p>
+        <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>Test hybrid search results across code and documentation directly from the browser.</p>
 
         <form onSubmit={runSearchTest} style={{ marginTop: '16px' }}>
           <div className="form-row">
@@ -69,7 +69,7 @@ export default function SearchInspector() {
         </form>
 
         <div style={{ marginTop: '20px' }}>
-          {isSearching && <div className="empty-state">Running hybrid retrieval with Reciprocal Rank Fusion (RRF)...</div>}
+          {isSearching && <div className="empty-state">Running hybrid retrieval with Normalized Weighted Fusion...</div>}
           {error && <div className="empty-state" style={{ color: 'var(--danger)' }}>Search error: {error}</div>}
           {!isSearching && !error && results === null && (
             <div className="empty-state">Enter a query above to test hybrid retrieval.</div>

@@ -79,7 +79,7 @@ Follow these steps to test search retrieval:
 ### Interpreting Search Results
 
 Each result card displays:
-- **RRF Score**: Combined score calculated from Dense Cosine similarity and BM25 rank.
+- **Relevance Score**: Combined score calculated from Dense Cosine similarity and BM25 keyword matching.
 - **Source Link**: Clickable permalink directly to the file and line range in the upstream Git provider.
 - **Syntax Preview**: Code block with syntax highlighting and line numbers.
 
