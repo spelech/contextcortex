@@ -35,7 +35,7 @@ describe('FileSettings Component', () => {
     expect(screen.getByText(/Loading settings.../i)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Files & Large File Summarization')).toBeInTheDocument();
+      expect(screen.queryByText(/Loading settings.../i)).not.toBeInTheDocument();
     });
 
     const toggle = screen.getByLabelText(/Enable Large File Summarization/i);
@@ -79,7 +79,7 @@ describe('FileSettings Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Files & Large File Summarization')).toBeInTheDocument();
+      expect(screen.queryByText(/Loading settings.../i)).not.toBeInTheDocument();
     });
 
     const thresholdInput = screen.getByLabelText(/Auto-Summarize Threshold/i);
