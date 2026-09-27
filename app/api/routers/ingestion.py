@@ -60,4 +60,4 @@ async def api_get_ingestion_catalog(
         }
     except Exception as e:
         logger.error(f"Error fetching ingestion catalog: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to fetch ingestion catalog."})

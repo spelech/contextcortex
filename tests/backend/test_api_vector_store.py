@@ -76,7 +76,7 @@ def test_api_get_vector_store_error():
     with patch("app.services.vector_store.get_vector_store_config", side_effect=RuntimeError("Vector store config error")):
         res = client.get("/admin/api/vector-store")
         assert res.status_code == 500
-        assert "Vector store config error" in res.json()["error"]
+        assert "error" in res.json()
 
 
 # --- POST /admin/api/vector-store/test ---

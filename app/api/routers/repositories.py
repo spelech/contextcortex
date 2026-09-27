@@ -42,7 +42,7 @@ async def api_get_repos():
             return result
     except Exception as e:
         logger.error(f"Error fetching repos: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to fetch repositories."})
 
 @router.post("/admin/api/repos")
 async def api_add_repo(repo: RepoConfig):
@@ -71,7 +71,7 @@ async def api_add_repo(repo: RepoConfig):
         return JSONResponse(status_code=400, content={"error": f"Repository with name '{repo.name}' already exists"})
     except Exception as e:
         logger.error(f"Error adding repo: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to add repository."})
 
 @router.patch("/admin/api/repos/{repo_id}/auto-sync")
 async def api_toggle_repo_auto_sync(repo_id: int, payload: AutoSyncToggleRequest):
@@ -82,7 +82,7 @@ async def api_toggle_repo_auto_sync(repo_id: int, payload: AutoSyncToggleRequest
         return {"status": "success", "id": repo_id, "repo_id": repo_id, "auto_sync": payload.auto_sync}
     except Exception as e:
         logger.error(f"Error toggling auto-sync for repo {repo_id}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to toggle auto-sync for repository."})
 
 @router.post("/admin/api/repos/{repo_id}/sync")
 @router.post("/admin/api/repos/sync/{repo_id}")
@@ -102,7 +102,7 @@ async def api_sync_repo(repo_id: int):
         return {"status": "success", "repo": r["name"], "message": f"Sync started for {r['name']}"}
     except Exception as e:
         logger.error(f"Error syncing repo {repo_id}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to sync repository."})
 
 STREAM_KEEPALIVE_TIMEOUT = 15.0
 
@@ -183,7 +183,7 @@ async def api_delete_repo(repo_id: int):
         return {"status": "success", "name": name, "deleted": name}
     except Exception as e:
         logger.error(f"Error deleting repo {repo_id}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to delete repository."})
 
 @router.get("/admin/api/paths")
 async def api_get_paths():
@@ -193,7 +193,7 @@ async def api_get_paths():
             return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"Error getting paths: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to get paths."})
 
 @router.post("/admin/api/paths")
 async def api_add_path(config: LocalPathConfig):
@@ -220,7 +220,7 @@ async def api_add_path(config: LocalPathConfig):
         return JSONResponse(status_code=400, content={"error": "Path already indexed"})
     except Exception as e:
         logger.error(f"Error adding path: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to add path."})
 
 @router.delete("/admin/api/paths/{path_id}")
 async def api_delete_path(path_id: int):
@@ -244,7 +244,7 @@ async def api_delete_path(path_id: int):
         return {"status": "success", "path": path_val, "deleted": path_val}
     except Exception as e:
         logger.error(f"Error deleting path {path_id}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to delete path."})
 
 @router.post("/admin/api/sync")
 @router.post("/admin/api/reindex")
@@ -278,7 +278,7 @@ async def api_test_search(payload: SearchRequest):
         return {"query": query, "type": payload.type, "results": results}
     except Exception as e:
         logger.error(f"Error testing search: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to execute search test."})
 
 @router.get("/admin/api/browse")
 async def api_browse_dir(path: str = "/"):
@@ -309,4 +309,4 @@ async def api_browse_dir(path: str = "/"):
         }
     except Exception as e:
         logger.error(f"Error browsing dir {path}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to browse directory."})

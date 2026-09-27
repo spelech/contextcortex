@@ -74,7 +74,8 @@ async def api_get_stats():
                 vector_db_healthy = bool(healthy)
                 vector_db_status = "Healthy" if vector_db_healthy else "Unhealthy"
             except Exception as e:
-                vector_db_status = f"Error: {e}"
+                logger.error(f"Error checking vector store health/stats: {e}")
+                vector_db_status = "Error"
 
         gh_token, _, gh_src = db_service.get_effective_git_token("https://github.com", provider="github")
         gl_token, _, gl_src = db_service.get_effective_git_token("https://gitlab.com", provider="gitlab")
@@ -136,7 +137,7 @@ async def api_get_stats():
         }
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to fetch stats."})
 
 @router.get("/admin/api/settings/hosts")
 async def api_get_host_credentials():
@@ -155,7 +156,7 @@ async def api_get_host_credentials():
         return safe_hosts
     except Exception as e:
         logger.error(f"Error listing host credentials: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to list host credentials."})
 
 @router.post("/admin/api/settings/hosts")
 async def api_save_host_credential(payload: HostCredentialRequest):
@@ -171,7 +172,7 @@ async def api_save_host_credential(payload: HostCredentialRequest):
         return JSONResponse(status_code=400, content={"error": f"Credentials for host '{payload.host}' already exist"})
     except Exception as e:
         logger.error(f"Error saving host credential: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to save host credential."})
 
 @router.delete("/admin/api/settings/hosts/{host_id}")
 async def api_delete_host_credential(host_id: int):
@@ -182,7 +183,7 @@ async def api_delete_host_credential(host_id: int):
         return {"status": "success", "id": host_id}
     except Exception as e:
         logger.error(f"Error deleting host credential: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to delete host credential."})
 
 @router.post("/admin/api/settings/token")
 async def api_save_token(payload: TokenRequest):
@@ -213,7 +214,7 @@ async def api_save_token(payload: TokenRequest):
         }
     except Exception as e:
         logger.error(f"Error saving tokens: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to save tokens."})
 
 @router.get("/admin/api/settings/auto-sync")
 async def api_get_auto_sync_settings():
@@ -227,7 +228,7 @@ async def api_get_auto_sync_settings():
         }
     except Exception as e:
         logger.error(f"Error loading auto-sync settings: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to load auto-sync settings."})
 
 @router.post("/admin/api/settings/auto-sync")
 async def api_save_auto_sync_settings(payload: AutoSyncSettingsRequest):
@@ -247,7 +248,7 @@ async def api_save_auto_sync_settings(payload: AutoSyncSettingsRequest):
         }
     except Exception as e:
         logger.error(f"Error saving auto-sync settings: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to save auto-sync settings."})
 
 @router.get("/admin/api/logs")
 async def api_get_logs(limit: int = 200, level: Optional[str] = None, search: Optional[str] = None):
@@ -255,7 +256,7 @@ async def api_get_logs(limit: int = 200, level: Optional[str] = None, search: Op
         return log_service.get_diagnostic_logs(limit=limit, level=level, search=search)
     except Exception as e:
         logger.error(f"Error fetching diagnostic logs: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to fetch diagnostic logs."})
 
 @router.delete("/admin/api/logs")
 async def api_clear_logs():
@@ -264,7 +265,7 @@ async def api_clear_logs():
         return {"status": "success", "message": "Diagnostic logs successfully cleared."}
     except Exception as e:
         logger.error(f"Error clearing diagnostic logs: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to clear diagnostic logs."})
 
 @router.get("/admin/api/vector-store")
 async def api_get_vector_store():
@@ -274,7 +275,7 @@ async def api_get_vector_store():
         return cfg
     except Exception as e:
         logger.error(f"Error reading vector store config: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to read vector store config."})
 
 @router.post("/admin/api/vector-store/test")
 async def api_test_vector_store(payload: VectorStoreTestRequest):
@@ -294,7 +295,7 @@ async def api_test_vector_store(payload: VectorStoreTestRequest):
         }
     except Exception as e:
         logger.error(f"Error testing vector store: {e}")
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e), "message": str(e)})
+        return JSONResponse(status_code=500, content={"success": False, "error": "Failed to test vector store.", "message": "Failed to test vector store."})
 
 @router.post("/admin/api/vector-store/switch")
 async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
@@ -322,7 +323,7 @@ async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
         }
     except Exception as e:
         logger.error(f"Error switching vector store backend: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
+        return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to switch vector store backend.", "message": "Failed to switch vector store backend."})
 
 @router.get("/admin/api/models/discover")
 async def api_discover_models(url: Optional[str] = None, api_key: Optional[str] = None):
@@ -353,7 +354,7 @@ async def api_get_embedding_settings():
         return cfg
     except Exception as e:
         logger.error(f"Error reading embedding settings: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to read embedding settings."})
 
 @router.post("/admin/api/settings/embedding")
 async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
@@ -376,7 +377,7 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
         }
     except Exception as e:
         logger.error(f"Error updating embedding settings: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
+        return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to update embedding settings.", "message": "Failed to update embedding settings."})
 
 @router.get("/admin/api/settings/files")
 async def api_get_file_settings():

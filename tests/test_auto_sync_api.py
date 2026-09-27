@@ -122,15 +122,15 @@ def test_api_error_handling(monkeypatch):
     monkeypatch.setattr("app.services.database.set_repo_auto_sync", mock_db_error)
     res_patch = client.patch("/admin/api/repos/1/auto-sync", json={"auto_sync": True})
     assert res_patch.status_code == 500
-    assert "Simulated database failure" in res_patch.json()["error"]
+    assert "error" in res_patch.json()
 
     monkeypatch.setattr("app.services.database.get_auto_sync_interval", mock_db_error)
     res_get_settings = client.get("/admin/api/settings/auto-sync")
     assert res_get_settings.status_code == 500
-    assert "Simulated database failure" in res_get_settings.json()["error"]
+    assert "error" in res_get_settings.json()
 
     monkeypatch.setattr("app.services.database.set_auto_sync_interval", mock_db_error)
     res_post_settings = client.post("/admin/api/settings/auto-sync", json={"interval_mins": 15})
     assert res_post_settings.status_code == 500
-    assert "Simulated database failure" in res_post_settings.json()["error"]
+    assert "error" in res_post_settings.json()
 
