@@ -42,13 +42,19 @@ class LocalStorageService:
         if any(part == ".." for part in parts):
             raise ValueError("Path traversal or invalid path detected")
 
-        target = os.path.abspath(os.path.join(self.storage_root, cleaned))
+        norm_root = os.path.normpath(os.path.abspath(self.storage_root))
+        target = os.path.normpath(os.path.abspath(os.path.join(norm_root, cleaned)))
+
+        prefix = norm_root if norm_root.endswith(os.sep) else norm_root + os.sep
+        if not target.startswith(prefix) and target != norm_root:
+            raise ValueError("Path traversal or invalid path detected")
+
         try:
-            common = os.path.commonpath([target, self.storage_root])
+            common = os.path.commonpath([target, norm_root])
         except ValueError:
             raise ValueError("Path traversal or invalid path detected")
 
-        if common != self.storage_root:
+        if common != norm_root:
             raise ValueError("Path traversal or invalid path detected")
 
         return target
@@ -61,6 +67,8 @@ class LocalStorageService:
         category: Optional[str] = None
     ) -> Dict[str, Any]:
         target_path = self.resolve_safe_path(rel_path)
+        if not target_path.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
         if isinstance(content, bytes):
@@ -97,6 +105,8 @@ class LocalStorageService:
         category: Optional[str] = None
     ) -> Dict[str, Any]:
         abs_path = self.resolve_safe_path(rel_path)
+        if not abs_path.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
         if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
             raise FileNotFoundError(f"File '{rel_path}' not found on disk for indexing.")
 
@@ -206,6 +216,8 @@ class LocalStorageService:
 
     def delete_file(self, rel_path: str, repo: str = "local_storage") -> Dict[str, Any]:
         abs_path = self.resolve_safe_path(rel_path)
+        if not abs_path.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
         self.delete_file_disk(rel_path)
 
         try:
@@ -232,6 +244,8 @@ class LocalStorageService:
 
     def read_file_content(self, rel_path: str) -> Dict[str, Any]:
         target_path = self.resolve_safe_path(rel_path)
+        if not target_path.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
         if not os.path.exists(target_path) or not os.path.isfile(target_path):
             raise FileNotFoundError(f"File '{rel_path}' does not exist in local storage.")
 
@@ -269,6 +283,8 @@ class LocalStorageService:
 
     def delete_file_disk(self, rel_path: str) -> bool:
         target_path = self.resolve_safe_path(rel_path)
+        if not target_path.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
         if not os.path.exists(target_path):
             return False
 
@@ -280,6 +296,8 @@ class LocalStorageService:
 
     def get_file_tree(self, subfolder: Optional[str] = None) -> Dict[str, Any]:
         scan_root = self.resolve_safe_path(subfolder) if subfolder else self.storage_root
+        if not scan_root.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
         if not os.path.exists(scan_root):
             return {"root": self.storage_root, "current_folder": subfolder or "", "directories": [], "files": []}
 

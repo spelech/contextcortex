@@ -85,11 +85,12 @@ def extract_pdf_pages(
                 raise ValueError(f"PDF exceeds size limit of {MAX_PDF_SIZE_BYTES // (1024*1024)}MB")
             doc = pymupdf.open(stream=source, filetype="pdf")
         else:
-            if not os.path.exists(source):
+            norm_source = os.path.normpath(os.path.abspath(source))
+            if not os.path.exists(norm_source):
                 raise FileNotFoundError(f"PDF file not found: {source}")
-            if os.path.getsize(source) > MAX_PDF_SIZE_BYTES:
+            if os.path.getsize(norm_source) > MAX_PDF_SIZE_BYTES:
                 raise ValueError(f"PDF exceeds size limit of {MAX_PDF_SIZE_BYTES // (1024*1024)}MB")
-            doc = pymupdf.open(source)
+            doc = pymupdf.open(norm_source)
     except Exception as e:
         if isinstance(e, (ValueError, FileNotFoundError)):
             raise

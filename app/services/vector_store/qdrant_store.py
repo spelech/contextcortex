@@ -64,21 +64,25 @@ class QdrantVectorStore(VectorStore):
                 if target_storage == ":memory:":
                     self.client = QdrantClient(location=":memory:")
                     self.mode = "memory"
+                    self.location = target_storage
                 else:
-                    os.makedirs(target_storage, exist_ok=True)
-                    self.client = QdrantClient(path=target_storage)
+                    clean_storage = os.path.normpath(os.path.abspath(target_storage))
+                    os.makedirs(clean_storage, exist_ok=True)
+                    self.client = QdrantClient(path=clean_storage)
                     self.mode = "embedded"
-                self.location = target_storage
+                    self.location = clean_storage
         else:
             target_storage = storage_path or storage_path_env
             if target_storage == ":memory:":
                 self.client = QdrantClient(location=":memory:")
                 self.mode = "memory"
+                self.location = target_storage
             else:
-                os.makedirs(target_storage, exist_ok=True)
-                self.client = QdrantClient(path=target_storage)
+                clean_storage = os.path.normpath(os.path.abspath(target_storage))
+                os.makedirs(clean_storage, exist_ok=True)
+                self.client = QdrantClient(path=clean_storage)
                 self.mode = "embedded"
-            self.location = target_storage
+                self.location = clean_storage
             logger.info(f"Initialized embedded Qdrant client at {self.location}")
 
         if auto_init:

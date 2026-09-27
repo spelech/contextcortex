@@ -113,20 +113,24 @@ class ChromaVectorStore(VectorStore):
                 if target_storage == ":memory:":
                     self.client = chromadb.EphemeralClient()
                     self.mode = "memory"
+                    self.location = target_storage
                 else:
-                    os.makedirs(target_storage, exist_ok=True)
-                    self.client = chromadb.PersistentClient(path=target_storage)
+                    clean_storage = os.path.normpath(os.path.abspath(target_storage))
+                    os.makedirs(clean_storage, exist_ok=True)
+                    self.client = chromadb.PersistentClient(path=clean_storage)
                     self.mode = "persistent"
-                self.location = target_storage
+                    self.location = clean_storage
         else:
             if target_storage == ":memory:":
                 self.client = chromadb.EphemeralClient()
                 self.mode = "memory"
+                self.location = target_storage
             else:
-                os.makedirs(target_storage, exist_ok=True)
-                self.client = chromadb.PersistentClient(path=target_storage)
+                clean_storage = os.path.normpath(os.path.abspath(target_storage))
+                os.makedirs(clean_storage, exist_ok=True)
+                self.client = chromadb.PersistentClient(path=clean_storage)
                 self.mode = "persistent"
-            self.location = target_storage
+                self.location = clean_storage
             logger.info(f"Initialized local Chroma client at {self.location}")
 
         if auto_init:

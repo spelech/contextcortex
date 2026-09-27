@@ -380,7 +380,8 @@ def process_file_content(
                     metadata={"kind": chunk.get("kind", "code")}
                 ))
 
-    mtime = os.path.getmtime(filepath) if os.path.exists(filepath) else 0.0
+    filepath_norm = os.path.normpath(os.path.abspath(filepath))
+    mtime = os.path.getmtime(filepath_norm) if os.path.exists(filepath_norm) else 0.0
     summary_tuple = (
         filepath,
         repo,

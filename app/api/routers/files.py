@@ -51,9 +51,12 @@ async def api_read_file(
 @router.post("/admin/api/files/summarize")
 async def api_summarize_file(payload: FileSummarizePayload):
     try:
+        raw_path = payload.path.strip() if payload.path else ""
+        if not raw_path or "\x00" in raw_path or any(part == ".." for part in raw_path.replace("\\", "/").split("/")):
+            return JSONResponse(status_code=400, content={"error": "Path traversal or invalid path detected."})
         summarizer = get_summarizer_service()
         summary_text = summarizer.get_or_create_summary(
-            filepath=payload.path,
+            filepath=raw_path,
             repo=payload.repo,
             force_refresh=payload.force_refresh
         )
