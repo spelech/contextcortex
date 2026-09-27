@@ -308,7 +308,8 @@ async def api_test_vector_store(payload: VectorStoreTestRequest):
             try:
                 safe_sp = _validate_vector_storage_path(payload.storage_path)
             except ValueError as ve:
-                return JSONResponse(status_code=400, content={"success": False, "error": str(ve), "message": str(ve)})
+                logger.warning(f"Vector store path validation failed: {ve}")
+                return JSONResponse(status_code=400, content={"success": False, "error": "Invalid storage path: outside authorized directories.", "message": "Invalid storage path: outside authorized directories."})
 
         success, message = vs_service.test_vector_store_connection(
             provider=payload.provider,
@@ -335,7 +336,8 @@ async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
             try:
                 safe_sp = _validate_vector_storage_path(payload.storage_path)
             except ValueError as ve:
-                return JSONResponse(status_code=400, content={"status": "error", "error": str(ve), "message": str(ve)})
+                logger.warning(f"Vector store path validation failed: {ve}")
+                return JSONResponse(status_code=400, content={"status": "error", "error": "Invalid storage path: outside authorized directories.", "message": "Invalid storage path: outside authorized directories."})
 
         def _reindex():
             threading.Thread(target=idx_service.run_full_indexing, daemon=True).start()
