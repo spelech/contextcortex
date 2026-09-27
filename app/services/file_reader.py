@@ -114,9 +114,8 @@ class FileReaderService:
             else:
                 for ip in matching_paths:
                     root = os.path.abspath(ip["path"])
-                    root_prefix = root if root.endswith(os.sep) else root + os.sep
                     candidate = os.path.normpath(os.path.abspath(os.path.join(root, path)))
-                    if (candidate.startswith(root_prefix) or candidate == root):
+                    if candidate.startswith(root):
                         if os.path.lexists(candidate):
                             if not self._is_within_root(candidate, root):
                                 raise ValueError("Path outside authorized roots")
@@ -124,9 +123,8 @@ class FileReaderService:
 
                 for ip in matching_paths:
                     root = os.path.abspath(ip["path"])
-                    root_prefix = root if root.endswith(os.sep) else root + os.sep
                     candidate = os.path.normpath(os.path.abspath(os.path.join(root, path)))
-                    if (candidate.startswith(root_prefix) or candidate == root) and self._is_within_root(candidate, root):
+                    if candidate.startswith(root) and self._is_within_root(candidate, root):
                         return candidate, "indexed_path"
                 raise ValueError("Path outside authorized roots")
 
@@ -145,8 +143,7 @@ class FileReaderService:
 
         # Relative path without repo specified:
         cand_storage = os.path.normpath(os.path.abspath(os.path.join(storage_root, path)))
-        storage_prefix = storage_root if storage_root.endswith(os.sep) else storage_root + os.sep
-        if (cand_storage.startswith(storage_prefix) or cand_storage == storage_root):
+        if cand_storage.startswith(storage_root):
             if os.path.lexists(cand_storage):
                 if not self._is_within_root(cand_storage, storage_root):
                     raise ValueError("Path outside authorized roots")
@@ -154,33 +151,27 @@ class FileReaderService:
 
         for ip in indexed_paths:
             root = os.path.abspath(ip["path"])
-            root_prefix = root if root.endswith(os.sep) else root + os.sep
             cand_ip = os.path.normpath(os.path.abspath(os.path.join(root, path)))
-            if (cand_ip.startswith(root_prefix) or cand_ip == root):
+            if cand_ip.startswith(root):
                 if os.path.lexists(cand_ip):
                     if not self._is_within_root(cand_ip, root):
                         raise ValueError("Path outside authorized roots")
                     return cand_ip, "indexed_path"
 
         # If not existing on disk, check if it falls inside valid storage root
-        if (cand_storage.startswith(storage_prefix) or cand_storage == storage_root) and self._is_within_root(cand_storage, storage_root):
+        if cand_storage.startswith(storage_root) and self._is_within_root(cand_storage, storage_root):
             return cand_storage, "local_storage"
 
         for ip in indexed_paths:
             root = os.path.abspath(ip["path"])
-            root_prefix = root if root.endswith(os.sep) else root + os.sep
             cand_ip = os.path.normpath(os.path.abspath(os.path.join(root, path)))
-            if (cand_ip.startswith(root_prefix) or cand_ip == root) and self._is_within_root(cand_ip, root):
+            if cand_ip.startswith(root) and self._is_within_root(cand_ip, root):
                 return cand_ip, "indexed_path"
 
         raise ValueError("Path outside authorized roots")
 
     def is_binary_file(self, abs_path: str) -> bool:
         """Detects binary files by checking for null bytes in the initial sample."""
-        root = os.path.abspath(os.path.sep)
-        root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
-        if not (abs_path.startswith(root_prefix) or abs_path == root):
-            raise ValueError(f"Invalid path: {abs_path}")
         with open(abs_path, "rb") as f:
             chunk = f.read(8192)
             return b"\x00" in chunk
@@ -195,11 +186,6 @@ class FileReaderService:
     ) -> Dict[str, Any]:
         """Reads a file with safe path resolution, binary checking, and line slicing."""
         abs_path, source_type = self.resolve_safe_path(path, repo=repo)
-
-        root = os.path.abspath(os.path.sep)
-        root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
-        if not (abs_path.startswith(root_prefix) or abs_path == root):
-            raise ValueError(f"Invalid path: {path}")
 
         if not os.path.exists(abs_path):
             raise FileNotFoundError(f"File not found: {path}")
