@@ -236,22 +236,21 @@ class SummarizerService:
         try:
             from app.services.file_reader import get_file_reader_service
             reader = get_file_reader_service()
-            read_res = reader.read_file(filepath, repo=resolved_repo)
+            read_res = reader.read_file(filepath, repo=repo)
             if isinstance(read_res, dict) and "content" in read_res:
                 content = read_res["content"]
         except Exception:
             content = None
 
-        if content is None:
-            # Fallback to direct read if safe file exists on disk
+        if content is None and repo:
             try:
-                norm_fp = os.path.normpath(os.path.abspath(filepath))
-                if os.path.exists(norm_fp) and os.path.isfile(norm_fp):
-                    with open(norm_fp, "r", encoding="utf-8", errors="replace") as f:
-                        content = f.read()
+                from app.services.file_reader import get_file_reader_service
+                reader = get_file_reader_service()
+                read_res = reader.read_file(filepath, repo=None)
+                if isinstance(read_res, dict) and "content" in read_res:
+                    content = read_res["content"]
             except Exception:
-                pass
-
+                content = None
         if content is None:
             # Fallback to local_storage
             try:

@@ -3,6 +3,7 @@ import re
 import json
 import sqlite3
 import logging
+import tempfile
 from typing import Optional
 from urllib.parse import urlsplit
 from fastapi import APIRouter, Request
@@ -277,24 +278,42 @@ async def api_get_vector_store():
         logger.error(f"Error reading vector store config: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to read vector store config."})
 
+def _validate_vector_storage_path(storage_path: Optional[str]) -> Optional[str]:
+    """Validates vector store storage path to ensure it resides within authorized data directories."""
+    if not storage_path:
+        return None
+    sp = storage_path.strip()
+    if sp == ":memory:":
+        return sp
+    if "\x00" in sp or any(part == ".." for part in sp.replace("\\", "/").split("/")):
+        raise ValueError("Invalid storage path: traversal detected.")
+
+    data_dir = os.path.abspath(os.getenv("DATA_DIR", "/app/data"))
+    repo_data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data"))
+    temp_dir = os.path.abspath(tempfile.gettempdir())
+    allowed_roots = [data_dir, repo_data_dir, temp_dir, "/tmp"]
+
+    norm_sp = os.path.normpath(os.path.abspath(sp)) if os.path.isabs(sp) else os.path.normpath(os.path.abspath(os.path.join(data_dir, sp)))
+    for safe_root in allowed_roots:
+        if norm_sp.startswith(safe_root):
+            return norm_sp
+    raise ValueError(f"Storage path '{sp}' is outside authorized directories.")
+
+
 @router.post("/admin/api/vector-store/test")
 async def api_test_vector_store(payload: VectorStoreTestRequest):
     try:
+        safe_sp = payload.storage_path
         if payload.storage_path:
-            sp = payload.storage_path.strip()
-            if sp != ":memory:":
-                if "\x00" in sp or any(part == ".." for part in sp.replace("\\", "/").split("/")):
-                    return JSONResponse(status_code=400, content={"success": False, "error": "Invalid storage path: traversal detected.", "message": "Invalid storage path: traversal detected."})
-                norm_sp = os.path.normpath(os.path.abspath(sp))
-                root = os.path.abspath(os.path.sep)
-                root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
-                if not (norm_sp.startswith(root_prefix) or norm_sp == root):
-                    return JSONResponse(status_code=400, content={"success": False, "error": "Invalid storage path.", "message": "Invalid storage path."})
+            try:
+                safe_sp = _validate_vector_storage_path(payload.storage_path)
+            except ValueError as ve:
+                return JSONResponse(status_code=400, content={"success": False, "error": str(ve), "message": str(ve)})
 
         success, message = vs_service.test_vector_store_connection(
             provider=payload.provider,
             mode=payload.mode,
-            storage_path=payload.storage_path,
+            storage_path=safe_sp,
             url=payload.url,
             collection=payload.collection
         )
@@ -311,16 +330,12 @@ async def api_test_vector_store(payload: VectorStoreTestRequest):
 @router.post("/admin/api/vector-store/switch")
 async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
     try:
+        safe_sp = payload.storage_path
         if payload.storage_path:
-            sp = payload.storage_path.strip()
-            if sp != ":memory:":
-                if "\x00" in sp or any(part == ".." for part in sp.replace("\\", "/").split("/")):
-                    return JSONResponse(status_code=400, content={"status": "error", "error": "Invalid storage path: traversal detected.", "message": "Invalid storage path: traversal detected."})
-                norm_sp = os.path.normpath(os.path.abspath(sp))
-                root = os.path.abspath(os.path.sep)
-                root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
-                if not (norm_sp.startswith(root_prefix) or norm_sp == root):
-                    return JSONResponse(status_code=400, content={"status": "error", "error": "Invalid storage path.", "message": "Invalid storage path."})
+            try:
+                safe_sp = _validate_vector_storage_path(payload.storage_path)
+            except ValueError as ve:
+                return JSONResponse(status_code=400, content={"status": "error", "error": str(ve), "message": str(ve)})
 
         def _reindex():
             threading.Thread(target=idx_service.run_full_indexing, daemon=True).start()
@@ -328,7 +343,7 @@ async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
         success, message = vs_service.switch_vector_store(
             provider=payload.provider,
             mode=payload.mode,
-            storage_path=payload.storage_path,
+            storage_path=safe_sp,
             url=payload.url,
             collection=payload.collection,
             reindex_callback=_reindex
