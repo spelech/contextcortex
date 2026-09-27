@@ -21,6 +21,12 @@ def test_db(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.database.CACHE_DB_PATH", str(db_file), raising=False)
     engine = get_db_engine(db_url, reset=True)
     init_db(engine=engine)
+    with get_db_connection() as conn:
+        conn.execute(
+            "INSERT INTO indexed_paths (path, type, enabled, repo, category) VALUES (?, 'directory', 1, 'test-repo', 'code')",
+            (str(tmp_path),)
+        )
+        conn.commit()
     return engine
 
 

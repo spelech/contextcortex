@@ -1,6 +1,7 @@
 import os
 import uuid
 import logging
+import tempfile
 from typing import List, Dict, Any, Optional, Tuple, Union
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
@@ -18,6 +19,17 @@ def get_default_qdrant_storage_path() -> str:
     if os.path.exists("/app") and os.access("/app", os.W_OK):
         return "/app/data/qdrant_storage"
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "qdrant_storage")
+
+
+def validate_qdrant_storage_path(target_storage: str) -> str:
+    clean = os.path.normpath(os.path.abspath(target_storage))
+    data_dir = os.path.abspath(os.getenv("DATA_DIR", "/app/data"))
+    repo_data_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"))
+    allowed_roots = [data_dir, repo_data_dir, os.path.abspath(tempfile.gettempdir()), "/tmp"]
+    for root in allowed_roots:
+        if clean.startswith(root):
+            return clean
+    raise ValueError(f"Invalid Qdrant storage path outside authorized directories: {target_storage}")
 
 
 class QdrantVectorStore(VectorStore):
@@ -66,11 +78,7 @@ class QdrantVectorStore(VectorStore):
                     self.mode = "memory"
                     self.location = target_storage
                 else:
-                    clean_storage = os.path.normpath(os.path.abspath(target_storage))
-                    root = os.path.abspath(os.path.sep)
-                    root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
-                    if not (clean_storage.startswith(root_prefix) or clean_storage == root):
-                        raise ValueError(f"Invalid Qdrant storage path: {target_storage}")
+                    clean_storage = validate_qdrant_storage_path(target_storage)
                     os.makedirs(clean_storage, exist_ok=True)
                     self.client = QdrantClient(path=clean_storage)
                     self.mode = "embedded"
@@ -82,11 +90,7 @@ class QdrantVectorStore(VectorStore):
                 self.mode = "memory"
                 self.location = target_storage
             else:
-                clean_storage = os.path.normpath(os.path.abspath(target_storage))
-                root = os.path.abspath(os.path.sep)
-                root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
-                if not (clean_storage.startswith(root_prefix) or clean_storage == root):
-                    raise ValueError(f"Invalid Qdrant storage path: {target_storage}")
+                clean_storage = validate_qdrant_storage_path(target_storage)
                 os.makedirs(clean_storage, exist_ok=True)
                 self.client = QdrantClient(path=clean_storage)
                 self.mode = "embedded"
