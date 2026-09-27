@@ -141,9 +141,10 @@ class VectorStoreManager:
                 healthy, health_msg = store.health_check()
                 stats = store.get_stats()
             except Exception as e:
+                logger.error(f"Error connecting to vector store during config load: {e}")
                 healthy = False
-                health_msg = f"Error connecting to vector store: {e}"
-                stats = {"error": str(e)}
+                health_msg = "Error connecting to vector store."
+                stats = {"error": "Error retrieving vector store statistics."}
 
             return {
                 "provider": cfg["provider"],
@@ -268,7 +269,7 @@ class VectorStoreManager:
                         cls._active_store = cls._create_store(current_cfg)
                     except Exception:
                         pass
-                return False, f"Failed to switch vector store: {str(e)}"
+                return False, "Failed to switch vector store backend."
 
     @classmethod
     def test_connection(
@@ -325,7 +326,8 @@ class VectorStoreManager:
                 is_healthy, health_msg = test_store.health_check()
                 return is_healthy, health_msg
             except Exception as e:
-                return False, f"Connection test failed for {prov}: {str(e)}"
+                logger.error(f"Connection test failed for {prov}: {e}")
+                return False, f"Connection test failed for {prov}."
             finally:
                 if test_store is not None:
                     try:

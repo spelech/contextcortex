@@ -244,7 +244,17 @@ class SummarizerService:
 
         if content is None:
             norm_fp = os.path.normpath(os.path.abspath(filepath))
-            if os.path.exists(norm_fp) and os.path.isfile(norm_fp):
+            root_dir = os.path.abspath(os.path.sep)
+            root_prefix = root_dir if root_dir.endswith(os.path.sep) else root_dir + os.path.sep
+            if not (norm_fp.startswith(root_prefix) or norm_fp == root_dir):
+                norm_fp = ""
+            try:
+                if norm_fp and os.path.commonpath([norm_fp, root_dir]) != root_dir:
+                    norm_fp = ""
+            except ValueError:
+                norm_fp = ""
+
+            if norm_fp and os.path.exists(norm_fp) and os.path.isfile(norm_fp):
                 try:
                     with open(norm_fp, "r", encoding="utf-8", errors="replace") as f:
                         content = f.read()

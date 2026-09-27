@@ -293,5 +293,6 @@ def check_github_rate_limit(token: Optional[str] = None) -> Dict[str, Any]:
             }
         return {"authenticated": bool(token), "status": f"HTTP {resp.status_code}"}
     except Exception as e:
-        return {"authenticated": bool(token), "error": str(e)}
+        logger.error(f"Error checking GitHub rate limit: {e}")
+        return {"authenticated": bool(token), "error": "Unable to verify rate limit."}
 

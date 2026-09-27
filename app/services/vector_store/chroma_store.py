@@ -116,6 +116,10 @@ class ChromaVectorStore(VectorStore):
                     self.location = target_storage
                 else:
                     clean_storage = os.path.normpath(os.path.abspath(target_storage))
+                    root = os.path.abspath(os.path.sep)
+                    root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+                    if not (clean_storage.startswith(root_prefix) or clean_storage == root):
+                        raise ValueError(f"Invalid Chroma storage path: {target_storage}")
                     os.makedirs(clean_storage, exist_ok=True)
                     self.client = chromadb.PersistentClient(path=clean_storage)
                     self.mode = "persistent"
@@ -127,6 +131,10 @@ class ChromaVectorStore(VectorStore):
                 self.location = target_storage
             else:
                 clean_storage = os.path.normpath(os.path.abspath(target_storage))
+                root = os.path.abspath(os.path.sep)
+                root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+                if not (clean_storage.startswith(root_prefix) or clean_storage == root):
+                    raise ValueError(f"Invalid Chroma storage path: {target_storage}")
                 os.makedirs(clean_storage, exist_ok=True)
                 self.client = chromadb.PersistentClient(path=clean_storage)
                 self.mode = "persistent"
@@ -348,7 +356,8 @@ class ChromaVectorStore(VectorStore):
             count = self.collection.count() if self.collection is not None else 0
             return True, f"Chroma ({self.mode} @ {self.location}) is healthy; heartbeat: {hb}, collection '{self.collection_name}' count: {count}"
         except Exception as e:
-            return False, f"Chroma ({self.mode}) health check failed: {e}"
+            logger.warning(f"Chroma ({self.mode}) health check failed: {e}")
+            return False, f"Chroma ({self.mode}) health check failed."
 
     def close(self):
         """Cleanly close Chroma client handle if applicable."""

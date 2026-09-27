@@ -86,10 +86,13 @@ class FileReaderService:
         # 1. repo specified as local_storage
         if repo == "local_storage":
             target = (
-                os.path.abspath(path)
+                os.path.normpath(os.path.abspath(path))
                 if os.path.isabs(path)
-                else os.path.abspath(os.path.join(storage_root, path))
+                else os.path.normpath(os.path.abspath(os.path.join(storage_root, path)))
             )
+            storage_prefix = storage_root if storage_root.endswith(os.sep) else storage_root + os.sep
+            if not (target.startswith(storage_prefix) or target == storage_root):
+                raise ValueError("Path outside authorized roots")
             if not self._is_within_root(target, storage_root):
                 raise ValueError("Path outside authorized roots")
             return target, "local_storage"
@@ -101,68 +104,83 @@ class FileReaderService:
                 raise ValueError(f"Repository '{repo}' not found or not authorized")
 
             if os.path.isabs(path):
-                target = os.path.abspath(path)
+                target = os.path.normpath(os.path.abspath(path))
                 for ip in matching_paths:
                     root = os.path.abspath(ip["path"])
-                    if self._is_within_root(target, root):
+                    root_prefix = root if root.endswith(os.sep) else root + os.sep
+                    if (target.startswith(root_prefix) or target == root) and self._is_within_root(target, root):
                         return target, "indexed_path"
                 raise ValueError("Path outside authorized roots")
             else:
                 for ip in matching_paths:
                     root = os.path.abspath(ip["path"])
-                    candidate = os.path.abspath(os.path.join(root, path))
-                    if os.path.lexists(candidate):
-                        if not self._is_within_root(candidate, root):
-                            raise ValueError("Path outside authorized roots")
-                        return candidate, "indexed_path"
+                    root_prefix = root if root.endswith(os.sep) else root + os.sep
+                    candidate = os.path.normpath(os.path.abspath(os.path.join(root, path)))
+                    if (candidate.startswith(root_prefix) or candidate == root):
+                        if os.path.lexists(candidate):
+                            if not self._is_within_root(candidate, root):
+                                raise ValueError("Path outside authorized roots")
+                            return candidate, "indexed_path"
 
                 for ip in matching_paths:
                     root = os.path.abspath(ip["path"])
-                    candidate = os.path.abspath(os.path.join(root, path))
-                    if self._is_within_root(candidate, root):
+                    root_prefix = root if root.endswith(os.sep) else root + os.sep
+                    candidate = os.path.normpath(os.path.abspath(os.path.join(root, path)))
+                    if (candidate.startswith(root_prefix) or candidate == root) and self._is_within_root(candidate, root):
                         return candidate, "indexed_path"
                 raise ValueError("Path outside authorized roots")
 
         # 3. repo is None
         if os.path.isabs(path):
-            target = os.path.abspath(path)
-            if self._is_within_root(target, storage_root):
+            target = os.path.normpath(os.path.abspath(path))
+            storage_prefix = storage_root if storage_root.endswith(os.sep) else storage_root + os.sep
+            if (target.startswith(storage_prefix) or target == storage_root) and self._is_within_root(target, storage_root):
                 return target, "local_storage"
             for ip in indexed_paths:
                 root = os.path.abspath(ip["path"])
-                if self._is_within_root(target, root):
+                root_prefix = root if root.endswith(os.sep) else root + os.sep
+                if (target.startswith(root_prefix) or target == root) and self._is_within_root(target, root):
                     return target, "indexed_path"
             raise ValueError("Path outside authorized roots")
 
         # Relative path without repo specified:
-        cand_storage = os.path.abspath(os.path.join(storage_root, path))
-        if os.path.lexists(cand_storage):
-            if not self._is_within_root(cand_storage, storage_root):
-                raise ValueError("Path outside authorized roots")
-            return cand_storage, "local_storage"
+        cand_storage = os.path.normpath(os.path.abspath(os.path.join(storage_root, path)))
+        storage_prefix = storage_root if storage_root.endswith(os.sep) else storage_root + os.sep
+        if (cand_storage.startswith(storage_prefix) or cand_storage == storage_root):
+            if os.path.lexists(cand_storage):
+                if not self._is_within_root(cand_storage, storage_root):
+                    raise ValueError("Path outside authorized roots")
+                return cand_storage, "local_storage"
 
         for ip in indexed_paths:
             root = os.path.abspath(ip["path"])
-            cand_ip = os.path.abspath(os.path.join(root, path))
-            if os.path.lexists(cand_ip):
-                if not self._is_within_root(cand_ip, root):
-                    raise ValueError("Path outside authorized roots")
-                return cand_ip, "indexed_path"
+            root_prefix = root if root.endswith(os.sep) else root + os.sep
+            cand_ip = os.path.normpath(os.path.abspath(os.path.join(root, path)))
+            if (cand_ip.startswith(root_prefix) or cand_ip == root):
+                if os.path.lexists(cand_ip):
+                    if not self._is_within_root(cand_ip, root):
+                        raise ValueError("Path outside authorized roots")
+                    return cand_ip, "indexed_path"
 
         # If not existing on disk, check if it falls inside valid storage root
-        if self._is_within_root(cand_storage, storage_root):
+        if (cand_storage.startswith(storage_prefix) or cand_storage == storage_root) and self._is_within_root(cand_storage, storage_root):
             return cand_storage, "local_storage"
 
         for ip in indexed_paths:
             root = os.path.abspath(ip["path"])
-            cand_ip = os.path.abspath(os.path.join(root, path))
-            if self._is_within_root(cand_ip, root):
+            root_prefix = root if root.endswith(os.sep) else root + os.sep
+            cand_ip = os.path.normpath(os.path.abspath(os.path.join(root, path)))
+            if (cand_ip.startswith(root_prefix) or cand_ip == root) and self._is_within_root(cand_ip, root):
                 return cand_ip, "indexed_path"
 
         raise ValueError("Path outside authorized roots")
 
     def is_binary_file(self, abs_path: str) -> bool:
         """Detects binary files by checking for null bytes in the initial sample."""
+        root = os.path.abspath(os.path.sep)
+        root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+        if not (abs_path.startswith(root_prefix) or abs_path == root):
+            raise ValueError(f"Invalid path: {abs_path}")
         with open(abs_path, "rb") as f:
             chunk = f.read(8192)
             return b"\x00" in chunk
@@ -177,6 +195,11 @@ class FileReaderService:
     ) -> Dict[str, Any]:
         """Reads a file with safe path resolution, binary checking, and line slicing."""
         abs_path, source_type = self.resolve_safe_path(path, repo=repo)
+
+        root = os.path.abspath(os.path.sep)
+        root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+        if not (abs_path.startswith(root_prefix) or abs_path == root):
+            raise ValueError(f"Invalid path: {path}")
 
         if not os.path.exists(abs_path):
             raise FileNotFoundError(f"File not found: {path}")

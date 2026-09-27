@@ -202,6 +202,15 @@ async def api_add_path(config: LocalPathConfig):
         if not raw_path or "\x00" in raw_path or any(part == ".." for part in raw_path.replace("\\", "/").split("/")):
             return JSONResponse(status_code=400, content={"error": "Path traversal or invalid path detected."})
         resolved = os.path.normpath(os.path.abspath(raw_path))
+        root_dir = os.path.abspath(os.path.sep)
+        root_prefix = root_dir if root_dir.endswith(os.path.sep) else root_dir + os.path.sep
+        if not (resolved.startswith(root_prefix) or resolved == root_dir):
+            return JSONResponse(status_code=400, content={"error": "Path outside authorized filesystem."})
+        try:
+            if os.path.commonpath([resolved, root_dir]) != root_dir:
+                return JSONResponse(status_code=400, content={"error": "Path traversal detected."})
+        except ValueError:
+            return JSONResponse(status_code=400, content={"error": "Invalid path."})
         if not os.path.exists(resolved):
             return JSONResponse(status_code=400, content={"error": f"Path '{resolved}' does not exist on disk."})
 
@@ -286,8 +295,17 @@ async def api_browse_dir(path: str = "/"):
     if "\x00" in cleaned or any(part in ("..", ".") for part in cleaned.replace("\\", "/").split("/") if part):
         cleaned = "/"
     resolved = os.path.normpath(os.path.abspath(cleaned))
+    root_dir = os.path.abspath(os.path.sep)
+    root_prefix = root_dir if root_dir.endswith(os.path.sep) else root_dir + os.path.sep
+    if not (resolved.startswith(root_prefix) or resolved == root_dir):
+        resolved = root_dir
+    try:
+        if os.path.commonpath([resolved, root_dir]) != root_dir:
+            resolved = root_dir
+    except ValueError:
+        resolved = root_dir
     if not os.path.exists(resolved):
-        resolved = "/"
+        resolved = root_dir
     try:
         entries = os.scandir(resolved)
         dirs = []
