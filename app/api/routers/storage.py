@@ -45,10 +45,11 @@ async def api_preview_pdf(
             "sample_chunks": res.preview_chunks[:50]
         }
     except ValueError as ve:
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        logger.warning(f"Validation error previewing PDF file: {ve}")
+        return JSONResponse(status_code=400, content={"error": "Invalid PDF file or parameters."})
     except Exception as e:
         logger.error(f"Error previewing PDF file: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to preview PDF file."})
 
 @router.post("/admin/api/storage/upload")
 async def api_upload_storage_file(request: Request):
@@ -93,10 +94,11 @@ async def api_upload_storage_file(request: Request):
         res = storage.save_file(path, content, repo=repo, category=category)
         return res
     except ValueError as ve:
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        logger.warning(f"Validation error uploading storage file: {ve}")
+        return JSONResponse(status_code=400, content={"error": "Invalid storage path or upload parameters."})
     except Exception as e:
         logger.error(f"Error uploading storage file: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to upload storage file."})
 
 @router.put("/admin/api/storage/file")
 async def api_replace_storage_file(payload: FileUploadPayload):
@@ -105,10 +107,11 @@ async def api_replace_storage_file(payload: FileUploadPayload):
         res = storage.save_file(payload.path, payload.content, repo=payload.repo or "local_storage", category=payload.category)
         return res
     except ValueError as ve:
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        logger.warning(f"Validation error replacing storage file: {ve}")
+        return JSONResponse(status_code=400, content={"error": "Invalid storage path or file parameters."})
     except Exception as e:
         logger.error(f"Error replacing storage file: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to replace storage file."})
 
 @router.get("/admin/api/storage/file")
 async def api_get_storage_file(path: str = Query(..., description="Relative file path")):
@@ -118,10 +121,11 @@ async def api_get_storage_file(path: str = Query(..., description="Relative file
     except FileNotFoundError:
         return JSONResponse(status_code=404, content={"error": f"File '{path}' not found"})
     except ValueError as ve:
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        logger.warning(f"Validation error reading storage file '{path}': {ve}")
+        return JSONResponse(status_code=400, content={"error": "Invalid storage path."})
     except Exception as e:
         logger.error(f"Error reading storage file '{path}': {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to read storage file."})
 
 @router.delete("/admin/api/storage/file")
 async def api_delete_storage_file(path: str = Query(..., description="Relative file path")):
@@ -130,10 +134,11 @@ async def api_delete_storage_file(path: str = Query(..., description="Relative f
         res = storage.delete_file(path)
         return res
     except ValueError as ve:
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        logger.warning(f"Validation error deleting storage file '{path}': {ve}")
+        return JSONResponse(status_code=400, content={"error": "Invalid storage path."})
     except Exception as e:
         logger.error(f"Error deleting storage file '{path}': {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to delete storage file."})
 
 @router.get("/admin/api/storage/tree")
 async def api_get_storage_tree(folder: Optional[str] = Query(None, description="Subfolder to inspect")):
@@ -141,7 +146,8 @@ async def api_get_storage_tree(folder: Optional[str] = Query(None, description="
         storage = get_local_storage_service()
         return storage.get_file_tree(folder)
     except ValueError as ve:
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        logger.warning(f"Validation error reading storage tree: {ve}")
+        return JSONResponse(status_code=400, content={"error": "Invalid folder path."})
     except Exception as e:
         logger.error(f"Error reading storage tree: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to read storage tree."})

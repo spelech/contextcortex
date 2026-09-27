@@ -24,7 +24,7 @@ async def api_get_navigator_tree(
         return data
     except Exception as e:
         logger.error(f"Error generating navigator tree for {repo}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to generate navigator tree."})
 
 
 @router.get("/admin/api/navigator/file-outline")
@@ -42,7 +42,7 @@ async def api_get_file_outline(
         return data
     except Exception as e:
         logger.error(f"Error getting file outline for {filepath} in {repo}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to retrieve file outline."})
 
 
 @router.get("/admin/api/navigator/symbol-impact")
@@ -60,4 +60,4 @@ async def api_get_symbol_impact(
         return data
     except Exception as e:
         logger.error(f"Error getting symbol impact for {symbol_id} in {repo}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to retrieve symbol impact."})

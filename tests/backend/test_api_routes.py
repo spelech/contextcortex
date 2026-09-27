@@ -63,7 +63,7 @@ def test_api_get_stats_error():
     with patch("app.services.database.get_db_connection", side_effect=RuntimeError("Database failure")):
         res = client.get("/admin/api/stats")
         assert res.status_code == 500
-        assert "Database failure" in res.json()["error"]
+        assert "error" in res.json()
 
 def test_api_stats_field_names(mock_db):
     mock_store = MagicMock()
@@ -132,7 +132,7 @@ def test_api_repos_error_handlers():
         # GET /admin/api/repos
         res = client.get("/admin/api/repos")
         assert res.status_code == 500
-        assert "DB error on repos" in res.json()["error"]
+        assert "error" in res.json()
 
         # POST /admin/api/repos
         res = client.post("/admin/api/repos", json={"name": "test", "url": "http://example.com"})
@@ -206,7 +206,7 @@ def test_api_settings_token_error():
     with patch("app.services.database.set_metadata", side_effect=RuntimeError("Failed to store token")):
         res = client.post("/admin/api/settings/token", json={"github_token": "ghp_fail"})
         assert res.status_code == 500
-        assert "Failed to store token" in res.json()["error"]
+        assert "error" in res.json()
 
 def test_api_search_test():
     # Empty query
@@ -229,7 +229,7 @@ def test_api_search_test_error():
     with patch("app.services.search.execute_hybrid_search", side_effect=RuntimeError("Search index down")):
         res = client.post("/admin/api/search/test", json={"query": "print hello", "type": "code"})
         assert res.status_code == 500
-        assert "Search index down" in res.json()["error"]
+        assert "error" in res.json()
 
 def test_api_reindex():
     with patch("app.services.indexing.is_indexing", return_value=False), \
@@ -269,7 +269,7 @@ def test_api_browse_dir_error():
     with patch("os.scandir", side_effect=PermissionError("Directory read forbidden")):
         res = client.get("/admin/api/browse?path=/root")
         assert res.status_code == 500
-        assert "Directory read forbidden" in res.json()["error"]
+        assert "error" in res.json()
 
 def test_api_logs_endpoints():
     res_del = client.delete("/admin/api/logs")
@@ -330,10 +330,10 @@ def test_api_embedding_settings_errors():
     with patch("app.services.embeddings.get_embedding_config", side_effect=RuntimeError("Embedding config error")):
         res = client.get("/admin/api/settings/embedding")
         assert res.status_code == 500
-        assert "Embedding config error" in res.json()["error"]
+        assert "error" in res.json()
 
     with patch("app.services.embeddings.update_embedding_config", side_effect=RuntimeError("Embedding update error")):
         res = client.post("/admin/api/settings/embedding", json={"provider": "local", "threads": 2})
         assert res.status_code == 500
-        assert "Embedding update error" in res.json()["error"]
+        assert "error" in res.json()
 

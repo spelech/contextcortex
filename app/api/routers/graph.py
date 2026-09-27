@@ -42,7 +42,7 @@ async def api_get_graph_topology(
         return data
     except Exception as e:
         logger.error(f"Error generating topology graph: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to generate topology graph."})
 
 @router.get("/admin/api/graph/node-details")
 async def api_get_graph_node_details(id: str):
@@ -56,4 +56,4 @@ async def api_get_graph_node_details(id: str):
         return details
     except Exception as e:
         logger.error(f"Error getting node details for {id}: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Failed to retrieve node details."})

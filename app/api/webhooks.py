@@ -88,7 +88,8 @@ async def handle_git_webhook(request: Request):
         if not isinstance(payload, dict):
             return JSONResponse(status_code=400, content={"error": "Payload must be a JSON object"})
     except Exception as e:
-        return JSONResponse(status_code=400, content={"error": f"Invalid JSON payload: {e}"})
+        logger.warning(f"Invalid JSON payload in webhook: {e}")
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON payload"})
 
     repo_url, pushed_branch = parse_webhook_payload(payload, headers)
     if not repo_url:
