@@ -91,7 +91,7 @@ describe('App Component', () => {
     );
 
     expect(screen.getByText('ContextCortex')).toBeInTheDocument();
-    expect(screen.getByText('v2.15.0')).toBeInTheDocument();
+    expect(screen.getByText('v2.16.0')).toBeInTheDocument();
 
 
     await waitFor(() => {
