@@ -89,19 +89,25 @@ export default function SearchInspector() {
                       {p.symbol && <span className="badge badge-accent">{p.symbol}</span>}
                       <span className="text-muted" style={{ fontSize: '0.8rem' }}>(Lines {p.start_line}-{p.end_line})</span>
                       {p.github_url && (() => {
+                        let hostname = '';
+                        try {
+                          hostname = new URL(p.github_url).hostname.toLowerCase();
+                        } catch {
+                          // Ignore invalid URL
+                        }
                         const u = p.github_url.toLowerCase();
                         let label = 'View Source';
                         let icon = 'fa-solid fa-code-branch';
-                        if (u.includes('gitlab') || u.includes('/-/blob/')) {
+                        if (hostname === 'gitlab.com' || hostname.endsWith('.gitlab.com') || u.includes('/-/blob/')) {
                           label = 'View on GitLab';
                           icon = 'fa-brands fa-gitlab';
-                        } else if (u.includes('gitea') || u.includes('forgejo')) {
+                        } else if (hostname.includes('gitea') || hostname.includes('forgejo')) {
                           label = 'View on Gitea';
                           icon = 'fa-solid fa-mug-hot';
-                        } else if (u.includes('bitbucket')) {
+                        } else if (hostname === 'bitbucket.org' || hostname.endsWith('.bitbucket.org')) {
                           label = 'View on Bitbucket';
                           icon = 'fa-brands fa-bitbucket';
-                        } else if (u.includes('github.com')) {
+                        } else if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
                           label = 'View on GitHub';
                           icon = 'fa-brands fa-github';
                         }

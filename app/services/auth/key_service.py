@@ -41,8 +41,9 @@ class ApiKeyService:
 
     @staticmethod
     def hash_key(raw_key: str) -> str:
-        """Computes deterministic SHA-256 hash of secret key string."""
-        return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+        """Computes deterministic PBKDF2-HMAC-SHA256 hash of key string."""
+        salt = b"contextcortex_api_key_salt_v1"
+        return hashlib.pbkdf2_hmac("sha256", raw_key.encode("utf-8"), salt, 50_000).hex()
 
     def issue_api_key(
         self,
@@ -94,7 +95,7 @@ class ApiKeyService:
                 ).first()
                 inserted_id = row[0] if row else 0
 
-        logger.info(f"Issued new API key '{name}' (id={inserted_id}, prefix={key_prefix}, role={assigned_role.value})")
+        logger.info(f"Issued new API key '{name}' (id={inserted_id}, role={assigned_role.value})")
 
         return ApiKeyOut(
             id=inserted_id,
@@ -305,7 +306,7 @@ class ApiKeyService:
                 group_name="admin",
                 engine=eng,
             )
-            logger.info(f"Auto-bootstrapped initial admin API key (prefix: {key.key_prefix})")
+            logger.info("Auto-bootstrapped initial admin API key.")
             return key
 
         # Custom explicit secret key specified
@@ -319,7 +320,7 @@ class ApiKeyService:
             ).mappings().fetchone()
 
             if row:
-                logger.info(f"Bootstrap admin key already registered (id={row['id']}, prefix={key_prefix})")
+                logger.info(f"Bootstrap admin key already registered (id={row['id']})")
                 return ApiKeyOut(
                     id=row["id"],
                     name=row["name"],
@@ -355,7 +356,7 @@ class ApiKeyService:
                 ).first()
                 inserted_id = r[0] if r else 0
 
-        logger.info(f"Bootstrapped configured initial admin key (id={inserted_id}, prefix={key_prefix})")
+        logger.info(f"Bootstrapped configured initial admin key (id={inserted_id})")
         return ApiKeyOut(
             id=inserted_id,
             name=name.strip(),

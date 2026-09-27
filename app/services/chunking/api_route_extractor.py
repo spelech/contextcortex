@@ -17,7 +17,7 @@ def normalize_path_pattern(path: str) -> str:
     # Express style :param
     path = re.sub(r':([a-zA-Z_][a-zA-Z0-9_]*)', r'{\1}', path)
     # Template literal ${param}
-    path = re.sub(r'\$\{([^}]+)\}', r'{\1}', path)
+    path = re.sub(r'\$\{([^{}]+)\}', r'{\1}', path)
     # Next.js [id]
     path = re.sub(r'\[([a-zA-Z_][a-zA-Z0-9_]*)\]', r'{\1}', path)
 
@@ -167,8 +167,14 @@ def extract_api_routes_and_calls(
         if re.search(r'route\.(?:ts|js|tsx|jsx)$', norm_fp):
             # Infer route path from folder structure
             # e.g. app/api/users/[id]/route.ts -> /api/users/{id}
-            app_match = re.search(r'(?:app|pages)(/.*?)/route\.(?:ts|js|tsx|jsx)$', norm_fp)
-            route_path = normalize_path_pattern(app_match.group(1)) if app_match else "/"
+            route_base = re.sub(r'/route\.(?:ts|js|tsx|jsx)$', '', norm_fp)
+            parts = route_base.split('/')
+            raw_route_path = "/"
+            for idx, part in enumerate(parts):
+                if part in ("app", "pages") and idx + 1 < len(parts):
+                    raw_route_path = "/" + "/".join(parts[idx + 1:])
+                    break
+            route_path = normalize_path_pattern(raw_route_path)
             for i, line in enumerate(lines, start=1):
                 m_next = re.search(r'export\s+(?:async\s+)?function\s+(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b', line)
                 if m_next:

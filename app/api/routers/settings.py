@@ -4,6 +4,7 @@ import json
 import sqlite3
 import logging
 from typing import Optional
+from urllib.parse import urlsplit
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -326,11 +327,24 @@ async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
 @router.get("/admin/api/models/discover")
 async def api_discover_models(url: Optional[str] = None, api_key: Optional[str] = None):
     try:
+        if url:
+            parsed = urlsplit(url.strip())
+            if parsed.scheme not in ("http", "https"):
+                return JSONResponse(
+                    status_code=400,
+                    content={"status": "error", "error": "Invalid URL scheme: only http and https are allowed."}
+                )
+            host = (parsed.hostname or "").lower()
+            if not host or host in ("169.254.169.254", "metadata.google.internal") or host.startswith("169.254."):
+                return JSONResponse(
+                    status_code=400,
+                    content={"status": "error", "error": "Invalid or restricted target host."}
+                )
         res = await litellm_service.discover_models(url=url, api_key=api_key)
         return res
     except Exception as e:
         logger.error(f"Error discovering models: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "error": str(e), "message": str(e)})
+        return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to discover models."})
 
 @router.get("/admin/api/settings/embedding")
 async def api_get_embedding_settings():
