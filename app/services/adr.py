@@ -155,9 +155,10 @@ def sync_adr_file(filepath: str, repo: str, content: Optional[str] = None) -> Op
     """Reads or receives ADR markdown file content and syncs it to SQLite database."""
     try:
         if content is None:
-            if not os.path.exists(filepath):
+            norm_fp = os.path.normpath(os.path.abspath(filepath))
+            if not os.path.exists(norm_fp):
                 return None
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            with open(norm_fp, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
 
         parsed = parse_adr_markdown(content, filepath, repo)

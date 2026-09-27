@@ -37,6 +37,10 @@ class FileReaderService:
                 and os.path.realpath(target_abs) == os.path.realpath(root_abs)
             )
 
+        root_prefix = root_abs if root_abs.endswith(os.sep) else root_abs + os.sep
+        if not target_abs.startswith(root_prefix) and target_abs != root_abs:
+            return False
+
         try:
             if os.path.commonpath([target_abs, root_abs]) != root_abs:
                 return False
@@ -46,6 +50,10 @@ class FileReaderService:
         # Verify symlink containment to prevent symlink breakouts
         target_real = os.path.realpath(target_abs)
         root_real = os.path.realpath(root_abs)
+        root_real_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
+        if not target_real.startswith(root_real_prefix) and target_real != root_real:
+            return False
+
         try:
             if os.path.commonpath([target_real, root_real]) != root_real:
                 return False

@@ -198,7 +198,10 @@ async def api_get_paths():
 @router.post("/admin/api/paths")
 async def api_add_path(config: LocalPathConfig):
     try:
-        resolved = os.path.abspath(config.path)
+        raw_path = config.path.strip() if config.path else ""
+        if not raw_path or "\x00" in raw_path or any(part == ".." for part in raw_path.replace("\\", "/").split("/")):
+            return JSONResponse(status_code=400, content={"error": "Path traversal or invalid path detected."})
+        resolved = os.path.normpath(os.path.abspath(raw_path))
         if not os.path.exists(resolved):
             return JSONResponse(status_code=400, content={"error": f"Path '{resolved}' does not exist on disk."})
 
@@ -279,7 +282,10 @@ async def api_test_search(payload: SearchRequest):
 
 @router.get("/admin/api/browse")
 async def api_browse_dir(path: str = "/"):
-    resolved = os.path.abspath(path)
+    cleaned = path.strip() if path else "/"
+    if "\x00" in cleaned or any(part in ("..", ".") for part in cleaned.replace("\\", "/").split("/") if part):
+        cleaned = "/"
+    resolved = os.path.normpath(os.path.abspath(cleaned))
     if not os.path.exists(resolved):
         resolved = "/"
     try:

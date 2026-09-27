@@ -243,17 +243,21 @@ class SummarizerService:
             content = None
 
         if content is None:
-            if os.path.exists(filepath):
+            norm_fp = os.path.normpath(os.path.abspath(filepath))
+            if os.path.exists(norm_fp) and os.path.isfile(norm_fp):
                 try:
-                    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+                    with open(norm_fp, "r", encoding="utf-8", errors="replace") as f:
                         content = f.read()
                 except Exception as e:
-                    logger.warning(f"Failed to read file from disk '{filepath}': {e}")
+                    logger.warning(f"Failed to read file from disk '{norm_fp}': {e}")
             else:
                 try:
                     from app.services.local_storage import get_default_storage_path
-                    storage_cand = os.path.join(get_default_storage_path(), filepath)
-                    if os.path.exists(storage_cand):
+                    storage_root = os.path.normpath(os.path.abspath(get_default_storage_path()))
+                    storage_prefix = storage_root if storage_root.endswith(os.sep) else storage_root + os.sep
+                    cleaned_fp = filepath.strip().replace("\\", "/").lstrip("/")
+                    storage_cand = os.path.normpath(os.path.abspath(os.path.join(storage_root, cleaned_fp)))
+                    if storage_cand.startswith(storage_prefix) and os.path.exists(storage_cand) and os.path.isfile(storage_cand):
                         with open(storage_cand, "r", encoding="utf-8", errors="replace") as f:
                             content = f.read()
                 except Exception:
