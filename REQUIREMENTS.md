@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **968 Automated Tests** (651 Pytest Backend + 271 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **969 Automated Tests** (652 Pytest Backend + 271 Vitest Frontend + 46 Playwright E2E).
 
 ---
 
@@ -980,7 +980,7 @@ persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
 
-#### `tests/test_litellm_service.py` (7 tests)
+#### `tests/test_litellm_service.py` (8 tests)
 - `test_discover_models_success`
 - `test_discover_models_timeout`
 - `test_discover_models_connect_error`
@@ -988,6 +988,7 @@ and leaves the prior indexed state intact without data loss._
 - `test_discover_models_http_500_error`
 - `test_discover_models_url_normalization`
 - `test_discover_models_default_resolution`
+- `test_discover_models_ssrf_rejection`
 
 #### `tests/test_local_storage_indexing.py` (4 tests)
 - `test_incremental_indexing_on_save`

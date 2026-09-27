@@ -1,6 +1,7 @@
 import os
 import logging
 from typing import Optional, Dict, Any, List
+from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from app.services.database import get_embedding_db_config
@@ -38,14 +39,45 @@ async def discover_models(
         or "dummy"
     )
 
-    # Normalize URL to target /models endpoint
-    clean_url = raw_url.strip().rstrip("/")
-    if clean_url.endswith("/models"):
-        endpoint = clean_url
+    # Validate URL against SSRF
+    parsed = urlsplit(raw_url.strip())
+    if parsed.scheme not in ("http", "https"):
+        error_msg = f"Invalid URL scheme '{parsed.scheme}': only http and https are permitted."
+        logger.warning(f"LiteLLM model discovery rejected: {error_msg}")
+        return {
+            "status": "error",
+            "message": error_msg,
+            "total_models": 0,
+            "models": [],
+            "embedding_models": [],
+            "vision_models": [],
+            "chat_models": [],
+        }
+
+    host = (parsed.hostname or "").lower()
+    if not host or host in ("169.254.169.254", "metadata.google.internal") or host.startswith("169.254."):
+        error_msg = f"Invalid or restricted host '{host}'."
+        logger.warning(f"LiteLLM model discovery rejected: {error_msg}")
+        return {
+            "status": "error",
+            "message": error_msg,
+            "total_models": 0,
+            "models": [],
+            "embedding_models": [],
+            "vision_models": [],
+            "chat_models": [],
+        }
+
+    # Normalize URL to target /models endpoint safely
+    clean_path = parsed.path.rstrip("/")
+    if clean_path.endswith("/models"):
+        endpoint_path = clean_path
     else:
-        if not clean_url.endswith("/v1"):
-            clean_url = f"{clean_url}/v1"
-        endpoint = f"{clean_url}/models"
+        if not clean_path.endswith("/v1"):
+            clean_path = f"{clean_path}/v1"
+        endpoint_path = f"{clean_path}/models"
+
+    endpoint = urlunsplit((parsed.scheme, parsed.netloc, endpoint_path, "", ""))
 
     headers = {"Authorization": f"Bearer {resolved_api_key}"}
 

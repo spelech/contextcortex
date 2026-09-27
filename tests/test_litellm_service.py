@@ -183,3 +183,16 @@ async def test_discover_models_default_resolution(monkeypatch):
             args, kwargs = mock_get.call_args
             assert args[0] == "http://custom-db-litellm:4000/v1/models"
             assert kwargs["headers"]["Authorization"] == "Bearer db-secret-key"
+
+
+@pytest.mark.asyncio
+async def test_discover_models_ssrf_rejection():
+    # Test invalid scheme
+    res_scheme = await discover_models(url="file:///etc/passwd")
+    assert res_scheme["status"] == "error"
+    assert "Invalid URL scheme" in res_scheme["message"]
+
+    # Test cloud metadata host
+    res_metadata = await discover_models(url="http://169.254.169.254/latest/meta-data")
+    assert res_metadata["status"] == "error"
+    assert "restricted host" in res_metadata["message"]
