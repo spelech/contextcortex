@@ -54,9 +54,11 @@ async def api_summarize_file(payload: FileSummarizePayload):
         raw_path = payload.path.strip() if payload.path else ""
         if not raw_path or "\x00" in raw_path or any(part == ".." for part in raw_path.replace("\\", "/").split("/")):
             return JSONResponse(status_code=400, content={"error": "Path traversal or invalid path detected."})
+        reader = get_file_reader_service()
+        safe_path, _ = reader.resolve_safe_path(raw_path, repo=payload.repo)
         summarizer = get_summarizer_service()
         summary_text = summarizer.get_or_create_summary(
-            filepath=raw_path,
+            filepath=safe_path,
             repo=payload.repo,
             force_refresh=payload.force_refresh
         )
