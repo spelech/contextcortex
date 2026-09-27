@@ -67,6 +67,10 @@ class QdrantVectorStore(VectorStore):
                     self.location = target_storage
                 else:
                     clean_storage = os.path.normpath(os.path.abspath(target_storage))
+                    root = os.path.abspath(os.path.sep)
+                    root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+                    if not (clean_storage.startswith(root_prefix) or clean_storage == root):
+                        raise ValueError(f"Invalid Qdrant storage path: {target_storage}")
                     os.makedirs(clean_storage, exist_ok=True)
                     self.client = QdrantClient(path=clean_storage)
                     self.mode = "embedded"
@@ -79,6 +83,10 @@ class QdrantVectorStore(VectorStore):
                 self.location = target_storage
             else:
                 clean_storage = os.path.normpath(os.path.abspath(target_storage))
+                root = os.path.abspath(os.path.sep)
+                root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+                if not (clean_storage.startswith(root_prefix) or clean_storage == root):
+                    raise ValueError(f"Invalid Qdrant storage path: {target_storage}")
                 os.makedirs(clean_storage, exist_ok=True)
                 self.client = QdrantClient(path=clean_storage)
                 self.mode = "embedded"
@@ -442,7 +450,8 @@ class QdrantVectorStore(VectorStore):
             exists = self.client.collection_exists(self.collection_name)
             return True, f"Qdrant ({self.mode} @ {self.location}) is healthy; collection '{self.collection_name}' exists: {exists}"
         except Exception as e:
-            return False, f"Qdrant ({self.mode}) health check failed: {e}"
+            logger.warning(f"Qdrant ({self.mode}) health check failed: {e}")
+            return False, f"Qdrant ({self.mode}) health check failed."
 
     def close(self):
         """Cleanly close Qdrant client connection and release local storage lock."""

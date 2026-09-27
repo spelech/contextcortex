@@ -280,6 +280,17 @@ async def api_get_vector_store():
 @router.post("/admin/api/vector-store/test")
 async def api_test_vector_store(payload: VectorStoreTestRequest):
     try:
+        if payload.storage_path:
+            sp = payload.storage_path.strip()
+            if sp != ":memory:":
+                if "\x00" in sp or any(part == ".." for part in sp.replace("\\", "/").split("/")):
+                    return JSONResponse(status_code=400, content={"success": False, "error": "Invalid storage path: traversal detected.", "message": "Invalid storage path: traversal detected."})
+                norm_sp = os.path.normpath(os.path.abspath(sp))
+                root = os.path.abspath(os.path.sep)
+                root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+                if not (norm_sp.startswith(root_prefix) or norm_sp == root):
+                    return JSONResponse(status_code=400, content={"success": False, "error": "Invalid storage path.", "message": "Invalid storage path."})
+
         success, message = vs_service.test_vector_store_connection(
             provider=payload.provider,
             mode=payload.mode,
@@ -300,6 +311,17 @@ async def api_test_vector_store(payload: VectorStoreTestRequest):
 @router.post("/admin/api/vector-store/switch")
 async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
     try:
+        if payload.storage_path:
+            sp = payload.storage_path.strip()
+            if sp != ":memory:":
+                if "\x00" in sp or any(part == ".." for part in sp.replace("\\", "/").split("/")):
+                    return JSONResponse(status_code=400, content={"status": "error", "error": "Invalid storage path: traversal detected.", "message": "Invalid storage path: traversal detected."})
+                norm_sp = os.path.normpath(os.path.abspath(sp))
+                root = os.path.abspath(os.path.sep)
+                root_prefix = root if root.endswith(os.path.sep) else root + os.path.sep
+                if not (norm_sp.startswith(root_prefix) or norm_sp == root):
+                    return JSONResponse(status_code=400, content={"status": "error", "error": "Invalid storage path.", "message": "Invalid storage path."})
+
         def _reindex():
             threading.Thread(target=idx_service.run_full_indexing, daemon=True).start()
 

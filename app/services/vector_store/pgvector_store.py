@@ -377,7 +377,8 @@ class PgVectorStore(VectorStore):
                 conn.execute(text(f"SELECT 1 FROM {self.table_name} LIMIT 1;"))
             return True, f"PgVectorStore ({self.location}) is healthy; table '{self.table_name}' verified"
         except Exception as e:
-            return False, f"PgVectorStore health check failed: {e}"
+            logger.warning(f"PgVectorStore health check failed: {e}")
+            return False, "PgVectorStore health check failed."
 
     def close(self):
         """Disposes underlying database handles if necessary."""

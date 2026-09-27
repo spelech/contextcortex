@@ -101,7 +101,7 @@ class TestPgVectorStoreLifecycle:
         store = PgVectorStore(engine=mock_engine, auto_init=False)
         healthy, msg = store.health_check()
         assert healthy is False
-        assert "DB Connection Refused" in msg
+        assert "health check failed" in msg.lower()
 
     def test_get_stats_success(self):
         from app.services.vector_store.pgvector_store import PgVectorStore

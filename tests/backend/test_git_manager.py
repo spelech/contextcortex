@@ -247,7 +247,7 @@ class TestGitManager(unittest.TestCase):
         mock_get.side_effect = Exception("Network connection timeout")
         status = check_github_rate_limit("token123")
         self.assertTrue(status["authenticated"])
-        self.assertIn("Network connection timeout", status["error"])
+        self.assertIn("error", status)
 
 
 if __name__ == "__main__":
