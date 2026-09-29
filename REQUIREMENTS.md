@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **975 Automated Tests** (653 Pytest Backend + 273 Vitest Frontend + 49 Playwright E2E).
+**Test Verification Baseline:** **977 Automated Tests** (655 Pytest Backend + 273 Vitest Frontend + 49 Playwright E2E).
 
 ---
 
@@ -475,7 +475,7 @@ classDiagram
 - `test_markdown_chunking_with_subchunks`
 - `test_markdown_chunking_with_nested_headings_and_empty`
 
-#### `tests/backend/test_db_and_tools.py` (16 tests)
+#### `tests/backend/test_db_and_tools.py` (17 tests)
 - `test_db_path_and_init`
 - `test_db_init_seeding_vault`
 - `test_db_init_seeding_errors`
@@ -484,6 +484,7 @@ classDiagram
 - `test_token_sources`
 - `test_handle_search_code`
 - `test_handle_search_docs`
+- `test_handle_search_code_and_docs_real_integration` - _Real un-mocked verification of handle_search_code and handle_search_docs MCP tools._
 - `test_handle_find_symbol`
 - `test_handle_get_file_outline`
 - `test_handle_list_repositories`
@@ -567,9 +568,10 @@ classDiagram
 - `test_git_syncer_nonexistent_repo`
 - `test_git_progress_tracker_pending_cancellation`
 
-#### `tests/backend/test_health_check_status.py` (2 tests)
+#### `tests/backend/test_health_check_status.py` (3 tests)
 - `test_api_stats_reports_healthy_when_store_is_healthy`
 - `test_api_stats_reports_unhealthy_when_store_fails`
+- `test_api_stats_reports_healthy_with_real_embedded_store` - _Verify /admin/api/stats health check against a real embedded Qdrant vector store without mocks._
 
 #### `tests/backend/test_indexer_and_embeddings.py` (25 tests)
 - `test_embeddings_generation`

@@ -59,3 +59,26 @@ def test_api_stats_reports_unhealthy_when_store_fails(mock_db):
         assert res.status_code == 200
         data = res.json()
         assert data["vector_db_status"] == "Unhealthy"
+
+def test_api_stats_reports_healthy_with_real_embedded_store(tmp_path):
+    """Verify /admin/api/stats health check against a real embedded Qdrant vector store without mocks."""
+    from app.services.database import set_vector_store_db_config
+    from app.services.vector_store import VectorStoreManager
+
+    qdrant_dir = str(tmp_path / "real_health_qdrant")
+    set_vector_store_db_config(
+        provider="qdrant",
+        mode="embedded",
+        storage_path=qdrant_dir,
+        url="",
+        collection="test_health_check",
+    )
+    VectorStoreManager.reset_instance()
+
+    with patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
+        res = client.get("/admin/api/stats")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["vector_db_status"] == "Healthy"
+        assert data["vector_store_provider"] == "qdrant"
+        assert data["vector_store_mode"] == "embedded"
