@@ -106,3 +106,15 @@ export interface RepoOption {
   id?: number;
   name: string;
 }
+
+export interface FileContentResult {
+  filepath: string;
+  content: string;
+  start_line: number;
+  end_line: number;
+  total_lines: number;
+  size_bytes: number;
+  truncated: boolean;
+  source?: string;
+  language?: string;
+}

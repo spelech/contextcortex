@@ -68,7 +68,30 @@ describe('NavigatorInspector Component', () => {
       />
     );
 
-    expect(screen.getByText(/select a symbol from the outline/i)).toBeInTheDocument();
+    expect(screen.getByText(/no file or symbol selected/i)).toBeInTheDocument();
+  });
+
+  it('renders doc reader when fileContent is provided without an impact symbol', () => {
+    render(
+      <NavigatorInspector
+        impact={null}
+        onSelectCaller={vi.fn()}
+        fileContent={{
+          filepath: 'README.md',
+          content: '# ContextCortex\n\nFull documentation reader is active.',
+          start_line: 1,
+          end_line: 3,
+          total_lines: 3,
+          size_bytes: 64,
+          truncated: false,
+          language: 'markdown',
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('nav-doc-reader')).toBeInTheDocument();
+    expect(screen.getByText('ContextCortex')).toBeInTheDocument();
+    expect(screen.getByText(/full documentation reader is active/i)).toBeInTheDocument();
   });
 
   it('renders symbol metadata and metrics', () => {

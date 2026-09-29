@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **969 Automated Tests** (652 Pytest Backend + 271 Vitest Frontend + 46 Playwright E2E).
+**Test Verification Baseline:** **975 Automated Tests** (653 Pytest Backend + 273 Vitest Frontend + 49 Playwright E2E).
 
 ---
 
@@ -667,10 +667,12 @@ classDiagram
 - `test_code_symbol_creation`
 - `test_search_request_defaults`
 
-#### `tests/backend/test_search.py` (3 tests)
+#### `tests/backend/test_search.py` (4 tests)
 - `test_execute_hybrid_search_empty_query`
 - `test_execute_hybrid_search_delegation`
 - `test_execute_hybrid_search_exception`
+- `test_execute_hybrid_search_end_to_end_real` - _Validates REAL hybrid retrieval without mocking get_vector_store or execute_hybrid_search.
+Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 
 #### `tests/backend/test_tools.py` (3 tests)
 - `test_dynamic_catalog_description`
@@ -1266,8 +1268,9 @@ and leaves the prior indexed state intact without data loss._
 - displays PDF notice and hides text textarea when upload path is a PDF
 - prevents direct text replacement of PDF files in replace modal
 
-#### `NavigatorInspector.test.tsx` (9 tests)
+#### `NavigatorInspector.test.tsx` (10 tests)
 - renders empty placeholder when no symbol is selected
+- renders doc reader when fileContent is provided without an impact symbol
 - renders symbol metadata and metrics
 - renders route details card
 - renders signature code and docstring
@@ -1277,8 +1280,9 @@ and leaves the prior indexed state intact without data loss._
 - calls onSelectCallee when a clickable callee is clicked for cross-file navigation
 - renders loading state when loading is true
 
-#### `NavigatorOutline.test.tsx` (8 tests)
+#### `NavigatorOutline.test.tsx` (9 tests)
 - renders empty placeholder when outline is null or empty
+- renders read document button and handles click when onReadDoc is provided
 - renders file header with filepath and symbols
 - renders route badges for route symbols
 - filters symbols by category chips
@@ -1545,10 +1549,13 @@ and leaves the prior indexed state intact without data loss._
 - 5. Settings Tab - Vector Store & Embedding Engine Layout Audit
 - 6. Diagnostics & Logs Tab - Log Container & Filter Layout Stability
 - 7. Add Repository Modal - Layout Shift & Center Alignment
+- 8. Navigator Tab - Desktop 3-Pane Zero Element Collisions & Layout Fit
+- 9. Navigator Tab - Mobile Responsive Stack & Layout Fit
 - 1. Navigation and Initial Load: mounts CodeNavigator container, toolbar, and stats
 - 2. File Tree Interaction: hierarchical structure, expand/collapse, and search filtering
 - 3. Symbol Outline & Category Filtering: loads symbols, filters by category chips, and searches
 - 4. Impact Inspector & Route Details: displays metrics, route card, signature, and copy permalink
 - 5. Caller Click-Through Navigation: jumps from caller card in inspector to caller file and symbol
 - 6. Density Mode Toggling: toggles Compact, Balanced, and Spacious layout modes
-- 7. Responsive Layout Audit: zero overflow and stable 3-pane layout across viewports
+- 7. Responsive Layout Audit: zero overflow, zero element collisions, and stable layout across desktop and mobile
+- 8. Document Reader: opens markdown document, renders full content and switches between rendered and source view

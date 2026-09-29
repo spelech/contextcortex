@@ -1,23 +1,40 @@
 import React, { useState } from 'react';
-import type { SymbolImpact, DensityMode } from './types';
+import type { SymbolImpact, DensityMode, FileContentResult } from './types';
 import { getMethodBadgeClass, getKindBadgeClass } from './NavigatorOutline';
+import { NavigatorDocReader } from './NavigatorDocReader';
 
 interface NavigatorInspectorProps {
   impact: SymbolImpact | null;
+  fileContent?: FileContentResult | null;
+  loadingContent?: boolean;
+  contentError?: string | null;
+  activeInspectorTab?: 'intelligence' | 'reader';
+  onChangeInspectorTab?: (tab: 'intelligence' | 'reader') => void;
   onSelectCaller?: (filePath: string, symbolName?: string, sourceSymbolId?: number) => void;
   onSelectCallee?: (filePath?: string, symbolName?: string) => void;
   density?: DensityMode;
   loading?: boolean;
+  onRefreshContent?: () => void;
 }
 
 export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
   impact,
+  fileContent,
+  loadingContent = false,
+  contentError = null,
+  activeInspectorTab,
+  onChangeInspectorTab,
   onSelectCaller,
   onSelectCallee,
   density = 'balanced',
   loading = false,
+  onRefreshContent,
 }) => {
+  const [internalTab, setInternalTab] = useState<'intelligence' | 'reader'>('intelligence');
   const [copied, setCopied] = useState(false);
+
+  const currentTab = activeInspectorTab !== undefined ? activeInspectorTab : internalTab;
+  const setTab = onChangeInspectorTab || setInternalTab;
 
   const handleCopyPermalink = async () => {
     if (!impact?.symbol) return;
@@ -40,6 +57,8 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
   const callees = impact?.callees || [];
   const imports = impact?.imports || [];
 
+  const showDocReader = (!symbol && (fileContent || loadingContent || contentError)) || (symbol && currentTab === 'reader');
+
   return (
     <div className={`nav-inspector-pane density-${density}`} data-testid="navigator-inspector-container">
       <div className="nav-inspector-header">
@@ -57,39 +76,76 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
             <circle cx="12" cy="12" r="10" />
             <path d="M12 16v-4M12 8h.01" />
           </svg>
-          <span>Code Intelligence & Impact</span>
+          <span>{showDocReader && !symbol ? 'Document & File Reader' : 'Code Intelligence & Impact'}</span>
         </div>
 
-        {symbol && (
-          <button
-            type="button"
-            className="nav-copy-permalink-btn"
-            onClick={handleCopyPermalink}
-            title="Copy file path & line range permalink"
-            aria-label="Copy Permalink"
-          >
-            {copied ? (
-              <>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <span>Copied!</span>
-              </>
-            ) : (
-              <>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-                <span>Copy Permalink</span>
-              </>
-            )}
-          </button>
-        )}
+        <div className="nav-inspector-header-actions">
+          {symbol && fileContent && (
+            <div className="nav-inspector-tabs" role="tablist">
+              <button
+                type="button"
+                className={`inspector-tab-btn ${currentTab === 'intelligence' ? 'active' : ''}`}
+                onClick={() => setTab('intelligence')}
+              >
+                Symbol Intelligence
+              </button>
+              <button
+                type="button"
+                className={`inspector-tab-btn ${currentTab === 'reader' ? 'active' : ''}`}
+                onClick={() => setTab('reader')}
+              >
+                Read Full File
+              </button>
+            </div>
+          )}
+
+          {symbol && currentTab === 'intelligence' && (
+            <button
+              type="button"
+              className="nav-copy-permalink-btn"
+              onClick={handleCopyPermalink}
+              title="Copy file path & line range permalink"
+              aria-label="Copy Permalink"
+            >
+              {copied ? (
+                <>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                  </svg>
+                  <span>Copy Permalink</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="nav-inspector-content">
-        {loading ? (
+        {showDocReader && fileContent ? (
+          <NavigatorDocReader
+            filepath={fileContent.filepath}
+            content={fileContent.content}
+            totalLines={fileContent.total_lines}
+            sizeBytes={fileContent.size_bytes}
+            loading={loadingContent}
+            error={contentError}
+            onRefresh={onRefreshContent}
+          />
+        ) : showDocReader && loadingContent ? (
+          <div className="nav-inspector-skeleton" data-testid="inspector-loading-skeleton">
+            <div className="skeleton-header shimmer"></div>
+            <div className="skeleton-metrics shimmer"></div>
+            <div className="skeleton-block shimmer"></div>
+          </div>
+        ) : loading ? (
           <div className="nav-inspector-skeleton" data-testid="inspector-loading-skeleton">
             <div className="skeleton-header shimmer"></div>
             <div className="skeleton-metrics shimmer"></div>
@@ -99,8 +155,8 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
         ) : !impact || !symbol ? (
           <div className="nav-empty-state">
             <div className="empty-icon">🔍</div>
-            <h4>No Symbol Selected</h4>
-            <p>Select a symbol from the outline to inspect its callers, dependencies, and impact.</p>
+            <h4>No File or Symbol Selected</h4>
+            <p>Select a file from the tree to read its documentation or select a symbol to inspect callers and dependencies.</p>
           </div>
         ) : (
           <div className="nav-inspector-body">

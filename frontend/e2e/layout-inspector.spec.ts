@@ -162,6 +162,69 @@ async function setupLayoutMocks(page: any) {
   await page.route('**/admin/api/graph/topology*', async (route: any) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockTopology) });
   });
+  await page.route('**/admin/api/navigator/tree*', async (route: any) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        repo: '__all__',
+        total_files: 2,
+        total_symbols: 4,
+        tree: [
+          {
+            id: 'dir:app',
+            name: 'app',
+            is_dir: true,
+            path: 'app',
+            symbol_count: 4,
+            children: [
+              { id: 'file:app/main.py', name: 'main.py', is_dir: false, path: 'app/main.py', language: 'python', symbol_count: 4 }
+            ]
+          },
+          { id: 'file:README.md', name: 'README.md', is_dir: false, path: 'README.md', language: 'markdown', symbol_count: 0 }
+        ]
+      })
+    });
+  });
+  await page.route('**/admin/api/navigator/file-outline*', async (route: any) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        repo: '__all__',
+        filepath: 'app/main.py',
+        language: 'python',
+        symbols: [
+          { id: 1, name: 'init_app', full_symbol: 'app.main.init_app', kind: 'function', start_line: 1, end_line: 20, signature: 'def init_app():' }
+        ]
+      })
+    });
+  });
+  await page.route('**/admin/api/navigator/symbol-impact*', async (route: any) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        symbol: { id: 1, name: 'init_app', full_symbol: 'app.main.init_app', kind: 'function', filepath: 'app/main.py', start_line: 1, end_line: 20, signature: 'def init_app():', docstring: 'Initializes application.', language: 'python', repo: 'app' },
+        route: null,
+        callers: [],
+        callees: [],
+        imports: []
+      })
+    });
+  });
+  await page.route('**/admin/api/files/read*', async (route: any) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        filepath: 'README.md',
+        content: '# ContextCortex\n\nFast code and doc search.',
+        total_lines: 3,
+        language: 'markdown'
+      })
+    });
+  });
 }
 
 async function navigateTab(page: any, tabName: string) {
@@ -290,5 +353,31 @@ test.describe('Playwright Layout Inspector UI UX Audits', () => {
     // Close modal
     await page.locator('button.btn-close').click();
     await expect(page.locator('.modal-card')).not.toBeVisible();
+  });
+
+  test('8. Navigator Tab - Desktop 3-Pane Zero Element Collisions & Layout Fit', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await navigateTab(page, 'Navigator');
+
+    await expect(page.locator('[data-testid="code-navigator-container"]')).toBeVisible();
+    await expect(page).toHaveNoLayoutOverflow();
+    await expect(page).toHaveNoElementCollisions();
+
+    const inspector = new LayoutInspector(page);
+    const audit = await inspector.audit({
+      device: getDevicePreset('Desktop 1080p'),
+      includeScreenshot: false,
+    });
+    expect(audit.overflowIssues.length).toBe(0);
+  });
+
+  test('9. Navigator Tab - Mobile Responsive Stack & Layout Fit', async ({ page }) => {
+    const s25 = getDevicePreset('Samsung Galaxy S25');
+    await page.setViewportSize({ width: s25.width, height: s25.height });
+    await navigateTab(page, 'Navigator');
+
+    await expect(page.locator('[data-testid="code-navigator-container"]')).toBeVisible();
+    await expect(page).toHaveNoLayoutOverflow();
+    await expect(page).toHaveNoElementCollisions();
   });
 });
