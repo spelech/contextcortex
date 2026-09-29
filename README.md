@@ -84,7 +84,8 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - **Pane 1 (Files & Modules)**: Virtualized folder & file tree hierarchy with symbol/route counts, instant filtering, and one-click expand/collapse.
   - **Pane 2 (Symbols & Routes)**: Language-aware AST symbol declarations with category chip filtering (`All`, `Functions`, `Classes`, `Routes`), signature previews, and search.
   - **Pane 3 (Code Intelligence & Impact)**: Deep architectural intelligence displaying incoming callers, outgoing callees, imported modules, REST API route mappings (`POST`, `GET`, etc.), signature code blocks, docstrings, and one-click caller navigation jump.
-  - **Customizable Layout Density**: Persisted `Compact` (IDE density), `Balanced` (default), and `Spacious` (cards) modes with zero horizontal overflow across devices.
+  - **Integrated Document & Markdown Reader**: Formatted Markdown and raw source table viewer for reading full documentation (`.md`, `.txt`) directly within Pane 3.
+  - **Customizable Layout Density & Mobile Responsiveness**: Persisted `Compact` (IDE density), `Balanced` (default), and `Spacious` (cards) modes with responsive vertical stacking and zero horizontal overflow across devices.
 - **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
 - **Multi-Theme Engine & Modern Tabbed Web Dashboard (`/admin/`)**:
   - **Appearance & Theme Settings**: Instant zero-latency switching between 4 distinct dark and light themes (**Deep Ocean**, **Midnight Blue**, **Lavender Haze**, and **Amber Warmth**) with live palette swatches and browser persistence.

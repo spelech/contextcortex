@@ -57,7 +57,7 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
   const [activeCategory, setActiveCategory] = useState<OutlineCategory>('all');
   const [filterQuery, setFilterQuery] = useState('');
 
-  const symbols = outline?.symbols || [];
+  const symbols = useMemo(() => outline?.symbols || [], [outline?.symbols]);
 
   // Compute counts for category chips
   const counts = useMemo(() => {

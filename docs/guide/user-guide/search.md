@@ -14,7 +14,7 @@ Follow these steps to run a retrieval test:
 2. Enter your query in the search bar (for example: `vector database connection pool` or `FastMCP tool registration`).
 3. Select the target search category:
    - **Code**: Searches source code AST chunks across all indexed languages.
-   - **Docs**: Searches architectural documents, ADR records, specifications, and file summaries.
+   - **Docs**: Searches architectural documents, ADR records, specifications, file summaries, and indexed PDF manuals.
 4. *(Optional)* Select a specific **Repository** filter to isolate results to a single project.
 5. Click **Run Search** or press <kbd>Enter</kbd>.
 
