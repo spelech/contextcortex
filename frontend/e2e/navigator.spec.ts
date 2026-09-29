@@ -338,7 +338,18 @@ async function setupNavigatorMocks(page: any) {
 
   await page.route('**/admin/api/navigator/file-outline*', async (route: any) => {
     const url = decodeURIComponent(route.request().url());
-    if (url.includes('tests/e2e/test_chat.py')) {
+    if (url.includes('README.md')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          repo: '__all__',
+          filepath: 'README.md',
+          language: 'markdown',
+          symbols: [],
+        }),
+      });
+    } else if (url.includes('tests/e2e/test_chat.py')) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -351,6 +362,19 @@ async function setupNavigatorMocks(page: any) {
         body: JSON.stringify(mockOutlineChat),
       });
     }
+  });
+
+  await page.route('**/admin/api/files/read*', async (route: any) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        filepath: 'README.md',
+        content: '# ContextCortex Documentation\n\nFull documentation reader is active.\n\n## Features\n\n- Hybrid Vector and Lexical Search\n- Interactive AST Symbol Navigator\n- Markdown and Source Code Viewer',
+        total_lines: 8,
+        language: 'markdown',
+      }),
+    });
   });
 
   await page.route('**/admin/api/navigator/symbol-impact*', async (route: any) => {
@@ -623,7 +647,8 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     await expect(container).toHaveClass(/density-balanced/);
   });
 
-  test('7. Responsive Layout Audit: zero overflow and stable 3-pane layout across viewports', async ({ page }) => {
+  test('7. Responsive Layout Audit: zero overflow, zero element collisions, and stable layout across desktop and mobile', async ({ page }) => {
+    // Desktop 1080p
     await page.setViewportSize({ width: 1920, height: 1080 });
     await navigateToNavigator(page);
 
@@ -631,8 +656,9 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     await page.locator('button[aria-label="Expand All"]').click();
     await page.locator('.nav-tree-item').filter({ has: page.locator('.tree-label:text-is("chat.py")') }).click();
 
-    // Assert zero horizontal overflow
+    // Assert zero horizontal overflow and zero element collisions
     await expect(page).toHaveNoLayoutOverflow();
+    await expect(page).toHaveNoElementCollisions();
 
     // Layout Inspector UX Audit
     const inspector = new LayoutInspector(page);
@@ -642,5 +668,44 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     });
 
     expect(audit.overflowIssues.length).toBe(0);
+
+    // Mobile Viewport (Samsung Galaxy S25: 360x780)
+    const s25 = getDevicePreset('Samsung Galaxy S25');
+    await page.setViewportSize({ width: s25.width, height: s25.height });
+    await page.waitForTimeout(200);
+
+    await expect(page).toHaveNoLayoutOverflow();
+    await expect(page).toHaveNoElementCollisions();
+  });
+
+  test('8. Document Reader: opens markdown document, renders full content and switches between rendered and source view', async ({ page }) => {
+    await navigateToNavigator(page);
+
+    // Locate README.md in tree and click
+    const readmeFile = page.locator('.nav-tree-item').filter({ has: page.locator('.tree-label:text-is("README.md")') });
+    await expect(readmeFile).toBeVisible();
+    await readmeFile.click();
+
+    // Verify Outline shows doc state
+    const docState = page.locator('[data-testid="outline-doc-state"]');
+    await expect(docState).toBeVisible();
+    await expect(docState).toContainText('Document File Selected');
+
+    // Verify Inspector renders NavigatorDocReader
+    const docReader = page.locator('[data-testid="nav-doc-reader"]');
+    await expect(docReader).toBeVisible();
+    await expect(docReader.locator('.doc-filename')).toContainText('README.md');
+    await expect(docReader.locator('.doc-rendered-content')).toBeVisible();
+    await expect(docReader.locator('.doc-rendered-content')).toContainText('ContextCortex Documentation');
+    await expect(docReader.locator('.doc-rendered-content')).toContainText('Hybrid Vector and Lexical Search');
+
+    // Switch to Raw Source tab
+    await docReader.getByRole('button', { name: 'Raw Source' }).click();
+    await expect(docReader.locator('.doc-lines-table')).toBeVisible();
+    await expect(docReader.locator('.doc-lines-table')).toContainText('ContextCortex Documentation');
+
+    // Switch back to Rendered View
+    await docReader.getByRole('button', { name: 'Rendered' }).click();
+    await expect(docReader.locator('.doc-rendered-content')).toBeVisible();
   });
 });

@@ -78,7 +78,24 @@ describe('NavigatorOutline Component', () => {
       />
     );
 
-    expect(screen.getByText(/no symbols found in this file/i)).toBeInTheDocument();
+    expect(screen.getByText(/document file selected/i)).toBeInTheDocument();
+  });
+
+  it('renders read document button and handles click when onReadDoc is provided', () => {
+    const onReadDoc = vi.fn();
+    render(
+      <NavigatorOutline
+        outline={{ repo: 'repo', filepath: 'README.md', symbols: [] }}
+        selectedSymbolId={null}
+        onSelectSymbol={vi.fn()}
+        onReadDoc={onReadDoc}
+      />
+    );
+
+    const readBtn = screen.getByRole('button', { name: /read full document/i });
+    expect(readBtn).toBeInTheDocument();
+    fireEvent.click(readBtn);
+    expect(onReadDoc).toHaveBeenCalledTimes(1);
   });
 
   it('renders file header with filepath and symbols', () => {

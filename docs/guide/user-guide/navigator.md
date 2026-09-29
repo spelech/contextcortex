@@ -25,21 +25,27 @@ The Codebase Navigator organizes project structure into three synchronized inter
   - **API Routes** (`@app.get`, `app.post`, etc.)
 - View parameter signatures, return types, and starting/ending line ranges.
 
-### Pane 3: Code Intelligence & Impact Analysis
-- **Callers & Callees**: Inspect incoming callers and outgoing references identified by AST cross-file analysis.
-- **Click-Through Navigation**: Click any caller or callee chip to jump directly to its declaration in Pane 1 and Pane 2.
-- **HTTP Route Specifications**: View endpoint paths, HTTP verbs, and request/response models.
-- **Syntax Preview**: Read formatted implementation code blocks with line numbers and syntax highlighting.
+### Pane 3: Code Intelligence & Impact Analysis (or Document Reader)
+- **Symbol Intelligence Mode**:
+  - **Callers & Callees**: Inspect incoming callers and outgoing references identified by AST cross-file analysis.
+  - **Click-Through Navigation**: Click any caller or callee chip to jump directly to its declaration in Pane 1 and Pane 2.
+  - **HTTP Route Specifications**: View endpoint paths, HTTP verbs, and request/response models.
+  - **Syntax Preview**: Read formatted implementation code blocks with line numbers and syntax highlighting.
+- **Full Document & Markdown Reader Mode**:
+  - Automatically activates when selecting non-code files (`.md`, `.markdown`, `.txt`, `.json`, etc.) or clicking **Read Full Document** from Pane 2.
+  - **Rendered View**: Safe Markdown parser supporting formatted headings, lists, blockquotes, inline code, and fenced code blocks.
+  - **Raw Source View**: Full file content display with line-by-line numbering.
+  - **One-Click Copy**: Copy complete document contents to clipboard with instant visual confirmation.
 
 ---
 
-## Layout Density Options
+## Layout Density & Mobile Responsiveness
 
-Customize the visual density of the three panes using the density selector in the top-right header:
-
-- **Compact**: Tight row spacing and minimal margins designed for high-density multi-file refactoring on laptops and widescreen monitors.
-- **Balanced** *(Default)*: Optimal spacing and font sizing for general architectural review.
-- **Spacious**: Card-based presentation with generous padding and expanded docstring summaries.
+- **Density Options**: Customize visual density using the header selector:
+  - **Compact**: Tight row spacing and minimal margins designed for high-density multi-file refactoring on laptops and widescreen monitors.
+  - **Balanced** *(Default)*: Optimal spacing and font sizing for general architectural review.
+  - **Spacious**: Card-based presentation with generous padding and expanded docstring summaries.
+- **Responsive Stacking**: On mobile and narrow viewports ($<900\text{px}$), the 3 panes seamlessly stack vertically with word-wrapping and container safeguards, guaranteeing zero horizontal overflow and zero element collisions.
 
 ---
 

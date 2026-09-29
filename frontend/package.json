@@ -11,7 +11,7 @@
     "test": "vitest run --configLoader native",
     "test:coverage": "vitest run --coverage --configLoader native",
     "test:e2e": "playwright test",
-    "test:layout": "playwright test e2e/layout-inspector.spec.ts",
+    "test:layout": "playwright test e2e/layout-inspector.spec.ts e2e/navigator.spec.ts",
     "inspect:layout": "node --experimental-strip-types scripts/inspect_layout.ts"
   },
   "dependencies": {

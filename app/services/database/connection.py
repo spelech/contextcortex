@@ -28,15 +28,8 @@ def get_db_connection() -> sqlite3.Connection:
     """
     Returns a SQLite database connection for backward compatibility with legacy modules.
     """
-    db_mod = sys.modules.get("app.services.database")
-    if db_mod and hasattr(db_mod, "CACHE_DB_PATH") and db_mod.CACHE_DB_PATH:
-        db_path = db_mod.CACHE_DB_PATH
-    else:
-        conn_mod = sys.modules.get("app.services.database.connection")
-        if conn_mod and hasattr(conn_mod, "CACHE_DB_PATH") and conn_mod.CACHE_DB_PATH:
-            db_path = conn_mod.CACHE_DB_PATH
-        else:
-            db_path = CACHE_DB_PATH
+    from app.services.database.engine import get_current_db_path
+    db_path = get_current_db_path()
 
     conn = sqlite3.connect(db_path, timeout=10.0)
     conn.row_factory = sqlite3.Row

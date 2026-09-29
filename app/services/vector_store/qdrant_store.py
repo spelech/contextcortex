@@ -307,7 +307,10 @@ class QdrantVectorStore(VectorStore):
 
             must_conditions = []
             if doc_type:
-                must_conditions.append(qmodels.FieldCondition(key="doc_type", match=qmodels.MatchValue(value=doc_type)))
+                if doc_type == "doc":
+                    must_conditions.append(qmodels.FieldCondition(key="doc_type", match=qmodels.MatchAny(any=["doc", "pdf"])))
+                else:
+                    must_conditions.append(qmodels.FieldCondition(key="doc_type", match=qmodels.MatchValue(value=doc_type)))
             if repo:
                 must_conditions.append(qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo)))
             if language:

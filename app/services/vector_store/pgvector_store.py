@@ -290,8 +290,11 @@ class PgVectorStore(VectorStore):
             }
 
             if doc_type:
-                conditions.append("doc_type = :doc_type")
-                params["doc_type"] = doc_type
+                if doc_type == "doc":
+                    conditions.append("doc_type IN ('doc', 'pdf')")
+                else:
+                    conditions.append("doc_type = :doc_type")
+                    params["doc_type"] = doc_type
             if repo:
                 conditions.append("repo = :repo")
                 params["repo"] = repo

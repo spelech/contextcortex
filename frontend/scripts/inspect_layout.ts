@@ -27,8 +27,11 @@ const VIEWPORTS: ViewportConfig[] = [
 
 const TABS = [
   { id: 'overview', name: 'Overview' },
+  { id: 'navigator', name: 'Navigator' },
   { id: 'git-repos', name: 'Git Repositories' },
   { id: 'local-paths', name: 'Local Paths' },
+  { id: 'local-storage', name: 'Local Storage' },
+  { id: 'ingestion-catalog', name: 'Ingestion Catalog' },
   { id: 'search-inspector', name: 'Search & Inspector' },
   { id: 'settings', name: 'Settings' },
   { id: 'diagnostics', name: 'Diagnostics & Logs' },
@@ -332,6 +335,50 @@ async function setupRouteMocks(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ status: 'indexing_started' })
+    });
+  });
+
+  await page.route('**/admin/api/navigator/tree*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        repo: '__all__',
+        total_files: 2,
+        total_symbols: 4,
+        tree: [
+          { id: 'file:app/main.py', name: 'main.py', is_dir: false, path: 'app/main.py', language: 'python', symbol_count: 4 },
+          { id: 'file:README.md', name: 'README.md', is_dir: false, path: 'README.md', language: 'markdown', symbol_count: 0 }
+        ]
+      })
+    });
+  });
+
+  await page.route('**/admin/api/navigator/file-outline*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        repo: '__all__',
+        filepath: 'app/main.py',
+        language: 'python',
+        symbols: [
+          { id: 1, name: 'init_app', full_symbol: 'app.main.init_app', kind: 'function', start_line: 1, end_line: 20, signature: 'def init_app():' }
+        ]
+      })
+    });
+  });
+
+  await page.route('**/admin/api/files/read*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        filepath: 'README.md',
+        content: '# ContextCortex\n\nFast code and doc search.',
+        total_lines: 3,
+        language: 'markdown'
+      })
     });
   });
 }

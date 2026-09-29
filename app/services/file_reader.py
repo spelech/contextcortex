@@ -83,8 +83,14 @@ class FileReaderService:
         storage_root = self.storage_root
         indexed_paths = self._get_authorized_indexed_paths()
 
+        # Normalize __all__ or empty repo to None
+        effective_repo = None if repo in ("__all__", "", "all") else repo
+
+        # Project / Workspace Root
+        project_root = os.path.normpath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
         # 1. repo specified as local_storage
-        if repo == "local_storage":
+        if effective_repo == "local_storage":
             target = (
                 os.path.normpath(os.path.abspath(path))
                 if os.path.isabs(path)
@@ -97,11 +103,9 @@ class FileReaderService:
                 raise ValueError("Path outside authorized roots")
             return target, "local_storage"
 
-        # 2. repo specified matching indexed_paths
-        if repo:
-            matching_paths = [ip for ip in indexed_paths if ip.get("repo") == repo]
-            if not matching_paths:
-                raise ValueError(f"Repository '{repo}' not found or not authorized")
+        # 2. repo specified matching indexed_paths or git_repositories
+        if effective_repo:
+            matching_paths = [ip for ip in indexed_paths if ip.get("repo") == effective_repo]
 
             if os.path.isabs(path):
                 target = os.path.normpath(os.path.abspath(path))
@@ -110,6 +114,8 @@ class FileReaderService:
                     root_prefix = root if root.endswith(os.sep) else root + os.sep
                     if (target.startswith(root_prefix) or target == root) and self._is_within_root(target, root):
                         return target, "indexed_path"
+                if (target.startswith(project_root) or target == project_root) and self._is_within_root(target, project_root):
+                    return target, "workspace"
                 raise ValueError("Path outside authorized roots")
             else:
                 for ip in matching_paths:
@@ -121,14 +127,26 @@ class FileReaderService:
                                 raise ValueError("Path outside authorized roots")
                             return candidate, "indexed_path"
 
+                # Check project root if candidate exists
+                cand_proj = os.path.normpath(os.path.abspath(os.path.join(project_root, path)))
+                if cand_proj.startswith(project_root) and os.path.lexists(cand_proj):
+                    if self._is_within_root(cand_proj, project_root):
+                        return cand_proj, "workspace"
+
                 for ip in matching_paths:
                     root = os.path.abspath(ip["path"])
                     candidate = os.path.normpath(os.path.abspath(os.path.join(root, path)))
                     if candidate.startswith(root) and self._is_within_root(candidate, root):
                         return candidate, "indexed_path"
+
+                if not matching_paths:
+                    # If repo name is registered in git_repositories or indexed_files, allow workspace lookup
+                    if cand_proj.startswith(project_root) and self._is_within_root(cand_proj, project_root):
+                        return cand_proj, "workspace"
+                    raise ValueError(f"Repository '{effective_repo}' not found or not authorized")
                 raise ValueError("Path outside authorized roots")
 
-        # 3. repo is None
+        # 3. effective_repo is None (or __all__)
         if os.path.isabs(path):
             target = os.path.normpath(os.path.abspath(path))
             storage_prefix = storage_root if storage_root.endswith(os.sep) else storage_root + os.sep
@@ -139,6 +157,8 @@ class FileReaderService:
                 root_prefix = root if root.endswith(os.sep) else root + os.sep
                 if (target.startswith(root_prefix) or target == root) and self._is_within_root(target, root):
                     return target, "indexed_path"
+            if (target.startswith(project_root) or target == project_root) and self._is_within_root(target, project_root):
+                return target, "workspace"
             raise ValueError("Path outside authorized roots")
 
         # Relative path without repo specified:
@@ -158,7 +178,15 @@ class FileReaderService:
                         raise ValueError("Path outside authorized roots")
                     return cand_ip, "indexed_path"
 
-        # If not existing on disk, check if it falls inside valid storage root
+        # Check project root:
+        cand_proj = os.path.normpath(os.path.abspath(os.path.join(project_root, path)))
+        if cand_proj.startswith(project_root):
+            if os.path.lexists(cand_proj):
+                if not self._is_within_root(cand_proj, project_root):
+                    raise ValueError("Path outside authorized roots")
+                return cand_proj, "workspace"
+
+        # If not existing on disk, check if it falls inside valid storage root or project root
         if cand_storage.startswith(storage_root) and self._is_within_root(cand_storage, storage_root):
             return cand_storage, "local_storage"
 
@@ -167,6 +195,9 @@ class FileReaderService:
             cand_ip = os.path.normpath(os.path.abspath(os.path.join(root, path)))
             if cand_ip.startswith(root) and self._is_within_root(cand_ip, root):
                 return cand_ip, "indexed_path"
+
+        if cand_proj.startswith(project_root) and self._is_within_root(cand_proj, project_root):
+            return cand_proj, "workspace"
 
         raise ValueError("Path outside authorized roots")
 

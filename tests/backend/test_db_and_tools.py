@@ -13,6 +13,7 @@ from app.mcp.tools import (
     handle_index_status, handle_catalog_summary, handle_search_infrastructure_docs,
     handle_find_implementation_symbol, register_mcp_tools_and_resources
 )
+from app.services.vector_store import VectorDocument, VectorStoreManager
 
 @pytest.fixture
 def temp_db(tmp_path):
@@ -173,6 +174,65 @@ async def test_handle_search_docs():
     with patch("app.mcp.tools.execute_hybrid_search", side_effect=Exception("Doc search crash")):
         res_err = await handle_search_docs(query="crash")
         assert "Error executing doc search" in res_err
+
+@pytest.mark.asyncio
+async def test_handle_search_code_and_docs_real_integration(tmp_path):
+    """Real un-mocked verification of handle_search_code and handle_search_docs MCP tools."""
+    storage_path = str(tmp_path / "qdrant_tools_test")
+    collection_name = "test_tools_rag"
+
+    from app.services.database import set_vector_store_db_config
+    from app.services.vector_store import get_vector_store
+
+    set_vector_store_db_config(
+        provider="qdrant",
+        mode="embedded",
+        storage_path=storage_path,
+        url="",
+        collection=collection_name,
+    )
+    VectorStoreManager.reset_instance()
+    store = get_vector_store(force_reload=True)
+
+    doc1 = VectorDocument(
+        id="code-auth-1",
+        text="def authenticate_jwt_user(token: str) -> bool:\n    '''Validates bearer JWT token claims and scopes.'''\n    return True",
+        repo="gateway-core",
+        doc_type="code",
+        language="python",
+        path="app/auth.py",
+        rel_path="app/auth.py",
+        title="auth.py",
+        symbol="authenticate_jwt_user",
+        start_line=1,
+        end_line=3,
+    )
+    doc2 = VectorDocument(
+        id="doc-arch-1",
+        text="# System Architecture\nContextCortex uses hybrid vector and BM25 lexical retrieval.",
+        repo="docs-vault",
+        doc_type="doc",
+        path="docs/architecture.md",
+        rel_path="docs/architecture.md",
+        title="architecture.md",
+        heading="System Architecture",
+        start_line=1,
+        end_line=2,
+    )
+    assert store.upsert_documents([doc1, doc2]) is True
+
+    # Real un-mocked code search via MCP tool
+    res_code = await handle_search_code(query="authenticate JWT user", repo="gateway-core")
+    assert "app/auth.py" in res_code
+    assert "authenticate_jwt_user" in res_code
+    assert "Validates bearer JWT token" in res_code
+    assert "Relevance Score" in res_code
+
+    # Real un-mocked doc search via MCP tool
+    res_doc = await handle_search_docs(query="hybrid BM25 retrieval", repo="docs-vault")
+    assert "docs/architecture.md" in res_doc
+    assert "System Architecture" in res_doc
+    assert "Relevance Score" in res_doc
 
 @pytest.mark.asyncio
 async def test_handle_find_symbol(temp_db):

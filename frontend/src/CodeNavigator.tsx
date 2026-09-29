@@ -7,6 +7,7 @@ import type {
   SymbolOutlineItem,
   SymbolImpact,
   RepoOption,
+  FileContentResult,
 } from './components/navigator/types';
 import { NavigatorToolbar } from './components/navigator/NavigatorToolbar';
 import { NavigatorTree } from './components/navigator/NavigatorTree';
@@ -58,6 +59,12 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
   const [selectedSymbolId, setSelectedSymbolId] = useState<number | null>(initialSymbolId || null);
   const [symbolImpact, setSymbolImpact] = useState<SymbolImpact | null>(null);
   const [loadingImpact, setLoadingImpact] = useState<boolean>(false);
+
+  // Full File / Document Content state
+  const [fileContent, setFileContent] = useState<FileContentResult | null>(null);
+  const [loadingContent, setLoadingContent] = useState<boolean>(false);
+  const [contentError, setContentError] = useState<string | null>(null);
+  const [activeInspectorTab, setActiveInspectorTab] = useState<'intelligence' | 'reader'>('intelligence');
 
   // Error state
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -128,7 +135,29 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
     }
   }, []);
 
-  // 4. Fetch file outline when selectedPath changes
+  // 4. Fetch full file content for document reading
+  const fetchFileContent = useCallback(async (repoName: string, filePath: string) => {
+    setLoadingContent(true);
+    setContentError(null);
+    try {
+      const res = await fetch(
+        `/admin/api/files/read?path=${encodeURIComponent(filePath)}&repo=${encodeURIComponent(repoName)}`
+      );
+      if (!res.ok) {
+        throw new Error(`Failed to read file: ${res.statusText}`);
+      }
+      const data: FileContentResult = await res.json();
+      setFileContent(data);
+    } catch (err: any) {
+      console.error('Error fetching file content:', err);
+      setContentError(err.message || 'Failed to read file content');
+      setFileContent(null);
+    } finally {
+      setLoadingContent(false);
+    }
+  }, []);
+
+  // 5. Fetch file outline when selectedPath changes
   const fetchOutline = useCallback(
     async (repoName: string, filePath: string, symbolToAutoSelect?: number | string) => {
       setLoadingOutline(true);
@@ -142,7 +171,7 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
         const data: FileOutline = await res.json();
         setFileOutline(data);
 
-        // Auto-select symbol
+        // Auto-select symbol or switch to reader mode
         if (data.symbols && data.symbols.length > 0) {
           let matched: SymbolOutlineItem | undefined;
           if (typeof symbolToAutoSelect === 'number') {
@@ -154,24 +183,25 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
           }
           const targetSymbol = matched || data.symbols[0];
           setSelectedSymbolId(targetSymbol.id);
+          setActiveInspectorTab('intelligence');
           await fetchImpact(repoName, targetSymbol.id);
         } else {
           setSelectedSymbolId(null);
           setSymbolImpact(null);
+          setActiveInspectorTab('reader');
         }
-
       } catch (err: any) {
         console.error('Error fetching outline:', err);
         setFileOutline(null);
         setSelectedSymbolId(null);
         setSymbolImpact(null);
+        setActiveInspectorTab('reader');
       } finally {
         setLoadingOutline(false);
       }
     },
     [fetchImpact]
   );
-
 
   // Handlers
   const handleSelectRepo = (repo: string) => {
@@ -180,16 +210,19 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
     setFileOutline(null);
     setSelectedSymbolId(null);
     setSymbolImpact(null);
+    setFileContent(null);
   };
 
   const handleSelectFile = (node: NavigatorTreeNode) => {
     if (node.is_dir) return;
     setSelectedPath(node.path);
     fetchOutline(selectedRepo, node.path);
+    fetchFileContent(selectedRepo, node.path);
   };
 
   const handleSelectSymbol = (symbol: SymbolOutlineItem) => {
     setSelectedSymbolId(symbol.id);
+    setActiveInspectorTab('intelligence');
     fetchImpact(selectedRepo, symbol.id);
   };
 
@@ -197,12 +230,14 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
   const handleSelectCaller = (filePath: string, symbolName?: string, sourceSymbolId?: number) => {
     setSelectedPath(filePath);
     fetchOutline(selectedRepo, filePath, sourceSymbolId ?? symbolName);
+    fetchFileContent(selectedRepo, filePath);
   };
 
   const handleSelectCallee = (filePath?: string, symbolName?: string) => {
     if (filePath) {
       setSelectedPath(filePath);
       fetchOutline(selectedRepo, filePath, symbolName);
+      fetchFileContent(selectedRepo, filePath);
     }
   };
 
@@ -243,7 +278,10 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
       {/* 3-Pane Responsive Layout */}
       <div className="nav-panes-layout">
         {/* Pane 1: File & Directory Tree */}
-        <section className="nav-pane-column nav-pane-tree" aria-label="File Tree">
+        <section
+          className="nav-pane-column nav-pane-tree"
+          aria-label="File Tree"
+        >
           <NavigatorTree
             nodes={treeData?.tree ?? []}
             selectedPath={selectedPath}
@@ -256,24 +294,39 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
         </section>
 
         {/* Pane 2: Symbol & Route Outline */}
-        <section className="nav-pane-column nav-pane-outline" aria-label="Symbol and Route Outline">
+        <section
+          className="nav-pane-column nav-pane-outline"
+          aria-label="Symbol and Route Outline"
+        >
           <NavigatorOutline
             outline={fileOutline}
             selectedSymbolId={selectedSymbolId}
             onSelectSymbol={handleSelectSymbol}
+            onReadDoc={() => {
+              setActiveInspectorTab('reader');
+            }}
             density={density}
             loading={loadingOutline}
           />
         </section>
 
-        {/* Pane 3: Impact & Relationship Inspector */}
-        <section className="nav-pane-column nav-pane-inspector" aria-label="Code Intelligence and Impact">
+        {/* Pane 3: Impact & Relationship Inspector OR Document Reader */}
+        <section
+          className="nav-pane-column nav-pane-inspector"
+          aria-label="Code Intelligence and Impact"
+        >
           <NavigatorInspector
             impact={symbolImpact}
+            fileContent={fileContent}
+            loadingContent={loadingContent}
+            contentError={contentError}
+            activeInspectorTab={activeInspectorTab}
+            onChangeInspectorTab={setActiveInspectorTab}
             onSelectCaller={handleSelectCaller}
             onSelectCallee={handleSelectCallee}
             density={density}
             loading={loadingImpact}
+            onRefreshContent={() => selectedPath && fetchFileContent(selectedRepo, selectedPath)}
           />
         </section>
       </div>

@@ -5,6 +5,7 @@ interface NavigatorOutlineProps {
   outline: FileOutline | null;
   selectedSymbolId: number | null;
   onSelectSymbol: (symbol: SymbolOutlineItem) => void;
+  onReadDoc?: () => void;
   density?: DensityMode;
   loading?: boolean;
 }
@@ -49,13 +50,14 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
   outline,
   selectedSymbolId,
   onSelectSymbol,
+  onReadDoc,
   density = 'balanced',
   loading = false,
 }) => {
   const [activeCategory, setActiveCategory] = useState<OutlineCategory>('all');
   const [filterQuery, setFilterQuery] = useState('');
 
-  const symbols = outline?.symbols || [];
+  const symbols = useMemo(() => outline?.symbols || [], [outline?.symbols]);
 
   // Compute counts for category chips
   const counts = useMemo(() => {
@@ -146,10 +148,12 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
         {outline && (
           <>
             <div className="nav-outline-search-bar">
-              <svg className="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
+              <span className="search-icon-wrapper" aria-hidden="true">
+                <svg className="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </span>
               <input
                 type="text"
                 className="nav-outline-search-input"
@@ -222,10 +226,22 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
             <p>Select a file from the tree to inspect its symbols and routes.</p>
           </div>
         ) : symbols.length === 0 ? (
-          <div className="nav-empty-state">
-            <div className="empty-icon">⚡</div>
-            <h4>No Symbols Found</h4>
-            <p>No symbols found in this file.</p>
+          <div className="nav-empty-state doc-file-state" data-testid="outline-doc-state">
+            <div className="empty-icon">📝</div>
+            <h4>Document File Selected</h4>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '6px 0 12px' }}>
+              This file contains documentation or text content with no code AST symbols.
+            </p>
+            {onReadDoc && (
+              <button
+                type="button"
+                className="btn btn-sm btn-primary read-doc-action-btn"
+                onClick={onReadDoc}
+                style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+              >
+                📖 Read Full Document
+              </button>
+            )}
           </div>
         ) : filteredSymbols.length === 0 ? (
           <div className="nav-empty-state">

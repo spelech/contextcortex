@@ -267,7 +267,10 @@ class ChromaVectorStore(VectorStore):
 
             conditions: List[Dict[str, Any]] = []
             if doc_type:
-                conditions.append({"doc_type": doc_type})
+                if doc_type == "doc":
+                    conditions.append({"doc_type": {"$in": ["doc", "pdf"]}})
+                else:
+                    conditions.append({"doc_type": doc_type})
             if repo:
                 conditions.append({"repo": repo})
             if language:
