@@ -329,6 +329,8 @@ class FileReaderService:
         """Reads a file with safe path resolution, binary checking, and line slicing."""
         try:
             abs_path, source_type = self.resolve_safe_path(path, repo=repo)
+            if not abs_path.startswith("/"):
+                raise ValueError(f"Target path is not absolute: {path}")
             if not os.path.exists(abs_path):
                 raise FileNotFoundError(f"File not found on disk: {path}")
         except (ValueError, FileNotFoundError):
