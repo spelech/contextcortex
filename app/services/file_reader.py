@@ -156,13 +156,6 @@ class FileReaderService:
                     return target, "workspace"
                 raise ValueError("Path outside authorized roots")
             else:
-                alt_abs = "/" + path.lstrip("/")
-                for ip in matching_paths:
-                    root = os.path.abspath(ip["path"])
-                    root_prefix = root if root.endswith(os.sep) else root + os.sep
-                    if (alt_abs.startswith(root_prefix) or alt_abs == root) and self._is_within_root(alt_abs, root):
-                        return alt_abs, "indexed_path"
-
                 for ip in matching_paths:
                     root = os.path.abspath(ip["path"])
                     candidate = os.path.normpath(os.path.abspath(os.path.join(root, path)))
@@ -213,13 +206,6 @@ class FileReaderService:
                 if not self._is_within_root(cand_storage, storage_root):
                     raise ValueError("Path outside authorized roots")
                 return cand_storage, "local_storage"
-
-        alt_abs = "/" + path.lstrip("/")
-        for ip in indexed_paths:
-            root = os.path.abspath(ip["path"])
-            root_prefix = root if root.endswith(os.sep) else root + os.sep
-            if (alt_abs.startswith(root_prefix) or alt_abs == root) and self._is_within_root(alt_abs, root):
-                return alt_abs, "indexed_path"
 
         for ip in indexed_paths:
             root = os.path.abspath(ip["path"])
@@ -344,25 +330,14 @@ class FileReaderService:
         max_lines: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Reads a file with safe path resolution, binary checking, and line slicing."""
-        on_disk = False
         abs_path = None
         source_type = "unknown"
-        is_dir = False
         try:
             abs_path, source_type = self.resolve_safe_path(path, repo=repo)
-            if abs_path:
-                abs_path = os.path.normpath(os.path.abspath(abs_path))
-                if os.path.isdir(abs_path):
-                    is_dir = True
-                else:
-                    on_disk = os.path.exists(abs_path) and not os.path.isdir(abs_path)
         except Exception:
-            pass
+            abs_path = None
 
-        if is_dir:
-            raise IsADirectoryError(f"Target path is a directory: {path}")
-
-        if not on_disk or not abs_path:
+        if not abs_path or not os.path.exists(abs_path):
             # Fallback to vector store chunks
             vec_res = self._read_from_vector_store(
                 path=path, repo=repo, start_line=start_line, end_line=end_line, max_lines=max_lines
@@ -370,6 +345,9 @@ class FileReaderService:
             if vec_res:
                 return vec_res
             raise FileNotFoundError(f"File not found: {path}")
+
+        if os.path.isdir(abs_path):
+            raise IsADirectoryError(f"Target path is a directory: {path}")
 
         if self.is_binary_file(abs_path):
             raise ValueError(f"Cannot read binary file: {path}")
