@@ -19,7 +19,17 @@ PERSISTENT_REPOS_DIR = os.getenv("PERSISTENT_REPOS_DIR", os.path.join(DATA_DIR, 
 
 def get_persistent_repo_dir(repo_name: str) -> str:
     """Returns absolute path for persistent shallow repository clone."""
-    return os.path.join(PERSISTENT_REPOS_DIR, repo_name)
+    if not repo_name or not isinstance(repo_name, str):
+        raise ValueError("Invalid repo_name")
+    safe_name = os.path.basename(repo_name.strip())
+    if not safe_name or safe_name in (".", ".."):
+        raise ValueError("Invalid repo_name")
+    base_dir = os.path.realpath(PERSISTENT_REPOS_DIR)
+    resolved = os.path.realpath(os.path.join(base_dir, safe_name))
+    base_prefix = base_dir if base_dir.endswith(os.sep) else base_dir + os.sep
+    if not (resolved.startswith(base_prefix) or resolved == base_dir):
+        raise ValueError(f"Path traversal detected in repo_name: {repo_name}")
+    return resolved
 
 def cleanup_persistent_repo(repo_name: str) -> None:
     """Safely removes persistent shallow clone for a deleted repo."""

@@ -16,7 +16,6 @@ import app.services.indexing as idx_service
 import app.services.search as search_service
 import app.services.git_manager as gm_service
 from app.services.indexing.git_progress import progress_tracker
-from app.services.ripgrep import run_ripgrep_search, is_ripgrep_available
 
 logger = logging.getLogger("contextcortex.api")
 
@@ -350,46 +349,3 @@ async def api_browse_dir(path: str = "/"):
     except Exception as e:
         logger.error(f"Error browsing dir {path}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to browse directory."})
-
-@router.get("/admin/api/search/ripgrep")
-async def api_ripgrep_search(q: str = "", repo: str = "", max_results: int = 50, case_sensitive: bool = False):
-    """Fast filesystem text search using ripgrep across indexed local paths."""
-    query = q.strip()
-    if not query:
-        return JSONResponse(status_code=400, content={"error": "Query parameter 'q' is required"})
-    if not is_ripgrep_available():
-        return JSONResponse(status_code=503, content={"error": "ripgrep (rg) is not available in this environment"})
-
-    target_paths: list[str] = []
-    try:
-        with db_service.get_db_connection() as conn:
-            if repo and repo != "__all__":
-                # Check for persistent clone first
-                clone_path = f"/app/data/repos/{repo}"
-                if os.path.isdir(clone_path):
-                    target_paths.append(clone_path)
-                # Also include any indexed local paths for this repo alias
-                rows = conn.execute(
-                    "SELECT path FROM indexed_paths WHERE repo = ? AND enabled = 1", (repo,)
-                ).fetchall()
-                target_paths.extend(r["path"] for r in rows if os.path.exists(r["path"]))
-            else:
-                # All indexed local paths
-                rows = conn.execute(
-                    "SELECT path FROM indexed_paths WHERE enabled = 1"
-                ).fetchall()
-                target_paths.extend(r["path"] for r in rows if os.path.exists(r["path"]))
-    except Exception as e:
-        logger.error(f"Error fetching indexed paths for ripgrep: {e}")
-        return JSONResponse(status_code=500, content={"error": "Failed to resolve search paths"})
-
-    if not target_paths:
-        return {"query": query, "repo": repo, "results": [], "note": "No searchable local paths found for this repo"}
-
-    results = run_ripgrep_search(
-        query=query,
-        target_paths=target_paths,
-        case_sensitive=case_sensitive,
-        max_results=max_results,
-    )
-    return {"query": query, "repo": repo, "total": len(results), "results": results}
