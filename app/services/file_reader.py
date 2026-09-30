@@ -127,6 +127,9 @@ class FileReaderService:
         if effective_repo:
             # Check persistent shallow clone if available
             try:
+                from app.services.git_manager import PERSISTENT_REPOS_DIR
+                persistent_root = os.path.normpath(os.path.abspath(PERSISTENT_REPOS_DIR))
+                persistent_prefix = persistent_root if persistent_root.endswith(os.sep) else persistent_root + os.sep
                 persistent_repos = self._get_authorized_persistent_repos()
                 if effective_repo in persistent_repos:
                     repo_disk_dir = persistent_repos[effective_repo]
@@ -134,6 +137,8 @@ class FileReaderService:
                     if os.path.isdir(repo_disk_dir):
                         rel_clean = path.split("://", 1)[1] if "://" in path else path.lstrip("/")
                         cand_repo = os.path.normpath(os.path.abspath(os.path.join(repo_disk_dir, rel_clean)))
+                        if not cand_repo.startswith(persistent_prefix):
+                            raise ValueError("Path outside authorized roots")
                         if not cand_repo.startswith(repo_prefix):
                             raise ValueError("Path outside authorized roots")
                         if not self._is_within_root(cand_repo, repo_disk_dir):
@@ -337,7 +342,7 @@ class FileReaderService:
         except Exception:
             abs_path = None
 
-        if not abs_path or not os.path.exists(abs_path):
+        if not abs_path:
             # Fallback to vector store chunks
             vec_res = self._read_from_vector_store(
                 path=path, repo=repo, start_line=start_line, end_line=end_line, max_lines=max_lines
@@ -346,14 +351,39 @@ class FileReaderService:
                 return vec_res
             raise FileNotFoundError(f"File not found: {path}")
 
-        if os.path.isdir(abs_path):
+        # Validate containment within authorized roots
+        from app.services.git_manager import PERSISTENT_REPOS_DIR
+        safe_bases = [
+            self.storage_root,
+            os.path.normpath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+            os.path.normpath(os.path.abspath(PERSISTENT_REPOS_DIR)),
+        ]
+        for ip in self._get_authorized_indexed_paths():
+            safe_bases.append(os.path.normpath(os.path.abspath(ip["path"])))
+
+        norm_abs = os.path.normpath(os.path.abspath(abs_path))
+        is_safe = any(
+            norm_abs.startswith(base if base.endswith(os.sep) else base + os.sep) or norm_abs == base
+            for base in safe_bases
+        )
+
+        if not is_safe or not os.path.exists(norm_abs):
+            # Fallback to vector store chunks
+            vec_res = self._read_from_vector_store(
+                path=path, repo=repo, start_line=start_line, end_line=end_line, max_lines=max_lines
+            )
+            if vec_res:
+                return vec_res
+            raise FileNotFoundError(f"File not found: {path}")
+
+        if os.path.isdir(norm_abs):
             raise IsADirectoryError(f"Target path is a directory: {path}")
 
-        if self.is_binary_file(abs_path):
+        if self.is_binary_file(norm_abs):
             raise ValueError(f"Cannot read binary file: {path}")
 
-        size_bytes = os.path.getsize(abs_path)
-        with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+        size_bytes = os.path.getsize(norm_abs)
+        with open(norm_abs, "r", encoding="utf-8", errors="replace") as f:
             text = f.read()
 
         settings = get_file_settings()
