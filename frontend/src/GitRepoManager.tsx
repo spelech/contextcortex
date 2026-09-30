@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { FormEvent } from 'react';
 import type { Repo } from './types';
 import { useToast } from './ToastContext';
@@ -16,6 +16,13 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [activeDrawerRepoId, setActiveDrawerRepoId] = useState<number | null>(null);
   const toast = useToast();
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   const { syncStates, cancelSync } = useGitSyncStream();
 
@@ -162,7 +169,12 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       }
       setCopiedUrl(true);
       toast.info('Webhook URL copied to clipboard');
-      setTimeout(() => setCopiedUrl(false), 2000);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          setCopiedUrl(false);
+        }
+      }, 2000);
     } catch (err: any) {
       toast.error('Failed to copy: ' + err.message);
     }

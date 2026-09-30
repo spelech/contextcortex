@@ -300,7 +300,7 @@ test.describe('Playwright Layout Inspector UI UX Audits', () => {
     const iphone = getDevicePreset('iPhone 16 Pro');
     await page.setViewportSize({ width: iphone.width, height: iphone.height });
 
-    await navigateTab(page, 'Local Paths');
+    await navigateTab(page, 'Files & Storage');
     await expect(page.getByText('Monitored Local Paths')).toBeVisible();
     await expect(page.locator('.mobile-card-list')).toBeVisible();
 

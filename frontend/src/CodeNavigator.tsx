@@ -338,7 +338,7 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
     fetchOutline(selectedRepo, filePath, undefined, 'reader');
     fetchFileContent(selectedRepo, filePath);
     setActiveInspectorTab('reader');
-    // Don't switch sidebar tab — user stays on Files tree unless they choose Symbols
+    setSidebarTab('outline');
   };
 
   const handleInspectorTabChange = (tab: 'intelligence' | 'reader') => {
