@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import type { SymbolImpact, DensityMode, FileContentResult } from './types';
 import { getMethodBadgeClass, getKindBadgeClass } from './NavigatorOutline';
 import { NavigatorDocReader } from './NavigatorDocReader';
+import { NavigatorCodeViewer } from './NavigatorCodeViewer';
 
 interface NavigatorInspectorProps {
   impact: SymbolImpact | null;
   fileContent?: FileContentResult | null;
   loadingContent?: boolean;
   contentError?: string | null;
+  targetStartLine?: number;
+  targetEndLine?: number;
   activeInspectorTab?: 'intelligence' | 'reader';
   onChangeInspectorTab?: (tab: 'intelligence' | 'reader') => void;
   onSelectCaller?: (filePath: string, symbolName?: string, sourceSymbolId?: number) => void;
@@ -22,6 +25,8 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
   fileContent,
   loadingContent = false,
   contentError = null,
+  targetStartLine,
+  targetEndLine,
   activeInspectorTab,
   onChangeInspectorTab,
   onSelectCaller,
@@ -130,15 +135,33 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
 
       <div className="nav-inspector-content">
         {showDocReader && fileContent ? (
-          <NavigatorDocReader
-            filepath={fileContent.filepath}
-            content={fileContent.content}
-            totalLines={fileContent.total_lines}
-            sizeBytes={fileContent.size_bytes}
-            loading={loadingContent}
-            error={contentError}
-            onRefresh={onRefreshContent}
-          />
+          (fileContent.filepath.toLowerCase().endsWith('.md') || fileContent.filepath.toLowerCase().endsWith('.markdown')) ? (
+            <NavigatorDocReader
+              filepath={fileContent.filepath}
+              content={fileContent.content}
+              totalLines={fileContent.total_lines}
+              sizeBytes={fileContent.size_bytes}
+              loading={loadingContent}
+              error={contentError}
+              onRefresh={onRefreshContent}
+            />
+          ) : (
+            <NavigatorCodeViewer
+              filepath={fileContent.filepath}
+              content={fileContent.content}
+              totalLines={fileContent.total_lines}
+              sizeBytes={fileContent.size_bytes}
+              targetStartLine={targetStartLine || symbol?.start_line}
+              targetEndLine={targetEndLine || symbol?.end_line}
+              impact={impact}
+              loading={loadingContent}
+              error={contentError}
+              onRefresh={onRefreshContent}
+              onSelectCaller={onSelectCaller}
+              onSelectCallee={onSelectCallee}
+              density={density}
+            />
+          )
         ) : showDocReader && loadingContent ? (
           <div className="nav-inspector-skeleton" data-testid="inspector-loading-skeleton">
             <div className="skeleton-header shimmer"></div>

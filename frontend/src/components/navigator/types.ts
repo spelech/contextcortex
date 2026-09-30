@@ -118,3 +118,28 @@ export interface FileContentResult {
   source?: string;
   language?: string;
 }
+
+export type OmniSearchMatchKind = 'symbol' | 'file' | 'code' | 'route' | 'doc';
+
+export interface OmniSearchResultItem {
+  id: string;
+  type: OmniSearchMatchKind;
+  name: string;
+  kind?: string;
+  filepath: string;
+  repo?: string;
+  symbol_id?: number;
+  start_line: number;
+  end_line: number;
+  score: number;
+  score_label: string;
+  preview: string;
+}
+
+export interface OmniSearchResponse {
+  query: string;
+  repo: string;
+  total_matches: number;
+  matches: OmniSearchResultItem[];
+}
+

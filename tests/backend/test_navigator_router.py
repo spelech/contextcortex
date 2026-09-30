@@ -187,3 +187,64 @@ def test_api_get_symbol_impact_not_found(client: TestClient, test_db):
     assert response.status_code == 404
     data = response.json()
     assert "error" in data
+
+
+def test_api_get_omni_search_symbols_and_files(client: TestClient, test_db):
+    # 1. Exact symbol match
+    res = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=root_handler")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["query"] == "root_handler"
+    assert len(data["matches"]) >= 1
+    match = data["matches"][0]
+    assert match["type"] == "symbol"
+    assert match["name"] == "root_handler"
+    assert match["filepath"] == "app/main.py"
+    assert match["score"] >= 0.95
+    assert "AST exact" in match["score_label"]
+
+    # 2. Prefix symbol match
+    res_prefix = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=compute")
+    assert res_prefix.status_code == 200
+    prefix_data = res_prefix.json()
+    assert len(prefix_data["matches"]) >= 1
+    p_match = prefix_data["matches"][0]
+    assert p_match["name"] == "compute_value"
+    assert p_match["score"] == 0.94
+    assert "prefix match" in p_match["score_label"]
+
+    # 3. File path match
+    res_file = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=helper.py")
+    assert res_file.status_code == 200
+    file_matches = res_file.json()["matches"]
+    assert any(m["type"] == "file" and "helper.py" in m["filepath"] for m in file_matches)
+
+    # 4. Route match
+    res_route = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=/api/v1/root")
+    assert res_route.status_code == 200
+    route_matches = res_route.json()["matches"]
+    assert any(m["type"] == "route" and "/api/v1/root" in m["name"] for m in route_matches)
+
+    # 5. Repo isolation
+    res_isolated = client.get("/admin/api/navigator/omni-search?repo=other-repo&q=root_handler")
+    assert res_isolated.status_code == 200
+    assert res_isolated.json()["matches"] == []
+
+    # 6. Sorting / ranking order (higher scores first)
+    res_all = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=main")
+    assert res_all.status_code == 200
+    all_matches = res_all.json()["matches"]
+    if len(all_matches) > 1:
+        scores = [m["score"] for m in all_matches]
+        assert scores == sorted(scores, reverse=True), "Matches must be ordered by score descending"
+
+    # 7. Empty query
+    res_empty = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=")
+    assert res_empty.status_code == 200
+    assert res_empty.json()["matches"] == []
+
+    # 8. No matches
+    res_none = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=nonexistent_xyz_123")
+    assert res_none.status_code == 200
+    assert res_none.json()["matches"] == []
+

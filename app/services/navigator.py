@@ -263,3 +263,161 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
         "callees": [dict(c) for c in callees],
         "imports": [dict(i) for i in imports]
     }
+
+
+def get_omni_search(repo: str, query: str, limit: int = 25) -> Dict[str, Any]:
+    raw_query = (query or "").strip()
+    if not raw_query:
+        return {
+            "query": "",
+            "repo": repo,
+            "total_matches": 0,
+            "matches": []
+        }
+
+    matches: List[Dict[str, Any]] = []
+    like_q = f"%{raw_query}%"
+    lower_q = raw_query.lower()
+
+    with get_db_connection() as conn:
+        repo_clause = "" if repo == "__all__" else " AND repo = ?"
+        repo_params = [] if repo == "__all__" else [repo]
+
+        # 1. Search AST Symbols
+        sym_sql = f"""
+            SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature
+            FROM ast_symbols
+            WHERE (name LIKE ? OR full_symbol LIKE ?){repo_clause}
+            LIMIT ?
+        """
+        sym_params = [like_q, like_q] + repo_params + [limit]
+        for row in conn.execute(sym_sql, sym_params).fetchall():
+            sym_name = row["name"] or ""
+            sym_lower = sym_name.lower()
+
+            if sym_lower == lower_q:
+                score = 0.99
+                label = "99% AST exact match"
+            elif sym_lower.startswith(lower_q):
+                score = 0.94
+                label = "94% AST prefix match"
+            else:
+                score = 0.88
+                label = "88% AST symbol match"
+
+            preview = row["signature"] or f"{row['kind']} {sym_name}"
+            matches.append({
+                "id": f"sym_{row['id']}",
+                "type": "symbol",
+                "symbol_id": row["id"],
+                "name": sym_name,
+                "kind": row["kind"],
+                "filepath": _clean_path(row["filepath"]),
+                "repo": row["repo"],
+                "start_line": row["start_line"],
+                "end_line": row["end_line"],
+                "score": score,
+                "score_label": label,
+                "preview": preview
+            })
+
+        # 2. Search File Paths
+        file_sql = f"""
+            SELECT filepath, repo, doc_type, language
+            FROM indexed_files
+            WHERE filepath LIKE ?{repo_clause}
+            LIMIT ?
+        """
+        file_params = [like_q] + repo_params + [limit]
+        for row in conn.execute(file_sql, file_params).fetchall():
+            fp = _clean_path(row["filepath"])
+            fname = os.path.basename(fp)
+            fname_lower = fname.lower()
+
+            if fname_lower == lower_q:
+                score = 0.96
+                label = "96% Exact filename"
+            elif fname_lower.startswith(lower_q):
+                score = 0.92
+                label = "92% Filename prefix"
+            else:
+                score = 0.85
+                label = "85% Path substring"
+
+            matches.append({
+                "id": f"file_{fp}",
+                "type": "file",
+                "name": fname,
+                "kind": "file",
+                "filepath": fp,
+                "repo": row["repo"],
+                "start_line": 1,
+                "end_line": 1,
+                "score": score,
+                "score_label": label,
+                "preview": fp
+            })
+
+        # 3. Search API Routes
+        route_sql = f"""
+            SELECT id, repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line
+            FROM api_routes
+            WHERE (path_pattern LIKE ? OR handler_symbol LIKE ?){repo_clause}
+            LIMIT ?
+        """
+        route_params = [like_q, like_q] + repo_params + [limit]
+        for row in conn.execute(route_sql, route_params).fetchall():
+            pat = row["path_pattern"] or ""
+            score = 0.95 if pat.lower() == lower_q else 0.89
+            matches.append({
+                "id": f"route_{row['id']}",
+                "type": "route",
+                "name": f"{row['http_method']} {pat}",
+                "kind": "route",
+                "filepath": _clean_path(row["filepath"]),
+                "repo": row["repo"],
+                "start_line": row["start_line"],
+                "end_line": row["end_line"],
+                "score": score,
+                "score_label": f"{int(score * 100)}% Route match",
+                "preview": f"{row['http_method']} {pat} -> {row['handler_symbol'] or ''}"
+            })
+
+        # 4. Search Code Chunks if table exists
+        try:
+            chunk_sql = f"""
+                SELECT id, repo, filepath, chunk_text, start_line, end_line
+                FROM code_chunks
+                WHERE chunk_text LIKE ?{repo_clause}
+                LIMIT ?
+            """
+            chunk_params = [like_q] + repo_params + [limit]
+            for row in conn.execute(chunk_sql, chunk_params).fetchall():
+                text = (row["chunk_text"] or "").strip()
+                preview = text.split("\n")[0][:120]
+                matches.append({
+                    "id": f"code_{row['id']}",
+                    "type": "code",
+                    "name": preview[:50],
+                    "kind": "code",
+                    "filepath": _clean_path(row["filepath"]),
+                    "repo": row["repo"],
+                    "start_line": row["start_line"],
+                    "end_line": row["end_line"],
+                    "score": 0.86,
+                    "score_label": "86% Code match",
+                    "preview": preview
+                })
+        except Exception:
+            pass
+
+    matches.sort(key=lambda m: m["score"], reverse=True)
+    final_matches = matches[:limit]
+
+    return {
+        "query": raw_query,
+        "repo": repo,
+        "total_matches": len(final_matches),
+        "matches": final_matches
+    }
+

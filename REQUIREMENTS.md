@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **977 Automated Tests** (655 Pytest Backend + 273 Vitest Frontend + 49 Playwright E2E).
+**Test Verification Baseline:** **993 Automated Tests** (656 Pytest Backend + 287 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -642,7 +642,7 @@ classDiagram
 - `test_process_file_content_with_custom_provider`
 - `test_sync_single_git_repo_triggers_notification`
 
-#### `tests/backend/test_navigator_router.py` (8 tests)
+#### `tests/backend/test_navigator_router.py` (9 tests)
 - `test_db`
 - `test_api_get_navigator_tree_all`
 - `test_api_get_navigator_tree_specific_repo`
@@ -651,6 +651,7 @@ classDiagram
 - `test_api_get_file_outline_empty`
 - `test_api_get_symbol_impact_success`
 - `test_api_get_symbol_impact_not_found`
+- `test_api_get_omni_search_symbols_and_files`
 
 #### `tests/backend/test_navigator_service.py` (11 tests)
 - `test_db`
@@ -1270,6 +1271,14 @@ and leaves the prior indexed state intact without data loss._
 - displays PDF notice and hides text textarea when upload path is a PDF
 - prevents direct text replacement of PDF files in replace modal
 
+#### `NavigatorCodeViewer.test.tsx` (6 tests)
+- renders line numbers and code lines
+- highlights target line range and calls scrollIntoView
+- toggles callers and impact drawer
+- copies full code to clipboard when clicking Copy Code button
+- copies permalink to clipboard when clicking Copy Link button
+- renders fallback when content is empty
+
 #### `NavigatorInspector.test.tsx` (10 tests)
 - renders empty placeholder when no symbol is selected
 - renders doc reader when fileContent is provided without an impact symbol
@@ -1281,6 +1290,16 @@ and leaves the prior indexed state intact without data loss._
 - renders outgoing callees and imports
 - calls onSelectCallee when a clickable callee is clicked for cross-file navigation
 - renders loading state when loading is true
+
+#### `NavigatorOmniSearch.test.tsx` (8 tests)
+- renders omni-search input with placeholder
+- fetches matches when user types and displays floating overlay
+- navigates with keyboard and selects on Enter
+- closes dropdown on Escape key
+- displays empty state when query returns no matches
+- handles fetch error gracefully without crashing
+- closes dropdown when clicking outside the container
+- supports ArrowUp navigation within bounds
 
 #### `NavigatorOutline.test.tsx` (9 tests)
 - renders empty placeholder when outline is null or empty
@@ -1561,3 +1580,4 @@ and leaves the prior indexed state intact without data loss._
 - 6. Density Mode Toggling: toggles Compact, Balanced, and Spacious layout modes
 - 7. Responsive Layout Audit: zero overflow, zero element collisions, and stable layout across desktop and mobile
 - 8. Document Reader: opens markdown document, renders full content and switches between rendered and source view
+- 9. Omni-Search & Synchronized Full-File Code Viewer: searches across symbols, opens full source, highlights target line with zero layout shift
