@@ -840,6 +840,7 @@
   padding: 0 4px;
   max-width: 100%;
   box-sizing: border-box;
+  border-left: 3px solid transparent;
 }
 
 .nav-code-line-row:hover {
@@ -870,18 +871,28 @@
   min-width: 0;
 }
 
-/* Target line highlight */
+/* Enclosing symbol scope range highlight */
 .nav-code-line-target {
-  background: rgba(14, 165, 233, 0.18) !important;
-  border-left: 3px solid #38bdf8 !important;
+  background: rgba(14, 165, 233, 0.04) !important;
+  border-left: 3px solid rgba(56, 189, 248, 0.22) !important;
 }
 
 .nav-code-line-target .nav-code-line-number {
+  color: #64748b;
+}
+
+/* Primary declaration / target line highlight */
+.nav-code-line-primary {
+  background: rgba(14, 165, 233, 0.16) !important;
+  border-left: 3px solid #38bdf8 !important;
+}
+
+.nav-code-line-primary .nav-code-line-number {
   color: #38bdf8 !important;
   font-weight: 700;
 }
 
-.nav-code-line-target .nav-code-line-content {
+.nav-code-line-primary .nav-code-line-content {
   font-weight: 500;
 }
 
