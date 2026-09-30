@@ -128,4 +128,97 @@ describe('NavigatorOmniSearch Component', () => {
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(screen.queryByTestId('nav-omni-dropdown')).not.toBeInTheDocument();
   });
+
+  it('displays empty state when query returns no matches', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        query: 'unknown_query',
+        repo: 'test-repo',
+        total_matches: 0,
+        matches: [],
+      }),
+    } as Response);
+
+    render(<NavigatorOmniSearch repo="test-repo" onSelectResult={vi.fn()} />);
+
+    const input = screen.getByPlaceholderText(/search files, symbols, routes, or code text/i);
+    fireEvent.change(input, { target: { value: 'unknown_query' } });
+
+    const emptyMsg = await screen.findByText(/no matching files, symbols, or code found/i);
+    expect(emptyMsg).toBeInTheDocument();
+  });
+
+  it('handles fetch error gracefully without crashing', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network failure'));
+
+    render(<NavigatorOmniSearch repo="test-repo" onSelectResult={vi.fn()} />);
+
+    const input = screen.getByPlaceholderText(/search files, symbols, routes, or code text/i);
+    fireEvent.change(input, { target: { value: 'api_read' } });
+
+    // Wait debounce duration
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(screen.queryByTestId('nav-omni-dropdown')).not.toBeInTheDocument();
+    errorSpy.mockRestore();
+  });
+
+  it('closes dropdown when clicking outside the container', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        query: 'api_read',
+        repo: 'test-repo',
+        total_matches: 2,
+        matches: mockMatches,
+      }),
+    } as Response);
+
+    render(
+      <div>
+        <div data-testid="outside-area">Outside</div>
+        <NavigatorOmniSearch repo="test-repo" onSelectResult={vi.fn()} />
+      </div>
+    );
+
+    const input = screen.getByPlaceholderText(/search files, symbols, routes, or code text/i);
+    fireEvent.change(input, { target: { value: 'api_read' } });
+
+    await screen.findByText('api_read_file');
+    expect(screen.getByTestId('nav-omni-dropdown')).toBeInTheDocument();
+
+    // Fire mousedown on outside element
+    fireEvent.mouseDown(screen.getByTestId('outside-area'));
+    expect(screen.queryByTestId('nav-omni-dropdown')).not.toBeInTheDocument();
+  });
+
+  it('supports ArrowUp navigation within bounds', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        query: 'api_read',
+        repo: 'test-repo',
+        total_matches: 2,
+        matches: mockMatches,
+      }),
+    } as Response);
+
+    const onSelect = vi.fn();
+    render(<NavigatorOmniSearch repo="test-repo" onSelectResult={onSelect} />);
+
+    const input = screen.getByPlaceholderText(/search files, symbols, routes, or code text/i);
+    fireEvent.change(input, { target: { value: 'api_read' } });
+
+    await screen.findByText('api_read_file');
+
+    // ArrowDown to 0 (api_read_file), ArrowDown to 1 (files.py), ArrowUp back to 0 (api_read_file), Enter
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSelect).toHaveBeenCalledWith(mockMatches[0]);
+  });
 });

@@ -135,7 +135,7 @@ export const NavigatorCodeViewer: React.FC<NavigatorCodeViewerProps> = ({
           {impact?.symbol && (
             <button
               type="button"
-              className={`nav-code-impact-toggle-btn ${drawerOpen ? 'active' : ''}`}
+              className={`nav-code-impact-toggle-btn nav-code-drawer-toggle ${drawerOpen ? 'active' : ''}`}
               onClick={() => setDrawerOpen((prev) => !prev)}
               aria-label="Callers & Impact"
             >
@@ -200,7 +200,12 @@ export const NavigatorCodeViewer: React.FC<NavigatorCodeViewerProps> = ({
 
       {/* Main Code Table */}
       <div className="nav-code-body" tabIndex={0}>
-        <div className="nav-code-lines-wrapper">
+        {lines.length === 0 && !loading && !error ? (
+          <div className="nav-code-empty-state" style={{ padding: '24px', color: '#64748b', textAlign: 'center' }}>
+            File is empty.
+          </div>
+        ) : (
+          <div className="nav-code-lines-wrapper">
           {lines.map((line, idx) => {
             const lineNum = idx + 1;
             const isTarget =
@@ -227,6 +232,7 @@ export const NavigatorCodeViewer: React.FC<NavigatorCodeViewerProps> = ({
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Docked Symbol Impact Drawer */}

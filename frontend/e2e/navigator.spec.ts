@@ -808,9 +808,30 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     await expect(codeViewer).toBeVisible();
     await expect(codeViewer.locator('.nav-code-filename')).toContainText('chat.py');
 
-    // Target line 45 should have highlight class
+    // Target line 45 should have highlight class and signature text
     const targetLine = codeViewer.locator('[data-testid="code-line-45"]');
     await expect(targetLine).toHaveClass(/nav-code-line-target/);
+    await expect(targetLine).toContainText('async def chat_completion_endpoint');
+
+    // Toggle Callers & Impact drawer
+    const drawerToggle = codeViewer.locator('.nav-code-drawer-toggle');
+    await expect(drawerToggle).toBeVisible();
+    await expect(drawerToggle).toContainText('Callers & Impact (2)');
+    await drawerToggle.click();
+
+    // Verify caller chip is visible in drawer
+    const drawer = codeViewer.locator('.nav-code-impact-drawer');
+    await expect(drawer).toBeVisible();
+    const callerChip = drawer.locator('.nav-impact-chip.caller').first();
+    await expect(callerChip.locator('.chip-name')).toContainText('test_chat_completions_e2e');
+
+    // Click caller chip to navigate cross-file to caller in Symbol Intelligence
+    await callerChip.click();
+
+    // Pane 3 switches to intelligence inspector showing the caller symbol
+    const inspector = page.locator('[data-testid="navigator-inspector-container"]');
+    await expect(inspector).toBeVisible();
+    await expect(inspector.locator('.summary-name')).toHaveText('test_chat_completions_e2e');
 
     // Check zero layout collisions
     await expect(page).toHaveNoLayoutOverflow();

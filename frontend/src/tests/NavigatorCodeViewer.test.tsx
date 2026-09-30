@@ -32,6 +32,11 @@ describe('NavigatorCodeViewer Component', () => {
   beforeEach(() => {
     // Mock scrollIntoView
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
   });
 
   it('renders line numbers and code lines', () => {
@@ -90,5 +95,55 @@ describe('NavigatorCodeViewer Component', () => {
     // Click caller chip
     fireEvent.click(screen.getByText('main_caller'));
     expect(onSelectCaller).toHaveBeenCalledWith('app/main.py', 'main_caller', undefined);
+  });
+
+  it('copies full code to clipboard when clicking Copy Code button', async () => {
+    const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+
+    render(
+      <NavigatorCodeViewer
+        filepath="test.py"
+        content={sampleCode}
+        totalLines={6}
+      />
+    );
+
+    const copyBtn = screen.getByRole('button', { name: /copy file code/i });
+    fireEvent.click(copyBtn);
+
+    expect(writeTextSpy).toHaveBeenCalledWith(sampleCode);
+    expect(await screen.findByText('Copied!')).toBeInTheDocument();
+  });
+
+  it('copies permalink to clipboard when clicking Copy Link button', async () => {
+    const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+
+    render(
+      <NavigatorCodeViewer
+        filepath="test.py"
+        content={sampleCode}
+        totalLines={6}
+        targetStartLine={3}
+        targetEndLine={4}
+      />
+    );
+
+    const copyLinkBtn = screen.getByRole('button', { name: /copy permalink/i });
+    fireEvent.click(copyLinkBtn);
+
+    expect(writeTextSpy).toHaveBeenCalledWith('test.py#L3-L4');
+    expect(await screen.findByText('Link Copied!')).toBeInTheDocument();
+  });
+
+  it('renders fallback when content is empty', () => {
+    render(
+      <NavigatorCodeViewer
+        filepath="empty.py"
+        content=""
+        totalLines={0}
+      />
+    );
+
+    expect(screen.getByText('File is empty.')).toBeInTheDocument();
   });
 });
