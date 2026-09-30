@@ -78,7 +78,7 @@ describe('NavigatorOutline Component', () => {
       />
     );
 
-    expect(screen.getByText(/document file selected/i)).toBeInTheDocument();
+    expect(screen.getByText(/document file/i)).toBeInTheDocument();
   });
 
   it('renders read document button and handles click when onReadDoc is provided', () => {

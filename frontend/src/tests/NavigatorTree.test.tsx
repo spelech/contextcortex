@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NavigatorTree } from '../components/navigator/NavigatorTree';
 import type { NavigatorTreeNode } from '../components/navigator/types';
 
@@ -54,6 +54,10 @@ const mockTreeData: NavigatorTreeNode[] = [
 ];
 
 describe('NavigatorTree Component', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
   it('renders directory nodes and root files', () => {
     render(
       <NavigatorTree

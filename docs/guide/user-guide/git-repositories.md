@@ -23,24 +23,31 @@ Follow these steps to connect a Git repository to ContextCortex:
 6. **Authentication**:
    - Provide an optional personal access token (PAT), or
    - Leave empty to automatically inherit saved domain credentials from the [Git Host Credential Vault](/guide/user-guide/settings).
-7. Click **Save Repository**.
+7. **Keep Shallow Copy on Disk** *(New in v2.16.0)*:
+   - Check **Keep shallow copy on disk** to retain a shallow clone (`--depth 1`) in persistent storage under `/app/data/repos/{repo_name}`.
+   - When enabled, Code Navigator can instantly load unchunked source files for full inspection, and subsequent syncs use fast incremental `git fetch --depth 1` instead of re-cloning from scratch.
+   - You can also toggle shallow retention on or off at any time via the **Shallow Copy** badge in the repository list table.
+8. Click **Add & Start Sync**.
 
 ---
 
 ## Synchronizing Repositories
 
-ContextCortex performs ephemeral shallow clones (`git clone --depth 1`) directly into an isolated workspace, parses AST chunks and docstrings into the vector store, updates the unified catalog, and purges the cloned files immediately from disk.
+ContextCortex supports both **ephemeral** and **persistent** shallow ingestion:
+- **Ephemeral Sync (Default)**: Authenticated shallow clone (`git clone --depth 1`) directly into an isolated directory, extracts AST chunks, symbols, and vector embeddings into the vector store, updates the relational catalog, and immediately purges the cloned files from disk to conserve host storage.
+- **Persistent Shallow Copy Retention**: Retains the `--depth 1` clone on the persistent `repo_cache` Docker volume, enabling instantaneous full source inspection in Code Navigator and lightning-fast delta updates.
 
 ### Manual Synchronization
-Click the **Sync Now** button on any repository card to trigger an immediate update. A live progress drawer displays:
-- Git clone phase
+Click the **Sync** button on any repository row or card to trigger an immediate update. A live progress drawer displays:
+- Remote ref verification
+- Shallow clone / incremental fetch phase
 - Tree-sitter AST parsing status
 - Vector embedding generation progress
-- Total vectors created and elapsed time
+- Total vectors created, AST symbols extracted, and elapsed time
 
 ### Automated Webhooks & Polling
-- **Auto-Sync Poller**: Repositories with auto-sync enabled are re-indexed periodically by the background daemon based on the configured interval (default: every 15 minutes).
-- **Webhooks**: Click **Webhook** on any repository card to view the pre-configured webhook endpoint (`/api/webhooks/git`) and secret payload for GitHub, GitLab, or Gitea push events.
+- **Auto-Sync Poller**: Repositories with auto-sync enabled are re-indexed periodically by the background daemon based on the configured interval (default: every 15 minutes). You can toggle auto-sync directly from the table.
+- **Webhooks**: Click **Webhook** on any repository card to open the webhook modal showing the pre-configured endpoint (`/api/webhooks/git`) and HMAC secret token for GitHub, GitLab, or Gitea push events. Both the Add Repo and Webhook modals render via full-screen React Portals to guarantee clean, unclipped displays.
 
 ---
 

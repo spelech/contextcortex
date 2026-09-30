@@ -172,7 +172,24 @@ export const NavigatorOmniSearch: React.FC<NavigatorOmniSearchProps> = ({
           aria-expanded={isOpen}
         />
 
-        {loading && <div className="nav-omni-spinner" />}
+        {loading && (
+          <svg
+            className="nav-omni-spinner animate-spin"
+            data-testid="omni-search-spinner"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <circle cx="12" cy="12" r="10" stroke="rgba(8, 145, 178, 0.25)" strokeWidth="3" />
+            <path
+              d="M12 2a10 10 0 0 1 10 10"
+              stroke="var(--primary, #0891b2)"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
 
         {query && (
           <button

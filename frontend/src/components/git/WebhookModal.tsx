@@ -1,4 +1,5 @@
 import type { Repo } from '../../types';
+import { createPortal } from 'react-dom';
 
 interface WebhookModalProps {
   repo: Repo | null;
@@ -13,7 +14,7 @@ export function WebhookModal({ repo, onClose, onCopyUrl, copiedUrl }: WebhookMod
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
   const webhookEndpoint = `${currentOrigin}/api/webhooks/git`;
 
-  return (
+  const modalNode = (
     <div
       className="modal-backdrop"
       onClick={(e) => {
@@ -131,4 +132,6 @@ export function WebhookModal({ repo, onClose, onCopyUrl, copiedUrl }: WebhookMod
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalNode, document.body) : modalNode;
 }

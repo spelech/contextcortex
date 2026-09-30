@@ -1,6 +1,198 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Highlight } from 'prism-react-renderer';
+import Prism from 'prismjs';
+// Programming Language Grammars
+import 'prismjs/components/prism-csharp';
+import 'prismjs/components/prism-c';
+import 'prismjs/components/prism-cpp';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-tsx';
+import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-rust';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-docker';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-plsql';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-cobol';
 import type { SymbolImpact, DensityMode } from './types';
 import { getMethodBadgeClass, getKindBadgeClass } from './NavigatorOutline';
+
+// Comprehensive VS/Rider/JetBrains dark theme with rich token mappings for C#, Python, TS/JS, C++, Go, Rust, COBOL, SQL, etc.
+const universalIDETheme = {
+  plain: {
+    color: '#d4d4d4',
+    backgroundColor: '#1e1e1e',
+  },
+  styles: [
+    {
+      types: ['comment', 'prolog', 'doctype', 'cdata'],
+      style: { color: '#6a9955', fontStyle: 'italic' as const },
+    },
+    {
+      types: ['level'],
+      style: { color: '#38bdf8', fontWeight: 'bold' as const },
+    },
+    {
+      types: ['keyword', 'builtin-keyword'],
+      style: { color: '#569cd6' },
+    },
+    {
+      types: [
+        'class-name',
+        'return-type',
+        'type-list',
+        'namespace',
+        'base-clause',
+        'builtin',
+      ],
+      style: { color: '#4ec9b0' },
+    },
+    {
+      types: ['interface'],
+      style: { color: '#b8d7a3' },
+    },
+    {
+      types: ['function', 'generic-function', 'function-variable', 'generic-method'],
+      style: { color: '#dcdcaa' },
+    },
+    {
+      types: ['decorator', 'attribute'],
+      style: { color: '#dcdcaa' },
+    },
+    {
+      types: [
+        'string',
+        'char',
+        'attr-value',
+        'triple-quoted-string',
+        'raw-string',
+        'template-string',
+        'interpolation-string',
+        'string-interpolation',
+      ],
+      style: { color: '#ce9178' },
+    },
+    {
+      types: ['number', 'boolean'],
+      style: { color: '#b5cea8' },
+    },
+    {
+      types: [
+        'variable',
+        'parameter',
+        'named-parameter',
+        'property',
+        'string-property',
+        'attr-name',
+        'identifier',
+      ],
+      style: { color: '#9cdcfe' },
+    },
+    {
+      types: ['constant', 'symbol'],
+      style: { color: '#4fc1ff' },
+    },
+    {
+      types: [
+        'macro',
+        'directive',
+        'preprocessor',
+        'preprocessor-directive',
+      ],
+      style: { color: '#c586c0' },
+    },
+    {
+      types: ['directive-hash'],
+      style: { color: '#9b9b9b' },
+    },
+    {
+      types: ['tag'],
+      style: { color: '#569cd6' },
+    },
+    {
+      types: ['regex'],
+      style: { color: '#d16969' },
+    },
+    {
+      types: ['punctuation', 'operator', 'double-colon'],
+      style: { color: '#d4d4d4' },
+    },
+  ],
+};
+
+function getPrismLanguage(filepath: string): string {
+  const clean = filepath.split('?')[0].split('#')[0];
+  const ext = (clean.split('.').pop() || '').toLowerCase();
+  const map: Record<string, string> = {
+    // C#
+    cs: 'csharp',
+    csharp: 'csharp',
+    // Python
+    py: 'python',
+    pyw: 'python',
+    python: 'python',
+    // TypeScript & JavaScript
+    ts: 'typescript',
+    tsx: 'tsx',
+    js: 'javascript',
+    jsx: 'jsx',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    // C & C++
+    c: 'c',
+    h: 'cpp',
+    cpp: 'cpp',
+    cc: 'cpp',
+    cxx: 'cpp',
+    hpp: 'cpp',
+    hh: 'cpp',
+    hxx: 'cpp',
+    // Go & Rust
+    go: 'go',
+    rs: 'rust',
+    rust: 'rust',
+    // Web, Config & Data
+    json: 'json',
+    yml: 'yaml',
+    yaml: 'yaml',
+    md: 'markdown',
+    markdown: 'markdown',
+    css: 'css',
+    scss: 'css',
+    html: 'markup',
+    xml: 'markup',
+    svg: 'markup',
+    // SQL, Databases & Procedural Dialects
+    sql: 'sql',
+    psql: 'sql',
+    pls: 'plsql',
+    plsql: 'plsql',
+    pkb: 'plsql',
+    pks: 'plsql',
+    ddl: 'sql',
+    dml: 'sql',
+    cql: 'sql',
+    hql: 'sql',
+    // Shell & Infra
+    sh: 'bash',
+    bash: 'bash',
+    zsh: 'bash',
+    dockerfile: 'docker',
+    // COBOL
+    cbl: 'cobol',
+    cob: 'cobol',
+    cpy: 'cobol',
+    cobol: 'cobol',
+    pco: 'cobol',
+  };
+  const candidate = map[ext] || 'plain';
+  return (Prism.languages as Record<string, any>)[candidate] ? candidate : 'plain';
+}
 
 export interface NavigatorCodeViewerProps {
   filepath: string;
@@ -205,33 +397,43 @@ export const NavigatorCodeViewer: React.FC<NavigatorCodeViewerProps> = ({
             File is empty.
           </div>
         ) : (
-          <div className="nav-code-lines-wrapper">
-          {lines.map((line, idx) => {
-            const lineNum = idx + 1;
-            const isTarget =
-              targetStartLine !== undefined &&
-              lineNum >= targetStartLine &&
-              lineNum <= (targetEndLine || targetStartLine);
+          <Highlight prism={Prism} theme={universalIDETheme} code={content || ''} language={getPrismLanguage(filepath)}>
+            {({ tokens, getTokenProps }) => (
+              <div className="nav-code-lines-wrapper">
+                {tokens.map((lineTokens, idx) => {
+                  const lineNum = idx + 1;
+                  const isTarget =
+                    targetStartLine !== undefined &&
+                    lineNum >= targetStartLine &&
+                    lineNum <= (targetEndLine || targetStartLine);
 
-            const isFirstTarget = targetStartLine !== undefined && lineNum === targetStartLine;
+                  const isFirstTarget = targetStartLine !== undefined && lineNum === targetStartLine;
 
-            return (
-              <div
-                key={lineNum}
-                ref={isFirstTarget ? targetLineRef : undefined}
-                className={`nav-code-line-row ${isTarget ? 'nav-code-line-target' : ''}`}
-                data-testid={`code-line-${lineNum}`}
-              >
-                <div className="nav-code-line-number select-none">
-                  {lineNum}
-                </div>
-                <div className="nav-code-line-content font-mono">
-                  {line || ' '}
-                </div>
+                  return (
+                    <div
+                      key={lineNum}
+                      ref={isFirstTarget ? targetLineRef : undefined}
+                      className={`nav-code-line-row ${isTarget ? 'nav-code-line-target' : ''}`}
+                      data-testid={`code-line-${lineNum}`}
+                    >
+                      <div className="nav-code-line-number select-none">
+                        {lineNum}
+                      </div>
+                      <div className="nav-code-line-content font-mono">
+                        {lineTokens.length === 0 || (lineTokens.length === 1 && lineTokens[0].content === '') ? (
+                          ' '
+                        ) : (
+                          lineTokens.map((token, key) => (
+                            <span key={key} {...getTokenProps({ token })} />
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            )}
+          </Highlight>
         )}
       </div>
 

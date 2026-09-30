@@ -5,8 +5,17 @@ from app.services.database import get_db_connection
 
 logger = logging.getLogger("contextcortex.navigator")
 
-def _clean_path(p: str) -> str:
-    return p.replace("\\", "/").strip("/")
+def _clean_path(p: str, repo: Optional[str] = None) -> str:
+    cleaned = p.replace("\\", "/")
+    if "://" in cleaned:
+        cleaned = cleaned.split("://", 1)[1]
+    if repo and cleaned.startswith(f"{repo}:"):
+        cleaned = cleaned[len(repo) + 1:]
+    return cleaned.strip("/")
+
+def _path_parts(filepath: str, repo: Optional[str] = None) -> List[str]:
+    cleaned = _clean_path(filepath, repo=repo)
+    return [part for part in cleaned.split("/") if part.strip()]
 
 def get_navigator_tree(repo: str) -> Optional[Dict[str, Any]]:
     with get_db_connection() as conn:
@@ -33,7 +42,7 @@ def get_navigator_tree(repo: str) -> Optional[Dict[str, Any]]:
             f"SELECT filepath, count(*) as cnt FROM ast_symbols{where} GROUP BY filepath",
             params
         ).fetchall():
-            sym_counts[_clean_path(row["filepath"])] = row["cnt"]
+            sym_counts[_clean_path(row["filepath"], repo=repo)] = row["cnt"]
 
         # Fetch route counts per file
         route_counts = {}
@@ -41,28 +50,75 @@ def get_navigator_tree(repo: str) -> Optional[Dict[str, Any]]:
             f"SELECT filepath, count(*) as cnt FROM api_routes{where} GROUP BY filepath",
             params
         ).fetchall():
-            route_counts[_clean_path(row["filepath"])] = row["cnt"]
+            route_counts[_clean_path(row["filepath"], repo=repo)] = row["cnt"]
 
     # Build hierarchical tree
-    root = {"children": {}}
-    for f in file_rows:
-        raw_path = _clean_path(f["filepath"])
-        parts = raw_path.split("/")
-        curr = root
-        for i, part in enumerate(parts):
-            is_last = (i == len(parts) - 1)
-            if part not in curr["children"]:
-                curr["children"][part] = {
-                    "id": f"{'file' if is_last else 'dir'}:{'/'.join(parts[:i+1])}",
-                    "name": part,
-                    "is_dir": not is_last,
-                    "path": "/".join(parts[:i+1]),
-                    "children": {} if not is_last else None,
-                    "language": f["language"] if is_last else None,
-                    "symbol_count": sym_counts.get(raw_path, 0) if is_last else 0,
-                    "route_count": route_counts.get(raw_path, 0) if is_last else 0,
-                }
-            curr = curr["children"][part]
+    if repo == "__all__":
+        # Group files by repo source, each gets its own root node
+        sources: Dict[str, list] = {}
+        for f in file_rows:
+            sources.setdefault(f["repo"], []).append(f)
+
+        root_children = {}
+        for source_name, source_files in sorted(sources.items()):
+            source_root = {"children": {}}
+            for f in source_files:
+                raw_path = _clean_path(f["filepath"], repo=f["repo"])
+                parts = _path_parts(f["filepath"], repo=f["repo"])
+                if not parts:
+                    continue
+                curr = source_root
+                for i, part in enumerate(parts):
+                    is_last = (i == len(parts) - 1)
+                    rel_path = f"{source_name}/{'/'.join(parts[:i+1])}"
+                    if part not in curr["children"]:
+                        curr["children"][part] = {
+                            "id": f"{'file' if is_last else 'dir'}:{rel_path}",
+                            "name": part,
+                            "is_dir": not is_last,
+                            "path": rel_path,
+                            "abs_path": f["filepath"] if is_last else None,
+                            "children": {} if not is_last else None,
+                            "language": f["language"] if is_last else None,
+                            "symbol_count": sym_counts.get(raw_path, 0) if is_last else 0,
+                            "route_count": route_counts.get(raw_path, 0) if is_last else 0,
+                        }
+                    curr = curr["children"][part]
+            root_children[source_name] = {
+                "id": f"source:{source_name}",
+                "name": source_name,
+                "is_dir": True,
+                "path": source_name,
+                "children": source_root["children"],
+                "language": None,
+                "symbol_count": 0,
+                "route_count": 0,
+            }
+        root = {"children": root_children}
+    else:
+        root = {"children": {}}
+        for f in file_rows:
+            raw_path = _clean_path(f["filepath"], repo=f["repo"])
+            parts = _path_parts(f["filepath"], repo=f["repo"])
+            if not parts:
+                continue
+            curr = root
+            for i, part in enumerate(parts):
+                is_last = (i == len(parts) - 1)
+                rel_path = "/".join(parts[:i+1])
+                if part not in curr["children"]:
+                    curr["children"][part] = {
+                        "id": f"{'file' if is_last else 'dir'}:{rel_path}",
+                        "name": part,
+                        "is_dir": not is_last,
+                        "path": rel_path,
+                        "abs_path": f["filepath"] if is_last else None,
+                        "children": {} if not is_last else None,
+                        "language": f["language"] if is_last else None,
+                        "symbol_count": sym_counts.get(raw_path, 0) if is_last else 0,
+                        "route_count": route_counts.get(raw_path, 0) if is_last else 0,
+                    }
+                curr = curr["children"][part]
 
     def _format_node(n):
         node = {
@@ -70,6 +126,7 @@ def get_navigator_tree(repo: str) -> Optional[Dict[str, Any]]:
             "name": n["name"],
             "is_dir": n["is_dir"],
             "path": n["path"],
+            "abs_path": n.get("abs_path"),
             "language": n["language"],
             "symbol_count": n["symbol_count"],
             "route_count": n["route_count"],

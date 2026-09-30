@@ -73,6 +73,26 @@ class FileReaderService:
             logger.warning(f"Failed to fetch authorized indexed_paths: {e}")
             return []
 
+    def _get_authorized_persistent_repos(self) -> Dict[str, str]:
+        try:
+            from app.services.git_manager import PERSISTENT_REPOS_DIR
+            base_dir = os.path.normpath(os.path.abspath(PERSISTENT_REPOS_DIR))
+            base_prefix = base_dir if base_dir.endswith(os.sep) else base_dir + os.sep
+            with get_db_connection() as conn:
+                rows = conn.execute("SELECT name FROM git_repositories").fetchall()
+            repos: Dict[str, str] = {}
+            for r in rows:
+                name = str(r["name"]).strip()
+                safe_name = os.path.basename(name)
+                if safe_name and safe_name not in (".", ".."):
+                    target = os.path.normpath(os.path.abspath(os.path.join(base_dir, safe_name)))
+                    if target.startswith(base_prefix) or target == base_dir:
+                        repos[name] = target
+            return repos
+        except Exception as e:
+            logger.warning(f"Failed to fetch authorized persistent repos: {e}")
+            return {}
+
     def resolve_safe_path(self, path: str, repo: Optional[str] = None) -> Tuple[str, str]:
         """Resolves target path safely within authorized watched paths or local storage.
         
@@ -105,6 +125,21 @@ class FileReaderService:
 
         # 2. repo specified matching indexed_paths or git_repositories
         if effective_repo:
+            # Check persistent shallow clone if available
+            try:
+                persistent_repos = self._get_authorized_persistent_repos()
+                if effective_repo in persistent_repos:
+                    repo_disk_dir = persistent_repos[effective_repo]
+                    rel_clean = path.split("://", 1)[1] if "://" in path else path.lstrip("/")
+                    cand_repo = os.path.normpath(os.path.abspath(os.path.join(repo_disk_dir, rel_clean)))
+                    if cand_repo.startswith(repo_disk_dir):
+                        if os.path.lexists(cand_repo):
+                            if not self._is_within_root(cand_repo, repo_disk_dir):
+                                raise ValueError("Path outside authorized roots")
+                            return cand_repo, "persistent_repo"
+            except Exception as e:
+                logger.debug(f"Persistent repo lookup check failed: {e}")
+
             matching_paths = [ip for ip in indexed_paths if ip.get("repo") == effective_repo]
 
             if os.path.isabs(path):
@@ -207,6 +242,82 @@ class FileReaderService:
             chunk = f.read(8192)
             return b"\x00" in chunk
 
+    def _read_from_vector_store(
+        self,
+        path: str,
+        repo: Optional[str] = None,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
+        max_lines: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Reconstructs file content from vector store chunks when file is not on disk."""
+        try:
+            from app.services.vector_store import get_vector_store
+            from qdrant_client.http import models as qmodels
+            store = get_vector_store()
+            if not hasattr(store, "client") or not store.client:
+                return None
+
+            clean_path = path.replace("\\", "/").strip("/")
+            rel_path = clean_path.split("://", 1)[1] if "://" in clean_path else clean_path
+            if repo and rel_path.startswith(f"{repo}/"):
+                rel_path = rel_path[len(repo) + 1:]
+
+            must_conditions = []
+            if repo and repo not in ("__all__", "all"):
+                must_conditions.append(qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo)))
+
+            should_conditions = [
+                qmodels.FieldCondition(key="rel_path", match=qmodels.MatchValue(value=rel_path)),
+                qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=path)),
+                qmodels.FieldCondition(key="rel_path", match=qmodels.MatchValue(value=path)),
+            ]
+            filter_obj = qmodels.Filter(
+                must=must_conditions if must_conditions else None,
+                should=should_conditions
+            )
+
+            records, _ = store.client.scroll(
+                collection_name=store.collection_name,
+                scroll_filter=filter_obj,
+                limit=250,
+                with_payload=True,
+                with_vectors=False
+            )
+            if not records:
+                return None
+
+            sorted_chunks = sorted(records, key=lambda p: (p.payload.get("start_line", 0), p.payload.get("end_line", 0)))
+            content_pieces = []
+            for p in sorted_chunks:
+                text = p.payload.get("content") or p.payload.get("text") or ""
+                if text.strip():
+                    content_pieces.append(text)
+
+            full_text = "\n\n".join(content_pieces)
+            lines = full_text.splitlines()
+            total_lines = len(lines)
+            s_line = start_line if (start_line is not None and start_line >= 1) else 1
+            e_line = end_line if end_line is not None else total_lines
+
+            start_idx = max(0, s_line - 1)
+            end_idx = min(total_lines, e_line)
+            sliced = "\n".join(lines[start_idx:end_idx])
+
+            return {
+                "filepath": path,
+                "content": sliced,
+                "start_line": s_line,
+                "end_line": end_idx,
+                "total_lines": total_lines,
+                "size_bytes": len(full_text.encode("utf-8")),
+                "truncated": False,
+                "source": "vector_store",
+            }
+        except Exception as e:
+            logger.warning(f"Error reading from vector store fallback for {path}: {e}")
+            return None
+
     def read_file(
         self,
         path: str,
@@ -216,10 +327,20 @@ class FileReaderService:
         max_lines: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Reads a file with safe path resolution, binary checking, and line slicing."""
-        abs_path, source_type = self.resolve_safe_path(path, repo=repo)
-
-        if not os.path.exists(abs_path):
+        try:
+            abs_path, source_type = self.resolve_safe_path(path, repo=repo)
+            if not abs_path.startswith("/"):
+                raise ValueError(f"Target path is not absolute: {path}")
+            if not os.path.exists(abs_path):
+                raise FileNotFoundError(f"File not found on disk: {path}")
+        except (ValueError, FileNotFoundError):
+            vec_res = self._read_from_vector_store(
+                path=path, repo=repo, start_line=start_line, end_line=end_line, max_lines=max_lines
+            )
+            if vec_res:
+                return vec_res
             raise FileNotFoundError(f"File not found: {path}")
+
         if os.path.isdir(abs_path):
             raise IsADirectoryError(f"Target path is a directory: {path}")
 

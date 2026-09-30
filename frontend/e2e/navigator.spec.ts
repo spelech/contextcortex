@@ -490,10 +490,10 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     await expect(page.getByText('5 files')).toBeVisible();
     await expect(page.getByText('18 symbols')).toBeVisible();
 
-    // Verify 3 pane headers
-    await expect(page.getByText('Files & Modules')).toBeVisible();
-    await expect(page.getByText('Symbols & Routes')).toBeVisible();
-    await expect(page.getByText('Code Intelligence & Impact')).toBeVisible();
+    // Verify sidebar tabs and hero viewport
+    await expect(page.locator('.nav-sidebar-tab-btn', { hasText: 'Files' })).toBeVisible();
+    await expect(page.locator('.nav-sidebar-tab-btn', { hasText: 'Symbols' })).toBeVisible();
+    await expect(page.locator('[data-testid="navigator-inspector-container"]')).toBeVisible();
   });
 
   test('2. File Tree Interaction: hierarchical structure, expand/collapse, and search filtering', async ({ page }) => {
@@ -642,7 +642,7 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     await expect(page.locator('.docstring-text')).toContainText('Processes OpenAI-compatible chat completion');
 
     // Verify Copy Permalink interaction
-    const copyBtn = page.locator('button[aria-label="Copy Permalink"]');
+    const copyBtn = inspector.locator('button[aria-label="Copy Permalink"]');
     await expect(copyBtn).toBeVisible();
     await copyBtn.click();
     await expect(copyBtn).toContainText('Copied!');
@@ -668,10 +668,12 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     await callerCard.click();
 
     // Verify file tree switched to test_chat.py and marked selected
+    await page.locator('.nav-sidebar-tab-btn', { hasText: 'Files' }).click();
     const testChatFile = page.locator('.nav-tree-item.file-item.selected').filter({ has: page.locator('.tree-label:text-is("test_chat.py")') });
     await expect(testChatFile).toBeVisible();
 
     // Verify outline pane loaded test_chat.py and highlighted test_chat_completions_e2e
+    await page.locator('.nav-sidebar-tab-btn', { hasText: 'Symbols' }).click();
     await expect(page.locator('.nav-file-badge .file-name')).toHaveText('test_chat.py');
     const activeSymbol = page.locator('[data-testid="symbol-item-301"]');
     await expect(activeSymbol).toHaveClass(/active/);
@@ -716,7 +718,7 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
 
     // Assert zero horizontal overflow and zero element collisions
     await expect(page).toHaveNoLayoutOverflow();
-    await expect(page).toHaveNoElementCollisions();
+    await expect(page).toHaveNoElementCollisions({ ignoreSelectors: ['.token'] });
 
     // Layout Inspector UX Audit
     const inspector = new LayoutInspector(page);
@@ -733,7 +735,7 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     await page.waitForTimeout(200);
 
     await expect(page).toHaveNoLayoutOverflow();
-    await expect(page).toHaveNoElementCollisions();
+    await expect(page).toHaveNoElementCollisions({ ignoreSelectors: ['.token'] });
   });
 
   test('8. Document Reader: opens markdown document, renders full content and switches between rendered and source view', async ({ page }) => {
@@ -747,7 +749,7 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     // Verify Outline shows doc state
     const docState = page.locator('[data-testid="outline-doc-state"]');
     await expect(docState).toBeVisible();
-    await expect(docState).toContainText('Document File Selected');
+    await expect(docState).toContainText('Document File Active');
 
     // Verify Inspector renders NavigatorDocReader
     const docReader = page.locator('[data-testid="nav-doc-reader"]');
@@ -828,7 +830,7 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     // Click caller chip to navigate cross-file to caller in Symbol Intelligence
     await callerChip.click();
 
-    // Pane 3 switches to intelligence inspector showing the caller symbol
+    // Viewer switches to intelligence inspector showing the caller symbol
     const inspector = page.locator('[data-testid="navigator-inspector-container"]');
     await expect(inspector).toBeVisible();
     await expect(inspector.locator('.summary-name')).toHaveText('test_chat_completions_e2e');

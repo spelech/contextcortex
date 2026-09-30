@@ -128,7 +128,8 @@ describe('GitRepoManager Component', () => {
             url: 'https://github.com/example/new-repo.git',
             branch: 'develop',
             auth_user: null,
-            auth_token: null
+            auth_token: null,
+            keep_shallow: false
           })
         })
       );

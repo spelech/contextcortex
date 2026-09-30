@@ -123,18 +123,11 @@ describe('App Component', () => {
       expect(screen.getByText('Registered Git Repositories')).toBeInTheDocument();
     });
 
-    // Switch to Local Paths
-    const pathsTab = screen.getByRole('button', { name: /Local Paths/i });
-    fireEvent.click(pathsTab);
+    // Switch to Files & Storage
+    const filesStorageTab = screen.getByRole('button', { name: /Files & Storage/i });
+    fireEvent.click(filesStorageTab);
     await waitFor(() => {
       expect(screen.getByText('Monitored Local Paths')).toBeInTheDocument();
-    });
-
-    // Switch to Local Storage
-    const storageTab = screen.getByRole('button', { name: /Local Storage/i });
-    fireEvent.click(storageTab);
-    await waitFor(() => {
-      expect(screen.getByText('Local Storage Explorer')).toBeInTheDocument();
     });
 
     // Switch to Ingestion Catalog
@@ -155,7 +148,7 @@ describe('App Component', () => {
     const settingsTab = screen.getByRole('button', { name: /Settings/i });
     fireEvent.click(settingsTab);
     await waitFor(() => {
-      expect(screen.getByText('Global Git Provider Authentication')).toBeInTheDocument();
+      expect(screen.getByText('AI & Model Gateway')).toBeInTheDocument();
     });
 
     // Switch to Diagnostics & Logs

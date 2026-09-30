@@ -96,6 +96,7 @@ def sync_single_git_repo(repo_id: int):
     """Ephemeral shallow clone, delta calculation, incremental vector upsert, and immediate disk cleanup."""
     repo_name = f"repo-{repo_id}"
     temp_dir = None
+    keep_shallow = False
     try:
         with db_service.get_db_connection() as conn:
             repo_row = conn.execute("SELECT * FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
@@ -108,6 +109,7 @@ def sync_single_git_repo(repo_id: int):
         per_repo_token = repo_row["auth_token"]
         per_repo_user = repo_row["auth_user"] if "auth_user" in repo_row.keys() else None
         provider = repo_row["provider"] if "provider" in repo_row.keys() else None
+        keep_shallow = bool(repo_row["keep_shallow"]) if "keep_shallow" in repo_row.keys() and repo_row["keep_shallow"] else False
 
         progress_tracker.get_or_create_job(repo_id, repo_name)
 
@@ -144,8 +146,10 @@ def sync_single_git_repo(repo_id: int):
             conn.execute("UPDATE git_repositories SET status = 'syncing' WHERE id = ?", (repo_id,))
             conn.commit()
 
+        target_dir = gm_service.get_persistent_repo_dir(repo_name) if keep_shallow else None
+        clone_mode_label = f"persistent storage ({target_dir})" if keep_shallow else "ephemeral directory"
         progress_tracker.update_step(repo_id, 2, "Shallow Cloning Repository", pct=25)
-        progress_tracker.log(repo_id, "INFO", f"Cloning branch '{branch}' to ephemeral directory...")
+        progress_tracker.log(repo_id, "INFO", f"Cloning branch '{branch}' to {clone_mode_label}...")
 
         clone_start = time.time()
         clone_res = gm_service.shallow_clone_repo(
@@ -154,7 +158,8 @@ def sync_single_git_repo(repo_id: int):
             token=effective_token, 
             username=effective_user, 
             provider=provider, 
-            repo_id=str(repo_id)
+            repo_id=str(repo_id),
+            target_dir=target_dir
         )
         temp_dir = clone_res.temp_dir
         commit_sha = clone_res.commit_sha
@@ -412,8 +417,11 @@ def sync_single_git_repo(repo_id: int):
         except Exception:
             pass
     finally:
-        # Crucial: Ephemeral disk cleanup!
-        gm_service.cleanup_repo_dir(temp_dir)
+        # Clean up ephemeral clone, or retain persistent shallow copy
+        if not keep_shallow and temp_dir:
+            gm_service.cleanup_repo_dir(temp_dir)
+        elif keep_shallow and temp_dir:
+            logger.info(f"Retained persistent shallow copy for repo '{repo_name}' at {temp_dir}")
 
 
 def run_full_indexing():

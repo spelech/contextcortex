@@ -49,6 +49,7 @@ git_repositories = Table(
     Column("auth_user", Text, nullable=True),
     Column("enabled", Integer, default=1, server_default="1"),
     Column("auto_sync", Integer, default=1, server_default="1"),
+    Column("keep_shallow", Integer, default=0, server_default="0"),
     Column("webhook_secret", Text, nullable=True),
     Column("status", Text, default="pending", server_default="pending"),
     Column("last_error", Text, nullable=True),

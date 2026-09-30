@@ -301,7 +301,7 @@ def set_embedding_db_config(
 
 def get_vision_ocr_model() -> str:
     """Returns stored vision OCR model or fallback to env/default."""
-    stored = get_metadata("vision_ocr_model") or get_metadata("embedding_vision_ocr_model")
+    stored = get_metadata("openai_vision_model") or get_metadata("vision_ocr_model") or get_metadata("embedding_vision_ocr_model")
     if stored and stored.strip():
         return stored.strip()
     return (os.getenv("VISION_OCR_MODEL") or "gemini-2.5-flash").strip()
@@ -309,15 +309,105 @@ def get_vision_ocr_model() -> str:
 
 def get_chat_model() -> str:
     """Returns stored chat model or fallback to env/default."""
-    stored = get_metadata("chat_model") or get_metadata("embedding_chat_model")
+    stored = get_metadata("openai_chat_model") or get_metadata("chat_model") or get_metadata("embedding_chat_model")
     if stored and stored.strip():
         return stored.strip()
     return (os.getenv("CHAT_MODEL") or "gemini-2.5-flash").strip()
 
 
-def ensure_file_summaries_columns(conn=None):
-    """Ensures summary_text column exists on file_summaries table."""
+def get_ai_gateway_config() -> Dict[str, Any]:
+    """
+    Returns OpenAI-compatible AI Gateway configuration from database.
+    Seeds from environment variables if database metadata is uninitialized.
+    """
+    url = get_metadata("openai_api_url") or get_metadata("embedding_litellm_url")
+    api_key = get_metadata("openai_api_key") or get_metadata("embedding_litellm_api_key")
+    chat_model = get_metadata("openai_chat_model") or get_metadata("chat_model") or get_metadata("embedding_chat_model")
+    vision_model = get_metadata("openai_vision_model") or get_metadata("vision_ocr_model") or get_metadata("embedding_vision_ocr_model")
+    embedding_model = get_metadata("openai_embedding_model") or get_metadata("embedding_dense_model")
+
+    # Env seed fallback
+    if not url:
+        url = os.getenv("LITELLM_URL", "http://litellm:4000/v1").strip()
+    if not api_key:
+        api_key = os.getenv("LITELLM_API_KEY", "").strip()
+    if not chat_model:
+        chat_model = os.getenv("CHAT_MODEL", "gemini-2.5-flash").strip()
+    if not vision_model:
+        vision_model = os.getenv("VISION_OCR_MODEL", "gemini-2.5-flash").strip()
+    if not embedding_model:
+        embedding_model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5").strip()
+
+    masked = ""
+    if api_key:
+        if len(api_key) <= 8:
+            masked = "••••••••"
+        else:
+            prefix = api_key[:3]
+            suffix = api_key[-4:]
+            masked = f"{prefix}••••••••{suffix}"
+
+    return {
+        "url": url,
+        "has_api_key": bool(api_key),
+        "masked_api_key": masked,
+        "chat_model": chat_model,
+        "vision_ocr_model": vision_model,
+        "embedding_model": embedding_model,
+    }
+
+
+def set_ai_gateway_config(
+    url: Optional[str] = None,
+    api_key: Optional[str] = None,
+    chat_model: Optional[str] = None,
+    vision_ocr_model: Optional[str] = None,
+    embedding_model: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Persists OpenAI-compatible AI Gateway configuration in SQLite system_metadata.
+    """
+    if url is not None:
+        set_metadata("openai_api_url", url.strip())
+        set_metadata("embedding_litellm_url", url.strip())
+    if api_key is not None:
+        cleaned_key = api_key.strip()
+        set_metadata("openai_api_key", cleaned_key)
+        set_metadata("embedding_litellm_api_key", cleaned_key)
+    if chat_model is not None:
+        set_metadata("openai_chat_model", chat_model.strip())
+        set_metadata("chat_model", chat_model.strip())
+        set_metadata("embedding_chat_model", chat_model.strip())
+    if vision_ocr_model is not None:
+        set_metadata("openai_vision_model", vision_ocr_model.strip())
+        set_metadata("vision_ocr_model", vision_ocr_model.strip())
+        set_metadata("embedding_vision_ocr_model", vision_ocr_model.strip())
+    if embedding_model is not None:
+        set_metadata("openai_embedding_model", embedding_model.strip())
+
+    return get_ai_gateway_config()
+
+
+def ensure_git_repositories_columns(conn=None):
+    """Ensures keep_shallow column exists on git_repositories table."""
     try:
+        raw_conn = get_db_connection()
+        try:
+            cols = [r["name"] for r in raw_conn.execute("PRAGMA table_info(git_repositories)").fetchall()]
+            if cols and "keep_shallow" not in cols:
+                raw_conn.execute("ALTER TABLE git_repositories ADD COLUMN keep_shallow INTEGER DEFAULT 0")
+                raw_conn.commit()
+                logger.info("Migrated git_repositories: added keep_shallow column")
+        finally:
+            raw_conn.close()
+    except Exception as e:
+        logger.debug(f"Migration error for git_repositories: {e}")
+
+
+def ensure_file_summaries_columns(conn=None):
+    """Ensures summary_text column exists on file_summaries table and git_repositories has keep_shallow."""
+    try:
+        ensure_git_repositories_columns(conn)
         raw_conn = get_db_connection()
         try:
             cols = [r["name"] for r in raw_conn.execute("PRAGMA table_info(file_summaries)").fetchall()]

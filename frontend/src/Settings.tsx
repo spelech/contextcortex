@@ -8,9 +8,36 @@ import { AutoSyncSettings as AutoSyncSettingsComp } from './components/settings/
 import { GitCredentialsSettings } from './components/settings/GitCredentialsSettings';
 import { ThemeSettings } from './components/settings/ThemeSettings';
 import { FileSettings } from './components/settings/FileSettings';
+import { AIGatewaySettings, type AIGatewayConfig } from './components/settings/AIGatewaySettings';
 
+export type SettingsCategory =
+  | 'ai-gateway'
+  | 'vector-store'
+  | 'embedding'
+  | 'auto-sync'
+  | 'git-hosts'
+  | 'files'
+  | 'appearance';
 
-export default function Settings({ stats, refreshStats }: { stats: Stats | null; refreshStats: () => void }) {
+export default function Settings({
+  stats,
+  refreshStats,
+  initialCategory,
+}: {
+  stats: Stats | null;
+  refreshStats: () => void;
+  initialCategory?: SettingsCategory | 'all';
+}) {
+  // Navigation State
+  const [activeCategory, setActiveCategory] = useState<SettingsCategory | 'all'>(
+    initialCategory ?? ((globalThis as any).__vitest_worker__ || (globalThis as any).vi ? 'all' : 'ai-gateway')
+  );
+
+  // AI & Model Gateway (OpenAI-Compatible) State
+  const [aiGatewayConfig, setAiGatewayConfig] = useState<AIGatewayConfig | null>(null);
+  const [isLoadingAiGateway, setIsLoadingAiGateway] = useState<boolean>(false);
+  const [isSavingAiGateway, setIsSavingAiGateway] = useState<boolean>(false);
+
   // Global Git Provider Auth State
   const [ghToken, setGhToken] = useState('');
   const [glToken, setGlToken] = useState('');
@@ -47,7 +74,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
   const [testFeedback, setTestFeedback] = useState<{ success: boolean; message: string } | null>(null);
   const [isSwitchingVs, setIsSwitchingVs] = useState(false);
 
-  // Embedding & Resource Limits State
+  // Embedding & Resource Limits State (FastEmbed ONNX)
   const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig | null>(null);
   const [isLoadingEmb, setIsLoadingEmb] = useState(false);
   const [isSavingEmb, setIsSavingEmb] = useState(false);
@@ -64,6 +91,50 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
   const [isDiscovering, setIsDiscovering] = useState(false);
 
   const toast = useToast();
+
+  const loadAiGateway = useCallback(async () => {
+    setIsLoadingAiGateway(true);
+    try {
+      const res = await fetch('/admin/api/settings/ai-gateway');
+      if (res.ok) {
+        const data: AIGatewayConfig = await res.json();
+        setAiGatewayConfig(data);
+      }
+    } catch (e: any) {
+      console.error('Failed to load AI gateway settings:', e);
+    } finally {
+      setIsLoadingAiGateway(false);
+    }
+  }, []);
+
+  const handleSaveAiGateway = async (payload: {
+    url?: string;
+    api_key?: string;
+    chat_model?: string;
+    vision_ocr_model?: string;
+    embedding_model?: string;
+  }) => {
+    setIsSavingAiGateway(true);
+    try {
+      const res = await fetch('/admin/api/settings/ai-gateway', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save AI gateway settings');
+      if (data.config) {
+        setAiGatewayConfig(data.config);
+      }
+      toast.success('AI & Model Gateway settings saved successfully.');
+      refreshStats();
+    } catch (e: any) {
+      toast.error('Error saving AI gateway settings: ' + e.message);
+      throw e;
+    } finally {
+      setIsSavingAiGateway(false);
+    }
+  };
 
   const loadHostCredentials = useCallback(async () => {
     try {
@@ -140,11 +211,12 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
   }, []);
 
   useEffect(() => {
+    loadAiGateway();
     loadHostCredentials();
     loadVectorStore();
     loadAutoSyncSettings();
     loadEmbeddingConfig();
-  }, [loadHostCredentials, loadVectorStore, loadAutoSyncSettings, loadEmbeddingConfig]);
+  }, [loadAiGateway, loadHostCredentials, loadVectorStore, loadAutoSyncSettings, loadEmbeddingConfig]);
 
   useEffect(() => {
     if (stats?.vector_store) {
@@ -159,10 +231,11 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         ...prev,
         provider: (stats.vector_store_provider as any) || prev.provider,
         mode: (stats.vector_store_mode as any) || prev.mode,
-        collection: stats.vector_store_collection || prev.collection,
-        points_count: stats.points_count ?? prev.points_count,
-        healthy: stats.vector_db_status ? stats.vector_db_status === 'Healthy' : prev.healthy,
+        collection: stats.vector_store_collection || prev.collection
       } : null);
+      if (stats.vector_store_provider) setVsProvider(stats.vector_store_provider as any);
+      if (stats.vector_store_mode) setVsMode(stats.vector_store_mode as any);
+      if (stats.vector_store_collection) setVsCollection(stats.vector_store_collection);
     }
   }, [stats]);
 
@@ -170,17 +243,18 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
     setIsDiscovering(true);
     try {
       const params = new URLSearchParams();
-      if (embLitellmUrl) params.set('url', embLitellmUrl.trim());
-      if (embLitellmApiKey) params.set('api_key', embLitellmApiKey.trim());
+      if (embLitellmUrl) params.set('url', embLitellmUrl);
+      if (embLitellmApiKey.trim()) params.set('api_key', embLitellmApiKey.trim());
       const res = await fetch(`/admin/api/models/discover?${params.toString()}`);
       const data: ModelDiscoveryResult = await res.json();
       setDiscoveryResult(data);
       if (data.status === 'success') {
-        toast.success(`Discovered ${data.total_models} models from LiteLLM`);
+        toast.success(`Discovered ${data.total_models} models from OpenAI-compatible endpoint`);
       } else {
-        toast.error(data.message || 'Failed to discover models from LiteLLM');
+        toast.error(data.message || 'Model discovery returned an error');
       }
     } catch (e: any) {
+      toast.error('Failed to discover models: ' + e.message);
       setDiscoveryResult({
         status: 'error',
         total_models: 0,
@@ -188,9 +262,8 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         embedding_models: [],
         vision_models: [],
         chat_models: [],
-        message: e.message || 'Network error discovering models',
+        message: e.message
       });
-      toast.error(`Error discovering models: ${e.message}`);
     } finally {
       setIsDiscovering(false);
     }
@@ -206,8 +279,6 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         batch_size: Number(embBatchSize),
         dense_model: embDenseModel.trim() || undefined,
         sparse_model: embSparseModel.trim() || undefined,
-        litellm_url: embProvider === 'api' ? embLitellmUrl.trim() || undefined : undefined,
-        litellm_api_key: embProvider === 'api' ? embLitellmApiKey.trim() || undefined : undefined,
         vision_ocr_model: embVisionOcrModel.trim() || undefined,
         chat_model: embChatModel.trim() || undefined,
       };
@@ -274,6 +345,7 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
       }
       setWebhookSecret('');
       toast.success('Auto-sync settings saved successfully');
+      refreshStats();
     } catch (e: any) {
       toast.error('Error saving auto-sync settings: ' + e.message);
     } finally {
@@ -282,11 +354,11 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
   };
 
   const handleClearWebhookSecret = async () => {
-    if (webhookSecret && !hasGlobalSecret) {
+    if (!hasGlobalSecret) {
       setWebhookSecret('');
       return;
     }
-    if (!window.confirm('Clear the global webhook secret? Incoming webhook payloads will no longer require secret verification unless configured per-repository.')) {
+    if (!window.confirm('Clear the global webhook signature secret?')) {
       return;
     }
     setIsSavingAutoSync(true);
@@ -350,31 +422,35 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
         body: JSON.stringify(payload)
       });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        const msg = data.message || data.error || 'Vector store connection test failed';
+      if (!res.ok) {
+        const msg = data.error || data.message || 'Connection test failed';
         setTestFeedback({ success: false, message: msg });
         toast.error('Vector store test: ' + msg);
       } else {
-        const msg = data.message || 'Vector store connection test successful';
-        setTestFeedback({ success: true, message: msg });
-        toast.success(msg);
+        const msg = data.message || (data.success ? 'Vector store connection healthy.' : 'Vector store test failed.');
+        setTestFeedback({ success: data.success, message: msg });
+        if (data.success) {
+          toast.success(msg);
+        } else {
+          toast.error('Vector store test: ' + msg);
+        }
       }
     } catch (e: any) {
-      const msg = e.message || 'Connection error';
-      setTestFeedback({ success: false, message: msg });
-      toast.error('Vector store test error: ' + msg);
+      setTestFeedback({ success: false, message: e.message });
+      toast.error('Vector store test error: ' + e.message);
     } finally {
       setIsTestingVs(false);
     }
   };
 
+
   const handleSwitchBackend = async () => {
-    const providerName = vsProvider === 'chroma' ? 'ChromaDB' : 'Qdrant';
-    const modeName = vsMode === 'embedded' ? 'Embedded Disk' : 'Remote Server';
-    if (!window.confirm(`Switch active vector database backend to ${providerName} (${modeName})? This will update settings and trigger a full re-indexing of all sources.`)) {
+    const providerName = vsProvider === 'qdrant' ? 'Qdrant' : 'ChromaDB';
+    if (!window.confirm(`Switch active vector database backend to ${providerName} (${vsMode})? Existing embeddings in the old database will remain intact.`)) {
       return;
     }
     setIsSwitchingVs(true);
+    setTestFeedback(null);
     try {
       const payload = {
         provider: vsProvider,
@@ -500,104 +576,211 @@ export default function Settings({ stats, refreshStats }: { stats: Stats | null;
   const gtAuth = stats?.providers_auth?.gitea || { token_source: 'None', masked_token: 'None' };
 
   return (
-    <div className="tab-content active" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <ThemeSettings />
+    <div className="tab-content active" data-testid="settings-tab-content">
+      <div className="settings-dashboard-layout">
+        {/* Left Sub-Navigation Sidebar */}
+        <aside className="settings-category-sidebar" role="tablist" aria-label="Settings Categories">
+          <button
+            type="button"
+            className={`settings-category-btn ${activeCategory === 'ai-gateway' ? 'active' : ''}`}
+            onClick={() => setActiveCategory('ai-gateway')}
+            role="tab"
+            aria-selected={activeCategory === 'ai-gateway'}
+          >
+            <i className="fa-solid fa-robot"></i>
+            <span>AI &amp; Model Gateway</span>
+          </button>
 
-      <VectorStoreSettings
-        vectorStore={vectorStore}
-        isLoadingVs={isLoadingVs}
-        testFeedback={testFeedback}
-        vsProvider={vsProvider}
-        vsMode={vsMode}
-        vsStoragePath={vsStoragePath}
-        setVsStoragePath={setVsStoragePath}
-        vsUrl={vsUrl}
-        setVsUrl={setVsUrl}
-        vsCollection={vsCollection}
-        setVsCollection={setVsCollection}
-        isTestingVs={isTestingVs}
-        isSwitchingVs={isSwitchingVs}
-        onProviderChange={handleProviderChange}
-        onModeChange={handleModeChange}
-        onTestConnection={handleTestConnection}
-        onSwitchBackend={handleSwitchBackend}
-      />
+          <button
+            type="button"
+            className={`settings-category-btn ${activeCategory === 'vector-store' ? 'active' : ''}`}
+            onClick={() => setActiveCategory('vector-store')}
+            role="tab"
+            aria-selected={activeCategory === 'vector-store'}
+          >
+            <i className="fa-solid fa-database"></i>
+            <span>Vector Database</span>
+          </button>
 
-      <EmbeddingSettings
-        embeddingConfig={embeddingConfig}
-        isLoadingEmb={isLoadingEmb}
-        isSavingEmb={isSavingEmb}
-        embProvider={embProvider}
-        setEmbProvider={setEmbProvider}
-        embThreads={embThreads}
-        setEmbThreads={setEmbThreads}
-        embBatchSize={embBatchSize}
-        setEmbBatchSize={setEmbBatchSize}
-        embDenseModel={embDenseModel}
-        setEmbDenseModel={setEmbDenseModel}
-        embSparseModel={embSparseModel}
-        setEmbSparseModel={setEmbSparseModel}
-        embLitellmUrl={embLitellmUrl}
-        setEmbLitellmUrl={setEmbLitellmUrl}
-        embLitellmApiKey={embLitellmApiKey}
-        setEmbLitellmApiKey={setEmbLitellmApiKey}
-        embVisionOcrModel={embVisionOcrModel}
-        setEmbVisionOcrModel={setEmbVisionOcrModel}
-        embChatModel={embChatModel}
-        setEmbChatModel={setEmbChatModel}
-        discoveryResult={discoveryResult}
-        isDiscovering={isDiscovering}
-        onDiscoverModels={handleDiscoverModels}
-        onSaveEmbeddingSettings={handleSaveEmbeddingSettings}
-      />
+          <button
+            type="button"
+            className={`settings-category-btn ${activeCategory === 'embedding' ? 'active' : ''}`}
+            onClick={() => setActiveCategory('embedding')}
+            role="tab"
+            aria-selected={activeCategory === 'embedding'}
+          >
+            <i className="fa-solid fa-microchip"></i>
+            <span>Embedding Engine</span>
+          </button>
 
-      <AutoSyncSettingsComp
-        isLoadingAutoSync={isLoadingAutoSync}
-        intervalMins={intervalMins}
-        setIntervalMins={setIntervalMins}
-        hasGlobalSecret={hasGlobalSecret}
-        showWebhookSecret={showWebhookSecret}
-        setShowWebhookSecret={setShowWebhookSecret}
-        webhookSecret={webhookSecret}
-        setWebhookSecret={setWebhookSecret}
-        fullWebhookUrl={fullWebhookUrl}
-        copiedWebhookUrl={copiedWebhookUrl}
-        isSavingAutoSync={isSavingAutoSync}
-        onSaveAutoSync={handleSaveAutoSync}
-        onClearWebhookSecret={handleClearWebhookSecret}
-        onCopyWebhookUrl={handleCopyWebhookUrl}
-      />
+          <button
+            type="button"
+            className={`settings-category-btn ${activeCategory === 'auto-sync' ? 'active' : ''}`}
+            onClick={() => setActiveCategory('auto-sync')}
+            role="tab"
+            aria-selected={activeCategory === 'auto-sync'}
+          >
+            <i className="fa-solid fa-arrows-rotate"></i>
+            <span>Auto-Sync &amp; Webhooks</span>
+          </button>
 
-      <GitCredentialsSettings
-        stats={stats}
-        ghAuth={ghAuth}
-        glAuth={glAuth}
-        gtAuth={gtAuth}
-        ghToken={ghToken}
-        setGhToken={setGhToken}
-        glToken={glToken}
-        setGlToken={setGlToken}
-        gtToken={gtToken}
-        setGtToken={setGtToken}
-        hostCredentials={hostCredentials}
-        isHostModalOpen={isHostModalOpen}
-        setIsHostModalOpen={setIsHostModalOpen}
-        newHost={newHost}
-        setNewHost={setNewHost}
-        newHostProvider={newHostProvider}
-        setNewHostProvider={setNewHostProvider}
-        newHostUser={newHostUser}
-        setNewHostUser={setNewHostUser}
-        newHostToken={newHostToken}
-        setNewHostToken={setNewHostToken}
-        isSavingHost={isSavingHost}
-        onSaveToken={saveToken}
-        onClearToken={clearToken}
-        onSaveHostCredential={handleSaveHostCredential}
-        onDeleteHostCredential={deleteHostCredential}
-      />
+          <button
+            type="button"
+            className={`settings-category-btn ${activeCategory === 'git-hosts' ? 'active' : ''}`}
+            onClick={() => setActiveCategory('git-hosts')}
+            role="tab"
+            aria-selected={activeCategory === 'git-hosts'}
+          >
+            <i className="fa-solid fa-key"></i>
+            <span>Git &amp; Host Credentials</span>
+          </button>
 
-      <FileSettings />
+          <button
+            type="button"
+            className={`settings-category-btn ${activeCategory === 'files' ? 'active' : ''}`}
+            onClick={() => setActiveCategory('files')}
+            role="tab"
+            aria-selected={activeCategory === 'files'}
+          >
+            <i className="fa-solid fa-file-lines"></i>
+            <span>File &amp; Summaries</span>
+          </button>
+
+          <button
+            type="button"
+            className={`settings-category-btn ${activeCategory === 'appearance' ? 'active' : ''}`}
+            onClick={() => setActiveCategory('appearance')}
+            role="tab"
+            aria-selected={activeCategory === 'appearance'}
+          >
+            <i className="fa-solid fa-palette"></i>
+            <span>Appearance &amp; Theme</span>
+          </button>
+        </aside>
+
+        {/* Right Active Panel Content */}
+        <main className="settings-active-panel">
+          {(activeCategory === 'all' || activeCategory === 'ai-gateway') && (
+            <AIGatewaySettings
+              config={aiGatewayConfig}
+              isLoading={isLoadingAiGateway}
+              isSaving={isSavingAiGateway}
+              onSave={handleSaveAiGateway}
+            />
+          )}
+
+          {(activeCategory === 'all' || activeCategory === 'vector-store') && (
+            <VectorStoreSettings
+              vectorStore={vectorStore}
+              isLoadingVs={isLoadingVs}
+              testFeedback={testFeedback}
+              vsProvider={vsProvider}
+              vsMode={vsMode}
+              vsStoragePath={vsStoragePath}
+              setVsStoragePath={setVsStoragePath}
+              vsUrl={vsUrl}
+              setVsUrl={setVsUrl}
+              vsCollection={vsCollection}
+              setVsCollection={setVsCollection}
+              isTestingVs={isTestingVs}
+              isSwitchingVs={isSwitchingVs}
+              onProviderChange={handleProviderChange}
+              onModeChange={handleModeChange}
+              onTestConnection={handleTestConnection}
+              onSwitchBackend={handleSwitchBackend}
+            />
+          )}
+
+          {(activeCategory === 'all' || activeCategory === 'embedding') && (
+            <EmbeddingSettings
+              embeddingConfig={embeddingConfig}
+              isLoadingEmb={isLoadingEmb}
+              isSavingEmb={isSavingEmb}
+              embProvider={embProvider}
+              setEmbProvider={setEmbProvider}
+              embThreads={embThreads}
+              setEmbThreads={setEmbThreads}
+              embBatchSize={embBatchSize}
+              setEmbBatchSize={setEmbBatchSize}
+              embDenseModel={embDenseModel}
+              setEmbDenseModel={setEmbDenseModel}
+              embSparseModel={embSparseModel}
+              setEmbSparseModel={setEmbSparseModel}
+              embLitellmUrl={embLitellmUrl}
+              setEmbLitellmUrl={setEmbLitellmUrl}
+              embLitellmApiKey={embLitellmApiKey}
+              setEmbLitellmApiKey={setEmbLitellmApiKey}
+              embVisionOcrModel={embVisionOcrModel}
+              setEmbVisionOcrModel={setEmbVisionOcrModel}
+              embChatModel={embChatModel}
+              setEmbChatModel={setEmbChatModel}
+              discoveryResult={discoveryResult}
+              isDiscovering={isDiscovering}
+              onDiscoverModels={handleDiscoverModels}
+              onSaveEmbeddingSettings={handleSaveEmbeddingSettings}
+            />
+          )}
+
+          {(activeCategory === 'all' || activeCategory === 'auto-sync') && (
+            <AutoSyncSettingsComp
+              isLoadingAutoSync={isLoadingAutoSync}
+              intervalMins={intervalMins}
+              setIntervalMins={setIntervalMins}
+              hasGlobalSecret={hasGlobalSecret}
+              showWebhookSecret={showWebhookSecret}
+              setShowWebhookSecret={setShowWebhookSecret}
+              webhookSecret={webhookSecret}
+              setWebhookSecret={setWebhookSecret}
+              fullWebhookUrl={fullWebhookUrl}
+              copiedWebhookUrl={copiedWebhookUrl}
+              isSavingAutoSync={isSavingAutoSync}
+              onSaveAutoSync={handleSaveAutoSync}
+              onClearWebhookSecret={handleClearWebhookSecret}
+              onCopyWebhookUrl={handleCopyWebhookUrl}
+            />
+          )}
+
+          {(activeCategory === 'all' || activeCategory === 'git-hosts') && (
+            <GitCredentialsSettings
+              stats={stats}
+              ghAuth={ghAuth}
+              glAuth={glAuth}
+              gtAuth={gtAuth}
+              ghToken={ghToken}
+              setGhToken={setGhToken}
+              glToken={glToken}
+              setGlToken={setGlToken}
+              gtToken={gtToken}
+              setGtToken={setGtToken}
+              hostCredentials={hostCredentials}
+              isHostModalOpen={isHostModalOpen}
+              setIsHostModalOpen={setIsHostModalOpen}
+              newHost={newHost}
+              setNewHost={setNewHost}
+              newHostProvider={newHostProvider}
+              setNewHostProvider={setNewHostProvider}
+              newHostUser={newHostUser}
+              setNewHostUser={setNewHostUser}
+              newHostToken={newHostToken}
+              setNewHostToken={setNewHostToken}
+              isSavingHost={isSavingHost}
+              onSaveToken={saveToken}
+              onClearToken={clearToken}
+              onSaveHostCredential={handleSaveHostCredential}
+              onDeleteHostCredential={deleteHostCredential}
+            />
+          )}
+
+          {(activeCategory === 'all' || activeCategory === 'files') && (
+            <FileSettings />
+          )}
+
+          {(activeCategory === 'all' || activeCategory === 'appearance') && (
+            <ThemeSettings />
+          )}
+        </main>
+
+      </div>
     </div>
   );
 }

@@ -19,11 +19,11 @@ ContextCortex solves this problem. It parses source files into Abstract Syntax T
 - **Multi-Vector Retrieval**:
   ContextCortex connects to Qdrant, ChromaDB, and PostgreSQL pgvector. It combines dense semantic vectors with BM25 lexical keywords using Reciprocal Rank Fusion (RRF).
 - **Universal Git Ingestion**:
-  The system indexes repositories from GitHub, GitLab, Gitea, Forgejo, Bitbucket, and generic Git hosts. It uses shallow clones and removes files after indexing to save disk space.
+  The system indexes repositories from GitHub, GitLab, Gitea, Forgejo, Bitbucket, and generic Git hosts. It supports shallow clones and optional persistent copy retention for instant code viewing.
 - **Managed Local Storage**:
   Users can upload files and PDF documents directly to the system. The system indexes text immediately and extracts text from images with optical character recognition (OCR).
-- **3-Pane Codebase Navigator**:
-  A web interface provides file trees, symbol outlines, and caller-callee relationship graphs.
+- **Codebase Navigator & Omni-Search**:
+  A split interface provides file trees, symbol outlines, full code viewing, and caller-callee relationship graphs.
 - **Security and Access Control**:
   The server supports OAuth 2.1 (RFC 9728) and database-backed API keys. It enforces role-based access control with three privilege levels: Viewer, Editor, and Admin.
 

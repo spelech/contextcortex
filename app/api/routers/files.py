@@ -26,10 +26,17 @@ async def api_read_file(
     end_line: Optional[int] = Query(None, description="1-based ending line number"),
 ):
     try:
+        raw_path = path.strip() if path else ""
+        if not raw_path or "\x00" in raw_path or any(part == ".." for part in raw_path.replace("\\", "/").split("/")):
+            return JSONResponse(status_code=400, content={"error": "Path traversal or invalid path detected."})
+        raw_repo = repo.strip() if repo else None
+        if raw_repo and ("\x00" in raw_repo or any(part == ".." for part in raw_repo.replace("\\", "/").split("/"))):
+            return JSONResponse(status_code=400, content={"error": "Path traversal or invalid repo detected."})
+
         reader = get_file_reader_service()
         res = reader.read_file(
-            path=path,
-            repo=repo,
+            path=raw_path,
+            repo=raw_repo,
             start_line=start_line,
             end_line=end_line
         )
@@ -37,6 +44,8 @@ async def api_read_file(
     except ForbiddenError as fe:
         logger.warning(f"Forbidden access reading file '{path}': {fe}")
         return JSONResponse(status_code=403, content={"error": "Access denied. Path is outside allowed repositories."})
+    except IsADirectoryError:
+        return JSONResponse(status_code=400, content={"error": f"Target path '{path}' is a directory, not a file."})
     except FileNotFoundError as fne:
         logger.warning(f"File not found reading '{path}': {fne}")
         return JSONResponse(status_code=404, content={"error": "File not found."})
@@ -54,8 +63,12 @@ async def api_summarize_file(payload: FileSummarizePayload):
         raw_path = payload.path.strip() if payload.path else ""
         if not raw_path or "\x00" in raw_path or any(part == ".." for part in raw_path.replace("\\", "/").split("/")):
             return JSONResponse(status_code=400, content={"error": "Path traversal or invalid path detected."})
+        raw_repo = payload.repo.strip() if payload.repo else None
+        if raw_repo and ("\x00" in raw_repo or any(part == ".." for part in raw_repo.replace("\\", "/").split("/"))):
+            return JSONResponse(status_code=400, content={"error": "Path traversal or invalid repo detected."})
+
         reader = get_file_reader_service()
-        safe_path, _ = reader.resolve_safe_path(raw_path, repo=payload.repo)
+        safe_path, _ = reader.resolve_safe_path(raw_path, repo=raw_repo)
         summarizer = get_summarizer_service()
         summary_text = summarizer.get_or_create_summary(
             filepath=safe_path,

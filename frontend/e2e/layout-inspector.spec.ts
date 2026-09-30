@@ -300,7 +300,7 @@ test.describe('Playwright Layout Inspector UI UX Audits', () => {
     const iphone = getDevicePreset('iPhone 16 Pro');
     await page.setViewportSize({ width: iphone.width, height: iphone.height });
 
-    await navigateTab(page, 'Local Paths');
+    await navigateTab(page, 'Files & Storage');
     await expect(page.getByText('Monitored Local Paths')).toBeVisible();
     await expect(page.locator('.mobile-card-list')).toBeVisible();
 
@@ -312,9 +312,14 @@ test.describe('Playwright Layout Inspector UI UX Audits', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await navigateTab(page, 'Settings');
 
+    // Audit Vector Database category
+    await page.locator('.settings-category-btn', { hasText: 'Vector Database' }).click();
     await expect(page.getByText('Vector Database Engine')).toBeVisible();
-    await expect(page.getByText('Embedding Engine & Resource Limits')).toBeVisible();
+    await expect(page).toHaveNoLayoutOverflow();
 
+    // Audit Embedding Engine category
+    await page.locator('.settings-category-btn', { hasText: 'Embedding Engine' }).click();
+    await expect(page.getByText('Embedding Engine & Resource Limits')).toBeVisible();
     await expect(page).toHaveNoLayoutOverflow();
 
     const inspector = new LayoutInspector(page);

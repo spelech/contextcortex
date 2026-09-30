@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { FormEvent } from 'react';
 import type { Repo } from './types';
 import { useToast } from './ToastContext';
@@ -16,6 +16,13 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [activeDrawerRepoId, setActiveDrawerRepoId] = useState<number | null>(null);
   const toast = useToast();
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   const { syncStates, cancelSync } = useGitSyncStream();
 
@@ -26,6 +33,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
   const [provider, setProvider] = useState('auto');
   const [authUser, setAuthUser] = useState('');
   const [token, setToken] = useState('');
+  const [keepShallow, setKeepShallow] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const loadRepos = useCallback(async () => {
@@ -65,6 +73,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
           provider: provider === 'auto' ? undefined : provider,
           auth_user: authUser.trim() || null,
           auth_token: token.trim() || null,
+          keep_shallow: keepShallow,
         }),
       });
       const data = await res.json();
@@ -77,6 +86,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       setProvider('auto');
       setAuthUser('');
       setToken('');
+      setKeepShallow(false);
       loadRepos();
       refreshStats();
       toast.success(`Repository '${alias.trim()}' added successfully`);
@@ -128,6 +138,30 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
     }
   };
 
+  const toggleKeepShallow = async (repoId: number, currentState: boolean) => {
+    const nextState = !currentState;
+    setRepos((prev) =>
+      prev.map((r) => (r.id === repoId ? { ...r, keep_shallow: nextState } : r))
+    );
+
+    try {
+      const res = await fetch(`/admin/api/repos/${repoId}/keep-shallow`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keep_shallow: nextState }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || data.detail || 'Failed to update shallow copy retention');
+      }
+      toast.info(`Shallow copy retention ${nextState ? 'enabled (retained on disk)' : 'disabled (ephemeral)'}`);
+      loadRepos();
+    } catch (e: any) {
+      loadRepos();
+      toast.error('Failed to update shallow copy setting: ' + e.message);
+    }
+  };
+
   const handleCopyUrl = async (text: string) => {
     try {
       if (navigator?.clipboard?.writeText) {
@@ -135,7 +169,12 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       }
       setCopiedUrl(true);
       toast.info('Webhook URL copied to clipboard');
-      setTimeout(() => setCopiedUrl(false), 2000);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          setCopiedUrl(false);
+        }
+      }, 2000);
     } catch (err: any) {
       toast.error('Failed to copy: ' + err.message);
     }
@@ -190,46 +229,49 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
           syncStates={syncStates}
           onSync={syncRepo}
           onToggleAutoSync={toggleAutoSync}
+          onToggleKeepShallow={toggleKeepShallow}
           onOpenWebhook={(repo) => setWebhookModalRepo(repo)}
           onDelete={deleteRepo}
           onOpenSyncDrawer={(id) => setActiveDrawerRepoId(id)}
         />
-
-        <AddRepoModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSave={handleSave}
-          alias={alias}
-          setAlias={setAlias}
-          url={url}
-          setUrl={setUrl}
-          branch={branch}
-          setBranch={setBranch}
-          provider={provider}
-          setProvider={setProvider}
-          authUser={authUser}
-          setAuthUser={setAuthUser}
-          token={token}
-          setToken={setToken}
-          isSaving={isSaving}
-        />
-
-        <WebhookModal
-          repo={webhookModalRepo}
-          onClose={() => setWebhookModalRepo(null)}
-          onCopyUrl={handleCopyUrl}
-          copiedUrl={copiedUrl}
-        />
-
-        <RepoSyncDrawer
-          isOpen={activeDrawerRepoId !== null}
-          onClose={() => setActiveDrawerRepoId(null)}
-          repoId={activeDrawerRepoId}
-          repoName={selectedRepoName}
-          job={activeJob}
-          onCancelSync={cancelSync}
-        />
       </div>
+
+      <AddRepoModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSave={handleSave}
+        alias={alias}
+        setAlias={setAlias}
+        url={url}
+        setUrl={setUrl}
+        branch={branch}
+        setBranch={setBranch}
+        provider={provider}
+        setProvider={setProvider}
+        authUser={authUser}
+        setAuthUser={setAuthUser}
+        token={token}
+        setToken={setToken}
+        keepShallow={keepShallow}
+        setKeepShallow={setKeepShallow}
+        isSaving={isSaving}
+      />
+
+      <WebhookModal
+        repo={webhookModalRepo}
+        onClose={() => setWebhookModalRepo(null)}
+        onCopyUrl={handleCopyUrl}
+        copiedUrl={copiedUrl}
+      />
+
+      <RepoSyncDrawer
+        isOpen={activeDrawerRepoId !== null}
+        onClose={() => setActiveDrawerRepoId(null)}
+        repoId={activeDrawerRepoId}
+        repoName={selectedRepoName}
+        job={activeJob}
+        onCancelSync={cancelSync}
+      />
     </div>
   );
 }

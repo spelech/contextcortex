@@ -200,4 +200,26 @@ describe('IngestionCatalogViewer', () => {
       expect(globalThis.fetch).toHaveBeenCalledWith(expect.stringContaining('file_extension=.md'));
     });
   });
+
+  it('renders 4 distinct aligned stat cards with formatted badges and no emojis', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => mockCatalogSummary
+      } as Response)
+    );
+
+    render(
+      <ToastProvider>
+        <IngestionCatalogViewer />
+      </ToastProvider>
+    );
+
+    const cards = await screen.findAllByTestId('catalog-stat-card');
+    expect(cards).toHaveLength(4);
+    for (const card of cards) {
+      expect(card.textContent).not.toMatch(/[\u{1F300}-\u{1F9FF}]/u);
+    }
+  });
 });
+

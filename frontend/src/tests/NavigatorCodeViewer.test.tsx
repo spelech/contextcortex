@@ -54,7 +54,7 @@ describe('NavigatorCodeViewer Component', () => {
     // Check line numbers 1 and 3 are present
     expect(screen.getByText('1')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText(/def hello\(\):/)).toBeInTheDocument();
+    expect(screen.getByTestId('code-line-3')).toHaveTextContent(/def hello\(\):/);
   });
 
   it('highlights target line range and calls scrollIntoView', () => {

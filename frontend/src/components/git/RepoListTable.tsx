@@ -6,6 +6,7 @@ interface RepoListTableProps {
   syncStates?: Record<number, GitSyncJob>;
   onSync: (id: number) => void;
   onToggleAutoSync: (id: number, current: boolean) => void;
+  onToggleKeepShallow?: (id: number, current: boolean) => void;
   onOpenWebhook: (repo: Repo) => void;
   onDelete: (id: number, name: string) => void;
   onOpenSyncDrawer?: (repoId: number) => void;
@@ -17,6 +18,7 @@ export function RepoListTable({
   syncStates,
   onSync,
   onToggleAutoSync,
+  onToggleKeepShallow,
   onOpenWebhook,
   onDelete,
   onOpenSyncDrawer,
@@ -85,6 +87,7 @@ export function RepoListTable({
               <th>Commit SHA</th>
               <th>Status</th>
               <th>Auto-Sync</th>
+              <th>Shallow Copy</th>
               <th>Files</th>
               <th>Last Synced</th>
               <th>Actions</th>
@@ -93,20 +96,21 @@ export function RepoListTable({
           <tbody>
             {isLoading && repos.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty-state" data-testid="repo-loading-state">
+                <td colSpan={10} className="empty-state" data-testid="repo-loading-state">
                   <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
                   Loading repositories...
                 </td>
               </tr>
             ) : repos.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty-state">
+                <td colSpan={10} className="empty-state">
                   No Git repositories registered. Click "Add Repository" to index a remote repo.
                 </td>
               </tr>
             ) : (
               repos.map((r) => {
                 const isAutoSync = r.auto_sync !== false && r.auto_sync !== 0;
+                const isKeepShallow = r.keep_shallow === true || r.keep_shallow === 1;
                 const job = syncStates?.[r.id];
                 const isSyncing = r.status === 'syncing' || job?.status === 'syncing';
 
@@ -197,6 +201,30 @@ export function RepoListTable({
                         Auto-Sync: {isAutoSync ? 'ON' : 'OFF'}
                       </button>
                     </td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`badge ${isKeepShallow ? 'badge-primary' : 'badge-secondary'}`}
+                        style={{
+                          cursor: 'pointer',
+                          background: isKeepShallow ? 'rgba(8, 145, 178, 0.2)' : 'rgba(100, 116, 139, 0.2)',
+                          border: isKeepShallow
+                            ? '1px solid rgba(8, 145, 178, 0.4)'
+                            : '1px solid rgba(100, 116, 139, 0.4)',
+                          color: isKeepShallow ? '#38bdf8' : '#94a3b8',
+                          padding: '4px 8px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onClick={() => onToggleKeepShallow?.(r.id, isKeepShallow)}
+                        title={`Shallow Copy: ${isKeepShallow ? 'Retained on disk (persistent)' : 'Ephemeral (pruned)'} (Click to toggle)`}
+                        aria-label={`Toggle shallow copy retention for ${r.name}`}
+                      >
+                        <i className={`fa-solid ${isKeepShallow ? 'fa-hard-drive' : 'fa-trash-can'}`}></i>
+                        {isKeepShallow ? 'Kept on Disk' : 'Ephemeral'}
+                      </button>
+                    </td>
                     <td>{(r.file_count || 0).toLocaleString()} files</td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                       {r.last_synced || 'Never'}
@@ -257,6 +285,7 @@ export function RepoListTable({
         ) : (
           repos.map((r) => {
             const isAutoSync = r.auto_sync !== false && r.auto_sync !== 0;
+            const isKeepShallow = r.keep_shallow === true || r.keep_shallow === 1;
             const job = syncStates?.[r.id];
             const isSyncing = r.status === 'syncing' || job?.status === 'syncing';
 
@@ -291,13 +320,13 @@ export function RepoListTable({
                 )}
 
                 <div className="data-mobile-card-body">
-                  <div>
-                    <span className="data-label">URL:</span>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'baseline' }}>
+                    <span className="data-label" style={{ flexShrink: 0 }}>URL:</span>
                     <a
                       href={r.url}
                       target="_blank"
                       rel="noreferrer"
-                      style={{ color: 'var(--primary)', textDecoration: 'none' }}
+                      style={{ color: 'var(--primary)', textDecoration: 'none', wordBreak: 'break-all', minWidth: 0 }}
                     >
                       {r.url}
                     </a>
@@ -315,12 +344,26 @@ export function RepoListTable({
                     <button
                       type="button"
                       className={`badge ${isAutoSync ? 'badge-success' : 'badge-danger'}`}
-                      style={{ cursor: 'pointer', padding: '2px 6px', fontSize: '0.75rem' }}
+                      style={{ cursor: 'pointer', padding: '4px 8px', fontSize: '0.75rem', minHeight: '24px', minWidth: '24px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                       onClick={() => onToggleAutoSync(r.id, isAutoSync)}
                       title={`Auto-Sync: ${isAutoSync ? 'ON' : 'OFF'} (Click to toggle)`}
                       aria-label={`Toggle auto-sync for ${r.name}`}
                     >
                       {isAutoSync ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div>
+                    <span className="data-label">Shallow Copy:</span>
+                    <button
+                      type="button"
+                      className={`badge ${isKeepShallow ? 'badge-primary' : 'badge-secondary'}`}
+                      style={{ cursor: 'pointer', padding: '4px 8px', fontSize: '0.75rem', minHeight: '24px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => onToggleKeepShallow?.(r.id, isKeepShallow)}
+                      title={`Shallow Copy: ${isKeepShallow ? 'Retained on disk' : 'Ephemeral'} (Click to toggle)`}
+                      aria-label={`Toggle shallow copy retention for ${r.name}`}
+                    >
+                      <i className={`fa-solid ${isKeepShallow ? 'fa-hard-drive' : 'fa-trash-can'}`}></i>
+                      {isKeepShallow ? 'Kept on Disk' : 'Ephemeral'}
                     </button>
                   </div>
                   <div>

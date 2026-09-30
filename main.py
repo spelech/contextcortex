@@ -35,6 +35,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("contextcortex")
 
 
+class McpNotificationFilter(logging.Filter):
+    """Filters out premature MCP notification warnings caused by client race conditions."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "Failed to validate notification" in msg and "notifications/roots/list_changed" in msg:
+            return False
+        return True
+
+
+logging.getLogger().addFilter(McpNotificationFilter())
+logging.getLogger("mcp").addFilter(McpNotificationFilter())
+
+
 def init_application_database() -> None:
     """
     Initializes database schema, seeds default configurations,

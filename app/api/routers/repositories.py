@@ -9,11 +9,12 @@ from typing import Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.models.schemas import RepoConfig, LocalPathConfig, AutoSyncToggleRequest, SearchRequest
+from app.models.schemas import RepoConfig, LocalPathConfig, AutoSyncToggleRequest, KeepShallowToggleRequest, SearchRequest
 import app.services.database as db_service
 import app.services.vector_store as vs_service
 import app.services.indexing as idx_service
 import app.services.search as search_service
+import app.services.git_manager as gm_service
 from app.services.indexing.git_progress import progress_tracker
 
 logger = logging.getLogger("contextcortex.api")
@@ -26,7 +27,7 @@ async def api_get_repos():
         with db_service.get_db_connection() as conn:
             rows = conn.execute("""
                 SELECT id, name, url, branch, commit_sha, status, last_error, last_synced, 
-                       auth_token, provider, auth_user, auto_sync, webhook_secret
+                       auth_token, provider, auth_user, auto_sync, keep_shallow, webhook_secret
                 FROM git_repositories 
                 ORDER BY id DESC
             """).fetchall()
@@ -53,10 +54,10 @@ async def api_add_repo(repo: RepoConfig):
         with db_service.get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                """INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user, auto_sync, webhook_secret)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user, auto_sync, keep_shallow, webhook_secret)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (repo.name.strip(), repo.url.strip(), repo.branch or "main", repo.auth_token, repo.provider or "github", repo.auth_user,
-                 1 if repo.auto_sync else 0, repo.webhook_secret)
+                 1 if repo.auto_sync else 0, 1 if repo.keep_shallow else 0, repo.webhook_secret)
             )
             conn.commit()
             repo_id = cursor.lastrowid
@@ -83,6 +84,21 @@ async def api_toggle_repo_auto_sync(repo_id: int, payload: AutoSyncToggleRequest
     except Exception as e:
         logger.error(f"Error toggling auto-sync for repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to toggle auto-sync for repository."})
+
+@router.patch("/admin/api/repos/{repo_id}/keep-shallow")
+async def api_toggle_repo_keep_shallow(repo_id: int, payload: KeepShallowToggleRequest):
+    try:
+        with db_service.get_db_connection() as conn:
+            cursor = conn.cursor()
+            val = 1 if payload.keep_shallow else 0
+            res = cursor.execute("UPDATE git_repositories SET keep_shallow = ? WHERE id = ?", (val, repo_id))
+            conn.commit()
+            if res.rowcount == 0:
+                return JSONResponse(status_code=404, content={"error": f"Repository with ID {repo_id} not found"})
+        return {"status": "success", "id": repo_id, "repo_id": repo_id, "keep_shallow": payload.keep_shallow}
+    except Exception as e:
+        logger.error(f"Error toggling keep-shallow for repo {repo_id}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Failed to toggle keep-shallow for repository."})
 
 @router.post("/admin/api/repos/{repo_id}/sync")
 @router.post("/admin/api/repos/sync/{repo_id}")
@@ -179,6 +195,11 @@ async def api_delete_repo(repo_id: int):
             store.delete_by_repo(name)
         except Exception as e:
             logger.error(f"Error removing points from vector database for {name}: {e}")
+
+        try:
+            gm_service.cleanup_persistent_repo(name)
+        except Exception as e:
+            logger.warning(f"Error cleaning persistent clone directory for {name}: {e}")
 
         return {"status": "success", "name": name, "deleted": name}
     except Exception as e:

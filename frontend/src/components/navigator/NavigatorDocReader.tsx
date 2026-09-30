@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Marked } from 'marked';
+import mermaid from 'mermaid';
 
 interface NavigatorDocReaderProps {
   filepath: string;
@@ -8,6 +10,95 @@ interface NavigatorDocReaderProps {
   loading?: boolean;
   error?: string | null;
   onRefresh?: () => void;
+}
+
+// Configured GFM markdown parser with Mermaid code block interception
+const markdownParser = new Marked({
+  gfm: true,
+  breaks: true,
+  renderer: {
+    code({ text, lang }: { text: string; lang?: string }) {
+      if (lang === 'mermaid') {
+        return `<div class="mermaid-container"><div class="mermaid">${text}</div></div>\n`;
+      }
+      return false; // use standard code block rendering
+    },
+  },
+});
+
+/**
+ * Normalizes loose or non-standard markdown tables:
+ * 1. Automatically inserts missing separator rows (| --- | --- |) after header rows
+ * 2. Bridges blank lines between consecutive table rows (common in notes and changelogs)
+ * 3. Preserves code blocks (``` and ~~~) without modification
+ */
+function normalizeMarkdownTables(md: string): string {
+  const lines = md.split('\n');
+  const result: string[] = [];
+  let inCodeBlock = false;
+  let inTable = false;
+  let tableColCount = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Preserve code blocks verbatim
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      inCodeBlock = !inCodeBlock;
+      inTable = false;
+      result.push(line);
+      continue;
+    }
+
+    if (inCodeBlock) {
+      result.push(line);
+      continue;
+    }
+
+    const isTableRow = trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.includes('|');
+
+    if (isTableRow) {
+      const colCount = Math.max(1, trimmed.split('|').length - 2);
+
+      if (!inTable) {
+        inTable = true;
+        tableColCount = colCount;
+        result.push(line);
+
+        // Peek next non-empty line
+        let nextIdx = i + 1;
+        while (nextIdx < lines.length && lines[nextIdx].trim() === '') nextIdx++;
+
+        if (nextIdx < lines.length) {
+          const nextTrimmed = lines[nextIdx].trim();
+          const isSeparator = /^\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?$/.test(nextTrimmed);
+          if (!isSeparator && nextTrimmed.startsWith('|') && nextTrimmed.endsWith('|')) {
+            // Missing separator row under header! Auto-insert matching columns
+            const separator = '|' + Array(tableColCount).fill(' --- ').join('|') + '|';
+            result.push(separator);
+          }
+        }
+      } else {
+        result.push(line);
+      }
+    } else if (trimmed === '' && inTable) {
+      // Check if next non-empty line is also a table row (bridging human blank lines in tables)
+      let nextIdx = i + 1;
+      while (nextIdx < lines.length && lines[nextIdx].trim() === '') nextIdx++;
+      if (nextIdx < lines.length && lines[nextIdx].trim().startsWith('|') && lines[nextIdx].trim().endsWith('|')) {
+        continue;
+      } else {
+        inTable = false;
+        result.push(line);
+      }
+    } else {
+      inTable = false;
+      result.push(line);
+    }
+  }
+
+  return result.join('\n');
 }
 
 export const NavigatorDocReader: React.FC<NavigatorDocReaderProps> = ({
@@ -22,6 +113,7 @@ export const NavigatorDocReader: React.FC<NavigatorDocReaderProps> = ({
   const isMarkdown = filepath.toLowerCase().endsWith('.md') || filepath.toLowerCase().endsWith('.markdown');
   const [viewMode, setViewMode] = useState<'rendered' | 'raw'>(isMarkdown ? 'rendered' : 'raw');
   const [copied, setCopied] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleCopy = async () => {
     if (!content) return;
@@ -44,123 +136,83 @@ export const NavigatorDocReader: React.FC<NavigatorDocReaderProps> = ({
 
   const basename = filepath ? filepath.split('/').pop() || filepath : '';
 
-  // Simple safe Markdown parser for formatted preview
-  const renderMarkdown = (text: string) => {
-    const lines = text.split('\n');
-    const elements: React.ReactNode[] = [];
-    let inCodeBlock = false;
-    let codeBlockLang = '';
-    let codeBlockLines: string[] = [];
-
-    lines.forEach((line, index) => {
-      // Code block toggle
-      if (line.trim().startsWith('```')) {
-        if (inCodeBlock) {
-          elements.push(
-            <pre key={`code-${index}`} className={`doc-code-block ${codeBlockLang}`.trim()}>
-              <code>{codeBlockLines.join('\n')}</code>
-            </pre>
-          );
-          codeBlockLines = [];
-          inCodeBlock = false;
-        } else {
-          inCodeBlock = true;
-          codeBlockLang = line.trim().slice(3);
-        }
-        return;
-      }
-
-      if (inCodeBlock) {
-        codeBlockLines.push(line);
-        return;
-      }
-
-      // Headings
-      if (line.startsWith('# ')) {
-        elements.push(<h1 key={`h1-${index}`} className="doc-h1">{line.slice(2)}</h1>);
-      } else if (line.startsWith('## ')) {
-        elements.push(<h2 key={`h2-${index}`} className="doc-h2">{line.slice(3)}</h2>);
-      } else if (line.startsWith('### ')) {
-        elements.push(<h3 key={`h3-${index}`} className="doc-h3">{line.slice(4)}</h3>);
-      } else if (line.startsWith('#### ')) {
-        elements.push(<h4 key={`h4-${index}`} className="doc-h4">{line.slice(5)}</h4>);
-      } else if (line.trim() === '---' || line.trim() === '***') {
-        elements.push(<hr key={`hr-${index}`} className="doc-divider" />);
-      } else if (line.startsWith('> ')) {
-        elements.push(<blockquote key={`quote-${index}`} className="doc-quote">{line.slice(2)}</blockquote>);
-      } else if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
-        elements.push(
-          <li key={`li-${index}`} className="doc-list-item">
-            {formatInline(line.trim().slice(2))}
-          </li>
-        );
-      } else if (/^\d+\.\s/.test(line.trim())) {
-        const itemText = line.trim().replace(/^\d+\.\s/, '');
-        elements.push(
-          <li key={`oli-${index}`} className="doc-numbered-item">
-            {formatInline(itemText)}
-          </li>
-        );
-      } else if (line.trim() === '') {
-        elements.push(<div key={`blank-${index}`} className="doc-blank-line" />);
-      } else {
-        elements.push(<p key={`p-${index}`} className="doc-paragraph">{formatInline(line)}</p>);
-      }
-    });
-
-    if (inCodeBlock && codeBlockLines.length > 0) {
-      elements.push(
-        <pre key="code-tail" className="doc-code-block">
-          <code>{codeBlockLines.join('\n')}</code>
-        </pre>
-      );
+  // Render HTML via Marked parser with table normalization
+  const renderedHtml = useMemo(() => {
+    if (!content) return '';
+    try {
+      const normalized = normalizeMarkdownTables(content);
+      return markdownParser.parse(normalized) as string;
+    } catch (e) {
+      console.error('Failed to parse markdown:', e);
+      return `<pre class="doc-code-block"><code>${content}</code></pre>`;
     }
+  }, [content]);
 
-    return elements;
-  };
+  // Render Mermaid diagrams whenever renderedHtml or viewMode updates
+  useEffect(() => {
+    if (viewMode !== 'rendered' || !containerRef.current) return;
 
-  // Helper for inline bold, inline code, links
-  const formatInline = (text: string): React.ReactNode => {
-    // Process inline code `foo`
-    const parts = text.split(/(`[^`]+`)/);
-    return parts.map((part, i) => {
-      if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
-        return <code key={i} className="doc-inline-code">{part.slice(1, -1)}</code>;
-      }
-      // Process bold **text**
-      const boldParts = part.split(/(\*\*[^*]+\*\*)/);
-      return boldParts.map((bPart, j) => {
-        if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length >= 4) {
-          return <strong key={`${i}-${j}`}>{bPart.slice(2, -2)}</strong>;
-        }
-        return bPart;
+    const mermaidNodes = containerRef.current.querySelectorAll<HTMLElement>('.mermaid');
+    if (mermaidNodes.length === 0) return;
+
+    try {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'loose',
+        fontFamily: 'monospace, sans-serif',
+        themeVariables: {
+          darkMode: true,
+          background: '#07181b',
+          primaryColor: '#0891b2',
+          primaryTextColor: '#f8fafc',
+          primaryBorderColor: '#15474d',
+          lineColor: '#2dd4bf',
+          secondaryColor: '#164e63',
+          tertiaryColor: '#0d2c2f',
+        },
       });
-    });
-  };
+
+      // Filter unrendered nodes
+      const unrendered = Array.from(mermaidNodes).filter((n) => !n.getAttribute('data-processed'));
+      if (unrendered.length > 0) {
+        mermaid.run({
+          nodes: unrendered,
+        }).catch((err) => {
+          console.warn('Mermaid rendering warning:', err);
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to initialize mermaid:', e);
+    }
+  }, [renderedHtml, viewMode]);
 
   return (
     <div className="nav-doc-reader" data-testid="nav-doc-reader">
-      {/* Doc Reader Header */}
+      {/* Header Toolbar */}
       <div className="doc-reader-header">
-        <div className="doc-reader-meta">
-          <span className="doc-icon">{isMarkdown ? '📝' : '📄'}</span>
-          <div className="doc-title-wrapper">
-            <h3 className="doc-filename" title={filepath}>{basename}</h3>
-            <div className="doc-meta-badges">
-              <span className="doc-badge badge-path">{filepath}</span>
-              <span className="doc-badge badge-lines">{totalLines} lines</span>
-              <span className="doc-badge badge-size">{formatSize(sizeBytes)}</span>
-            </div>
-          </div>
+        <div className="doc-header-meta">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+          <span className="doc-filename" title={filepath}>
+            {basename}
+          </span>
+          <span className="doc-badge-chip">{totalLines} lines</span>
+          {sizeBytes > 0 && <span className="doc-badge-chip">{formatSize(sizeBytes)}</span>}
         </div>
 
-        <div className="doc-reader-actions">
+        <div className="doc-header-actions">
           {isMarkdown && (
-            <div className="doc-view-toggle" role="group" aria-label="View Mode">
+            <div className="doc-view-toggle" role="group" aria-label="Document View Mode">
               <button
                 type="button"
                 className={`toggle-btn ${viewMode === 'rendered' ? 'active' : ''}`}
                 onClick={() => setViewMode('rendered')}
+                aria-pressed={viewMode === 'rendered'}
               >
                 Rendered
               </button>
@@ -168,6 +220,7 @@ export const NavigatorDocReader: React.FC<NavigatorDocReaderProps> = ({
                 type="button"
                 className={`toggle-btn ${viewMode === 'raw' ? 'active' : ''}`}
                 onClick={() => setViewMode('raw')}
+                aria-pressed={viewMode === 'raw'}
               >
                 Raw Source
               </button>
@@ -204,9 +257,12 @@ export const NavigatorDocReader: React.FC<NavigatorDocReaderProps> = ({
             )}
           </div>
         ) : viewMode === 'rendered' && isMarkdown ? (
-          <div className="doc-rendered-content" data-testid="doc-rendered-content">
-            {renderMarkdown(content)}
-          </div>
+          <div
+            ref={containerRef}
+            className="doc-rendered-content"
+            data-testid="doc-rendered-content"
+            dangerouslySetInnerHTML={{ __html: renderedHtml }}
+          />
         ) : (
           <div className="doc-raw-container" data-testid="doc-raw-content">
             <pre className="doc-raw-pre">

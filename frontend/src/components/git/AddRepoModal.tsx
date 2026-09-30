@@ -1,4 +1,5 @@
 import type { FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 
 interface AddRepoModalProps {
   isOpen: boolean;
@@ -16,6 +17,8 @@ interface AddRepoModalProps {
   setAuthUser: (val: string) => void;
   token: string;
   setToken: (val: string) => void;
+  keepShallow?: boolean;
+  setKeepShallow?: (val: boolean) => void;
   isSaving: boolean;
 }
 
@@ -35,11 +38,13 @@ export function AddRepoModal({
   setAuthUser,
   token,
   setToken,
+  keepShallow = false,
+  setKeepShallow,
   isSaving,
 }: AddRepoModalProps) {
   if (!isOpen) return null;
 
-  return (
+  const modalNode = (
     <div
       className="modal-backdrop"
       onClick={(e) => {
@@ -131,6 +136,22 @@ export function AddRepoModal({
             </div>
           </div>
 
+          <div className="form-group" style={{ marginTop: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600, color: 'var(--text)' }}>
+              <input
+                type="checkbox"
+                id="repo-keep-shallow"
+                checked={keepShallow}
+                onChange={(e) => setKeepShallow?.(e.target.checked)}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+              />
+              <span>Keep shallow copy on disk</span>
+            </label>
+            <p className="text-muted" style={{ fontSize: '0.82rem', marginTop: '4px', marginLeft: '24px', lineHeight: '1.4' }}>
+              When enabled, retains a shallow clone (<code>--depth 1</code>) in persistent storage on disk after indexing, enabling instant full-file inspection in Code Navigator and faster delta updates.
+            </p>
+          </div>
+
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
@@ -149,4 +170,6 @@ export function AddRepoModal({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalNode, document.body) : modalNode;
 }

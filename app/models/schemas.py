@@ -16,6 +16,7 @@ class RepoConfig(BaseModel):
     auth_user: Optional[str] = None
     enabled: bool = True
     auto_sync: bool = True
+    keep_shallow: bool = False
     webhook_secret: Optional[str] = None
 
 class LocalPathConfig(BaseModel):
@@ -166,6 +167,9 @@ class VectorStoreConfigRequest(BaseModel):
 class AutoSyncToggleRequest(BaseModel):
     auto_sync: bool
 
+class KeepShallowToggleRequest(BaseModel):
+    keep_shallow: bool
+
 class AutoSyncSettingsRequest(BaseModel):
     interval_mins: int
     global_webhook_secret: Optional[str] = None
@@ -237,6 +241,15 @@ class NodeDetailsResponse(BaseModel):
     incoming: List[NeighborDetail] = Field(default_factory=list)
     outgoing: List[NeighborDetail] = Field(default_factory=list)
     metadata: Optional[Dict[str, Any]] = None
+
+
+class AIGatewaySettingsRequest(BaseModel):
+    url: Optional[str] = Field(None, description="OpenAI-compatible / LiteLLM API endpoint URL")
+    api_key: Optional[str] = Field(None, description="API key / Bearer token (optional, only updated if provided)")
+    chat_model: Optional[str] = Field(None, description="Default chat completion model")
+    vision_ocr_model: Optional[str] = Field(None, description="Default vision OCR model")
+    embedding_model: Optional[str] = Field(None, description="Default embedding model")
+
 
 
 

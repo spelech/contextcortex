@@ -1,56 +1,52 @@
-# 3-Pane Codebase Navigator
+# Codebase Navigator & Omni-Search
 
-The **Codebase Navigator** provides high-performance exploration of project directory structures, Tree-sitter AST declarations, API endpoints, and caller/callee code relationships.
+The **Codebase Navigator** provides high-performance exploration of project directory structures, Tree-sitter AST declarations, API endpoints, caller/callee code relationships, full syntax-highlighted source code, and rendered Markdown documentation.
 
 ---
 
 ![Codebase Navigator](/assets/desktop_codebase-navigator.png)
 
-## The Three Synchronized Panes
+## Hero Split View Architecture
 
-The Codebase Navigator organizes project structure into three synchronized interactive panes:
+The Codebase Navigator features a modern split layout optimized for code reading and deep architectural navigation:
 
-### Pane 1: Files & Modules Tree
-- Browse directory hierarchies and file trees with instant search filtering.
-- Displays AST symbol badges and REST route counts next to each file.
-- Filter by file extension or path fragment using the quick search bar.
-- Selecting any file automatically populates Panes 2 and 3.
+### 1. Left Sidebar: Dual-Tab Tree & Outline
+- **Files Tab**:
+  - Hierarchical directory and file tree with live search filtering and expand/collapse controls.
+  - Per-repository directory expansion persistence: expanded folder states are automatically saved and restored per repo across browser sessions (`sessionStorage`).
+  - AST symbol count badges and API route indicators next to files and directories.
+  - File-type icons (Python, TypeScript, JavaScript, C#, C++, Go, Rust, SQL, COBOL, JSON, Markdown, Dockerfile, etc.).
+- **Symbols Tab**:
+  - Syntax-aware outline of all functions, classes, interfaces, and API routes extracted by Tree-sitter.
+  - Quick category filter chips: **All Symbols**, **Functions**, **Classes & Structs**, and **API Routes**.
+  - Parameter signatures, return types, line ranges, and HTTP method badges (`GET`, `POST`, etc.).
 
-### Pane 2: Symbols & Routes Outline
-- Lists all declared functions, classes, interfaces, and API routes extracted by Tree-sitter.
-- Filter symbols with quick category chips:
-  - **All Symbols**
-  - **Functions** (`def`, `function`, `fn`)
-  - **Classes & Structs** (`class`, `struct`, `interface`)
-  - **API Routes** (`@app.get`, `app.post`, etc.)
-- View parameter signatures, return types, and starting/ending line ranges.
-
-### Universal Omni-Search
-- **Global Command Palette**: Search across AST symbols, files, API routes, and raw code text in real time from the center toolbar.
+### 2. Universal Omni-Search Command Palette (`Ctrl+K` / `Cmd+K`)
+- **Global Command Palette**: Instant fuzzy search across repositories, file paths, AST symbols, and API endpoints from the toolbar or via `Ctrl+K` / `Cmd+K`.
 - **Match Types & Confidence Scoring**:
-  - `[symbol]` – High confidence AST matches (e.g., `99% AST exact match`, `94% AST prefix match`).
+  - `[symbol]` – High-confidence AST matches (e.g. `99% AST exact match`, `94% AST prefix match`).
   - `[file]` – File path and module matches (`92% filename match`).
   - `[route]` – REST endpoint paths (`95% route match`).
-  - `[code]` – Raw source code substring occurrences (`88% code match`).
 - **Keyboard Navigation**: Navigate results with <kbd>&uarr;</kbd> and <kbd>&darr;</kbd>, press <kbd>Enter</kbd> to jump, or <kbd>Esc</kbd> to dismiss.
-- **Zero-Shift Floating Overlay**: Floats smoothly over the 3 panes without shifting header layout or altering pane heights.
+- **Zero-Shift Floating Overlay**: Floats smoothly over the viewports without altering page heights.
 
-### Pane 3: Code Intelligence & Full Source Viewer (or Document Reader)
-- **Symbol Intelligence Mode**:
-  - **Callers & Callees**: Inspect incoming callers and outgoing references identified by AST cross-file analysis.
-  - **Click-Through Navigation**: Click any caller or callee chip to jump directly to its declaration in Pane 1 and Pane 2.
-  - **HTTP Route Specifications**: View endpoint paths, HTTP verbs, and request/response models.
-  - **Syntax Preview**: Read formatted implementation code blocks with line numbers and syntax highlighting.
+### 3. Center Hero Viewport: Code Viewer, Doc Reader & Intelligence
 - **Full Source Code Viewer**:
-  - Automatically loads full file contents with line numbering.
-  - **Target Line Highlighting**: Seamlessly scrolls to and highlights target line ranges (`targetStartLine` / `targetEndLine`) when jumping from Omni-Search or symbols outline.
-  - **Docked Symbol Impact Drawer**: Collapsible bottom drawer showing caller and callee counts with instant click-to-jump.
-  - **Copy Code & Link**: One-click actions to copy clean source code or deep links to specific lines.
-- **Full Document & Markdown Reader Mode**:
-  - Automatically activates when selecting non-code files (`.md`, `.markdown`, `.txt`, `.json`, etc.) or clicking **Read Full Document** from Pane 2.
-  - **Rendered View**: Safe Markdown parser supporting formatted headings, lists, blockquotes, inline code, and fenced code blocks.
-  - **Raw Source View**: Full file content display with line-by-line numbering.
-  - **One-Click Copy**: Copy complete document contents to clipboard with instant visual confirmation.
+  - Syntax highlighting powered by Prism across 8+ languages including C#, Python, JavaScript/TypeScript, C++, Go, Rust, SQL, and COBOL.
+  - Line numbers with target line range highlighting (`targetStartLine`-`targetEndLine`) when jumping from Omni-Search or the symbols outline.
+  - Copy clean file contents or permalinks directly to the clipboard.
+  - Collapsible bottom drawer for quick caller and callee inspection.
+- **Enhanced Markdown Document Reader**:
+  - Safe GitHub Flavored Markdown (GFM) renderer for `.md` and `.markdown` files.
+  - **Automatic Table Normalization**: Automatically bridges blank lines between table rows and synthesizes missing separator rows (`| --- | --- |`) for non-standard Markdown tables.
+  - **Interactive Mermaid Diagrams**: Embedded Mermaid diagrams (`flowchart`, `sequenceDiagram`, `classDiagram`, `erDiagram`, `stateDiagram`) render directly inline.
+  - Switch seamlessly between **Rendered** and **Raw Source** view modes.
+- **Instant Code Intelligence & Impact Inspector**:
+  - Immediately available via the **Intelligence** tab on any opened file—no prior outline clicks required.
+  - Symbol kind, file path, line ranges, and 4-metric overview (Incoming Callers, Outgoing Callees, Total Imports, Language).
+  - Framework API route mapping card (`POST /v1/chat/completions`).
+  - Formatted signature block and docstring summary.
+  - Clickable caller and callee cards for cross-file jump navigation.
 
 ---
 

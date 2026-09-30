@@ -17,6 +17,7 @@ export interface NavigatorTreeNode {
   name: string;
   is_dir: boolean;
   path: string;
+  abs_path?: string | null;
   language?: string | null;
   symbol_count: number;
   route_count: number;

@@ -11,6 +11,30 @@ from app.models.schemas import CloneResult
 logger = logging.getLogger("contextcortex.git")
 
 TMP_BASE_DIR = os.getenv("TMP_REPOS_DIR", "/tmp/rag_repos")
+DATA_DIR = os.getenv(
+    "DATA_DIR",
+    "/app/data" if os.path.exists("/app/data") else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
+)
+PERSISTENT_REPOS_DIR = os.getenv("PERSISTENT_REPOS_DIR", os.path.join(DATA_DIR, "repos"))
+
+def get_persistent_repo_dir(repo_name: str) -> str:
+    """Returns absolute path for persistent shallow repository clone."""
+    if not repo_name or not isinstance(repo_name, str):
+        raise ValueError("Invalid repo_name")
+    safe_name = os.path.basename(repo_name.strip())
+    if not safe_name or safe_name in (".", ".."):
+        raise ValueError("Invalid repo_name")
+    base_dir = os.path.realpath(PERSISTENT_REPOS_DIR)
+    resolved = os.path.realpath(os.path.join(base_dir, safe_name))
+    base_prefix = base_dir if base_dir.endswith(os.sep) else base_dir + os.sep
+    if not (resolved.startswith(base_prefix) or resolved == base_dir):
+        raise ValueError(f"Path traversal detected in repo_name: {repo_name}")
+    return resolved
+
+def cleanup_persistent_repo(repo_name: str) -> None:
+    """Safely removes persistent shallow clone for a deleted repo."""
+    target = get_persistent_repo_dir(repo_name)
+    cleanup_repo_dir(target)
 
 def get_env_token() -> Optional[str]:
     """Retrieve GitHub token from environment variables."""
@@ -157,16 +181,22 @@ def shallow_clone_repo(
     token: Optional[str] = None,
     username: Optional[str] = None,
     provider: Optional[str] = None,
-    repo_id: Optional[str] = None
+    repo_id: Optional[str] = None,
+    target_dir: Optional[str] = None
 ) -> CloneResult:
     """
-    Shallow clones a git repository to a temporary directory.
+    Shallow clones a git repository to a temporary or persistent directory.
     Returns: CloneResult
     """
     from app.services.database import get_effective_git_token
     norm_url = normalize_git_url(git_url)
-    os.makedirs(TMP_BASE_DIR, exist_ok=True)
-    repo_dir = tempfile.mkdtemp(prefix=f"repo_{repo_id or 'temp'}_", dir=TMP_BASE_DIR)
+
+    if target_dir:
+        os.makedirs(os.path.dirname(os.path.abspath(target_dir)), exist_ok=True)
+        repo_dir = os.path.abspath(target_dir)
+    else:
+        os.makedirs(TMP_BASE_DIR, exist_ok=True)
+        repo_dir = tempfile.mkdtemp(prefix=f"repo_{repo_id or 'temp'}_", dir=TMP_BASE_DIR)
 
     if not token and not username:
         eff_token, eff_user, _ = get_effective_git_token(norm_url, provider=provider)
@@ -178,6 +208,20 @@ def shallow_clone_repo(
 
     logger.info(f"Cloning {safe_url} (branch: {branch}) shallowly to {repo_dir}...")
     try:
+        # Check if already a git repo in target_dir (incremental shallow update)
+        if target_dir and os.path.exists(os.path.join(repo_dir, ".git")):
+            logger.info(f"Existing shallow clone found in {repo_dir}; fetching latest refs...")
+            fetch_cmd = ["git", "fetch", "--depth", "1", "origin", branch]
+            f_res = subprocess.run(fetch_cmd, cwd=repo_dir, capture_output=True, text=True, timeout=60, env=GIT_ENV)
+            if f_res.returncode == 0:
+                subprocess.run(["git", "reset", "--hard", f"origin/{branch}"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
+                sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10, env=GIT_ENV)
+                commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else "unknown"
+                return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)
+            else:
+                logger.warning(f"Incremental fetch failed in {repo_dir}; falling back to fresh clone: {f_res.stderr.strip()}")
+                cleanup_repo_dir(repo_dir)
+
         # Shallow clone single branch
         cmd = [
             "git", "clone",
@@ -194,7 +238,8 @@ def shallow_clone_repo(
             res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120, env=GIT_ENV)
             if res.returncode != 0:
                 err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
-                cleanup_repo_dir(repo_dir)
+                if not target_dir:
+                    cleanup_repo_dir(repo_dir)
                 return CloneResult(temp_dir=None, commit_sha=None, error=f"Clone failed: {err_msg}")
 
         # Get Commit SHA
@@ -203,7 +248,8 @@ def shallow_clone_repo(
 
         return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)
     except Exception as e:
-        cleanup_repo_dir(repo_dir)
+        if not target_dir:
+            cleanup_repo_dir(repo_dir)
         return CloneResult(temp_dir=None, commit_sha=None, error=f"Exception during git clone: {str(e)}")
 
 def cleanup_repo_dir(repo_dir: Optional[str]):
