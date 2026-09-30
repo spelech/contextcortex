@@ -73,6 +73,26 @@ class FileReaderService:
             logger.warning(f"Failed to fetch authorized indexed_paths: {e}")
             return []
 
+    def _get_authorized_persistent_repos(self) -> Dict[str, str]:
+        try:
+            from app.services.git_manager import PERSISTENT_REPOS_DIR
+            base_dir = os.path.normpath(os.path.abspath(PERSISTENT_REPOS_DIR))
+            base_prefix = base_dir if base_dir.endswith(os.sep) else base_dir + os.sep
+            with get_db_connection() as conn:
+                rows = conn.execute("SELECT name FROM git_repositories").fetchall()
+            repos: Dict[str, str] = {}
+            for r in rows:
+                name = str(r["name"]).strip()
+                safe_name = os.path.basename(name)
+                if safe_name and safe_name not in (".", ".."):
+                    target = os.path.normpath(os.path.abspath(os.path.join(base_dir, safe_name)))
+                    if target.startswith(base_prefix) or target == base_dir:
+                        repos[name] = target
+            return repos
+        except Exception as e:
+            logger.warning(f"Failed to fetch authorized persistent repos: {e}")
+            return {}
+
     def resolve_safe_path(self, path: str, repo: Optional[str] = None) -> Tuple[str, str]:
         """Resolves target path safely within authorized watched paths or local storage.
         
@@ -107,27 +127,18 @@ class FileReaderService:
         if effective_repo:
             # Check persistent shallow clone if available
             try:
-                from app.services.git_manager import get_persistent_repo_dir, PERSISTENT_REPOS_DIR
-                persistent_root = os.path.realpath(PERSISTENT_REPOS_DIR)
-                persistent_prefix = persistent_root if persistent_root.endswith(os.sep) else persistent_root + os.sep
-                
-                with get_db_connection() as conn:
-                    repo_row = conn.execute(
-                        "SELECT name FROM git_repositories WHERE name = ?", (effective_repo,)
-                    ).fetchone()
-                
-                if repo_row:
-                    repo_name_db = repo_row["name"]
-                    repo_disk_dir = get_persistent_repo_dir(repo_name_db)
-                    if not (repo_disk_dir.startswith(persistent_prefix) or repo_disk_dir == persistent_root):
-                        raise ValueError("Path outside authorized roots")
-                    if os.path.exists(repo_disk_dir) and os.path.isdir(repo_disk_dir):
+                persistent_repos = self._get_authorized_persistent_repos()
+                if effective_repo in persistent_repos:
+                    repo_disk_dir = persistent_repos[effective_repo]
+                    repo_prefix = repo_disk_dir if repo_disk_dir.endswith(os.sep) else repo_disk_dir + os.sep
+                    if os.path.isdir(repo_disk_dir):
                         rel_clean = path.split("://", 1)[1] if "://" in path else path.lstrip("/")
                         cand_repo = os.path.normpath(os.path.abspath(os.path.join(repo_disk_dir, rel_clean)))
-                        repo_prefix = repo_disk_dir if repo_disk_dir.endswith(os.sep) else repo_disk_dir + os.sep
-                        if not (cand_repo.startswith(repo_prefix) or cand_repo == repo_disk_dir):
+                        if not cand_repo.startswith(repo_prefix):
                             raise ValueError("Path outside authorized roots")
-                        if self._is_within_root(cand_repo, repo_disk_dir) and os.path.lexists(cand_repo):
+                        if not self._is_within_root(cand_repo, repo_disk_dir):
+                            raise ValueError("Path outside authorized roots")
+                        if os.path.lexists(cand_repo):
                             return cand_repo, "persistent_repo"
             except Exception as e:
                 logger.debug(f"Persistent repo lookup check failed: {e}")
