@@ -123,6 +123,8 @@ export const NavigatorOmniSearch: React.FC<NavigatorOmniSearchProps> = ({
   const handleSelect = useCallback(
     (item: OmniSearchResultItem) => {
       setIsOpen(false);
+      setQuery('');
+      setResults([]);
       onSelectResult(item);
     },
     [onSelectResult]

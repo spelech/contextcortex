@@ -162,7 +162,12 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
 
   // 5. Fetch file outline when selectedPath changes
   const fetchOutline = useCallback(
-    async (repoName: string, filePath: string, symbolToAutoSelect?: number | string) => {
+    async (
+      repoName: string,
+      filePath: string,
+      symbolToAutoSelect?: number | string,
+      tabToActivate?: 'intelligence' | 'reader'
+    ) => {
       setLoadingOutline(true);
       try {
         const res = await fetch(
@@ -186,7 +191,7 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
           }
           const targetSymbol = matched || data.symbols[0];
           setSelectedSymbolId(targetSymbol.id);
-          setActiveInspectorTab('intelligence');
+          setActiveInspectorTab(tabToActivate || 'intelligence');
           await fetchImpact(repoName, targetSymbol.id);
         } else {
           setSelectedSymbolId(null);
@@ -231,11 +236,11 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
 
     if (result.type === 'symbol' && result.symbol_id) {
       setSelectedSymbolId(result.symbol_id);
-      fetchOutline(targetRepo, result.filepath, result.symbol_id);
+      fetchOutline(targetRepo, result.filepath, result.symbol_id, 'reader');
       fetchImpact(targetRepo, result.symbol_id);
       setActiveInspectorTab('reader');
     } else {
-      fetchOutline(targetRepo, result.filepath);
+      fetchOutline(targetRepo, result.filepath, undefined, 'reader');
       setActiveInspectorTab('reader');
     }
   };
@@ -253,7 +258,7 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
     setSelectedSymbolId(symbol.id);
     setTargetStartLine(symbol.start_line);
     setTargetEndLine(symbol.end_line);
-    setActiveInspectorTab('reader');
+    setActiveInspectorTab('intelligence');
     fetchImpact(selectedRepo, symbol.id);
   };
 

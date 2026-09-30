@@ -364,17 +364,75 @@ async function setupNavigatorMocks(page: any) {
     }
   });
 
+  await page.route('**/admin/api/navigator/omni-search*', async (route: any) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('chat_completion')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          query: 'chat_completion',
+          repo: '__all__',
+          total_matches: 1,
+          matches: [
+            {
+              id: 'sym_101',
+              type: 'symbol',
+              symbol_id: 101,
+              name: 'chat_completion_endpoint',
+              kind: 'function',
+              filepath: 'app/api/routers/chat.py',
+              repo: 'contextcortex-core',
+              start_line: 45,
+              end_line: 85,
+              score: 0.99,
+              score_label: '99% AST exact match',
+              preview: 'async def chat_completion_endpoint(...)',
+            },
+          ],
+        }),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ query: '', repo: '__all__', total_matches: 0, matches: [] }),
+      });
+    }
+  });
+
   await page.route('**/admin/api/files/read*', async (route: any) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        filepath: 'README.md',
-        content: '# ContextCortex Documentation\n\nFull documentation reader is active.\n\n## Features\n\n- Hybrid Vector and Lexical Search\n- Interactive AST Symbol Navigator\n- Markdown and Source Code Viewer',
-        total_lines: 8,
-        language: 'markdown',
-      }),
-    });
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('chat.py')) {
+      const codeLines = Array.from({ length: 90 }, (_, i) => {
+        const lineNum = i + 1;
+        if (lineNum === 45) return 'async def chat_completion_endpoint(request: ChatCompletionRequest):';
+        if (lineNum === 46) return '    return {"status": "ok"}';
+        return `# Line ${lineNum} sample source code`;
+      }).join('\n');
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          filepath: 'app/api/routers/chat.py',
+          content: codeLines,
+          total_lines: 90,
+          language: 'python',
+        }),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          filepath: 'README.md',
+          content: '# ContextCortex Documentation\n\nFull documentation reader is active.\n\n## Features\n\n- Hybrid Vector and Lexical Search\n- Interactive AST Symbol Navigator\n- Markdown and Source Code Viewer',
+          total_lines: 8,
+          language: 'markdown',
+        }),
+      });
+    }
   });
 
   await page.route('**/admin/api/navigator/symbol-impact*', async (route: any) => {
@@ -708,4 +766,55 @@ test.describe('Codebase Navigator End-to-End Suite', () => {
     await docReader.getByRole('button', { name: 'Rendered' }).click();
     await expect(docReader.locator('.doc-rendered-content')).toBeVisible();
   });
+
+  test('9. Omni-Search & Synchronized Full-File Code Viewer: searches across symbols, opens full source, highlights target line with zero layout shift', async ({ page }) => {
+    await navigateToNavigator(page);
+
+    const toolbar = page.locator('[data-testid="navigator-toolbar"]');
+    const toolbarBoxBefore = await toolbar.boundingBox();
+
+    // Type query into omni-search input
+    const omniInput = page.getByRole('textbox', { name: /omni-search/i });
+    await expect(omniInput).toBeVisible();
+    await omniInput.fill('chat_completion');
+
+    // Wait for floating dropdown
+    const dropdown = page.locator('[data-testid="nav-omni-dropdown"]');
+    await expect(dropdown).toBeVisible();
+
+    // Check overlay has position: absolute and z-index >= 50
+    const dropdownStyle = await dropdown.evaluate((el) => {
+      const computed = window.getComputedStyle(el);
+      return { position: computed.position, zIndex: computed.zIndex };
+    });
+    expect(dropdownStyle.position).toBe('absolute');
+    expect(Number(dropdownStyle.zIndex)).toBeGreaterThanOrEqual(50);
+
+    // Verify toolbar height didn't expand (within 2px tolerance)
+    const toolbarBoxAfter = await toolbar.boundingBox();
+    expect(Math.abs((toolbarBoxAfter?.height || 0) - (toolbarBoxBefore?.height || 0))).toBeLessThanOrEqual(2);
+
+    // Click matching symbol result
+    const matchItem = dropdown.locator('.nav-omni-item').first();
+    await expect(matchItem).toContainText('chat_completion_endpoint');
+    await expect(matchItem).toContainText('99% AST exact match');
+    await matchItem.click();
+
+    // Dropdown should dismiss
+    await expect(dropdown).not.toBeVisible();
+
+    // Pane 3 should display NavigatorCodeViewer
+    const codeViewer = page.locator('[data-testid="navigator-code-viewer"]');
+    await expect(codeViewer).toBeVisible();
+    await expect(codeViewer.locator('.nav-code-filename')).toContainText('chat.py');
+
+    // Target line 45 should have highlight class
+    const targetLine = codeViewer.locator('[data-testid="code-line-45"]');
+    await expect(targetLine).toHaveClass(/nav-code-line-target/);
+
+    // Check zero layout collisions
+    await expect(page).toHaveNoLayoutOverflow();
+    await expect(page).toHaveNoElementCollisions();
+  });
 });
+

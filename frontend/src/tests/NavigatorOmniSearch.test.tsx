@@ -1,6 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import React from 'react';
 import { NavigatorOmniSearch } from '../components/navigator/NavigatorOmniSearch';
 import type { OmniSearchResultItem } from '../components/navigator/types';
 
@@ -50,7 +49,7 @@ describe('NavigatorOmniSearch Component', () => {
   });
 
   it('fetches matches when user types and displays floating overlay', async () => {
-    const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
         query: 'api_read',
@@ -82,7 +81,7 @@ describe('NavigatorOmniSearch Component', () => {
   });
 
   it('navigates with keyboard and selects on Enter', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue({
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
         query: 'api_read',
@@ -108,7 +107,7 @@ describe('NavigatorOmniSearch Component', () => {
   });
 
   it('closes dropdown on Escape key', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue({
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({
         query: 'api_read',
