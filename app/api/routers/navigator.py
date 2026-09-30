@@ -61,3 +61,18 @@ async def api_get_symbol_impact(
     except Exception as e:
         logger.error(f"Error getting symbol impact for {symbol_id} in {repo}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to retrieve symbol impact."})
+
+
+@router.get("/admin/api/navigator/omni-search")
+async def api_get_omni_search(
+    repo: str = Query(..., description="Repository name or '__all__'"),
+    q: str = Query("", description="Search query string"),
+    limit: int = Query(25, ge=1, le=100, description="Max matches to return")
+):
+    try:
+        data = nav_service.get_omni_search(repo=repo, query=q, limit=limit)
+        return data
+    except Exception as e:
+        logger.error(f"Error executing omni-search for query '{q}' in {repo}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Failed to execute omni-search."})
+

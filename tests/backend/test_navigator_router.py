@@ -187,3 +187,35 @@ def test_api_get_symbol_impact_not_found(client: TestClient, test_db):
     assert response.status_code == 404
     data = response.json()
     assert "error" in data
+
+
+def test_api_get_omni_search_symbols_and_files(client: TestClient, test_db):
+    # 1. Exact symbol match
+    res = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=root_handler")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["query"] == "root_handler"
+    assert len(data["matches"]) >= 1
+    match = data["matches"][0]
+    assert match["type"] == "symbol"
+    assert match["name"] == "root_handler"
+    assert match["filepath"] == "app/main.py"
+    assert match["score"] >= 0.95
+    assert "AST exact" in match["score_label"]
+
+    # 2. File path match
+    res_file = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=helper.py")
+    assert res_file.status_code == 200
+    file_matches = res_file.json()["matches"]
+    assert any(m["type"] == "file" and "helper.py" in m["filepath"] for m in file_matches)
+
+    # 3. Empty query
+    res_empty = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=")
+    assert res_empty.status_code == 200
+    assert res_empty.json()["matches"] == []
+
+    # 4. No matches
+    res_none = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=nonexistent_xyz_123")
+    assert res_none.status_code == 200
+    assert res_none.json()["matches"] == []
+
