@@ -350,10 +350,12 @@ class FileReaderService:
         is_dir = False
         try:
             abs_path, source_type = self.resolve_safe_path(path, repo=repo)
-            if abs_path and os.path.isdir(abs_path):
-                is_dir = True
-            else:
-                on_disk = os.path.exists(abs_path) and not os.path.isdir(abs_path)
+            if abs_path:
+                abs_path = os.path.normpath(os.path.abspath(abs_path))
+                if os.path.isdir(abs_path):
+                    is_dir = True
+                else:
+                    on_disk = os.path.exists(abs_path) and not os.path.isdir(abs_path)
         except Exception:
             pass
 
