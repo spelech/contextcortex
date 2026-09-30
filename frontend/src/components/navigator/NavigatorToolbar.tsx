@@ -1,5 +1,6 @@
 import React from 'react';
-import type { DensityMode, RepoOption } from './types';
+import type { DensityMode, RepoOption, OmniSearchResultItem } from './types';
+import { NavigatorOmniSearch } from './NavigatorOmniSearch';
 
 interface NavigatorToolbarProps {
   repos: RepoOption[];
@@ -9,6 +10,7 @@ interface NavigatorToolbarProps {
   onChangeDensity: (density: DensityMode) => void;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
+  onSelectSearchResult?: (result: OmniSearchResultItem) => void;
   totalFiles?: number;
   totalSymbols?: number;
   onRefresh?: () => void;
@@ -23,6 +25,7 @@ export const NavigatorToolbar: React.FC<NavigatorToolbarProps> = ({
   onChangeDensity,
   searchQuery = '',
   onSearchChange,
+  onSelectSearchResult,
   totalFiles = 0,
   totalSymbols = 0,
   onRefresh,
@@ -65,7 +68,9 @@ export const NavigatorToolbar: React.FC<NavigatorToolbarProps> = ({
       </div>
 
       <div className="nav-toolbar-center">
-        {onSearchChange && (
+        {onSelectSearchResult ? (
+          <NavigatorOmniSearch repo={selectedRepo} onSelectResult={onSelectSearchResult} />
+        ) : onSearchChange ? (
           <div className="nav-global-search">
             <span className="search-icon-wrapper" aria-hidden="true">
               <svg
@@ -102,7 +107,7 @@ export const NavigatorToolbar: React.FC<NavigatorToolbarProps> = ({
               </button>
             )}
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="nav-toolbar-right">

@@ -8,6 +8,7 @@ import type {
   SymbolImpact,
   RepoOption,
   FileContentResult,
+  OmniSearchResultItem,
 } from './components/navigator/types';
 import { NavigatorToolbar } from './components/navigator/NavigatorToolbar';
 import { NavigatorTree } from './components/navigator/NavigatorTree';
@@ -65,6 +66,8 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
   const [loadingContent, setLoadingContent] = useState<boolean>(false);
   const [contentError, setContentError] = useState<string | null>(null);
   const [activeInspectorTab, setActiveInspectorTab] = useState<'intelligence' | 'reader'>('intelligence');
+  const [targetStartLine, setTargetStartLine] = useState<number | undefined>(undefined);
+  const [targetEndLine, setTargetEndLine] = useState<number | undefined>(undefined);
 
   // Error state
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -211,24 +214,54 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
     setSelectedSymbolId(null);
     setSymbolImpact(null);
     setFileContent(null);
+    setTargetStartLine(undefined);
+    setTargetEndLine(undefined);
+  };
+
+  const handleSelectSearchResult = (result: OmniSearchResultItem) => {
+    const targetRepo = result.repo && result.repo !== '__all__' ? result.repo : selectedRepo;
+    if (result.repo && result.repo !== selectedRepo && selectedRepo !== '__all__') {
+      setSelectedRepo(result.repo);
+    }
+    setSelectedPath(result.filepath);
+    setTargetStartLine(result.start_line);
+    setTargetEndLine(result.end_line);
+
+    fetchFileContent(targetRepo, result.filepath);
+
+    if (result.type === 'symbol' && result.symbol_id) {
+      setSelectedSymbolId(result.symbol_id);
+      fetchOutline(targetRepo, result.filepath, result.symbol_id);
+      fetchImpact(targetRepo, result.symbol_id);
+      setActiveInspectorTab('reader');
+    } else {
+      fetchOutline(targetRepo, result.filepath);
+      setActiveInspectorTab('reader');
+    }
   };
 
   const handleSelectFile = (node: NavigatorTreeNode) => {
     if (node.is_dir) return;
     setSelectedPath(node.path);
+    setTargetStartLine(undefined);
+    setTargetEndLine(undefined);
     fetchOutline(selectedRepo, node.path);
     fetchFileContent(selectedRepo, node.path);
   };
 
   const handleSelectSymbol = (symbol: SymbolOutlineItem) => {
     setSelectedSymbolId(symbol.id);
-    setActiveInspectorTab('intelligence');
+    setTargetStartLine(symbol.start_line);
+    setTargetEndLine(symbol.end_line);
+    setActiveInspectorTab('reader');
     fetchImpact(selectedRepo, symbol.id);
   };
 
   // Cross-pane click-through navigation for callers
   const handleSelectCaller = (filePath: string, symbolName?: string, sourceSymbolId?: number) => {
     setSelectedPath(filePath);
+    setTargetStartLine(undefined);
+    setTargetEndLine(undefined);
     fetchOutline(selectedRepo, filePath, sourceSymbolId ?? symbolName);
     fetchFileContent(selectedRepo, filePath);
   };
@@ -236,6 +269,8 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
   const handleSelectCallee = (filePath?: string, symbolName?: string) => {
     if (filePath) {
       setSelectedPath(filePath);
+      setTargetStartLine(undefined);
+      setTargetEndLine(undefined);
       fetchOutline(selectedRepo, filePath, symbolName);
       fetchFileContent(selectedRepo, filePath);
     }
@@ -255,6 +290,7 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
         onChangeDensity={handleDensityChange}
         searchQuery={treeSearch}
         onSearchChange={setTreeSearch}
+        onSelectSearchResult={handleSelectSearchResult}
         totalFiles={treeData?.total_files ?? 0}
         totalSymbols={treeData?.total_symbols ?? 0}
         onRefresh={() => fetchTree(selectedRepo)}
@@ -320,6 +356,8 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
             fileContent={fileContent}
             loadingContent={loadingContent}
             contentError={contentError}
+            targetStartLine={targetStartLine}
+            targetEndLine={targetEndLine}
             activeInspectorTab={activeInspectorTab}
             onChangeInspectorTab={setActiveInspectorTab}
             onSelectCaller={handleSelectCaller}
