@@ -126,6 +126,7 @@ export interface OmniSearchResultItem {
   id: string;
   type: OmniSearchMatchKind;
   name: string;
+  full_symbol?: string;
   kind?: string;
   filepath: string;
   repo?: string;

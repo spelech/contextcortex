@@ -221,4 +221,62 @@ describe('NavigatorOmniSearch Component', () => {
 
     expect(onSelect).toHaveBeenCalledWith(mockMatches[0]);
   });
+
+  it('renders container prefix and highlights query match in symbol and path', async () => {
+    const symbolWithContainer: OmniSearchResultItem = {
+      id: 'sym_nested',
+      type: 'symbol',
+      symbol_id: 15,
+      name: 'GetAllProviders',
+      full_symbol: 'ProvidersController.GetAllProviders',
+      kind: 'method_declaration',
+      filepath: 'mcp-router-code://Components/Providers/ProvidersController.cs',
+      repo: 'test-repo',
+      start_line: 25,
+      end_line: 60,
+      score: 0.95,
+      score_label: '95% Prefix match',
+      preview: 'public async Task<IActionResult> GetAllProviders()',
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        query: 'Providers',
+        repo: 'test-repo',
+        total_matches: 1,
+        matches: [symbolWithContainer],
+      }),
+    } as Response);
+
+    render(<NavigatorOmniSearch repo="test-repo" onSelectResult={vi.fn()} />);
+
+    const input = screen.getByPlaceholderText(/search files, symbols, routes, or code text/i);
+    fireEvent.change(input, { target: { value: 'Providers' } });
+
+    await screen.findByText('GetAllProviders');
+
+    // Container prefix should be displayed
+    expect(screen.getByText('ProvidersController.')).toBeInTheDocument();
+
+    // Kind should be cleaned from method_declaration to method
+    expect(screen.getByText('method')).toBeInTheDocument();
+
+    // Path should be cleaned of protocol scheme
+    expect(screen.getByText('Components/Providers/ProvidersController.cs')).toBeInTheDocument();
+
+    // Query match marks should exist
+    const marks = document.querySelectorAll('mark.nav-omni-match');
+    expect(marks.length).toBeGreaterThan(0);
+  });
+
+  it('focuses search input when pressing Ctrl+K', () => {
+    render(<NavigatorOmniSearch repo="test-repo" onSelectResult={vi.fn()} />);
+    const input = screen.getByPlaceholderText(/search files, symbols, routes, or code text/i);
+
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    expect(document.activeElement).toBe(input);
+  });
 });
+

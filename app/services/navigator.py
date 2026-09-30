@@ -386,23 +386,28 @@ def get_omni_search(repo: str, query: str, limit: int = 25) -> Dict[str, Any]:
         sym_sql = f"""
             SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature
             FROM ast_symbols
-            WHERE (name LIKE ? OR full_symbol LIKE ?){repo_clause}
+            WHERE (name LIKE ? OR full_symbol LIKE ? OR signature LIKE ?){repo_clause}
             LIMIT ?
         """
-        sym_params = [like_q, like_q] + repo_params + [limit]
+        sym_params = [like_q, like_q, like_q] + repo_params + [limit]
         for row in conn.execute(sym_sql, sym_params).fetchall():
             sym_name = row["name"] or ""
+            full_sym = row["full_symbol"] or sym_name
             sym_lower = sym_name.lower()
+            full_lower = full_sym.lower()
 
-            if sym_lower == lower_q:
+            if sym_lower == lower_q or full_lower == lower_q:
                 score = 0.99
                 label = "99% AST exact match"
-            elif sym_lower.startswith(lower_q):
+            elif sym_lower.startswith(lower_q) or full_lower.startswith(lower_q):
                 score = 0.94
                 label = "94% AST prefix match"
-            else:
+            elif lower_q in sym_lower or lower_q in full_lower:
                 score = 0.88
                 label = "88% AST symbol match"
+            else:
+                score = 0.82
+                label = "82% Signature match"
 
             preview = row["signature"] or f"{row['kind']} {sym_name}"
             matches.append({
@@ -410,6 +415,7 @@ def get_omni_search(repo: str, query: str, limit: int = 25) -> Dict[str, Any]:
                 "type": "symbol",
                 "symbol_id": row["id"],
                 "name": sym_name,
+                "full_symbol": full_sym,
                 "kind": row["kind"],
                 "filepath": _clean_path(row["filepath"]),
                 "repo": row["repo"],
