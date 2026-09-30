@@ -258,3 +258,38 @@ Content 2
     assert "Section 1" in headings
     assert "Subsection 1.1" in headings
     assert "Section 2" in headings
+
+
+def test_call_extraction_constructors_and_generics():
+    code = """using System;
+
+namespace App
+{
+    public class Startup
+    {
+        public void Configure()
+        {
+            var s = new MyService();
+            app.UseMiddleware<JwtMiddleware>();
+        }
+    }
+}
+"""
+    res = extract_symbols_and_chunks(code, "Startup.cs", repo="test")
+    targets = [r.target_symbol for r in res.relationships if r.relationship_type == "CALLS"]
+    assert "MyService" in targets
+    assert "UseMiddleware" in targets
+    assert "new" not in targets
+    assert "var" not in targets
+
+
+def test_toplevel_call_source_symbol_preservation():
+    code = """import math
+print(math.sqrt(16))
+run_task()
+"""
+    res = extract_symbols_and_chunks(code, "main.py", repo="test")
+    sources = [r.source_symbol for r in res.relationships if r.relationship_type == "CALLS"]
+    assert all(src == "main.py" for src in sources)
+    assert "py" not in sources
+

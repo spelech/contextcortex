@@ -345,6 +345,8 @@ def sync_single_git_repo(repo_id: int):
                         for s in batch_symbols:
                             if "inserted_id" in s:
                                 sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
+                                if s.get("full_symbol"):
+                                    sym_map[(s["repo"], s["filepath"], s["full_symbol"])] = s["inserted_id"]
 
                         rel_tuples = []
                         for r in batch_relationships:

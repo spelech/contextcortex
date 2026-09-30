@@ -288,6 +288,53 @@ def test_no_outgoing_calls_in_callers(test_db):
     assert len(res["imports"]) == 0
 
 
+def test_class_symbol_impact_aggregation(test_db):
+    # Seed a class with methods, callers, callees, and file-level imports
+    conn = sqlite3.connect(test_db)
+    conn.executescript("""
+        INSERT INTO indexed_files (filepath, repo, doc_type, language)
+        VALUES ('app/services/user_service.py', 'test-repo', 'code', 'python');
+
+        INSERT INTO ast_symbols (id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language)
+        VALUES (10, 'test-repo', 'app/services/user_service.py', 'UserService', 'UserService', 'class_definition', 1, 50, 'class UserService:', 'python'),
+               (11, 'test-repo', 'app/services/user_service.py', 'get_user', 'UserService.get_user', 'function_definition', 5, 20, 'def get_user(self, id):', 'python'),
+               (12, 'test-repo', 'app/services/user_service.py', 'save_user', 'UserService.save_user', 'function_definition', 22, 45, 'def save_user(self, user):', 'python');
+
+        -- File-level import
+        INSERT INTO ast_relationships (id, repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
+        VALUES (20, 'test-repo', NULL, 'app/services/user_service.py', 'user_service.py', 'typing', 'IMPORTS', 1);
+
+        -- External caller calling UserService.get_user
+        INSERT INTO ast_relationships (id, repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
+        VALUES (21, 'test-repo', NULL, 'app/api/endpoints.py', 'handle_request', 'get_user', 'CALLS', 10);
+
+        -- Method save_user calling external function
+        INSERT INTO ast_relationships (id, repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
+        VALUES (22, 'test-repo', 12, 'app/services/user_service.py', 'save_user', 'db_commit', 'CALLS', 30);
+    """)
+    conn.commit()
+    conn.close()
+
+    # Inspect the class UserService (id=10)
+    res = get_symbol_impact("test-repo", 10)
+    assert res is not None
+    assert res["symbol"]["name"] == "UserService"
+
+    # Aggregated callers should find handle_request calling get_user
+    assert len(res["callers"]) == 1
+    assert res["callers"][0]["source_symbol"] == "handle_request"
+    assert res["callers"][0]["target_symbol"] == "get_user"
+
+    # Aggregated callees should find db_commit called from save_user
+    assert len(res["callees"]) == 1
+    assert res["callees"][0]["target_symbol"] == "db_commit"
+
+    # File-level imports should be available for the class
+    assert len(res["imports"]) == 1
+    assert res["imports"][0]["target_symbol"] == "typing"
+
+
+
 def test_real_codebase_symbol_extraction_and_navigation(tmp_path):
     from app.services.chunking import extract_symbols_and_chunks
 
