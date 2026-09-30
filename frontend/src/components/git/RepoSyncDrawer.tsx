@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { GitSyncJob } from '../../types';
 
 export interface RepoSyncDrawerProps {
@@ -121,7 +122,7 @@ export function RepoSyncDrawer({
   const percent = job?.percent ?? (status === 'synced' ? 100 : 0);
   const currentStep = job?.step ?? (status === 'synced' ? 5 : 1);
 
-  return (
+  const drawerNode = (
     <div
       className="sync-drawer-backdrop"
       onClick={(e) => {
@@ -373,4 +374,6 @@ export function RepoSyncDrawer({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(drawerNode, document.body) : drawerNode;
 }

@@ -32,7 +32,7 @@ export const NavigatorToolbar: React.FC<NavigatorToolbarProps> = ({
   loading = false,
 }) => {
   return (
-    <div className="nav-toolbar" data-testid="navigator-toolbar">
+    <div className="nav-toolbar nav-toolbar-single-row" data-testid="navigator-toolbar">
       <div className="nav-toolbar-left">
         <div className="nav-repo-selector-wrapper">
           <label htmlFor="nav-repo-select" className="nav-repo-label">

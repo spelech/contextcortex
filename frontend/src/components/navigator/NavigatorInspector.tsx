@@ -35,16 +35,27 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
   loading = false,
   onRefreshContent,
 }) => {
-  const [internalTab, setInternalTab] = useState<'intelligence' | 'reader'>('intelligence');
+  const [internalTab, setInternalTab] = useState<'intelligence' | 'reader'>(
+    impact?.symbol || loading ? 'intelligence' : (fileContent ? 'reader' : 'intelligence')
+  );
   const [copied, setCopied] = useState(false);
 
   const currentTab = activeInspectorTab !== undefined ? activeInspectorTab : internalTab;
   const setTab = onChangeInspectorTab || setInternalTab;
 
+  const symbol = impact?.symbol;
+  const route = impact?.route;
+  const callers = impact?.callers || [];
+  const callees = impact?.callees || [];
+  const imports = impact?.imports || [];
+
+  const hasFile = !!(fileContent || loadingContent || contentError);
+  const showDocReader = currentTab === 'reader';
+
   const handleCopyPermalink = async () => {
     if (!impact?.symbol) return;
     const { filepath, start_line, end_line } = impact.symbol;
-    const permalink = `${filepath}#L${start_line}${end_line && end_line !== start_line ? `-L${end_line}` : ''}`;
+    const permalink = `${window.location.origin}${window.location.pathname}?repo=${encodeURIComponent(impact.symbol.repo || '')}&file=${filepath}#L${start_line}-L${end_line}`;
     try {
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(permalink);
@@ -56,50 +67,48 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
     }
   };
 
-  const symbol = impact?.symbol;
-  const route = impact?.route;
-  const callers = impact?.callers || [];
-  const callees = impact?.callees || [];
-  const imports = impact?.imports || [];
-
-  const showDocReader = (!symbol && (fileContent || loadingContent || contentError)) || (symbol && currentTab === 'reader');
-
   return (
     <div className={`nav-inspector-pane density-${density}`} data-testid="navigator-inspector-container">
       <div className="nav-inspector-header">
         <div className="nav-inspector-title">
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 16v-4M12 8h.01" />
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
           </svg>
-          <span>{showDocReader && !symbol ? 'Document & File Reader' : 'Code Intelligence & Impact'}</span>
+          <span>Inspector</span>
         </div>
 
+        {/* Stable tabs — always rendered when a file is open or impact is present */}
         <div className="nav-inspector-header-actions">
-          {symbol && fileContent && (
+          {(hasFile || symbol) && (
             <div className="nav-inspector-tabs" role="tablist">
-              <button
-                type="button"
-                className={`inspector-tab-btn ${currentTab === 'intelligence' ? 'active' : ''}`}
-                onClick={() => setTab('intelligence')}
-              >
-                Symbol Intelligence
-              </button>
               <button
                 type="button"
                 className={`inspector-tab-btn ${currentTab === 'reader' ? 'active' : ''}`}
                 onClick={() => setTab('reader')}
+                role="tab"
+                aria-selected={currentTab === 'reader'}
               >
-                Read Full File
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                File
+              </button>
+              <button
+                type="button"
+                className={`inspector-tab-btn ${currentTab === 'intelligence' ? 'active' : ''}`}
+                onClick={() => setTab('intelligence')}
+                title="View symbol callers, callees & impact"
+                role="tab"
+                aria-selected={currentTab === 'intelligence'}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+                Intelligence
               </button>
             </div>
           )}
@@ -134,6 +143,7 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
       </div>
 
       <div className="nav-inspector-content">
+        {/* File/Reader tab */}
         {showDocReader && fileContent ? (
           (fileContent.filepath.toLowerCase().endsWith('.md') || fileContent.filepath.toLowerCase().endsWith('.markdown')) ? (
             <NavigatorDocReader
@@ -168,16 +178,25 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
             <div className="skeleton-metrics shimmer"></div>
             <div className="skeleton-block shimmer"></div>
           </div>
+        ) : showDocReader ? (
+          /* reader tab but no file yet */
+          <div className="nav-empty-state">
+            <div className="empty-icon"><i className="fa-solid fa-file-code" style={{ fontSize: '2rem', opacity: 0.3 }}></i></div>
+            <h4>No File or Symbol Selected</h4>
+            <p>Select a file from the tree to read its documentation or select a symbol to inspect callers and dependencies.</p>
+          </div>
         ) : loading ? (
+          /* intelligence tab loading */
           <div className="nav-inspector-skeleton" data-testid="inspector-loading-skeleton">
             <div className="skeleton-header shimmer"></div>
             <div className="skeleton-metrics shimmer"></div>
             <div className="skeleton-block shimmer"></div>
             <div className="skeleton-block shimmer"></div>
           </div>
-        ) : !impact || !symbol ? (
+        ) : !symbol ? (
+          /* intelligence tab but no symbol picked yet */
           <div className="nav-empty-state">
-            <div className="empty-icon">🔍</div>
+            <div className="empty-icon"><i className="fa-solid fa-circle-nodes" style={{ fontSize: '2rem', opacity: 0.3 }}></i></div>
             <h4>No File or Symbol Selected</h4>
             <p>Select a file from the tree to read its documentation or select a symbol to inspect callers and dependencies.</p>
           </div>

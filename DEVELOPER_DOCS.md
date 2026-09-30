@@ -90,10 +90,10 @@ cd contextcortex
 
 ### Backend Tests (Python Pytest & Coverage)
 ```bash
-# Run all backend unit and integration tests (277 tests)
+# Run all backend unit and integration tests (522+ tests)
 pytest -v
 
-# Run backend tests with code coverage report (88% coverage baseline)
+# Run backend tests with code coverage report (88%+ coverage baseline)
 pytest -v --cov=app --cov-report=term-missing
 ```
 
@@ -101,13 +101,13 @@ pytest -v --cov=app --cov-report=term-missing
 ```bash
 cd frontend
 
-# Run unit and component tests via Vitest (82 tests)
+# Run unit and component tests via Vitest (315 tests across 32 test files)
 npm test
 
-# Run component tests with code coverage (87% line coverage)
+# Run component tests with code coverage
 npm run test:coverage
 
-# Run end-to-end user journey tests via Playwright (26 user journeys)
+# Run end-to-end user journey tests via Playwright
 npx playwright test
 ```
 
@@ -138,6 +138,7 @@ npm run docs:preview
 | :--- | :--- | :--- |
 | `DATABASE_URL` | SQLAlchemy connection string (e.g. `postgresql+psycopg://...` or `sqlite:///...`) | `sqlite:////app/data/index_cache.db` |
 | `LOCAL_STORAGE_PATH` | Storage directory for managed local storage file uploads | `/app/data/storage` |
+| `PERSISTENT_REPOS_DIR` | Storage directory for retained shallow git clones (`keep_shallow`) | `/app/data/repos` |
 | `AUTH_ENABLED` | Enable MCP 2026-07-28 OAuth 2.1 & API Key RBAC | `false` |
 | `VECTOR_STORE_PROVIDER` | Vector database backend (`pgvector`, `qdrant`, or `chroma`) | `qdrant` |
 | `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` |
@@ -179,16 +180,18 @@ contextcortex/
 │       ├── indexing/      # Git/local syncers, file processor, state notifications
 │       ├── topology/      # Graph topology builder, node details, BFS helpers
 │       ├── vector_store/  # pgvector, Qdrant, and ChromaDB pluggable vector store implementations
-│       ├── navigator.py   # High-performance 3-pane codebase tree, outline & impact intelligence
+│       ├── navigator.py   # High-performance codebase tree, outline & impact intelligence
+│       ├── omni_search.py # Unified fuzzy command palette search for files, repos, and symbols
+│       ├── file_reader.py # Safe full-file source and markdown content resolution from disk
 │       ├── local_storage.py# Safe path resolution, disk file persistence, and tree inspection
-│       ├── git_manager.py # Ephemeral shallow git clone, token masking, permalinks
+│       ├── git_manager.py # Shallow git clone (ephemeral & persistent), token masking, permalinks
 │       ├── embeddings.py  # FastEmbed dense (384d) & sparse BM25 multi-vector engine
 │       ├── search.py      # Hybrid search & Reciprocal Rank Fusion (RRF) reranker
 │       ├── poller.py      # Background scheduled repo SHA poller daemon
 │       ├── adr.py         # MADR / Nygard format ADR ingestion and lifecycle
 │       ├── architecture.py# Codebase entry point, language distribution synthesis
 │       └── logger.py      # In-memory 500-event ring buffer diagnostic logger
-├── tests/                 # Backend pytest test suite (430+ tests, 88% coverage)
+├── tests/                 # Backend pytest test suite (522+ tests, 88%+ coverage)
 │   ├── backend/           # Unit and integration test modules
 │   ├── test_navigator_router.py      # REST navigator endpoints tests
 │   ├── test_navigator_service.py     # Tree, outline, and impact service tests

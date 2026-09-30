@@ -101,6 +101,7 @@ export interface Repo {
   file_count?: number;
   last_synced?: string;
   auto_sync?: number | boolean;
+  keep_shallow?: number | boolean;
   webhook_secret?: string;
 }
 

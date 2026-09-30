@@ -170,6 +170,20 @@ describe('CodeNavigator Container', () => {
           json: () => Promise.resolve(mockOutlineMain),
         });
       }
+      if (url.includes('/admin/api/files/read') || url.includes('/admin/api/navigator/file-content')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              repo: '__all__',
+              filepath: 'app/main.py',
+              content: 'def handle_request(req):\n    pass\n',
+              total_lines: 2,
+              size_bytes: 35,
+              doc_type: 'code',
+            }),
+        });
+      }
       if (url.includes('/admin/api/navigator/symbol-impact')) {
         if (url.includes('symbol_id=201')) {
           return Promise.resolve({
@@ -186,7 +200,7 @@ describe('CodeNavigator Container', () => {
     });
   });
 
-  it('renders toolbar, 3-pane layout, and fetches initial tree data', async () => {
+  it('renders toolbar, hero layout, and fetches initial tree data', async () => {
     render(<CodeNavigator />);
 
     // Check toolbar elements
@@ -195,10 +209,10 @@ describe('CodeNavigator Container', () => {
       expect(screen.getByText('test_main.py')).toBeInTheDocument();
     });
 
-    // Check Pane titles / headers
-    expect(screen.getByText(/files & modules/i)).toBeInTheDocument();
-    expect(screen.getByText(/symbols & routes/i)).toBeInTheDocument();
-    expect(screen.getByText(/code intelligence & impact/i)).toBeInTheDocument();
+    // Check sidebar tabs and hero viewport
+    expect(screen.getByRole('tab', { name: /files/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /symbols/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/code and document hero viewport/i)).toBeInTheDocument();
   });
 
   it('handles density mode switching and persists to localStorage', async () => {

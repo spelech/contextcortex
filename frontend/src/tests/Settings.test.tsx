@@ -108,7 +108,7 @@ describe('Settings Component', () => {
 
     expect(screen.getByText('Vector Database Engine')).toBeInTheDocument();
     expect(screen.getByText('Active Vector Backend')).toBeInTheDocument();
-    expect(screen.getByText('Auto-Sync & Webhooks')).toBeInTheDocument();
+    expect(screen.getAllByText('Auto-Sync & Webhooks')[0]).toBeInTheDocument();
     expect(screen.getByText('Global Git Provider Authentication')).toBeInTheDocument();
     expect(screen.getByText('Custom & Self-Hosted Git Host Vault')).toBeInTheDocument();
     expect(screen.getByText('ghp_****5678')).toBeInTheDocument();
@@ -211,7 +211,7 @@ describe('Settings Component', () => {
       expect(screen.getByText('1,250')).toBeInTheDocument();
     });
 
-    const testBtn = screen.getByRole('button', { name: /Test Connection/i });
+    const testBtn = screen.getByRole('button', { name: /^Test Connection$/i });
     fireEvent.click(testBtn);
 
     await waitFor(() => {
@@ -418,7 +418,7 @@ describe('Settings Component', () => {
 
     // 1. Save empty (guard branch)
     fireEvent.click(saveBtns[0]);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(5); // Initial loads for hosts, vector store, auto-sync, embedding & files
+    expect(globalThis.fetch).toHaveBeenCalledTimes(6); // Initial loads for hosts, vector store, auto-sync, embedding, files & ai-gateway
 
     // 2. Save GitHub token
     const ghInput = screen.getByPlaceholderText(/ghp_xxxx/i);
@@ -707,7 +707,7 @@ describe('Settings Component', () => {
       </ToastProvider>
     );
 
-    expect(screen.getByText('Auto-Sync & Webhooks')).toBeInTheDocument();
+    expect(screen.getAllByText('Auto-Sync & Webhooks')[0]).toBeInTheDocument();
     expect(screen.getByLabelText(/Repository Polling Interval/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Global Webhook Secret/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Incoming Webhook Payload URL/i)).toBeInTheDocument();

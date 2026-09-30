@@ -62,7 +62,30 @@ export default function SearchInspector() {
             </div>
             <div className="form-group search-form-btn-group" style={{ alignSelf: 'flex-end' }}>
               <button type="submit" className="btn btn-primary" disabled={isSearching}>
-                {isSearching ? <><i className="fa-solid fa-spinner fa-spin"></i> Searching...</> : <><i className="fa-solid fa-play"></i> Search</>}
+                {isSearching ? (
+                  <>
+                    <svg
+                      className="nav-svg-spinner animate-spin"
+                      data-testid="search-inspector-spinner"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      style={{ marginRight: '6px', verticalAlign: 'middle', display: 'inline-block' }}
+                    >
+                      <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.25)" strokeWidth="3" />
+                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                    Searching...
+                  </>
+                ) : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    Search
+                  </>
+                )}
               </button>
             </div>
           </div>

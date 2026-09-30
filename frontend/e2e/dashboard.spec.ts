@@ -411,7 +411,7 @@ test('1. navigates through all tabs including Diagnostics & Logs', async ({ page
 
   // Settings tab
   await navigateToTab(page, 'Settings');
-  await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
+  await expect(page.getByText('AI & Model Gateway').first()).toBeVisible();
 
   // Diagnostics & Logs tab
   await navigateToTab(page, 'Diagnostics & Logs');
@@ -806,6 +806,7 @@ test('10. saves GitHub personal access token and verifies rate limit update', as
   });
 
   await navigateToTab(page, 'Settings');
+  await page.locator('.settings-category-btn', { hasText: 'Git & Host Credentials' }).click();
   await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
 
   // Verify initial token display
@@ -862,6 +863,7 @@ test('11. clears GitHub token with confirmation dialog', async ({ page }) => {
   });
 
   await navigateToTab(page, 'Settings');
+  await page.locator('.settings-category-btn', { hasText: 'Git & Host Credentials' }).click();
   await expect(page.getByText('Global Git Provider Authentication')).toBeVisible();
 
   await page.locator('.settings-provider-box').filter({ hasText: 'GitHub' }).getByRole('button', { name: 'Clear' }).click();
@@ -1311,6 +1313,7 @@ test('24. configures auto-sync polling schedule and manages global webhook secre
   });
 
   await navigateToTab(page, 'Settings');
+  await page.locator('.settings-category-btn', { hasText: 'Auto-Sync & Webhooks' }).click();
   await expect(page.getByRole('heading', { name: /Auto-Sync & Webhooks/i })).toBeVisible();
 
   // Select 30 minutes polling interval

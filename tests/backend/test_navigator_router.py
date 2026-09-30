@@ -34,6 +34,7 @@ def test_db(tmp_path):
             last_synced TEXT,
             enabled INTEGER DEFAULT 1,
             auto_sync INTEGER DEFAULT 1,
+            keep_shallow INTEGER DEFAULT 0,
             webhook_secret TEXT,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -247,4 +248,34 @@ def test_api_get_omni_search_symbols_and_files(client: TestClient, test_db):
     res_none = client.get("/admin/api/navigator/omni-search?repo=test-repo&q=nonexistent_xyz_123")
     assert res_none.status_code == 200
     assert res_none.json()["matches"] == []
+
+
+def test_navigator_tree_has_no_empty_folder_root(client: TestClient, test_db):
+    """Verify get_navigator_tree sanitizes URI schemes and never produces empty name root folders."""
+    # Insert indexed file with URI scheme
+    conn = sqlite3.connect(test_db)
+    with conn:
+        conn.execute(
+            "INSERT INTO indexed_files (filepath, repo, doc_type, language) VALUES (?, ?, ?, ?)",
+            ("test-repo://scripts/db/migration.sql", "test-repo", "code", "sql")
+        )
+    conn.close()
+    
+    resp = client.get("/admin/api/navigator/tree?repo=test-repo")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "tree" in data
+    assert len(data["tree"]) > 0
+
+    # Ensure no node anywhere in the hierarchy has an empty name or raw scheme suffix
+    def assert_no_empty_nodes(nodes):
+        for node in nodes:
+            assert node["name"] != "", f"Found node with empty name: {node}"
+            assert not node["name"].endswith(":"), f"Found raw scheme node: {node}"
+            assert not node["path"].startswith(":"), f"Invalid path starting with colon: {node}"
+            if node.get("children"):
+                assert_no_empty_nodes(node["children"])
+
+    assert_no_empty_nodes(data["tree"])
+
 

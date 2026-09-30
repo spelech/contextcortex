@@ -37,6 +37,8 @@ async def api_read_file(
     except ForbiddenError as fe:
         logger.warning(f"Forbidden access reading file '{path}': {fe}")
         return JSONResponse(status_code=403, content={"error": "Access denied. Path is outside allowed repositories."})
+    except IsADirectoryError:
+        return JSONResponse(status_code=400, content={"error": f"Target path '{path}' is a directory, not a file."})
     except FileNotFoundError as fne:
         logger.warning(f"File not found reading '{path}': {fne}")
         return JSONResponse(status_code=404, content={"error": "File not found."})

@@ -109,31 +109,36 @@ body {
 /* Dashboard Container */
 .dashboard-container {
     width: 100%;
-    max-width: 1400px;
+    max-width: 1720px;
     margin: 0 auto;
     min-width: 0;
-    padding: 20px 32px;
+    padding: 16px 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;
     z-index: 1;
 }
 
-/* Header */
+/* Header - Top Brand & Status Bar */
 .dashboard-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 20px;
+    gap: 16px;
+    padding: 10px 18px;
     background: var(--bg-card);
     border: 1px solid var(--border-card);
     border-radius: var(--radius);
     backdrop-filter: blur(16px);
+    min-height: 52px;
+    box-sizing: border-box;
 }
 
-.header-top-row {
+.header-brand {
     display: flex;
     align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
 }
 
 .menu-toggle-btn {
@@ -141,9 +146,9 @@ body {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid var(--border-card);
     color: var(--text);
-    font-size: 1.25rem;
-    padding: 8px 12px;
-    border-radius: 8px;
+    font-size: 1.1rem;
+    padding: 6px 10px;
+    border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -155,45 +160,115 @@ body {
 .header-logo {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 8px;
 }
 
 .logo-icon {
-    font-size: 2rem;
+    font-size: 1.3rem;
     color: var(--accent-light);
 }
 
+.header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .header-title h1 {
-    font-size: 1.4rem;
+    font-size: 1.15rem;
     font-weight: 700;
-    letter-spacing: -0.5px;
+    letter-spacing: -0.4px;
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* Sub-Bar Navigation - Dedicated Row Below Header */
+.dashboard-nav {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    backdrop-filter: blur(16px);
+    overflow: auto;
+    scrollbar-width: none;
+    white-space: nowrap;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.dashboard-nav::-webkit-scrollbar {
+    display: none;
+}
+
+.nav-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.86rem;
+    font-weight: 600;
+    padding: 8px 10px;
+    min-height: 36px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    white-space: nowrap;
+    flex: 1;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+
+.nav-tab:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.nav-tab.active {
+    color: #fff;
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 45%, transparent);
 }
 
 .header-status {
     display: flex;
-    gap: 20px;
+    gap: 8px;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .status-item {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .status-item .label {
-    font-size: 0.75rem;
+    display: inline-block;
+    font-size: 0.72rem;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    font-weight: 500;
 }
 
 .status-item .value {
-    font-size: 0.95rem;
+    font-size: 0.78rem;
     font-weight: 600;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
+    white-space: nowrap;
 }
 
 /* Indicators */
@@ -219,42 +294,6 @@ body {
     0% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.4; transform: scale(1.2); }
     100% { opacity: 1; transform: scale(1); }
-}
-
-/* Nav Tabs */
-.dashboard-nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    border-bottom: 1px solid var(--border-card);
-    padding-bottom: 8px;
-}
-
-.nav-tab {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    font-family: inherit;
-    font-size: 0.95rem;
-    font-weight: 600;
-    padding: 10px 18px;
-    border-radius: 8px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.2s ease;
-}
-
-.nav-tab:hover {
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.05);
-}
-
-.nav-tab.active {
-    color: #fff;
-    background: color-mix(in srgb, var(--primary) 25%, transparent);
-    border: 1px solid color-mix(in srgb, var(--primary) 50%, transparent);
 }
 
 /* Glass Card */

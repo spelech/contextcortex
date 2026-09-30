@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **993 Automated Tests** (656 Pytest Backend + 287 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1003 Automated Tests** (658 Pytest Backend + 295 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -393,6 +393,9 @@ classDiagram
 
 ### 6.1 Backend Python Tests
 
+#### `tests/backend/test_ai_gateway_settings.py` (1 tests)
+- `test_ai_gateway_settings_lifecycle` - _Verify OpenAI-compatible AI Gateway configuration lifecycle and masking._
+
 #### `tests/backend/test_api_route_discovery.py` (6 tests)
 - `test_path_normalization_and_matching`
 - `test_fastapi_route_parsing`
@@ -642,7 +645,7 @@ classDiagram
 - `test_process_file_content_with_custom_provider`
 - `test_sync_single_git_repo_triggers_notification`
 
-#### `tests/backend/test_navigator_router.py` (9 tests)
+#### `tests/backend/test_navigator_router.py` (10 tests)
 - `test_db`
 - `test_api_get_navigator_tree_all`
 - `test_api_get_navigator_tree_specific_repo`
@@ -652,6 +655,7 @@ classDiagram
 - `test_api_get_symbol_impact_success`
 - `test_api_get_symbol_impact_not_found`
 - `test_api_get_omni_search_symbols_and_files`
+- `test_navigator_tree_has_no_empty_folder_root` - _Verify get_navigator_tree sanitizes URI schemes and never produces empty name root folders._
 
 #### `tests/backend/test_navigator_service.py` (11 tests)
 - `test_db`
@@ -1186,6 +1190,11 @@ and leaves the prior indexed state intact without data loss._
 
 ### 6.2 Frontend Vitest Tests (`frontend/src/tests/`)
 
+#### `AIGatewaySettings.test.tsx` (3 tests)
+- renders masked api key and exposes change key input when clicked
+- submits updated settings with new key
+- discovers models and populates dropdown selections
+
 #### `App.test.tsx` (6 tests)
 - renders header, status indicators, and default Overview tab
 - switches between tabs on navigation click
@@ -1195,7 +1204,7 @@ and leaves the prior indexed state intact without data loss._
 - renders ChromaDB provider and unhealthy status badge in header
 
 #### `CodeNavigator.test.tsx` (5 tests)
-- renders toolbar, 3-pane layout, and fetches initial tree data
+- renders toolbar, hero layout, and fetches initial tree data
 - handles density mode switching and persists to localStorage
 - loads file outline on file selection and symbol impact on symbol selection
 - supports caller click-through navigation jumping to caller file and symbol
@@ -1243,11 +1252,12 @@ and leaves the prior indexed state intact without data loss._
 - opens and closes RepoSyncDrawer when Live Logs button is clicked
 - displays loading state initially and then renders loaded repositories seamlessly
 
-#### `IngestionCatalogViewer.test.tsx` (4 tests)
+#### `IngestionCatalogViewer.test.tsx` (5 tests)
 - renders summary catalog with git repos, monitored paths, and local storage stats
 - switches source type filters (git, monitored_path, local_storage)
 - toggles detail level to detailed and renders ingested files list
 - applies search and extension filters
+- renders 4 distinct aligned stat cards with formatted badges and no emojis
 
 #### `LocalPathManager.test.tsx` (8 tests)
 - renders configured paths correctly
@@ -1270,6 +1280,12 @@ and leaves the prior indexed state intact without data loss._
 - intercepts .pdf upload, fetches preview data, opens PdfPreviewModal, and ingests on confirm
 - displays PDF notice and hides text textarea when upload path is a PDF
 - prevents direct text replacement of PDF files in replace modal
+
+#### `NavigatorBreadcrumbs.test.tsx` (4 tests)
+- renders repo badge and clickable path segments
+- triggers back and forward history buttons
+- disables history buttons when navigation history bounds are reached
+- toggles sidebar on sidebar button click
 
 #### `NavigatorCodeViewer.test.tsx` (6 tests)
 - renders line numbers and code lines

@@ -14,10 +14,10 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | ![Overview](docs/assets/desktop_overview.png) | ![Git Repos](docs/assets/desktop_git-repos.png) |
 | **Codebase Navigator** | **Search & Inspector** |
 | ![Codebase Navigator](docs/assets/desktop_codebase-navigator.png) | ![Search](docs/assets/desktop_search-inspector.png) |
-| **Local Paths** | **Settings** |
-| ![Local Paths](docs/assets/desktop_local-paths.png) | ![Settings](docs/assets/desktop_settings.png) |
-| **Diagnostics & Logs** | |
-| ![Diagnostics](docs/assets/desktop_diagnostics.png) | |
+| **Files & Storage** | **Settings** |
+| ![Files & Storage](docs/assets/desktop_local-paths.png) | ![Settings](docs/assets/desktop_settings.png) |
+| **Diagnostics & Logs** | **Add Repository Modal** |
+| ![Diagnostics](docs/assets/desktop_diagnostics.png) | ![Add Repository Modal](docs/assets/desktop_add-repo-modal.png) |
 
 </details>
 
@@ -59,12 +59,13 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - **Qdrant**: High-scale vector engine supporting dense + sparse BM25 multi-vectors with Reciprocal Rank Fusion (RRF) in both embedded disk and remote server modes.
   - **ChromaDB**: Lightweight, zero-dependency embedded disk or remote vector store with automatic fallback.
   - **Dynamic Backend Switching**: Test and switch vector backends live from the Settings UI or REST API without server restarts.
-- **Universal Git Provider Support**:
+- **Universal Git Provider Support & Persistent Shallow Retention**:
   - Ingest repositories from **any source where Git lives**: **GitHub**, **GitLab (Cloud, Enterprise & Self-Hosted)**, **Gitea & Forgejo**, **Bitbucket (Cloud & Server)**, and **Generic Git HTTP/HTTPS**.
+  - **Configurable Shallow Copy Retention (`keep_shallow`)**: Choose between **ephemeral shallow clones** (immediate deletion after indexing to save storage) or **persistent shallow clones** (`--depth 1` retained on disk under `/app/data/repos/{repo_name}` on the cache volume). Persistent copies power instant full source code inspection in Code Navigator and accelerated incremental delta syncing (`git fetch --depth 1` + `git reset --hard`).
+  - **Full-Screen React Portals for Modals**: Add Repository modal, Webhook setup modal, and Sync Drawer render cleanly via React Portals (`createPortal(..., document.body)`), eliminating containment clipping from glassmorphism cards.
   - **Provider-Aware Permalinks**: Automatically generates exact deep-links for code results (`/blob/`, `/-/blob/`, `/src/branch/`, `/src/commit/`, `/src/#lines-`).
   - **Custom Git Host Credential Vault**: Register per-host tokens and authentication types for private internal domains (e.g. `gitlab.company.internal` or `http://git.lan:3000`).
 - **AST-Aware Code Chunking (Tree-sitter)**: Understands syntax structures across Python, TypeScript/JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more. Chunks along class, method, and function boundaries with exact line numbers and symbol names.
-- **Ephemeral Repository Ingestion**: Authenticated shallow clones (`--depth 1`) extract AST symbols and hybrid vectors and **immediately remove the cloned repository from disk** to conserve storage.
 - **Multi-Tier Git Authentication Hierarchy**:
   1. Per-repository override token & optional username.
   2. Domain-level Custom Git Host Vault (`git_host_credentials`).
@@ -80,20 +81,21 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - Granular multi-dimensional filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo_name`, `path_prefix`, and `file_extension`.
   - Flexible granularity (`summary` for totals and status; `detailed` for hierarchical file trees).
 - **Fast Deterministic Symbol Lookup**: Built-in symbol table (`ast_symbols`) powers instantaneous symbol searches (`find_symbol`) and file outlines (`get_file_outline`) without token bloat.
-- **High-Performance 3-Pane Codebase Navigator**:
-  - **Pane 1 (Files & Modules)**: Virtualized folder & file tree hierarchy with symbol/route counts, instant filtering, and one-click expand/collapse.
-  - **Pane 2 (Symbols & Routes)**: Language-aware AST symbol declarations with category chip filtering (`All`, `Functions`, `Classes`, `Routes`), signature previews, and search.
-  - **Pane 3 (Code Intelligence & Impact)**: Deep architectural intelligence displaying incoming callers, outgoing callees, imported modules, REST API route mappings (`POST`, `GET`, etc.), signature code blocks, docstrings, and one-click caller navigation jump.
-  - **Integrated Document & Markdown Reader**: Formatted Markdown and raw source table viewer for reading full documentation (`.md`, `.txt`) directly within Pane 3.
+- **High-Performance Codebase Navigator & Omni-Search**:
+  - **Omni-Search Command Palette (`Ctrl+K` / `Cmd+K`)**: Unified command palette searching across repositories, file paths, and AST symbols with live fuzzy scoring and keyboard navigation.
+  - **Dual-Pane Sidebar (Files & Symbols)**: Tabbed sidebar separating file directory hierarchy and AST symbol outline. Preserves folder expansion state per-repository across browser sessions (`sessionStorage`).
+  - **Hero Viewport (Full Source Code & Documentation)**:
+    - **Syntax-Highlighted Source Code Viewer**: High-fidelity syntax highlighting across 8+ languages (C#, Python, JavaScript/TypeScript, C++, Go, Rust, SQL, COBOL, JSON, YAML, etc.) with line numbers, highlighted target symbol line ranges, permalink copy, and collapsible caller impact drawer.
+    - **Markdown Document Reader**: Automatic table auto-normalization (bridging gaps and synthesizing separator rows for loose Markdown) and interactive Mermaid diagram rendering.
+    - **Instant Intelligence & Impact Tab**: Caller/callee analysis, route mappings, AST signatures, and cross-file jump navigation, immediately clickable and populated upon file selection without requiring manual outline navigation.
   - **Customizable Layout Density & Mobile Responsiveness**: Persisted `Compact` (IDE density), `Balanced` (default), and `Spacious` (cards) modes with responsive vertical stacking and zero horizontal overflow across devices.
 - **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
 - **Multi-Theme Engine & Modern Tabbed Web Dashboard (`/admin/`)**:
   - **Appearance & Theme Settings**: Instant zero-latency switching between 4 distinct dark and light themes (**Deep Ocean**, **Midnight Blue**, **Lavender Haze**, and **Amber Warmth**) with live palette swatches and browser persistence.
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
-  - **Codebase Navigator**: High-performance 3-pane architectural file tree, AST symbol outline, and code impact/route inspector.
-  - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, trigger shallow clone syncs, inspect commit SHAs, and manage sources.
-  - **Local Paths**: Monitor local workspaces and notes vaults with recursive directory scanning and filesystem browser modal.
-  - **Local Storage**: Managed file explorer, direct file upload modal with folder categorization, and file preview/replacement.
+  - **Codebase Navigator**: Hero split layout with Omni-Search palette, folder tree persistence, syntax-highlighted code viewer, Mermaid documentation reader, and instant intelligence inspection.
+  - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, configure shallow copy retention, trigger syncs, inspect commit SHAs, and manage sources.
+  - **Files & Storage**: Unified explorer managing monitored local directory vaults and managed local file storage with upload modal and file preview.
   - **Ingestion Catalog**: Unified multi-source explorer with source type filters, repository lookup, and file listings.
   - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews, target type toggle (Code vs Docs), and syntax highlighted results.
   - **Settings**: Vector Database manager (pgvector, Qdrant, & ChromaDB switcher & connection tester), LiteLLM Model Discovery with dynamic categorized model dropdowns (Embeddings, Vision OCR, and Chat models), multi-provider token cards, GitHub rate limit monitor, and interactive Custom Git Host Credential Vault table/modal.

@@ -74,9 +74,11 @@ flowchart TD
             TopoHelpers["helpers.py"]
         end
 
-        NavigatorSrv["Codebase Navigator Service (navigator.py)\n3-Pane Tree, AST Outline & Impact Engine"]
+        NavigatorSrv["Codebase Navigator Service (navigator.py)\nHero Tree, AST Outline & Impact Engine"]
+        OmniSearchSrv["Omni-Search Command Palette (omni_search.py)\nFuzzy Repo, File & Symbol Ranking"]
+        FileReaderSrv["Source & Doc Reader (file_reader.py)\nFull Code & Markdown Content Delivery"]
         LocalStorageSrv["Local Storage Service (local_storage.py)\nPath Traversal Defense & File Trees"]
-        GitMgr["Universal Shallow Git Ingestion (git_manager.py)"]
+        GitMgr["Universal Shallow Git Ingestion (git_manager.py)\nEphemeral & Persistent Clones"]
         Embeddings["FastEmbed Engine (embeddings.py)\nDense (384d) + Sparse BM25"]
         Search["Hybrid & RRF Search (search.py)"]
         Poller["Auto-Sync Poller Daemon (poller.py)"]
@@ -94,6 +96,7 @@ flowchart TD
         Chroma["ChromaDB (Embedded/Remote)"]
         end
         LocalStorageDir[("Managed Local Storage\n(DATA_DIR/storage)")]
+        PersistentRepoDir[("Persistent Shallow Clones\n(DATA_DIR/repos/{repo_name})")]
     end
 
     Claude -->|Authorization: Bearer cc_... or JWT| SSE
@@ -352,26 +355,19 @@ flowchart TD
 
 ---
 
-### 13. High-Performance 3-Pane Codebase Navigator (`app/services/navigator.py` & `app/api/routers/navigator.py`)
-- **Architectural Motivation**: Replaces legacy 2D graph canvases with a structured, ultra-fast 3-pane navigation paradigm designed for instant codebase comprehension, symbol discovery, and architectural impact analysis.
-- **Three-Pane Layout Topology**:
-  - **Pane 1: Files & Modules (`NavigatorTree.tsx`)**:
-    - Queries `GET /admin/api/navigator/tree?repo=...`.
-    - Recursively organizes `indexed_files` into hierarchical directory trees with aggregate metrics (total symbol counts, detected API routes per folder/file).
-    - Features instant search filtering (auto-expanding ancestor directories), Expand All / Collapse All controls, and active file highlighting.
-  - **Pane 2: Symbols & Routes (`NavigatorOutline.tsx`)**:
-    - Queries `GET /admin/api/navigator/file-outline?filepath=...&repo=...`.
-    - Retrieves syntax-aware AST symbols from `ast_symbols` along with associated REST routes from `api_routes`.
-    - Provides category chip filtering (`All`, `Functions`, `Classes`, `Routes`) and real-time symbol search.
-    - Displays symbol kinds (function, class, struct, interface), start/end line numbers, and route method badges (`POST`, `GET`, etc.).
-  - **Pane 3: Code Intelligence & Impact Inspector (`NavigatorInspector.tsx`)**:
-    - Queries `GET /admin/api/navigator/symbol-impact?symbol_id=...` or `?name=...&filepath=...`.
-    - Aggregates multi-source intelligence from `ast_symbols`, `ast_relationships`, and `api_routes`.
-    - **4-Metric Impact Summary**: Count of incoming callers, outgoing callees, imported modules, and language scope.
-    - **API Route Mapping Card**: Method badge (`POST`, `GET`, `PUT`, `DELETE`), path pattern (`/v1/chat/completions`), and framework tag (`FastAPI`, `Express`, `Gin`, etc.).
-    - **Signature & Docstrings**: Syntax-highlighted code block and extracted documentation.
-    - **Interactive Relationship Cards**: Clickable caller cards with filename, symbol name, and line numbers. Clicking a caller triggers bidirectional navigation (updates tree selection, switches file outline, and activates the caller symbol).
-    - **Copy Permalink**: Generates and copies clean permalinks with file paths and line ranges.
+### 13. High-Performance Codebase Navigator & Omni-Search (`app/services/navigator.py`, `app/services/omni_search.py`, `app/services/file_reader.py`)
+- **Architectural Motivation**: Provides an ultra-fast, IDE-grade codebase comprehension and exploration system with split hero layout, instant command palette search, syntax-highlighted code viewing, and deep AST symbol intelligence.
+- **Hero Split-View Layout Topology**:
+  - **Left Sidebar: Dual-Tab Directory Tree & Symbol Outline**:
+    - **Files Tab (`NavigatorTree.tsx`)**: Queries `GET /admin/api/navigator/tree?repo=...`. Recursively structures `indexed_files` into hierarchical trees with aggregate symbol counts and API routes. Features instant search filtering, Expand All / Collapse All controls, active file highlighting, and per-repository directory expansion persistence via `sessionStorage`.
+    - **Symbols Tab (`NavigatorOutline.tsx`)**: Queries `GET /admin/api/navigator/file-outline?filepath=...&repo=...`. Displays AST symbol declarations from `ast_symbols` and REST routes from `api_routes` with category filtering (`All`, `Functions`, `Classes`, `Routes`), signature previews, and search.
+  - **Center Hero Viewport: Code Viewer, Doc Reader & Intelligence**:
+    - **Syntax-Aware Source Code Viewer (`NavigatorCodeViewer.tsx`)**: Queries `GET /admin/api/navigator/file-content?filepath=...&repo=...` through `file_reader.py`. Features Prism-powered syntax highlighting across 8+ languages (C#, Python, JavaScript/TypeScript, C++, Go, Rust, SQL, COBOL, JSON, YAML, etc.), line numbering, target line range highlights (`targetStartLine`-`targetEndLine`), permalink copying, and collapsible caller impact drawer.
+    - **Documentation & Markdown Reader (`NavigatorDocReader.tsx`)**: Renders markdown files with GitHub Flavored Markdown (GFM), automatic table normalization (bridging blank lines and auto-inserting missing separator rows), and interactive Mermaid diagram rendering (`flowchart`, `sequenceDiagram`, `classDiagram`, `erDiagram`, etc.).
+    - **Code Intelligence & Impact Inspector (`NavigatorInspector.tsx`)**: Queries `GET /admin/api/navigator/symbol-impact?symbol_id=...`. Immediately accessible and clickable upon file selection without requiring manual outline navigation. Aggregates caller/callee counts, API route mappings, method signatures, docstrings, and cross-file jump navigation.
+  - **Omni-Search Command Palette (`NavigatorOmniSearch.tsx` / `Ctrl+K`)**:
+    - Queries `GET /admin/api/navigator/omni-search?query=...&repo=...`.
+    - Real-time fuzzy ranked matching across repository aliases, file paths, and AST symbols with hotkey triggers, badge indicators, and instant keyboard selection.
 - **Multi-Density Layout Engine & Persistent UX**:
   - `Balanced`: Default balanced layout optimized for standard desktop viewports.
   - `Compact`: High-density IDE layout reducing font sizes and padding for large file trees and complex outlines.
@@ -400,6 +396,7 @@ erDiagram
         datetime last_synced
         int enabled
         int auto_sync
+        int keep_shallow "0 = Ephemeral (delete on sync), 1 = Retain shallow clone on disk"
         string webhook_secret
         datetime added_at
     }

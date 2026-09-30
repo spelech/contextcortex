@@ -2,12 +2,11 @@ import { useState, useEffect } from 'react';
 import './index.css';
 import Overview from './Overview';
 import GitRepoManager from './GitRepoManager';
-import LocalPathManager from './LocalPathManager';
+import FilesAndStorage from './FilesAndStorage';
 import SearchInspector from './SearchInspector';
 import Settings from './Settings';
 import DiagnosticsViewer from './DiagnosticsViewer';
 import CodeNavigator from './CodeNavigator';
-import LocalStorageManager from './LocalStorageManager';
 import IngestionCatalogViewer from './IngestionCatalogViewer';
 import type { Stats } from './types';
 
@@ -37,7 +36,7 @@ function App() {
     <>
       <div className="dashboard-container">
         <header className="dashboard-header">
-          <div className="header-top-row">
+          <div className="header-brand">
             <div className="header-logo">
               <i className="fa-solid fa-layer-group logo-icon"></i>
               <div className="header-title">
@@ -45,14 +44,8 @@ function App() {
                 <span className="badge badge-primary">v2.16.0</span>
               </div>
             </div>
-            <button
-              className="menu-toggle-btn"
-              aria-label="Toggle navigation"
-              onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
-            >
-              <i className={`fa-solid ${isMobileNavOpen ? 'fa-xmark' : 'fa-bars'}`}></i>
-            </button>
           </div>
+
           <div className="header-status">
             <div className="status-item">
               <span className="label">Engine State</span>
@@ -82,31 +75,61 @@ function App() {
                 )}
               </span>
             </div>
-            <div className="status-item">
+            <div className="status-item header-collection-item">
               <span className="label">Collection</span>
               <span className="value code">{stats?.vector_store_collection || 'knowledge_rag_v1'}</span>
             </div>
           </div>
+
+          <button
+            className="menu-toggle-btn"
+            aria-label="Toggle navigation"
+            onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+          >
+            <i className={`fa-solid ${isMobileNavOpen ? 'fa-xmark' : 'fa-bars'}`}></i>
+          </button>
         </header>
 
-        <nav className={`dashboard-nav ${isMobileNavOpen ? 'drawer-open' : ''}`}>
-          <button className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => { setActiveTab('overview'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-chart-pie"></i> Overview</button>
-          <button className={`nav-tab ${activeTab === 'navigator' || activeTab === 'topology' ? 'active' : ''}`} onClick={() => { setActiveTab('navigator'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-code-fork"></i> Navigator</button>
-          <button className={`nav-tab ${activeTab === 'git-repos' ? 'active' : ''}`} onClick={() => { setActiveTab('git-repos'); setIsMobileNavOpen(false); }}><i className="fa-brands fa-github"></i> Git Repositories</button>
-          <button className={`nav-tab ${activeTab === 'local-paths' ? 'active' : ''}`} onClick={() => { setActiveTab('local-paths'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-folder-tree"></i> Local Paths</button>
-          <button className={`nav-tab ${activeTab === 'local-storage' ? 'active' : ''}`} onClick={() => { setActiveTab('local-storage'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-hard-drive"></i> Local Storage</button>
-          <button className={`nav-tab ${activeTab === 'ingestion-catalog' ? 'active' : ''}`} onClick={() => { setActiveTab('ingestion-catalog'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-book-bookmark"></i> Ingestion Catalog</button>
-          <button className={`nav-tab ${activeTab === 'search-inspector' ? 'active' : ''}`} onClick={() => { setActiveTab('search-inspector'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-magnifying-glass"></i> Search & Inspector</button>
-          <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-gear"></i> Settings</button>
-          <button className={`nav-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => { setActiveTab('diagnostics'); setIsMobileNavOpen(false); }}><i className="fa-solid fa-terminal"></i> Diagnostics & Logs</button>
+        <nav className={`dashboard-nav ${isMobileNavOpen ? 'drawer-open' : ''}`} aria-label="Main Navigation">
+          <button className={`nav-tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => { setActiveTab('overview'); setIsMobileNavOpen(false); }}>
+            <i className="fa-solid fa-chart-pie"></i>
+            <span>Overview</span>
+          </button>
+          <button className={`nav-tab ${activeTab === 'navigator' || activeTab === 'topology' ? 'active' : ''}`} onClick={() => { setActiveTab('navigator'); setIsMobileNavOpen(false); }}>
+            <i className="fa-solid fa-code-fork"></i>
+            <span>Navigator</span>
+          </button>
+          <button className={`nav-tab ${activeTab === 'git-repos' ? 'active' : ''}`} onClick={() => { setActiveTab('git-repos'); setIsMobileNavOpen(false); }}>
+            <i className="fa-brands fa-github"></i>
+            <span>Git Repositories</span>
+          </button>
+          <button className={`nav-tab ${activeTab === 'files-storage' ? 'active' : ''}`} onClick={() => { setActiveTab('files-storage'); setIsMobileNavOpen(false); }}>
+            <i className="fa-solid fa-folder-tree"></i>
+            <span>Files &amp; Storage</span>
+          </button>
+          <button className={`nav-tab ${activeTab === 'ingestion-catalog' ? 'active' : ''}`} onClick={() => { setActiveTab('ingestion-catalog'); setIsMobileNavOpen(false); }}>
+            <i className="fa-solid fa-book-bookmark"></i>
+            <span>Ingestion Catalog</span>
+          </button>
+          <button className={`nav-tab ${activeTab === 'search-inspector' ? 'active' : ''}`} onClick={() => { setActiveTab('search-inspector'); setIsMobileNavOpen(false); }}>
+            <i className="fa-solid fa-magnifying-glass"></i>
+            <span>Search & Inspector</span>
+          </button>
+          <button className={`nav-tab ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setIsMobileNavOpen(false); }}>
+            <i className="fa-solid fa-gear"></i>
+            <span>Settings</span>
+          </button>
+          <button className={`nav-tab ${activeTab === 'diagnostics' ? 'active' : ''}`} onClick={() => { setActiveTab('diagnostics'); setIsMobileNavOpen(false); }}>
+            <i className="fa-solid fa-terminal"></i>
+            <span>Diagnostics & Logs</span>
+          </button>
         </nav>
 
         <main className="dashboard-main">
           {activeTab === 'overview' && <Overview stats={stats} refreshStats={loadStats} />}
           {(activeTab === 'navigator' || activeTab === 'topology') && <CodeNavigator />}
           {activeTab === 'git-repos' && <GitRepoManager refreshStats={loadStats} />}
-          {activeTab === 'local-paths' && <LocalPathManager refreshStats={loadStats} />}
-          {activeTab === 'local-storage' && <LocalStorageManager refreshStats={loadStats} />}
+          {activeTab === 'files-storage' && <FilesAndStorage refreshStats={loadStats} />}
           {activeTab === 'ingestion-catalog' && <IngestionCatalogViewer />}
           {activeTab === 'search-inspector' && <SearchInspector />}
           {activeTab === 'settings' && <Settings stats={stats} refreshStats={loadStats} />}

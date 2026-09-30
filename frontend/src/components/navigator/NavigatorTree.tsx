@@ -9,22 +9,29 @@ interface NavigatorTreeProps {
   onFilterChange?: (text: string) => void;
   density?: DensityMode;
   loading?: boolean;
+  repo?: string;
+  autoExpandRoot?: boolean;
 }
 
-// File icon helper
-export function getFileIcon(filename: string, language?: string | null): { icon: string; className: string } {
+// File icon helper — returns FA icon class strings (no emoji)
+export function getFileIcon(filename: string, language?: string | null): { faClass: string; className: string } {
   const lower = filename.toLowerCase();
-  if (lower.endsWith('.py') || language === 'python') return { icon: '🐍', className: 'icon-py' };
-  if (lower.endsWith('.tsx') || lower.endsWith('.ts') || language === 'typescript') return { icon: '⚡', className: 'icon-ts' };
-  if (lower.endsWith('.jsx') || lower.endsWith('.js') || lower.endsWith('.mjs') || language === 'javascript') return { icon: '📜', className: 'icon-js' };
-  if (lower.endsWith('.go') || language === 'go') return { icon: '🔷', className: 'icon-go' };
-  if (lower.endsWith('.rs') || language === 'rust') return { icon: '🦀', className: 'icon-rs' };
-  if (lower.endsWith('.json')) return { icon: '📄', className: 'icon-json' };
-  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return { icon: '📝', className: 'icon-md' };
-  if (lower.endsWith('.css') || lower.endsWith('.scss')) return { icon: '🎨', className: 'icon-css' };
-  if (lower.endsWith('.sql')) return { icon: '🗄️', className: 'icon-sql' };
-  if (lower.endsWith('.yaml') || lower.endsWith('.yml') || lower.endsWith('.toml')) return { icon: '⚙️', className: 'icon-yaml' };
-  return { icon: '📄', className: 'icon-file' };
+  if (lower.endsWith('.py') || language === 'python') return { faClass: 'fa-brands fa-python', className: 'icon-py' };
+  if (lower.endsWith('.tsx') || lower.endsWith('.ts') || language === 'typescript') return { faClass: 'fa-brands fa-js', className: 'icon-ts' };
+  if (lower.endsWith('.jsx') || lower.endsWith('.js') || lower.endsWith('.mjs') || language === 'javascript') return { faClass: 'fa-brands fa-square-js', className: 'icon-js' };
+  if (lower.endsWith('.go') || language === 'go') return { faClass: 'fa-solid fa-g', className: 'icon-go' };
+  if (lower.endsWith('.rs') || language === 'rust') return { faClass: 'fa-solid fa-gear', className: 'icon-rs' };
+  if (lower.endsWith('.cs') || language === 'csharp') return { faClass: 'fa-brands fa-microsoft', className: 'icon-cs' };
+  if (lower.endsWith('.json')) return { faClass: 'fa-solid fa-brackets-curly', className: 'icon-json' };
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return { faClass: 'fa-solid fa-file-lines', className: 'icon-md' };
+  if (lower.endsWith('.css') || lower.endsWith('.scss')) return { faClass: 'fa-brands fa-css3-alt', className: 'icon-css' };
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return { faClass: 'fa-brands fa-html5', className: 'icon-html' };
+  if (lower.endsWith('.sql') || lower.endsWith('.psql') || lower.endsWith('.pls') || lower.endsWith('.plsql') || lower.endsWith('.ddl') || lower.endsWith('.dml') || lower.endsWith('.cql') || language === 'sql') return { faClass: 'fa-solid fa-database', className: 'icon-sql' };
+  if (lower.endsWith('.yaml') || lower.endsWith('.yml') || lower.endsWith('.toml')) return { faClass: 'fa-solid fa-sliders', className: 'icon-yaml' };
+  if (lower.endsWith('.sh') || lower.endsWith('.bash') || lower.endsWith('.zsh')) return { faClass: 'fa-solid fa-terminal', className: 'icon-sh' };
+  if (lower.endsWith('.dockerfile') || lower === 'dockerfile') return { faClass: 'fa-brands fa-docker', className: 'icon-docker' };
+  if (lower.endsWith('.cbl') || lower.endsWith('.cob') || lower.endsWith('.cpy') || lower.endsWith('.cobol') || language === 'cobol') return { faClass: 'fa-solid fa-server', className: 'icon-cobol' };
+  return { faClass: 'fa-solid fa-file-code', className: 'icon-file' };
 }
 
 interface FlatVisibleItem {
@@ -42,12 +49,61 @@ export const NavigatorTree: React.FC<NavigatorTreeProps> = ({
   onFilterChange,
   density = 'balanced',
   loading = false,
+  repo,
+  autoExpandRoot = false,
 }) => {
   const [internalFilter, setInternalFilter] = useState('');
   const filter = externalFilter !== undefined ? externalFilter : internalFilter;
   const setFilter = onFilterChange || setInternalFilter;
 
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const storageKey = `cc_nav_expanded_${repo || 'all'}`;
+
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
+    try {
+      const saved = sessionStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return new Set(parsed);
+        }
+      }
+    } catch {}
+    return new Set();
+  });
+
+  // Save expanded IDs to sessionStorage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify(Array.from(expandedIds)));
+    } catch {}
+  }, [expandedIds, storageKey]);
+
+  // Restore when repo changes
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(`cc_nav_expanded_${repo || 'all'}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setExpandedIds(new Set(parsed));
+        }
+      }
+    } catch {}
+  }, [repo]);
+
+  // Auto-expand top-level folders on first load if autoExpandRoot is enabled and nothing is expanded
+  useEffect(() => {
+    if (autoExpandRoot && nodes && nodes.length > 0) {
+      setExpandedIds((prev) => {
+        if (prev.size === 0) {
+          const rootDirIds = nodes.filter((n) => n.is_dir).map((n) => n.id);
+          return rootDirIds.length > 0 ? new Set(rootDirIds) : prev;
+        }
+        return prev;
+      });
+    }
+  }, [nodes, autoExpandRoot]);
+
   const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -337,8 +393,9 @@ export const NavigatorTree: React.FC<NavigatorTreeProps> = ({
               const isSelected = !node.is_dir && node.path === selectedPath;
               const isFocused = idx === focusedIndex;
 
-              const { icon, className: iconClass } = node.is_dir
-                ? { icon: isExpanded ? '📂' : '📁', className: 'icon-dir' }
+              const dirFaClass = isExpanded ? 'fa-solid fa-folder-open' : 'fa-solid fa-folder';
+              const { faClass: fileFaClass, className: iconClass } = node.is_dir
+                ? { faClass: dirFaClass, className: 'icon-dir' }
                 : getFileIcon(node.name, node.language);
 
               return (
@@ -367,7 +424,7 @@ export const NavigatorTree: React.FC<NavigatorTreeProps> = ({
                   </span>
 
                   <span className={`tree-icon ${iconClass}`} aria-hidden="true">
-                    {icon}
+                    <i className={fileFaClass}></i>
                   </span>
 
                   <span className="tree-label" title={node.path}>

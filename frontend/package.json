@@ -15,6 +15,12 @@
     "inspect:layout": "node --experimental-strip-types scripts/inspect_layout.ts"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.13",
+    "@types/marked": "^5.0.2",
+    "marked": "^18.0.14",
+    "mermaid": "^12.0.0",
+    "prism-react-renderer": "^2.4.1",
+    "prismjs": "^1.30.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -23,6 +29,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^24.13.3",
+    "@types/prismjs": "^1.26.6",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",

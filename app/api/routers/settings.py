@@ -13,7 +13,7 @@ from app.models.schemas import (
     TokenRequest, HostCredentialRequest,
     VectorStoreTestRequest, VectorStoreSwitchRequest,
     AutoSyncSettingsRequest, EmbeddingSettingsRequest,
-    FileSettingsRequest
+    FileSettingsRequest, AIGatewaySettingsRequest
 )
 import app.services.database as db_service
 import app.services.git_manager as gm_service
@@ -385,6 +385,34 @@ async def api_discover_models(url: Optional[str] = None, api_key: Optional[str] 
     except Exception as e:
         logger.error(f"Error discovering models: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to discover models."})
+
+@router.get("/admin/api/settings/ai-gateway")
+async def api_get_ai_gateway_settings():
+    try:
+        cfg = db_service.get_ai_gateway_config()
+        return cfg
+    except Exception as e:
+        logger.error(f"Error reading AI gateway settings: {e}")
+        return JSONResponse(status_code=500, content={"error": "Failed to read AI gateway settings."})
+
+@router.post("/admin/api/settings/ai-gateway")
+async def api_save_ai_gateway_settings(payload: AIGatewaySettingsRequest):
+    try:
+        updated = db_service.set_ai_gateway_config(
+            url=payload.url,
+            api_key=payload.api_key,
+            chat_model=payload.chat_model,
+            vision_ocr_model=payload.vision_ocr_model,
+            embedding_model=payload.embedding_model,
+        )
+        return {
+            "status": "success",
+            "message": "AI & Model Gateway settings saved successfully.",
+            "config": updated
+        }
+    except Exception as e:
+        logger.error(f"Error saving AI gateway settings: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to save AI gateway settings."})
 
 @router.get("/admin/api/settings/embedding")
 async def api_get_embedding_settings():

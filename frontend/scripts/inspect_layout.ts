@@ -489,7 +489,7 @@ async function evaluatePageLayout(page: Page, viewportWidth: number, viewportHei
       let overflowPixels = 0;
 
       // 1. Viewport Overflow Check
-      const scrollParent = el.closest('.table-container, .table-responsive, [style*="overflow-x: auto"], [style*="overflow-x: scroll"], pre, .traceback-container, .traceback-box');
+      const scrollParent = el.closest('.table-container, .table-responsive, .settings-category-sidebar, .nav-toolbar, .dashboard-nav, .log-filter-pills, [style*="overflow-x: auto"], [style*="overflow-x: scroll"], pre, .traceback-container, .traceback-box');
       const isInsideScrollContainer = scrollParent && scrollParent !== el;
 
       const rightOverflow = rect.right - viewportWidth;
@@ -628,6 +628,8 @@ export async function runLayoutInspection() {
       });
 
       const page = await context.newPage();
+      page.on('console', (msg) => console.log(`[Browser ${msg.type()}]`, msg.text()));
+      page.on('pageerror', (err) => console.error(`[Browser PageError]`, err));
       await setupRouteMocks(page);
 
       await page.goto(devServer.url, { waitUntil: 'domcontentloaded' });
