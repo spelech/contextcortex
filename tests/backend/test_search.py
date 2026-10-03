@@ -91,6 +91,97 @@ def test_execute_hybrid_search_ast_enrichment():
         assert p["kind"] == "method_declaration"
         assert p["ast_symbol_id"] == 1234
 
+def test_execute_hybrid_search_ast_enrichment_interval_fallback():
+    # Priority 2: symbol is None or doesn't match by name, but line interval overlaps
+    mock_hit = VectorSearchResult(
+        id="code-hit-2",
+        score=0.85,
+        payload={
+            "repo": "test-repo",
+            "doc_type": "code",
+            "rel_path": "src/utils.py",
+            "symbol": None,
+            "start_line": 50,
+            "end_line": 65,
+            "content": "def helper(): pass"
+        }
+    )
+    with patch("app.services.search.get_vector_store") as mock_get_store, \
+         patch("app.services.search.get_db_connection") as mock_db:
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_hit]
+        mock_get_store.return_value = mock_store
+
+        mock_conn = MagicMock()
+        # First query (exact symbol) returns None
+        # Second query (line interval) returns matching symbol
+        mock_row = {
+            "id": 5678,
+            "name": "helper",
+            "full_symbol": "Utils.helper",
+            "kind": "function_declaration",
+            "signature": "def helper(val: int) -> int:",
+            "start_line": 48,
+            "end_line": 68,
+        }
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+        mock_db.return_value.__enter__.return_value = mock_conn
+
+        results = execute_hybrid_search("helper", doc_type="code")
+        assert len(results) == 1
+        p = results[0].payload
+        assert p["signature"] == "def helper(val: int) -> int:"
+        assert p["kind"] == "function_declaration"
+        assert p["full_symbol"] == "Utils.helper"
+        assert p["ast_symbol_id"] == 5678
+
+def test_execute_hybrid_search_ast_enrichment_resilience():
+    # When SQLite has no matching symbol or raises an error, search must NOT crash
+    mock_hit = VectorSearchResult(
+        id="code-hit-3",
+        score=0.75,
+        payload={
+            "repo": "test-repo",
+            "doc_type": "code",
+            "rel_path": "src/unknown.py",
+            "symbol": "UnknownClass",
+            "content": "class UnknownClass: pass"
+        }
+    )
+    with patch("app.services.search.get_vector_store") as mock_get_store, \
+         patch("app.services.search.get_db_connection") as mock_db:
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_hit]
+        mock_get_store.return_value = mock_store
+
+        # Simulate SQLite operational failure
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("database disk image is malformed")
+        mock_db.return_value.__enter__.return_value = mock_conn
+
+        results = execute_hybrid_search("unknown", doc_type="code")
+        assert len(results) == 1
+        # Payload remains preserved without failure
+        assert results[0].payload["symbol"] == "UnknownClass"
+        assert "signature" not in results[0].payload
+
+def test_execute_hybrid_search_ast_enrichment_skipped_for_docs():
+    # AST enrichment must be completely bypassed for doc_type="doc"
+    mock_hit = VectorSearchResult(
+        id="doc-hit-1",
+        score=0.89,
+        payload={"repo": "docs", "doc_type": "doc", "rel_path": "README.md"}
+    )
+    with patch("app.services.search.get_vector_store") as mock_get_store, \
+         patch("app.services.search.get_db_connection") as mock_db:
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_hit]
+        mock_get_store.return_value = mock_store
+
+        results = execute_hybrid_search("readme", doc_type="doc")
+        assert len(results) == 1
+        mock_db.assert_not_called()
+
 def test_execute_hybrid_search_exception():
     with patch("app.services.search.get_vector_store") as mock_get_store:
         mock_store = MagicMock()

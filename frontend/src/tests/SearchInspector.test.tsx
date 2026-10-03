@@ -297,4 +297,65 @@ describe('SearchInspector Component', () => {
       expect(screen.getByText('Copied')).toBeInTheDocument();
     });
   });
+
+  it('renders hits with missing AST metadata and null scores without error', async () => {
+    const rawHits = [
+      {
+        id: 'raw-1',
+        score: 0.65,
+        dense_score: null,
+        sparse_score: null,
+        payload: {
+          repo: 'scripts-repo',
+          rel_path: 'deploy.sh',
+          content: '#!/bin/bash\necho deploy'
+        }
+      }
+    ];
+
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/admin/api/repos')) {
+        return Promise.resolve({ ok: true, json: async () => [{ name: 'scripts-repo' }] });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ results: rawHits }) });
+    });
+
+    render(
+      <ToastProvider>
+        <SearchInspector />
+      </ToastProvider>
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/e.g. JWT token/i), { target: { value: 'deploy' } });
+    fireEvent.click(screen.getByRole('button', { name: /Search/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText('scripts-repo').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('deploy.sh')).toBeInTheDocument();
+      expect(screen.getByText(/65\.0%/)).toBeInTheDocument();
+      expect(screen.queryByText(/Signature:/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('handles network error during search gracefully', async () => {
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/admin/api/repos')) {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      return Promise.reject(new Error('Network offline'));
+    });
+
+    render(
+      <ToastProvider>
+        <SearchInspector />
+      </ToastProvider>
+    );
+
+    fireEvent.change(screen.getByPlaceholderText(/e.g. JWT token/i), { target: { value: 'test' } });
+    fireEvent.click(screen.getByRole('button', { name: /Search/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Network offline/i).length).toBeGreaterThanOrEqual(1);
+    });
+  });
 });

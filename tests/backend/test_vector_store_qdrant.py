@@ -289,6 +289,46 @@ class TestQdrantVectorStoreOperations:
         assert len(res_semantic) == 1
         assert res_semantic[0].score == res_semantic[0].dense_score
 
+        # Out-of-bounds negative dense weight (< 0.0) is clamped to 0.0
+        res_neg = memory_store.search("Redis cache clusters", limit=5, dense_weight=-0.5)
+        assert len(res_neg) == 1
+        assert res_neg[0].score == res_neg[0].sparse_score
+
+        # Out-of-bounds excessive dense weight (> 1.0) is clamped to 1.0
+        res_pos = memory_store.search("Redis cache clusters", limit=5, dense_weight=2.0)
+        assert len(res_pos) == 1
+        assert res_pos[0].score == res_pos[0].dense_score
+
+        # Non-numeric string falls back to default 0.5 without exception
+        res_str = memory_store.search("Redis cache clusters", limit=5, dense_weight="invalid")
+        assert len(res_str) == 1
+        assert res_str[0].score > 0
+
+    def test_search_modes_case_insensitivity_and_whitespace(self, memory_store):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Kafka event streaming and partition consumer groups.",
+            repo="streaming",
+            path="/docs/kafka.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        # Uppercase and leading/trailing whitespace
+        res_sem = memory_store.search("Kafka event", limit=5, search_mode=" SEMANTIC  ")
+        assert len(res_sem) == 1
+        assert res_sem[0].dense_score > 0
+        assert res_sem[0].sparse_score == 0.0
+
+        res_lex = memory_store.search("Kafka consumer", limit=5, search_mode="LEXICAL")
+        assert len(res_lex) == 1
+        assert res_lex[0].sparse_score > 0
+        assert res_lex[0].dense_score == 0.0
+
+        # Unrecognized search mode falls back to hybrid
+        res_unrec = memory_store.search("Kafka streaming", limit=5, search_mode="non_existent_mode")
+        assert len(res_unrec) == 1
+        assert res_unrec[0].score > 0
+
     def test_search_modes_semantic_and_lexical(self, memory_store, monkeypatch):
         doc = VectorDocument(
             id=str(uuid.uuid4()),
