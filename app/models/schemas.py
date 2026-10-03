@@ -117,6 +117,8 @@ class SearchRequest(BaseModel):
     tag: Optional[str] = None
     limit: int = 5
     exact: bool = True
+    dense_weight: Optional[float] = None
+    search_mode: Optional[str] = "hybrid"
 
 class SyncRequest(BaseModel):
     repo: Optional[str] = None

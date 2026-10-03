@@ -175,3 +175,62 @@ def test_execute_hybrid_search_end_to_end_real(tmp_path, monkeypatch):
     assert len(pdf_results) >= 1
     assert any(h.payload.get("rel_path") == "docs/manual.pdf" for h in pdf_results)
 
+
+def test_api_test_search_endpoint():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.api.routers.repositories import router as repo_router
+
+    test_app = FastAPI()
+    test_app.include_router(repo_router)
+    client = TestClient(test_app)
+
+    mock_hit = VectorSearchResult(
+        id="sym-1",
+        score=0.85,
+        dense_score=0.90,
+        sparse_score=0.75,
+        dense_rank=1,
+        sparse_rank=2,
+        payload={"repo": "test-repo", "rel_path": "index.ts", "symbol": "runApp"}
+    )
+
+    with patch("app.services.search.execute_hybrid_search", return_value=[mock_hit]) as mock_exec:
+        resp = client.post(
+            "/admin/api/search/test",
+            json={
+                "query": "run app",
+                "type": "code",
+                "repo": "test-repo",
+                "dense_weight": 0.65,
+                "search_mode": "hybrid",
+                "limit": 10
+            }
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["query"] == "run app"
+        assert data["dense_weight"] == 0.65
+        assert data["search_mode"] == "hybrid"
+        assert len(data["results"]) == 1
+        res0 = data["results"][0]
+        assert res0["score"] == 0.85
+        assert res0["dense_score"] == 0.90
+        assert res0["sparse_score"] == 0.75
+        assert res0["dense_rank"] == 1
+        assert res0["sparse_rank"] == 2
+        assert res0["payload"]["symbol"] == "runApp"
+
+        mock_exec.assert_called_once_with(
+            query_text="run app",
+            doc_type="code",
+            repo="test-repo",
+            language=None,
+            category=None,
+            tag=None,
+            limit=10,
+            dense_weight=0.65,
+            search_mode="hybrid"
+        )
+
+

@@ -103,3 +103,46 @@ async def test_fastmcp_streamable_http_transport():
             )
             assert resp.status_code == 200
             assert "ContextCortex" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_search_code_with_dense_weight_and_score_breakdown(temp_mcp_db):
+    mock_hit = MagicMock()
+    mock_hit.score = 0.82
+    mock_hit.dense_score = 0.88
+    mock_hit.sparse_score = 0.74
+    mock_hit.payload = {
+        "repo": "demo-repo",
+        "rel_path": "services/auth.py",
+        "start_line": 20,
+        "end_line": 35,
+        "symbol": "AuthService.login",
+        "signature": "def login(self, username: str, password: str) -> Token:",
+        "kind": "method_declaration",
+        "github_url": "https://github.com/demo/auth.py#L20-L35",
+        "language": "python",
+        "content": "def login(...): return token"
+    }
+
+    with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]) as mock_exec:
+        res, structured = await mcp_server.call_tool(
+            "search_code",
+            {"query": "user login", "dense_weight": 0.6, "mode": "hybrid"}
+        )
+        assert len(res) == 1
+        text = res[0].text
+        assert "services/auth.py" in text
+        assert "AuthService.login" in text
+        assert "def login(self, username: str, password: str)" in text
+        assert "Semantic: 88.0%" in text
+        assert "Lexical: 74.0%" in text
+        mock_exec.assert_called_once_with(
+            query_text="user login",
+            doc_type="code",
+            repo=None,
+            language=None,
+            limit=5,
+            dense_weight=0.6,
+            search_mode="hybrid"
+        )
+
