@@ -16,7 +16,7 @@ All administrative routes are prefixed with `/admin/api`.
   ```json
   {
     "status": "ok",
-    "version": "2.16.0",
+    "version": "2.17.0",
     "database": "connected",
     "vector_store": "healthy"
   }
