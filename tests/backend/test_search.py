@@ -25,7 +25,9 @@ def test_execute_hybrid_search_delegation():
             language="python",
             category="core",
             tag="auth",
-            limit=5
+            limit=5,
+            dense_weight=0.7,
+            search_mode="hybrid"
         )
 
         assert len(results) == 1
@@ -39,8 +41,55 @@ def test_execute_hybrid_search_delegation():
             language="python",
             category="core",
             tag="auth",
-            limit=5
+            limit=5,
+            dense_weight=0.7,
+            search_mode="hybrid"
         )
+
+def test_execute_hybrid_search_ast_enrichment():
+    mock_hit = VectorSearchResult(
+        id="code-hit-1",
+        score=0.88,
+        payload={
+            "repo": "test-repo",
+            "doc_type": "code",
+            "rel_path": "src/auth.py",
+            "symbol": "AuthService.validate_token",
+            "start_line": 10,
+            "end_line": 25,
+            "content": "def validate_token(self, token): pass"
+        }
+    )
+    with patch("app.services.search.get_vector_store") as mock_get_store, \
+         patch("app.services.search.get_db_connection") as mock_db:
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_hit]
+        mock_get_store.return_value = mock_store
+
+        mock_conn = MagicMock()
+        mock_row = {
+            "id": 1234,
+            "name": "validate_token",
+            "full_symbol": "AuthService.validate_token",
+            "kind": "method_declaration",
+            "signature": "def validate_token(self, token: str) -> bool:",
+            "start_line": 10,
+            "end_line": 25,
+        }
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+        mock_db.return_value.__enter__.return_value = mock_conn
+
+        results = execute_hybrid_search(
+            query_text="validate token",
+            doc_type="code",
+            repo="test-repo"
+        )
+
+        assert len(results) == 1
+        p = results[0].payload
+        assert p["signature"] == "def validate_token(self, token: str) -> bool:"
+        assert p["kind"] == "method_declaration"
+        assert p["ast_symbol_id"] == 1234
 
 def test_execute_hybrid_search_exception():
     with patch("app.services.search.get_vector_store") as mock_get_store:

@@ -260,6 +260,56 @@ class TestQdrantVectorStoreOperations:
         score_low = results_low_dense[0].score
         assert 0.0 <= score_low <= 1.0
 
+    def test_search_explicit_dense_weight_and_score_decomposition(self, memory_store):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Distributed cache invalidation protocols and Redis clusters.",
+            repo="cache-system",
+            path="/docs/cache.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        # Explicit dense weight 0.8
+        res = memory_store.search("Redis cache clusters", limit=5, dense_weight=0.8)
+        assert len(res) == 1
+        hit = res[0]
+        assert hit.dense_score is not None
+        assert hit.sparse_score is not None
+        assert hit.score > 0
+        assert hit.dense_rank == 1
+        assert hit.sparse_rank == 1
+
+        # Explicit dense weight 0.0 (pure lexical)
+        res_lexical = memory_store.search("Redis cache clusters", limit=5, dense_weight=0.0)
+        assert len(res_lexical) == 1
+        assert res_lexical[0].score == res_lexical[0].sparse_score
+
+        # Explicit dense weight 1.0 (pure semantic)
+        res_semantic = memory_store.search("Redis cache clusters", limit=5, dense_weight=1.0)
+        assert len(res_semantic) == 1
+        assert res_semantic[0].score == res_semantic[0].dense_score
+
+    def test_search_modes_semantic_and_lexical(self, memory_store):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Kubernetes ingress controller configuration and TLS termination.",
+            repo="k8s-infra",
+            path="/docs/ingress.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        # Semantic mode
+        res_sem = memory_store.search("TLS ingress", limit=5, search_mode="semantic")
+        assert len(res_sem) == 1
+        assert res_sem[0].dense_score > 0
+        assert res_sem[0].sparse_score == 0.0
+
+        # Lexical mode
+        res_lex = memory_store.search("ingress controller", limit=5, search_mode="lexical")
+        assert len(res_lex) == 1
+        assert res_lex[0].sparse_score > 0
+        assert res_lex[0].dense_score == 0.0
+
     def test_search_dense_fallback_without_sparse(self, memory_store):
         doc = VectorDocument(
             id=str(uuid.uuid4()),

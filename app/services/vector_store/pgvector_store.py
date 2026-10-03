@@ -272,6 +272,8 @@ class PgVectorStore(VectorStore):
         category: Optional[str] = None,
         tag: Optional[str] = None,
         limit: int = 5,
+        dense_weight: Optional[float] = None,
+        search_mode: str = "hybrid",
     ) -> List[VectorSearchResult]:
         """
         Performs cosine distance vector search returning ranked results.
@@ -322,7 +324,7 @@ class PgVectorStore(VectorStore):
                 rows = conn.execute(search_sql, params).mappings().fetchall()
 
             results: List[VectorSearchResult] = []
-            for row in rows:
+            for rank_idx, row in enumerate(rows, start=1):
                 payload = row["payload"]
                 if isinstance(payload, str):
                     try:
@@ -333,10 +335,15 @@ class PgVectorStore(VectorStore):
                     payload = {}
 
                 score = float(row["score"]) if row["score"] is not None else 0.0
+                clamped_score = max(0.0, min(1.0, score))
                 results.append(
                     VectorSearchResult(
                         id=str(row["id"]),
-                        score=score,
+                        score=round(clamped_score, 4),
+                        dense_score=round(clamped_score, 4),
+                        sparse_score=0.0,
+                        dense_rank=rank_idx,
+                        sparse_rank=None,
                         payload=payload,
                     )
                 )

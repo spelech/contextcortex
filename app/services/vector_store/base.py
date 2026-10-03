@@ -70,6 +70,10 @@ class VectorSearchResult(BaseModel):
     """Represents a ranked search result item returned from a vector store."""
     id: str
     score: float = 0.0
+    dense_score: Optional[float] = None
+    sparse_score: Optional[float] = None
+    dense_rank: Optional[int] = None
+    sparse_rank: Optional[int] = None
     payload: Dict[str, Any] = Field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -77,6 +81,10 @@ class VectorSearchResult(BaseModel):
         return {
             "id": self.id,
             "score": self.score,
+            "dense_score": self.dense_score,
+            "sparse_score": self.sparse_score,
+            "dense_rank": self.dense_rank,
+            "sparse_rank": self.sparse_rank,
             "payload": self.payload
         }
 
@@ -117,7 +125,9 @@ class VectorStore(ABC):
         language: Optional[str] = None,
         category: Optional[str] = None,
         tag: Optional[str] = None,
-        limit: int = 5
+        limit: int = 5,
+        dense_weight: Optional[float] = None,
+        search_mode: str = "hybrid"
     ) -> List[VectorSearchResult]:
         """Performs vector search returning ranked results."""
         pass

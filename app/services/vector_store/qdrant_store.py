@@ -291,9 +291,11 @@ class QdrantVectorStore(VectorStore):
         language: Optional[str] = None,
         category: Optional[str] = None,
         tag: Optional[str] = None,
-        limit: int = 5
+        limit: int = 5,
+        dense_weight: Optional[float] = None,
+        search_mode: str = "hybrid"
     ) -> List[VectorSearchResult]:
-        """Performs vector search returning ranked results using Dense + Sparse normalized weighted fusion."""
+        """Performs vector search returning ranked results using Dense, Sparse, or configurable Weighted Fusion."""
         if not query_text or not query_text.strip():
             return []
 
@@ -322,73 +324,29 @@ class QdrantVectorStore(VectorStore):
 
             query_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
 
-            try:
-                alpha = float(os.getenv("HYBRID_DENSE_WEIGHT", "0.7"))
-            except (ValueError, TypeError):
-                alpha = 0.7
-            alpha = max(0.0, min(1.0, alpha))
+            mode = (search_mode or "hybrid").lower().strip()
+            if mode == "semantic":
+                alpha = 1.0
+            elif mode == "lexical":
+                alpha = 0.0
+            elif dense_weight is not None:
+                try:
+                    alpha = float(dense_weight)
+                except (ValueError, TypeError):
+                    alpha = 0.5
+                alpha = max(0.0, min(1.0, alpha))
+            else:
+                try:
+                    env_alpha = os.getenv("HYBRID_DENSE_WEIGHT")
+                    alpha = float(env_alpha) if env_alpha is not None else 0.5
+                except (ValueError, TypeError):
+                    alpha = 0.5
+                alpha = max(0.0, min(1.0, alpha))
 
             candidate_limit = max(limit * 5, 50)
 
-            if sparse_vec is not None and len(sparse_vec.indices) > 0:
-                batch_response = self.client.query_batch_points(
-                    collection_name=self.collection_name,
-                    requests=[
-                        qmodels.QueryRequest(
-                            query=dense_vec,
-                            using="dense",
-                            limit=candidate_limit,
-                            filter=query_filter,
-                            with_payload=True,
-                        ),
-                        qmodels.QueryRequest(
-                            query=sparse_vec,
-                            using="sparse",
-                            limit=candidate_limit,
-                            filter=query_filter,
-                            with_payload=True,
-                        ),
-                    ],
-                )
-
-                dense_pts = {str(p.id): p for p in batch_response[0].points}
-                sparse_pts = {str(p.id): p for p in batch_response[1].points}
-
-                sparse_scores = [p.score for p in sparse_pts.values() if p.score is not None]
-                max_sparse = max(sparse_scores, default=1.0)
-                if max_sparse <= 0.0:
-                    max_sparse = 1.0
-
-                all_uids = set(dense_pts.keys()).union(sparse_pts.keys())
-                scored_results: List[VectorSearchResult] = []
-
-                for uid in all_uids:
-                    d_score = max(0.0, min(1.0, float(dense_pts[uid].score))) if uid in dense_pts and dense_pts[uid].score is not None else 0.0
-                    s_score = (float(sparse_pts[uid].score) / max_sparse) if uid in sparse_pts and sparse_pts[uid].score is not None and max_sparse > 0 else 0.0
-                    s_score = max(0.0, min(1.0, s_score))
-
-                    if uid in dense_pts and uid in sparse_pts:
-                        final_score = alpha * d_score + (1.0 - alpha) * s_score
-                    elif uid in dense_pts:
-                        final_score = alpha * d_score
-                    else:
-                        final_score = (1.0 - alpha) * s_score
-
-                    final_score = max(0.0, min(1.0, final_score))
-                    pt = dense_pts.get(uid) or sparse_pts.get(uid)
-                    payload = (pt.payload or {}) if pt else {}
-
-                    scored_results.append(
-                        VectorSearchResult(
-                            id=uid,
-                            score=round(final_score, 4),
-                            payload=payload,
-                        )
-                    )
-
-                scored_results.sort(key=lambda r: r.score, reverse=True)
-                return scored_results[:limit]
-            else:
+            # Pure semantic search or fallback if no sparse vector is available
+            if mode == "semantic" or sparse_vec is None or len(sparse_vec.indices) == 0:
                 response = self.client.query_points(
                     collection_name=self.collection_name,
                     query=dense_vec,
@@ -398,17 +356,120 @@ class QdrantVectorStore(VectorStore):
                     with_payload=True,
                 )
                 results: List[VectorSearchResult] = []
-                for pt in response.points:
+                for rank_idx, pt in enumerate(response.points, start=1):
                     raw_score = float(pt.score) if pt.score is not None else 0.0
                     clamped_score = max(0.0, min(1.0, raw_score))
                     results.append(
                         VectorSearchResult(
                             id=str(pt.id),
                             score=round(clamped_score, 4),
+                            dense_score=round(clamped_score, 4),
+                            sparse_score=0.0,
+                            dense_rank=rank_idx,
+                            sparse_rank=None,
                             payload=pt.payload or {},
                         )
                     )
                 return results
+
+            # Pure lexical search
+            if mode == "lexical":
+                response = self.client.query_points(
+                    collection_name=self.collection_name,
+                    query=sparse_vec,
+                    using="sparse",
+                    query_filter=query_filter,
+                    limit=limit,
+                    with_payload=True,
+                )
+                sparse_scores = [p.score for p in response.points if p.score is not None]
+                max_sparse = max(sparse_scores, default=1.0)
+                if max_sparse <= 0.0:
+                    max_sparse = 1.0
+
+                results: List[VectorSearchResult] = []
+                for rank_idx, pt in enumerate(response.points, start=1):
+                    raw_s = float(pt.score) if pt.score is not None else 0.0
+                    norm_s = max(0.0, min(1.0, raw_s / max_sparse))
+                    results.append(
+                        VectorSearchResult(
+                            id=str(pt.id),
+                            score=round(norm_s, 4),
+                            dense_score=0.0,
+                            sparse_score=round(norm_s, 4),
+                            dense_rank=None,
+                            sparse_rank=rank_idx,
+                            payload=pt.payload or {},
+                        )
+                    )
+                return results
+
+            # Hybrid mode: query both dense and sparse representations
+            batch_response = self.client.query_batch_points(
+                collection_name=self.collection_name,
+                requests=[
+                    qmodels.QueryRequest(
+                        query=dense_vec,
+                        using="dense",
+                        limit=candidate_limit,
+                        filter=query_filter,
+                        with_payload=True,
+                    ),
+                    qmodels.QueryRequest(
+                        query=sparse_vec,
+                        using="sparse",
+                        limit=candidate_limit,
+                        filter=query_filter,
+                        with_payload=True,
+                    ),
+                ],
+            )
+
+            dense_pts = {str(p.id): p for p in batch_response[0].points}
+            sparse_pts = {str(p.id): p for p in batch_response[1].points}
+
+            # Map ranks
+            dense_ranks = {str(p.id): idx for idx, p in enumerate(batch_response[0].points, start=1)}
+            sparse_ranks = {str(p.id): idx for idx, p in enumerate(batch_response[1].points, start=1)}
+
+            sparse_scores = [p.score for p in sparse_pts.values() if p.score is not None]
+            max_sparse = max(sparse_scores, default=1.0)
+            if max_sparse <= 0.0:
+                max_sparse = 1.0
+
+            all_uids = set(dense_pts.keys()).union(sparse_pts.keys())
+            scored_results: List[VectorSearchResult] = []
+
+            for uid in all_uids:
+                d_score = max(0.0, min(1.0, float(dense_pts[uid].score))) if uid in dense_pts and dense_pts[uid].score is not None else 0.0
+                s_score = (float(sparse_pts[uid].score) / max_sparse) if uid in sparse_pts and sparse_pts[uid].score is not None and max_sparse > 0 else 0.0
+                s_score = max(0.0, min(1.0, s_score))
+
+                if uid in dense_pts and uid in sparse_pts:
+                    final_score = alpha * d_score + (1.0 - alpha) * s_score
+                elif uid in dense_pts:
+                    final_score = alpha * d_score
+                else:
+                    final_score = (1.0 - alpha) * s_score
+
+                final_score = max(0.0, min(1.0, final_score))
+                pt = dense_pts.get(uid) or sparse_pts.get(uid)
+                payload = (pt.payload or {}) if pt else {}
+
+                scored_results.append(
+                    VectorSearchResult(
+                        id=uid,
+                        score=round(final_score, 4),
+                        dense_score=round(d_score, 4),
+                        sparse_score=round(s_score, 4),
+                        dense_rank=dense_ranks.get(uid),
+                        sparse_rank=sparse_ranks.get(uid),
+                        payload=payload,
+                    )
+                )
+
+            scored_results.sort(key=lambda r: r.score, reverse=True)
+            return scored_results[:limit]
         except Exception as e:
             logger.error(f"Error searching Qdrant collection '{self.collection_name}': {e}")
             return []
