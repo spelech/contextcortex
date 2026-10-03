@@ -135,13 +135,25 @@ export interface BrowseData {
 
 export interface SearchHit {
   score: number;
+  dense_score?: number | null;
+  sparse_score?: number | null;
+  dense_rank?: number | null;
+  sparse_rank?: number | null;
   payload: {
     repo: string;
     rel_path: string;
     symbol?: string;
+    full_symbol?: string;
+    signature?: string;
+    kind?: string;
+    ast_symbol_id?: number;
+    language?: string;
     start_line: number;
     end_line: number;
     github_url?: string;
+    permalink_url?: string;
+    heading?: string;
+    tags?: string[];
     content: string;
   };
 }

@@ -14,6 +14,13 @@ function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [navigatorTarget, setNavigatorTarget] = useState<{
+    repo: string;
+    path: string;
+    symbolId?: number;
+    startLine?: number;
+    endLine?: number;
+  } | null>(null);
 
   const loadStats = async () => {
     try {
@@ -127,11 +134,26 @@ function App() {
 
         <main className="dashboard-main">
           {activeTab === 'overview' && <Overview stats={stats} refreshStats={loadStats} />}
-          {(activeTab === 'navigator' || activeTab === 'topology') && <CodeNavigator />}
+          {(activeTab === 'navigator' || activeTab === 'topology') && (
+            <CodeNavigator
+              initialRepo={navigatorTarget?.repo}
+              initialPath={navigatorTarget?.path}
+              initialSymbolId={navigatorTarget?.symbolId}
+              initialStartLine={navigatorTarget?.startLine}
+              initialEndLine={navigatorTarget?.endLine}
+            />
+          )}
           {activeTab === 'git-repos' && <GitRepoManager refreshStats={loadStats} />}
           {activeTab === 'files-storage' && <FilesAndStorage refreshStats={loadStats} />}
           {activeTab === 'ingestion-catalog' && <IngestionCatalogViewer />}
-          {activeTab === 'search-inspector' && <SearchInspector />}
+          {activeTab === 'search-inspector' && (
+            <SearchInspector
+              onOpenInNavigator={(repo, path, symbolId, startLine, endLine) => {
+                setNavigatorTarget({ repo, path, symbolId, startLine, endLine });
+                setActiveTab('navigator');
+              }}
+            />
+          )}
           {activeTab === 'settings' && <Settings stats={stats} refreshStats={loadStats} />}
           {activeTab === 'diagnostics' && <DiagnosticsViewer />}
         </main>

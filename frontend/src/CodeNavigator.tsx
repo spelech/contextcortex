@@ -22,6 +22,8 @@ export interface CodeNavigatorProps {
   initialRepo?: string;
   initialPath?: string;
   initialSymbolId?: number;
+  initialStartLine?: number;
+  initialEndLine?: number;
 }
 
 interface HistoryItem {
@@ -36,6 +38,8 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
   initialRepo = '__all__',
   initialPath,
   initialSymbolId,
+  initialStartLine,
+  initialEndLine,
 }) => {
   // Persistence for density mode
   const [density, setDensity] = useState<DensityMode>(() => {
@@ -237,6 +241,26 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
     },
     [fetchImpact]
   );
+
+  // Handle external navigation (e.g. from SearchInspector)
+  useEffect(() => {
+    if (initialRepo && initialRepo !== '__all__' && initialRepo !== selectedRepo) {
+      setSelectedRepo(initialRepo);
+    }
+    if (initialPath) {
+      setSelectedPath(initialPath);
+      fetchFileContent(initialRepo || selectedRepo, initialPath);
+      fetchOutline(initialRepo || selectedRepo, initialPath);
+      if (initialStartLine !== undefined) setTargetStartLine(initialStartLine);
+      if (initialEndLine !== undefined) setTargetEndLine(initialEndLine);
+      setActiveInspectorTab('reader');
+    }
+    if (initialSymbolId) {
+      setSelectedSymbolId(initialSymbolId);
+      fetchImpact(initialRepo || selectedRepo, initialSymbolId);
+      setActiveInspectorTab('intelligence');
+    }
+  }, [initialRepo, initialPath, initialSymbolId, initialStartLine, initialEndLine, fetchFileContent, fetchOutline, fetchImpact, selectedRepo]);
 
   // Push item into navigation history
   const pushHistory = useCallback(
