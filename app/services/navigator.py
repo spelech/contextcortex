@@ -218,10 +218,39 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
         repo_filter_clause = "" if target_repo == "__all__" else " AND r.repo = ?"
         repo_params = [] if target_repo == "__all__" else [target_repo]
 
+        clean_sym_fp = _clean_path(sym["filepath"])
+
+        # Check for child member symbols in the same file (e.g. methods of a class or members of a struct/interface)
+        member_rows = conn.execute(
+            """
+            SELECT id, name, full_symbol
+            FROM ast_symbols
+            WHERE repo = ? 
+              AND (filepath = ? OR filepath = ? OR filepath LIKE ?)
+              AND start_line > ? AND end_line <= ? AND id != ?
+            """,
+            (sym["repo"], sym["filepath"], f"/{clean_sym_fp}", f"%/{clean_sym_fp}", sym["start_line"], sym["end_line"], sym["id"])
+        ).fetchall()
+
+        target_names = {sym["name"]}
+        if sym["full_symbol"]:
+            target_names.add(sym["full_symbol"])
+        for m in member_rows:
+            target_names.add(m["name"])
+            if m["full_symbol"]:
+                target_names.add(m["full_symbol"])
+        target_names_list = list(target_names)
+
+        exclude_source_names = list(target_names)
+        exclude_source_ids = [sym["id"]] + [m["id"] for m in member_rows]
+
         # 1. Fetch incoming callers:
-        # Matches relationships where this symbol is called/used.
-        # Never includes outgoing calls made by this symbol.
-        # Resolves source_symbol_id from ast_symbols if missing, and groups multiple calls from same caller.
+        # Matches relationships where this symbol (or any of its member methods) is called/used.
+        # Excludes self-calls originating from within this symbol or its member methods.
+        callers_placeholders = ",".join(["?"] * len(target_names_list))
+        ex_name_placeholders = ",".join(["?"] * len(exclude_source_names))
+        ex_id_placeholders = ",".join(["?"] * len(exclude_source_ids))
+
         callers_query = f"""
             SELECT 
                 MIN(r.id) as id,
@@ -240,20 +269,25 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
                 FROM ast_symbols
             ) src_sym ON (
                 r.source_symbol_id = src_sym.id
-                OR (r.source_symbol = src_sym.name AND (r.source_filepath = src_sym.filepath OR r.source_filepath LIKE '%/' || src_sym.filepath) AND r.repo = src_sym.repo)
+                OR ((r.source_symbol = src_sym.name OR r.source_symbol = src_sym.full_symbol) AND (r.source_filepath = src_sym.filepath OR r.source_filepath LIKE '%/' || src_sym.filepath) AND r.repo = src_sym.repo)
             ) AND src_sym.rn = 1
-            WHERE (r.target_symbol = ? OR (r.target_symbol = ? AND ? != '')){repo_filter_clause}
+            WHERE r.target_symbol IN ({callers_placeholders})
+              AND (r.source_symbol_id IS NULL OR r.source_symbol_id NOT IN ({ex_id_placeholders}))
+              AND r.source_symbol NOT IN ({ex_name_placeholders})
+              AND r.relationship_type != 'IMPORTS'{repo_filter_clause}
             GROUP BY r.source_filepath, r.source_symbol, r.relationship_type
             ORDER BY r.source_filepath, MIN(r.line_number) ASC
         """
-        full_sym = sym["full_symbol"] or ""
-        caller_params = [sym["name"], full_sym, full_sym] + repo_params
+        caller_params = target_names_list + exclude_source_ids + exclude_source_names + repo_params
         callers = conn.execute(callers_query, caller_params).fetchall()
 
         # 2. Fetch outgoing dependencies (callees):
-        # Matches calls originating from this symbol.
-        # Resolves target_filepath and target_symbol_id from ast_symbols so links work across usages!
-        # Groups repeated calls to the same target and sorts resolved codebase targets to the top.
+        # Matches calls originating from this symbol or any of its member methods.
+        callee_source_ids = [sym["id"]] + [m["id"] for m in member_rows]
+        callee_source_names = list(target_names)
+        src_id_placeholders = ",".join(["?"] * len(callee_source_ids))
+        src_name_placeholders = ",".join(["?"] * len(callee_source_names))
+
         callees_query = f"""
             SELECT 
                 MIN(r.id) as id,
@@ -274,17 +308,19 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
                 AND (r.repo = tgt_sym.repo OR ? = '__all__')
                 AND tgt_sym.rn = 1
             )
-            WHERE (r.source_symbol_id = ? OR (r.source_symbol = ? AND (r.source_filepath = ? OR r.source_filepath LIKE ?)))
+            WHERE (r.source_symbol_id IN ({src_id_placeholders}) 
+                   OR (r.source_symbol IN ({src_name_placeholders}) AND (r.source_filepath = ? OR r.source_filepath = ? OR r.source_filepath LIKE ?)))
               AND r.relationship_type != 'IMPORTS'{repo_filter_clause}
             GROUP BY r.target_symbol, r.relationship_type
             ORDER BY 
                 CASE WHEN tgt_sym.filepath IS NOT NULL THEN 0 ELSE 1 END ASC,
                 MIN(r.line_number) ASC
         """
-        callee_params = [target_repo, sym["id"], sym["name"], sym["filepath"], f"%/{_clean_path(sym['filepath'])}"] + repo_params
+        callee_params = [target_repo] + callee_source_ids + callee_source_names + [sym["filepath"], f"/{clean_sym_fp}", f"%/{clean_sym_fp}"] + repo_params
         callees = conn.execute(callees_query, callee_params).fetchall()
 
         # 3. Fetch imports:
+        # Imports in codebases are module/file-level. Include both symbol-specific imports (if any) and containing file-level imports.
         imports_query = f"""
             SELECT 
                 MIN(r.id) as id, 
@@ -293,12 +329,18 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
                 COUNT(*) as import_count,
                 GROUP_CONCAT(DISTINCT r.line_number) as all_lines
             FROM ast_relationships r
-            WHERE (r.source_symbol_id = ? OR (r.source_symbol = ? AND (r.source_filepath = ? OR r.source_filepath LIKE ?)))
+            WHERE (r.source_symbol_id = ? 
+                   OR (r.source_symbol = ? AND (r.source_filepath = ? OR r.source_filepath = ? OR r.source_filepath LIKE ?))
+                   OR (r.source_filepath = ? OR r.source_filepath = ? OR r.source_filepath LIKE ?))
               AND r.relationship_type = 'IMPORTS'{repo_filter_clause}
             GROUP BY r.target_symbol
             ORDER BY MIN(r.line_number) ASC
         """
-        import_params = [sym["id"], sym["name"], sym["filepath"], f"%/{_clean_path(sym['filepath'])}"] + repo_params
+        import_params = [
+            sym["id"],
+            sym["name"], sym["filepath"], f"/{clean_sym_fp}", f"%/{clean_sym_fp}",
+            sym["filepath"], f"/{clean_sym_fp}", f"%/{clean_sym_fp}"
+        ] + repo_params
         imports = conn.execute(imports_query, import_params).fetchall()
 
         # 4. Fetch API route mapping:
@@ -344,23 +386,28 @@ def get_omni_search(repo: str, query: str, limit: int = 25) -> Dict[str, Any]:
         sym_sql = f"""
             SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature
             FROM ast_symbols
-            WHERE (name LIKE ? OR full_symbol LIKE ?){repo_clause}
+            WHERE (name LIKE ? OR full_symbol LIKE ? OR signature LIKE ?){repo_clause}
             LIMIT ?
         """
-        sym_params = [like_q, like_q] + repo_params + [limit]
+        sym_params = [like_q, like_q, like_q] + repo_params + [limit]
         for row in conn.execute(sym_sql, sym_params).fetchall():
             sym_name = row["name"] or ""
+            full_sym = row["full_symbol"] or sym_name
             sym_lower = sym_name.lower()
+            full_lower = full_sym.lower()
 
-            if sym_lower == lower_q:
+            if sym_lower == lower_q or full_lower == lower_q:
                 score = 0.99
                 label = "99% AST exact match"
-            elif sym_lower.startswith(lower_q):
+            elif sym_lower.startswith(lower_q) or full_lower.startswith(lower_q):
                 score = 0.94
                 label = "94% AST prefix match"
-            else:
+            elif lower_q in sym_lower or lower_q in full_lower:
                 score = 0.88
                 label = "88% AST symbol match"
+            else:
+                score = 0.82
+                label = "82% Signature match"
 
             preview = row["signature"] or f"{row['kind']} {sym_name}"
             matches.append({
@@ -368,6 +415,7 @@ def get_omni_search(repo: str, query: str, limit: int = 25) -> Dict[str, Any]:
                 "type": "symbol",
                 "symbol_id": row["id"],
                 "name": sym_name,
+                "full_symbol": full_sym,
                 "kind": row["kind"],
                 "filepath": _clean_path(row["filepath"]),
                 "repo": row["repo"],

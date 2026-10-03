@@ -25,7 +25,9 @@ def test_execute_hybrid_search_delegation():
             language="python",
             category="core",
             tag="auth",
-            limit=5
+            limit=5,
+            dense_weight=0.7,
+            search_mode="hybrid"
         )
 
         assert len(results) == 1
@@ -39,8 +41,146 @@ def test_execute_hybrid_search_delegation():
             language="python",
             category="core",
             tag="auth",
-            limit=5
+            limit=5,
+            dense_weight=0.7,
+            search_mode="hybrid"
         )
+
+def test_execute_hybrid_search_ast_enrichment():
+    mock_hit = VectorSearchResult(
+        id="code-hit-1",
+        score=0.88,
+        payload={
+            "repo": "test-repo",
+            "doc_type": "code",
+            "rel_path": "src/auth.py",
+            "symbol": "AuthService.validate_token",
+            "start_line": 10,
+            "end_line": 25,
+            "content": "def validate_token(self, token): pass"
+        }
+    )
+    with patch("app.services.search.get_vector_store") as mock_get_store, \
+         patch("app.services.search.get_db_connection") as mock_db:
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_hit]
+        mock_get_store.return_value = mock_store
+
+        mock_conn = MagicMock()
+        mock_row = {
+            "id": 1234,
+            "name": "validate_token",
+            "full_symbol": "AuthService.validate_token",
+            "kind": "method_declaration",
+            "signature": "def validate_token(self, token: str) -> bool:",
+            "start_line": 10,
+            "end_line": 25,
+        }
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+        mock_db.return_value.__enter__.return_value = mock_conn
+
+        results = execute_hybrid_search(
+            query_text="validate token",
+            doc_type="code",
+            repo="test-repo"
+        )
+
+        assert len(results) == 1
+        p = results[0].payload
+        assert p["signature"] == "def validate_token(self, token: str) -> bool:"
+        assert p["kind"] == "method_declaration"
+        assert p["ast_symbol_id"] == 1234
+
+def test_execute_hybrid_search_ast_enrichment_interval_fallback():
+    # Priority 2: symbol is None or doesn't match by name, but line interval overlaps
+    mock_hit = VectorSearchResult(
+        id="code-hit-2",
+        score=0.85,
+        payload={
+            "repo": "test-repo",
+            "doc_type": "code",
+            "rel_path": "src/utils.py",
+            "symbol": None,
+            "start_line": 50,
+            "end_line": 65,
+            "content": "def helper(): pass"
+        }
+    )
+    with patch("app.services.search.get_vector_store") as mock_get_store, \
+         patch("app.services.search.get_db_connection") as mock_db:
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_hit]
+        mock_get_store.return_value = mock_store
+
+        mock_conn = MagicMock()
+        # First query (exact symbol) returns None
+        # Second query (line interval) returns matching symbol
+        mock_row = {
+            "id": 5678,
+            "name": "helper",
+            "full_symbol": "Utils.helper",
+            "kind": "function_declaration",
+            "signature": "def helper(val: int) -> int:",
+            "start_line": 48,
+            "end_line": 68,
+        }
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+        mock_db.return_value.__enter__.return_value = mock_conn
+
+        results = execute_hybrid_search("helper", doc_type="code")
+        assert len(results) == 1
+        p = results[0].payload
+        assert p["signature"] == "def helper(val: int) -> int:"
+        assert p["kind"] == "function_declaration"
+        assert p["full_symbol"] == "Utils.helper"
+        assert p["ast_symbol_id"] == 5678
+
+def test_execute_hybrid_search_ast_enrichment_resilience():
+    # When SQLite has no matching symbol or raises an error, search must NOT crash
+    mock_hit = VectorSearchResult(
+        id="code-hit-3",
+        score=0.75,
+        payload={
+            "repo": "test-repo",
+            "doc_type": "code",
+            "rel_path": "src/unknown.py",
+            "symbol": "UnknownClass",
+            "content": "class UnknownClass: pass"
+        }
+    )
+    with patch("app.services.search.get_vector_store") as mock_get_store, \
+         patch("app.services.search.get_db_connection") as mock_db:
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_hit]
+        mock_get_store.return_value = mock_store
+
+        # Simulate SQLite operational failure
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = Exception("database disk image is malformed")
+        mock_db.return_value.__enter__.return_value = mock_conn
+
+        results = execute_hybrid_search("unknown", doc_type="code")
+        assert len(results) == 1
+        # Payload remains preserved without failure
+        assert results[0].payload["symbol"] == "UnknownClass"
+        assert "signature" not in results[0].payload
+
+def test_execute_hybrid_search_ast_enrichment_skipped_for_docs():
+    # AST enrichment must be completely bypassed for doc_type="doc"
+    mock_hit = VectorSearchResult(
+        id="doc-hit-1",
+        score=0.89,
+        payload={"repo": "docs", "doc_type": "doc", "rel_path": "README.md"}
+    )
+    with patch("app.services.search.get_vector_store") as mock_get_store, \
+         patch("app.services.search.get_db_connection") as mock_db:
+        mock_store = MagicMock()
+        mock_store.search.return_value = [mock_hit]
+        mock_get_store.return_value = mock_store
+
+        results = execute_hybrid_search("readme", doc_type="doc")
+        assert len(results) == 1
+        mock_db.assert_not_called()
 
 def test_execute_hybrid_search_exception():
     with patch("app.services.search.get_vector_store") as mock_get_store:
@@ -125,4 +265,63 @@ def test_execute_hybrid_search_end_to_end_real(tmp_path, monkeypatch):
     pdf_results = execute_hybrid_search("Deployment Runbook Operator Manual", doc_type="doc")
     assert len(pdf_results) >= 1
     assert any(h.payload.get("rel_path") == "docs/manual.pdf" for h in pdf_results)
+
+
+def test_api_test_search_endpoint():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.api.routers.repositories import router as repo_router
+
+    test_app = FastAPI()
+    test_app.include_router(repo_router)
+    client = TestClient(test_app)
+
+    mock_hit = VectorSearchResult(
+        id="sym-1",
+        score=0.85,
+        dense_score=0.90,
+        sparse_score=0.75,
+        dense_rank=1,
+        sparse_rank=2,
+        payload={"repo": "test-repo", "rel_path": "index.ts", "symbol": "runApp"}
+    )
+
+    with patch("app.services.search.execute_hybrid_search", return_value=[mock_hit]) as mock_exec:
+        resp = client.post(
+            "/admin/api/search/test",
+            json={
+                "query": "run app",
+                "type": "code",
+                "repo": "test-repo",
+                "dense_weight": 0.65,
+                "search_mode": "hybrid",
+                "limit": 10
+            }
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["query"] == "run app"
+        assert data["dense_weight"] == 0.65
+        assert data["search_mode"] == "hybrid"
+        assert len(data["results"]) == 1
+        res0 = data["results"][0]
+        assert res0["score"] == 0.85
+        assert res0["dense_score"] == 0.90
+        assert res0["sparse_score"] == 0.75
+        assert res0["dense_rank"] == 1
+        assert res0["sparse_rank"] == 2
+        assert res0["payload"]["symbol"] == "runApp"
+
+        mock_exec.assert_called_once_with(
+            query_text="run app",
+            doc_type="code",
+            repo="test-repo",
+            language=None,
+            category=None,
+            tag=None,
+            limit=10,
+            dense_weight=0.65,
+            search_mode="hybrid"
+        )
+
 

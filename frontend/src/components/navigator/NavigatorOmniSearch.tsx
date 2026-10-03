@@ -24,6 +24,59 @@ export function getMatchBadgeClass(type: OmniSearchMatchKind): string {
   }
 }
 
+export function HighlightMatch({ text, query }: { text: string; query: string }) {
+  if (!query || !query.trim() || !text) {
+    return <>{text}</>;
+  }
+  const trimmed = query.trim();
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escaped})`, 'gi');
+  const parts = text.split(regex);
+  if (parts.length <= 1) {
+    return <>{text}</>;
+  }
+  return (
+    <>
+      <span className="sr-only">{text}</span>
+      <span aria-hidden="true">
+        {parts.map((part, idx) =>
+          part.toLowerCase() === trimmed.toLowerCase() ? (
+            <mark key={idx} className="nav-omni-match">
+              {part}
+            </mark>
+          ) : (
+            <React.Fragment key={idx}>{part}</React.Fragment>
+          )
+        )}
+      </span>
+    </>
+  );
+}
+
+export function formatKind(kind?: string): string {
+  if (!kind) return '';
+  const k = kind.toLowerCase();
+  if (k.includes('method')) return 'method';
+  if (k.includes('func')) return 'func';
+  if (k.includes('class')) return 'class';
+  if (k.includes('interface')) return 'interface';
+  if (k.includes('struct')) return 'struct';
+  if (k.includes('type')) return 'type';
+  if (k.includes('enum')) return 'enum';
+  if (k.includes('property') || k.includes('field')) return 'prop';
+  if (k === 'route') return 'route';
+  if (k === 'file') return 'file';
+  if (k === 'code') return 'code';
+  return k.replace(/_declaration|_definition|_specifier/g, '');
+}
+
+export function formatDisplayPath(path: string): string {
+  if (path.includes('://')) {
+    return path.split('://')[1];
+  }
+  return path;
+}
+
 export const NavigatorOmniSearch: React.FC<NavigatorOmniSearchProps> = ({
   repo,
   onSelectResult,
@@ -38,6 +91,19 @@ export const NavigatorOmniSearch: React.FC<NavigatorOmniSearchProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Global Ctrl+K / Cmd+K listener
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, []);
 
   // Debounced search
   useEffect(() => {
@@ -172,6 +238,12 @@ export const NavigatorOmniSearch: React.FC<NavigatorOmniSearchProps> = ({
           aria-expanded={isOpen}
         />
 
+        {!query && (
+          <span className="nav-omni-kbd" title="Shortcut: Ctrl+K / ⌘K" aria-hidden="true">
+            Ctrl K
+          </span>
+        )}
+
         {loading && (
           <svg
             className="nav-omni-spinner animate-spin"
@@ -204,7 +276,7 @@ export const NavigatorOmniSearch: React.FC<NavigatorOmniSearchProps> = ({
         )}
       </div>
 
-      {/* Floating Absolute Overlay */}
+      {/* Floating Centered Overlay */}
       {isOpen && (
         <div
           className="nav-omni-dropdown"
@@ -229,6 +301,15 @@ export const NavigatorOmniSearch: React.FC<NavigatorOmniSearchProps> = ({
               const isSelected = index === activeIndex;
               const badgeClass = getMatchBadgeClass(item.type);
 
+              // Determine container prefix if full_symbol has parent
+              let containerPrefix = '';
+              let symbolName = item.name;
+              if (item.full_symbol && item.full_symbol.includes('.') && item.type === 'symbol') {
+                const lastDot = item.full_symbol.lastIndexOf('.');
+                containerPrefix = item.full_symbol.substring(0, lastDot + 1);
+                symbolName = item.full_symbol.substring(lastDot + 1);
+              }
+
               return (
                 <div
                   key={item.id}
@@ -237,27 +318,46 @@ export const NavigatorOmniSearch: React.FC<NavigatorOmniSearchProps> = ({
                   onMouseEnter={() => setActiveIndex(index)}
                   role="option"
                   aria-selected={isSelected}
+                  title={item.full_symbol || item.name}
                 >
                   <div className="nav-omni-item-top">
                     <div className="nav-omni-item-title-group">
                       <span className={`nav-omni-badge ${badgeClass}`}>
                         {item.type.toUpperCase()}
                       </span>
-                      <span className="nav-omni-item-name">{item.name}</span>
+                      {containerPrefix && (
+                        <span className="nav-omni-item-container" title={containerPrefix}>
+                          <HighlightMatch text={containerPrefix} query={query} />
+                        </span>
+                      )}
+                      <span className="nav-omni-item-name" title={item.full_symbol || item.name}>
+                        <HighlightMatch text={symbolName} query={query} />
+                      </span>
                       {item.kind && item.kind !== item.type && (
-                        <span className="nav-omni-item-kind">({item.kind})</span>
+                        <span className="nav-omni-item-kind" title={`Kind: ${item.kind}`}>
+                          {formatKind(item.kind)}
+                        </span>
                       )}
                     </div>
-                    <span className="nav-omni-score-pill">{item.score_label}</span>
+                    <span className="nav-omni-score-pill" title={item.score_label}>
+                      {item.score_label}
+                    </span>
                   </div>
 
                   <div className="nav-omni-item-bottom">
-                    <span className="nav-omni-item-path">
-                      {item.filepath}
-                      {item.start_line > 0 && `:${item.start_line}`}
+                    <span className="nav-omni-item-path" title={item.filepath}>
+                      <HighlightMatch text={formatDisplayPath(item.filepath)} query={query} />
+                      {item.start_line > 0 && (
+                        <span className="nav-omni-line-badge">:{item.start_line}</span>
+                      )}
                     </span>
                     {item.preview && item.preview !== item.name && (
-                      <span className="nav-omni-item-preview truncate">{item.preview}</span>
+                      <>
+                        <span className="nav-omni-sep" aria-hidden="true">•</span>
+                        <span className="nav-omni-item-preview" title={item.preview}>
+                          <HighlightMatch text={item.preview} query={query} />
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>

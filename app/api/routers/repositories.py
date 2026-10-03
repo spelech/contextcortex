@@ -293,19 +293,35 @@ async def api_test_search(payload: SearchRequest):
         if not query:
             return JSONResponse(status_code=400, content={"error": "Query required"})
 
+        search_mode = payload.search_mode or "hybrid"
         hits = search_service.execute_hybrid_search(
             query_text=query,
             doc_type=payload.type,
             repo=payload.repo,
-            limit=payload.limit or 6
+            language=payload.language,
+            category=payload.category,
+            tag=payload.tag,
+            limit=payload.limit or 6,
+            dense_weight=payload.dense_weight,
+            search_mode=search_mode
         )
         results = []
         for h in hits:
             results.append({
                 "score": round(getattr(h, "score", 0.0), 4),
+                "dense_score": getattr(h, "dense_score", None),
+                "sparse_score": getattr(h, "sparse_score", None),
+                "dense_rank": getattr(h, "dense_rank", None),
+                "sparse_rank": getattr(h, "sparse_rank", None),
                 "payload": getattr(h, "payload", {})
             })
-        return {"query": query, "type": payload.type, "results": results}
+        return {
+            "query": query,
+            "type": payload.type,
+            "search_mode": search_mode,
+            "dense_weight": payload.dense_weight,
+            "results": results
+        }
     except Exception as e:
         logger.error(f"Error testing search: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to execute search test."})

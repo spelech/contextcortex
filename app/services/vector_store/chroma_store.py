@@ -252,7 +252,9 @@ class ChromaVectorStore(VectorStore):
         language: Optional[str] = None,
         category: Optional[str] = None,
         tag: Optional[str] = None,
-        limit: int = 5
+        limit: int = 5,
+        dense_weight: Optional[float] = None,
+        search_mode: str = "hybrid"
     ) -> List[VectorSearchResult]:
         """Performs dense vector search returning ranked results."""
         if not query_text or not query_text.strip():
@@ -312,7 +314,11 @@ class ChromaVectorStore(VectorStore):
                     results.append(
                         VectorSearchResult(
                             id=str(doc_id),
-                            score=score,
+                            score=round(score, 4),
+                            dense_score=round(score, 4),
+                            sparse_score=0.0,
+                            dense_rank=i + 1,
+                            sparse_rank=None,
                             payload=payload
                         )
                     )

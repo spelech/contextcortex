@@ -23,9 +23,11 @@ async def handle_search_code(
     query: Annotated[str, Field(description="Natural language question or code concept (e.g. 'JWT token authentication handler').")],
     repo: Annotated[Optional[str], Field(description="Optional repository name/alias to filter by.")] = None,
     language: Annotated[Optional[str], Field(description="Optional language filter (e.g. 'python', 'typescript', 'go').")] = None,
-    limit: Annotated[int, Field(description="Max number of code blocks to return (default 5).")] = 5
+    limit: Annotated[int, Field(description="Max number of code blocks to return (default 5).")] = 5,
+    dense_weight: Annotated[Optional[float], Field(description="Weight between 0.0 (pure lexical BM25) and 1.0 (pure semantic vector). Default is 0.5 balanced.")] = None,
+    mode: Annotated[Optional[str], Field(description="Search mode: 'hybrid' (default), 'semantic', or 'lexical'.")] = "hybrid"
 ) -> str:
-    """Hybrid semantic and BM25 search over code functions, classes, and logic snippets with line numbers and GitHub links."""
+    """Hybrid semantic and BM25 search over code functions, classes, and logic snippets with line numbers, AST signatures, and GitHub links."""
     query = query.strip() if query else ""
     if not query:
         return "Error: search query cannot be empty."
@@ -33,20 +35,44 @@ async def handle_search_code(
     try:
         from app.services.auth import enforce_tool_permission, Role
         enforce_tool_permission(Role.VIEWER)
-        hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(query_text=query, doc_type="code", repo=repo, language=language, limit=limit)
+        hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(
+            query_text=query,
+            doc_type="code",
+            repo=repo,
+            language=language,
+            limit=limit,
+            dense_weight=dense_weight,
+            search_mode=mode or "hybrid"
+        )
         if not hits:
             return f"No matching code snippets found for query: '{query}'."
 
         formatted = []
         for hit in hits:
             p = hit.payload
-            header = f"### [{p.get('repo')}] {p.get('rel_path')} (Lines {p.get('start_line')}-{p.get('end_line')})"
-            if p.get("symbol"):
-                header += f" - Symbol: `{p.get('symbol')}`"
+            header = f"### [{p.get('repo')}] {p.get('rel_path')} (Lines {p.get('start_line')}-{p.get('end_line')})\n"
+            
+            sym = p.get("full_symbol") or p.get("symbol")
+            kind = p.get("kind")
+            if sym:
+                kind_str = f" (`{kind}`)" if kind else ""
+                header += f"- **Symbol**: `{sym}`{kind_str}\n"
+
+            sig = p.get("signature")
+            if sig:
+                header += f"- **Signature**: `{sig}`\n"
+
             link_url = p.get("permalink_url") or p.get("github_url")
             if link_url:
-                header += f"\nSource Link: {link_url}"
-            header += f"\nRelevance Score: {hit.score:.4f} ({hit.score * 100:.1f}%)\n"
+                header += f"- **Source Link**: {link_url}\n"
+
+            score_val = float(hit.score) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
+            score_str = f"{score_val:.4f} ({score_val * 100:.1f}%)"
+            d_val = getattr(hit, "dense_score", None)
+            s_val = getattr(hit, "sparse_score", None)
+            if isinstance(d_val, (int, float)) and isinstance(s_val, (int, float)):
+                score_str += f" [Semantic: {float(d_val) * 100:.1f}% | Lexical: {float(s_val) * 100:.1f}%]"
+            header += f"- Relevance Score: {score_str}\n\n"
 
             lang = p.get("language", "")
             block = f"{header}```{lang}\n{p.get('content')}\n```"
@@ -63,7 +89,9 @@ async def handle_search_docs(
     repo: Annotated[Optional[str], Field(description="Optional repository/vault filter.")] = None,
     category: Annotated[Optional[str], Field(description="Optional category filter.")] = None,
     tag: Annotated[Optional[str], Field(description="Optional tag filter.")] = None,
-    limit: Annotated[int, Field(description="Max documents to return (default 5).")] = 5
+    limit: Annotated[int, Field(description="Max documents to return (default 5).")] = 5,
+    dense_weight: Annotated[Optional[float], Field(description="Weight between 0.0 (pure lexical BM25) and 1.0 (pure semantic vector). Default is 0.5 balanced.")] = None,
+    mode: Annotated[Optional[str], Field(description="Search mode: 'hybrid' (default), 'semantic', or 'lexical'.")] = "hybrid"
 ) -> str:
     """Hybrid search across system documentation, markdown notes, architectural decisions, and runbooks."""
     query = query.strip() if query else ""
@@ -73,7 +101,16 @@ async def handle_search_docs(
     try:
         from app.services.auth import enforce_tool_permission, Role
         enforce_tool_permission(Role.VIEWER)
-        hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(query_text=query, doc_type="doc", repo=repo, category=category, tag=tag, limit=limit)
+        hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(
+            query_text=query,
+            doc_type="doc",
+            repo=repo,
+            category=category,
+            tag=tag,
+            limit=limit,
+            dense_weight=dense_weight,
+            search_mode=mode or "hybrid"
+        )
         if not hits:
             return f"No matching documentation found for query: '{query}'."
 
@@ -84,16 +121,23 @@ async def handle_search_docs(
             header = f"### [{p.get('repo')}] {p.get('rel_path')}"
             if p.get("heading") and p.get("heading") != "Root":
                 header += f" -> {p.get('heading')}"
+            header += "\n"
             if tags_str:
-                header += f"\nTags: {tags_str}"
+                header += f"- **Tags**: {tags_str}\n"
             link_url = p.get("permalink_url") or p.get("github_url")
             if link_url:
-                header += f"\nSource Link: {link_url}"
-            header += f"\nRelevance Score: {hit.score:.4f} ({hit.score * 100:.1f}%)\n"
+                header += f"- **Source Link**: {link_url}\n"
+
+            score_val = float(hit.score) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
+            score_str = f"{score_val:.4f} ({score_val * 100:.1f}%)"
+            d_val = getattr(hit, "dense_score", None)
+            s_val = getattr(hit, "sparse_score", None)
+            if isinstance(d_val, (int, float)) and isinstance(s_val, (int, float)):
+                score_str += f" [Semantic: {float(d_val) * 100:.1f}% | Lexical: {float(s_val) * 100:.1f}%]"
+            header += f"- Relevance Score: {score_str}\n\n"
 
             block = f"{header}---\n{p.get('content')}"
             formatted.append(block)
-
 
         return "\n\n========================\n\n".join(formatted)
     except Exception as e:

@@ -216,9 +216,18 @@ IMPORT_NODE_TYPES = {
 
 def extract_target_from_call_node(node, source_bytes: bytes) -> Optional[str]:
     """Extract function, method, constructor, or macro name from a call node."""
-    fn_node = node.child_by_field_name("function") or node.child_by_field_name("method") or node.child_by_field_name("expression")
+    fn_node = (
+        node.child_by_field_name("function")
+        or node.child_by_field_name("method")
+        or node.child_by_field_name("expression")
+        or node.child_by_field_name("type")
+        or node.child_by_field_name("constructor")
+    )
     if not fn_node and len(node.children) > 0:
-        fn_node = node.children[0]
+        for child in node.children:
+            if child.type not in ("new", "(", ")", ";", "{", "}", "[", "]"):
+                fn_node = child
+                break
 
     if fn_node:
         call_str = source_bytes[fn_node.start_byte:fn_node.end_byte].decode("utf-8", errors="ignore").strip()
@@ -228,22 +237,17 @@ def extract_target_from_call_node(node, source_bytes: bytes) -> Optional[str]:
         # Clean method call like self.foo() or obj.bar() or math.sqrt() -> get target symbol name
         if "(" in call_str:
             call_str = call_str.split("(")[0].strip()
-        if "." in call_str:
-            parts = [p for p in call_str.split(".") if p]
-            if parts:
-                return parts[-1]
-        if "::" in call_str:
-            parts = [p for p in call_str.split("::") if p]
-            if parts:
-                return parts[-1]
-        if "->" in call_str:
-            parts = [p for p in call_str.split("->") if p]
-            if parts:
-                return parts[-1]
-        if "\\" in call_str:
-            parts = [p for p in call_str.split("\\") if p]
-            if parts:
-                return parts[-1]
+        # Strip generics e.g. Foo<T> or Bar<A, B> -> Foo or Bar
+        call_str = re.sub(r'<.*?>', '', call_str).strip()
+        call_str = call_str.strip('; >')
+        for sep in ('.', '::', '->', '\\'):
+            if sep in call_str:
+                parts = [p for p in call_str.split(sep) if p]
+                if parts:
+                    call_str = parts[-1]
+        call_str = re.sub(r'<.*?>', '', call_str).strip('; >()')
+        if not call_str or call_str in ("new", "var", "self", "this", "super", "return", "throw", "yield", "void"):
+            return None
         return call_str
     return None
 

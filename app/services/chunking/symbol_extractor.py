@@ -154,12 +154,12 @@ def extract_symbols_and_chunks(
 
         elif node.type in CALL_NODE_TYPES:
             target = extract_target_from_call_node(node, source_bytes)
-            if target and target not in ("self", "this", "super"):
+            if target and target not in ("self", "this", "super", "new", "var"):
                 # Clean method prefix if full_symbol has parent
                 active_src = parent_symbol if parent_symbol else file_symbol
-                # if current active symbol is a method like Foo.bar, extract just bar or Foo.bar
-                if active_src and "." in active_src:
-                    active_src_name = active_src.split(".")[-1]
+                # If current active symbol is a method like Foo.bar, extract just bar
+                if parent_symbol and "." in parent_symbol:
+                    active_src_name = parent_symbol.split(".")[-1]
                 else:
                     active_src_name = active_src
                 relationships.append({

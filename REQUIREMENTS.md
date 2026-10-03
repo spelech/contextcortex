@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1003 Automated Tests** (658 Pytest Backend + 295 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1032 Automated Tests** (679 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -460,7 +460,7 @@ classDiagram
 - `test_split_by_length`
 - `test_chunk_markdown`
 
-#### `tests/backend/test_chunker_languages.py` (16 tests)
+#### `tests/backend/test_chunker_languages.py` (18 tests)
 - `test_language_detection`
 - `test_get_tree_sitter_parser_caching_and_fallbacks`
 - `test_extract_symbols_unsupported_language`
@@ -477,6 +477,8 @@ classDiagram
 - `test_get_file_outline_helper`
 - `test_markdown_chunking_with_subchunks`
 - `test_markdown_chunking_with_nested_headings_and_empty`
+- `test_call_extraction_constructors_and_generics`
+- `test_toplevel_call_source_symbol_preservation`
 
 #### `tests/backend/test_db_and_tools.py` (17 tests)
 - `test_db_path_and_init`
@@ -626,13 +628,16 @@ classDiagram
 - `test_sync_single_git_repo_vector_upsert_failure`
 - `test_sync_local_paths_vector_upsert_failure`
 
-#### `tests/backend/test_mcp_v2.py` (6 tests)
+#### `tests/backend/test_mcp_v2.py` (9 tests)
 - `test_fastmcp_tools_registered`
 - `test_fastmcp_resources_and_prompts`
 - `test_fastmcp_tool_execution`
 - `test_fastmcp_resource_read`
 - `test_fastmcp_prompt_get`
 - `test_fastmcp_streamable_http_transport`
+- `test_search_code_with_dense_weight_and_score_breakdown`
+- `test_search_code_empty_and_missing_ast_boundaries`
+- `test_search_docs_with_dense_weight_and_score_breakdown`
 
 #### `tests/backend/test_multi_git_providers.py` (9 tests)
 - `test_detect_git_provider`
@@ -657,7 +662,7 @@ classDiagram
 - `test_api_get_omni_search_symbols_and_files`
 - `test_navigator_tree_has_no_empty_folder_root` - _Verify get_navigator_tree sanitizes URI schemes and never produces empty name root folders._
 
-#### `tests/backend/test_navigator_service.py` (11 tests)
+#### `tests/backend/test_navigator_service.py` (12 tests)
 - `test_db`
 - `test_navigator_tree_construction`
 - `test_navigator_tree_all_repos`
@@ -668,18 +673,26 @@ classDiagram
 - `test_symbol_impact_retrieval`
 - `test_symbol_impact_not_found`
 - `test_no_outgoing_calls_in_callers`
+- `test_class_symbol_impact_aggregation`
 - `test_real_codebase_symbol_extraction_and_navigation`
 
-#### `tests/backend/test_schemas.py` (2 tests)
+#### `tests/backend/test_schemas.py` (4 tests)
 - `test_code_symbol_creation`
 - `test_search_request_defaults`
+- `test_search_request_dense_weight_boundaries`
+- `test_search_request_search_mode_boundaries`
 
-#### `tests/backend/test_search.py` (4 tests)
+#### `tests/backend/test_search.py` (9 tests)
 - `test_execute_hybrid_search_empty_query`
 - `test_execute_hybrid_search_delegation`
+- `test_execute_hybrid_search_ast_enrichment`
+- `test_execute_hybrid_search_ast_enrichment_interval_fallback`
+- `test_execute_hybrid_search_ast_enrichment_resilience`
+- `test_execute_hybrid_search_ast_enrichment_skipped_for_docs`
 - `test_execute_hybrid_search_exception`
 - `test_execute_hybrid_search_end_to_end_real` - _Validates REAL hybrid retrieval without mocking get_vector_store or execute_hybrid_search.
 Asserts both Markdown and PDF docs are matched under doc_type='doc'._
+- `test_api_test_search_endpoint`
 
 #### `tests/backend/test_tools.py` (3 tests)
 - `test_dynamic_catalog_description`
@@ -793,7 +806,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_test_connection_active_embedded` - _Verify test_connection succeeds on active embedded Qdrant store without file lock conflict._
 - `test_switch_same_embedded_directory` - _Verify switch_vector_store succeeds when switching collection on the same embedded Qdrant directory._
 
-#### `tests/backend/test_vector_store_qdrant.py` (32 tests)
+#### `tests/backend/test_vector_store_qdrant.py` (40 tests)
 - `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`
 - `TestQdrantVectorStoreInit::test_init_remote_success`
 - `TestQdrantVectorStoreInit::test_init_remote_fallback_to_embedded_on_connection_error`
@@ -806,6 +819,10 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `TestQdrantVectorStoreOperations::test_search_dense_and_hybrid_rrf`
 - `TestQdrantVectorStoreOperations::test_search_weighted_score_fusion_range_and_boost`
 - `TestQdrantVectorStoreOperations::test_search_weighted_score_fusion_alpha_weighting`
+- `TestQdrantVectorStoreOperations::test_search_explicit_dense_weight_and_score_decomposition`
+- `TestQdrantVectorStoreOperations::test_search_modes_case_insensitivity_and_whitespace`
+- `TestQdrantVectorStoreOperations::test_search_modes_semantic_and_lexical`
+- `TestQdrantVectorStoreOperations::test_search_mode_lexical_empty_sparse_no_dense_fallback`
 - `TestQdrantVectorStoreOperations::test_search_dense_fallback_without_sparse`
 - `TestQdrantVectorStoreOperations::test_delete_by_path`
 - `TestQdrantVectorStoreOperations::test_delete_by_repo`
@@ -822,6 +839,10 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_search_dense_and_hybrid_rrf`
 - `test_search_weighted_score_fusion_range_and_boost`
 - `test_search_weighted_score_fusion_alpha_weighting`
+- `test_search_explicit_dense_weight_and_score_decomposition`
+- `test_search_modes_case_insensitivity_and_whitespace`
+- `test_search_modes_semantic_and_lexical`
+- `test_search_mode_lexical_empty_sparse_no_dense_fallback`
 - `test_search_dense_fallback_without_sparse`
 - `test_delete_by_path`
 - `test_delete_by_repo`
@@ -1203,12 +1224,13 @@ and leaves the prior indexed state intact without data loss._
 - renders vector database health badge in header when vector_db_status is present
 - renders ChromaDB provider and unhealthy status badge in header
 
-#### `CodeNavigator.test.tsx` (5 tests)
+#### `CodeNavigator.test.tsx` (6 tests)
 - renders toolbar, hero layout, and fetches initial tree data
 - handles density mode switching and persists to localStorage
 - loads file outline on file selection and symbol impact on symbol selection
 - supports caller click-through navigation jumping to caller file and symbol
 - handles repo switcher change and re-fetches tree
+- handles external navigation and permits subsequent repo changes without loop
 
 #### `DiagnosticsViewer.test.tsx` (10 tests)
 - renders log records, badges, and controls
@@ -1307,7 +1329,7 @@ and leaves the prior indexed state intact without data loss._
 - calls onSelectCallee when a clickable callee is clicked for cross-file navigation
 - renders loading state when loading is true
 
-#### `NavigatorOmniSearch.test.tsx` (8 tests)
+#### `NavigatorOmniSearch.test.tsx` (10 tests)
 - renders omni-search input with placeholder
 - fetches matches when user types and displays floating overlay
 - navigates with keyboard and selects on Enter
@@ -1316,6 +1338,8 @@ and leaves the prior indexed state intact without data loss._
 - handles fetch error gracefully without crashing
 - closes dropdown when clicking outside the container
 - supports ArrowUp navigation within bounds
+- renders container prefix and highlights query match in symbol and path
+- focuses search input when pressing Ctrl+K
 
 #### `NavigatorOutline.test.tsx` (9 tests)
 - renders empty placeholder when outline is null or empty
@@ -1405,13 +1429,18 @@ and leaves the prior indexed state intact without data loss._
 - cancels sync by calling /admin/api/repos/{id}/cancel-sync
 - closes EventSource on unmount
 
-#### `SearchInspector.test.tsx` (6 tests)
+#### `SearchInspector.test.tsx` (11 tests)
 - renders initial prompt and inputs
-- performs search and renders matching hit cards
+- switches search mode and updates UI controls
+- adjusts hybrid split slider and presets
+- performs search and renders matching hit cards with score breakdowns and signature
+- invokes onOpenInNavigator when Open in Navigator button is clicked
 - displays empty results message when no hits found
 - handles search API failure with error display
 - performs doc search with repo filter and renders documentation hits
-- renders search query form and hit card headers with responsive classes
+- copies code snippet when Copy button is clicked
+- renders hits with missing AST metadata and null scores without error
+- handles network error during search gracefully
 
 #### `Settings.test.tsx` (29 tests)
 - renders vector database panel, auto-sync panel, multi-provider token boxes, rate limits, and host vault list

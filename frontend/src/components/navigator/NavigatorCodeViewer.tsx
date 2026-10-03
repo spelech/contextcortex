@@ -413,7 +413,7 @@ export const NavigatorCodeViewer: React.FC<NavigatorCodeViewerProps> = ({
                     <div
                       key={lineNum}
                       ref={isFirstTarget ? targetLineRef : undefined}
-                      className={`nav-code-line-row ${isTarget ? 'nav-code-line-target' : ''}`}
+                      className={`nav-code-line-row ${isTarget ? 'nav-code-line-target' : ''} ${isFirstTarget ? 'nav-code-line-primary' : ''}`}
                       data-testid={`code-line-${lineNum}`}
                     >
                       <div className="nav-code-line-number select-none">

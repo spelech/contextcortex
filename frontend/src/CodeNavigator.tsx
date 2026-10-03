@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   DensityMode,
   NavigatorTreeNode,
@@ -22,6 +22,9 @@ export interface CodeNavigatorProps {
   initialRepo?: string;
   initialPath?: string;
   initialSymbolId?: number;
+  initialStartLine?: number;
+  initialEndLine?: number;
+  onNavigationConsumed?: () => void;
 }
 
 interface HistoryItem {
@@ -36,6 +39,9 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
   initialRepo = '__all__',
   initialPath,
   initialSymbolId,
+  initialStartLine,
+  initialEndLine,
+  onNavigationConsumed,
 }) => {
   // Persistence for density mode
   const [density, setDensity] = useState<DensityMode>(() => {
@@ -237,6 +243,40 @@ export const CodeNavigator: React.FC<CodeNavigatorProps> = ({
     },
     [fetchImpact]
   );
+
+  // Track last consumed external navigation to prevent navigation trap
+  const lastNavRef = useRef<string | null>(null);
+
+  // Handle external navigation (e.g. from SearchInspector)
+  useEffect(() => {
+    if (!initialPath && !initialSymbolId && (!initialRepo || initialRepo === '__all__')) {
+      return;
+    }
+    const navKey = `${initialRepo || ''}:${initialPath || ''}:${initialSymbolId || ''}:${initialStartLine || ''}:${initialEndLine || ''}`;
+    if (lastNavRef.current === navKey) {
+      return;
+    }
+    lastNavRef.current = navKey;
+
+    const targetRepo = initialRepo && initialRepo !== '__all__' ? initialRepo : selectedRepo;
+    if (initialRepo && initialRepo !== '__all__' && initialRepo !== selectedRepo) {
+      setSelectedRepo(initialRepo);
+    }
+    if (initialPath) {
+      setSelectedPath(initialPath);
+      fetchFileContent(targetRepo, initialPath);
+      fetchOutline(targetRepo, initialPath);
+      if (initialStartLine !== undefined) setTargetStartLine(initialStartLine);
+      if (initialEndLine !== undefined) setTargetEndLine(initialEndLine);
+      setActiveInspectorTab('reader');
+    }
+    if (initialSymbolId) {
+      setSelectedSymbolId(initialSymbolId);
+      fetchImpact(targetRepo, initialSymbolId);
+      setActiveInspectorTab('intelligence');
+    }
+    onNavigationConsumed?.();
+  }, [initialRepo, initialPath, initialSymbolId, initialStartLine, initialEndLine, fetchFileContent, fetchOutline, fetchImpact, onNavigationConsumed]);
 
   // Push item into navigation history
   const pushHistory = useCallback(

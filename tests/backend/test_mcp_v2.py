@@ -103,3 +103,112 @@ async def test_fastmcp_streamable_http_transport():
             )
             assert resp.status_code == 200
             assert "ContextCortex" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_search_code_with_dense_weight_and_score_breakdown(temp_mcp_db):
+    mock_hit = MagicMock()
+    mock_hit.score = 0.82
+    mock_hit.dense_score = 0.88
+    mock_hit.sparse_score = 0.74
+    mock_hit.payload = {
+        "repo": "demo-repo",
+        "rel_path": "services/auth.py",
+        "start_line": 20,
+        "end_line": 35,
+        "symbol": "AuthService.login",
+        "signature": "def login(self, username: str, password: str) -> Token:",
+        "kind": "method_declaration",
+        "github_url": "https://github.com/demo/auth.py#L20-L35",
+        "language": "python",
+        "content": "def login(...): return token"
+    }
+
+    with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]) as mock_exec:
+        res, structured = await mcp_server.call_tool(
+            "search_code",
+            {"query": "user login", "dense_weight": 0.6, "mode": "hybrid"}
+        )
+        assert len(res) == 1
+        text = res[0].text
+        assert "services/auth.py" in text
+        assert "AuthService.login" in text
+        assert "def login(self, username: str, password: str)" in text
+        assert "Semantic: 88.0%" in text
+        assert "Lexical: 74.0%" in text
+        mock_exec.assert_called_once_with(
+            query_text="user login",
+            doc_type="code",
+            repo=None,
+            language=None,
+            limit=5,
+            dense_weight=0.6,
+            search_mode="hybrid"
+        )
+
+@pytest.mark.asyncio
+async def test_search_code_empty_and_missing_ast_boundaries(temp_mcp_db):
+    # 1. Empty results returns polite notice
+    with patch("app.mcp.tools.execute_hybrid_search", return_value=[]):
+        res, _ = await mcp_server.call_tool("search_code", {"query": "nonexistent_func"})
+        assert "No matching code snippets found for query: 'nonexistent_func'" in res[0].text
+
+    # 2. Hit without AST signature/symbol renders cleanly without crashing
+    mock_hit_no_ast = MagicMock()
+    mock_hit_no_ast.score = 0.70
+    mock_hit_no_ast.dense_score = 0.70
+    mock_hit_no_ast.sparse_score = 0.0
+    mock_hit_no_ast.payload = {
+        "repo": "raw-repo",
+        "rel_path": "scripts/build.sh",
+        "start_line": 1,
+        "end_line": 10,
+        "symbol": None,
+        "signature": None,
+        "content": "#!/usr/bin/env bash\necho 'building'"
+    }
+    with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit_no_ast]):
+        res, _ = await mcp_server.call_tool("search_code", {"query": "build.sh"})
+        assert len(res) == 1
+        text = res[0].text
+        assert "scripts/build.sh" in text
+        assert "echo 'building'" in text
+        assert "Signature" not in text
+
+@pytest.mark.asyncio
+async def test_search_docs_with_dense_weight_and_score_breakdown(temp_mcp_db):
+    mock_doc = MagicMock()
+    mock_doc.score = 0.82
+    mock_doc.dense_score = 0.80
+    mock_doc.sparse_score = 0.85
+    mock_doc.payload = {
+        "repo": "docs-repo",
+        "rel_path": "docs/architecture.md",
+        "title": "Architecture Guide",
+        "heading": "Microservices",
+        "start_line": 12,
+        "end_line": 30,
+        "content": "ContextCortex microservices routing and gateways"
+    }
+
+    with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_doc]) as mock_exec:
+        res, _ = await mcp_server.call_tool(
+            "search_docs",
+            {"query": "microservices", "dense_weight": 0.4, "mode": "lexical"}
+        )
+        assert len(res) == 1
+        text = res[0].text
+        assert "docs/architecture.md" in text
+        assert "Microservices" in text
+        assert "Relevance Score: 0.8200 (82.0%) [Semantic: 80.0% | Lexical: 85.0%]" in text
+        mock_exec.assert_called_once_with(
+            query_text="microservices",
+            doc_type="doc",
+            repo=None,
+            category=None,
+            tag=None,
+            limit=5,
+            dense_weight=0.4,
+            search_mode="lexical"
+        )
+

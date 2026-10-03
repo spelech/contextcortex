@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Literal
 
 # Database & Sync Models
 class RepoConfig(BaseModel):
@@ -117,6 +117,8 @@ class SearchRequest(BaseModel):
     tag: Optional[str] = None
     limit: int = 5
     exact: bool = True
+    dense_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    search_mode: Optional[Literal["hybrid", "semantic", "lexical"]] = "hybrid"
 
 class SyncRequest(BaseModel):
     repo: Optional[str] = None

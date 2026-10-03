@@ -260,6 +260,128 @@ class TestQdrantVectorStoreOperations:
         score_low = results_low_dense[0].score
         assert 0.0 <= score_low <= 1.0
 
+    def test_search_explicit_dense_weight_and_score_decomposition(self, memory_store):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Distributed cache invalidation protocols and Redis clusters.",
+            repo="cache-system",
+            path="/docs/cache.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        # Explicit dense weight 0.8
+        res = memory_store.search("Redis cache clusters", limit=5, dense_weight=0.8)
+        assert len(res) == 1
+        hit = res[0]
+        assert hit.dense_score is not None
+        assert hit.sparse_score is not None
+        assert hit.score > 0
+        assert hit.dense_rank == 1
+        assert hit.sparse_rank == 1
+
+        # Explicit dense weight 0.0 (pure lexical)
+        res_lexical = memory_store.search("Redis cache clusters", limit=5, dense_weight=0.0)
+        assert len(res_lexical) == 1
+        assert res_lexical[0].score == res_lexical[0].sparse_score
+
+        # Explicit dense weight 1.0 (pure semantic)
+        res_semantic = memory_store.search("Redis cache clusters", limit=5, dense_weight=1.0)
+        assert len(res_semantic) == 1
+        assert res_semantic[0].score == res_semantic[0].dense_score
+
+        # Out-of-bounds negative dense weight (< 0.0) is clamped to 0.0
+        res_neg = memory_store.search("Redis cache clusters", limit=5, dense_weight=-0.5)
+        assert len(res_neg) == 1
+        assert res_neg[0].score == res_neg[0].sparse_score
+
+        # Out-of-bounds excessive dense weight (> 1.0) is clamped to 1.0
+        res_pos = memory_store.search("Redis cache clusters", limit=5, dense_weight=2.0)
+        assert len(res_pos) == 1
+        assert res_pos[0].score == res_pos[0].dense_score
+
+        # Non-numeric string falls back to default 0.5 without exception
+        res_str = memory_store.search("Redis cache clusters", limit=5, dense_weight="invalid")
+        assert len(res_str) == 1
+        assert res_str[0].score > 0
+
+    def test_search_modes_case_insensitivity_and_whitespace(self, memory_store):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Kafka event streaming and partition consumer groups.",
+            repo="streaming",
+            path="/docs/kafka.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        # Uppercase and leading/trailing whitespace
+        res_sem = memory_store.search("Kafka event", limit=5, search_mode=" SEMANTIC  ")
+        assert len(res_sem) == 1
+        assert res_sem[0].dense_score > 0
+        assert res_sem[0].sparse_score == 0.0
+
+        res_lex = memory_store.search("Kafka consumer", limit=5, search_mode="LEXICAL")
+        assert len(res_lex) == 1
+        assert res_lex[0].sparse_score > 0
+        assert res_lex[0].dense_score == 0.0
+
+        # Unrecognized search mode falls back to hybrid
+        res_unrec = memory_store.search("Kafka streaming", limit=5, search_mode="non_existent_mode")
+        assert len(res_unrec) == 1
+        assert res_unrec[0].score > 0
+
+    def test_search_modes_semantic_and_lexical(self, memory_store, monkeypatch):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="Kubernetes ingress controller configuration and TLS termination.",
+            repo="k8s-infra",
+            path="/docs/ingress.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        # Semantic mode
+        res_sem = memory_store.search("TLS ingress", limit=5, search_mode="semantic")
+        assert len(res_sem) == 1
+        assert res_sem[0].dense_score > 0
+        assert res_sem[0].sparse_score == 0.0
+
+        # Lexical mode
+        res_lex = memory_store.search("ingress controller", limit=5, search_mode="lexical")
+        assert len(res_lex) == 1
+        assert res_lex[0].sparse_score > 0
+        assert res_lex[0].dense_score == 0.0
+
+        # Ensure lazy embedding inference: semantic mode doesn't compute sparse embedding
+        from app.services.vector_store import qdrant_store
+        sparse_called = []
+        monkeypatch.setattr(qdrant_store, "get_sparse_embedding", lambda q: sparse_called.append(q))
+        memory_store.search("TLS ingress", limit=5, search_mode="semantic")
+        assert len(sparse_called) == 0
+
+        # Ensure lexical mode doesn't compute dense embedding
+        dense_called = []
+        monkeypatch.setattr(qdrant_store, "get_dense_embedding", lambda q: dense_called.append(q))
+        memory_store.search("ingress controller", limit=5, search_mode="lexical")
+        assert len(dense_called) == 0
+
+    def test_search_mode_lexical_empty_sparse_no_dense_fallback(self, memory_store, monkeypatch):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="General documentation without specific match.",
+            repo="core",
+            path="/docs/general.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        from app.services.vector_store import qdrant_store
+        class EmptySparse:
+            indices = []
+            values = []
+
+        monkeypatch.setattr(qdrant_store, "get_sparse_embedding", lambda _: EmptySparse())
+        # Pure lexical search must return empty list and NOT fall back to dense semantic results
+        res = memory_store.search("general", search_mode="lexical")
+        assert res == []
+
     def test_search_dense_fallback_without_sparse(self, memory_store):
         doc = VectorDocument(
             id=str(uuid.uuid4()),
