@@ -141,6 +141,7 @@ function App() {
               initialSymbolId={navigatorTarget?.symbolId}
               initialStartLine={navigatorTarget?.startLine}
               initialEndLine={navigatorTarget?.endLine}
+              onNavigationConsumed={() => setNavigatorTarget(null)}
             />
           )}
           {activeTab === 'git-repos' && <GitRepoManager refreshStats={loadStats} />}

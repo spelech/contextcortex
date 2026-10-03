@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1018 Automated Tests** (668 Pytest Backend + 300 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1021 Automated Tests** (670 Pytest Backend + 301 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -799,7 +799,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_test_connection_active_embedded` - _Verify test_connection succeeds on active embedded Qdrant store without file lock conflict._
 - `test_switch_same_embedded_directory` - _Verify switch_vector_store succeeds when switching collection on the same embedded Qdrant directory._
 
-#### `tests/backend/test_vector_store_qdrant.py` (36 tests)
+#### `tests/backend/test_vector_store_qdrant.py` (38 tests)
 - `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`
 - `TestQdrantVectorStoreInit::test_init_remote_success`
 - `TestQdrantVectorStoreInit::test_init_remote_fallback_to_embedded_on_connection_error`
@@ -814,6 +814,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `TestQdrantVectorStoreOperations::test_search_weighted_score_fusion_alpha_weighting`
 - `TestQdrantVectorStoreOperations::test_search_explicit_dense_weight_and_score_decomposition`
 - `TestQdrantVectorStoreOperations::test_search_modes_semantic_and_lexical`
+- `TestQdrantVectorStoreOperations::test_search_mode_lexical_empty_sparse_no_dense_fallback`
 - `TestQdrantVectorStoreOperations::test_search_dense_fallback_without_sparse`
 - `TestQdrantVectorStoreOperations::test_delete_by_path`
 - `TestQdrantVectorStoreOperations::test_delete_by_repo`
@@ -832,6 +833,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_search_weighted_score_fusion_alpha_weighting`
 - `test_search_explicit_dense_weight_and_score_decomposition`
 - `test_search_modes_semantic_and_lexical`
+- `test_search_mode_lexical_empty_sparse_no_dense_fallback`
 - `test_search_dense_fallback_without_sparse`
 - `test_delete_by_path`
 - `test_delete_by_repo`
@@ -1213,12 +1215,13 @@ and leaves the prior indexed state intact without data loss._
 - renders vector database health badge in header when vector_db_status is present
 - renders ChromaDB provider and unhealthy status badge in header
 
-#### `CodeNavigator.test.tsx` (5 tests)
+#### `CodeNavigator.test.tsx` (6 tests)
 - renders toolbar, hero layout, and fetches initial tree data
 - handles density mode switching and persists to localStorage
 - loads file outline on file selection and symbol impact on symbol selection
 - supports caller click-through navigation jumping to caller file and symbol
 - handles repo switcher change and re-fetches tree
+- handles external navigation and permits subsequent repo changes without loop
 
 #### `DiagnosticsViewer.test.tsx` (10 tests)
 - renders log records, badges, and controls

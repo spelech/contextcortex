@@ -304,9 +304,6 @@ class QdrantVectorStore(VectorStore):
                 logger.warning(f"Collection '{self.collection_name}' does not exist in Qdrant.")
                 return []
 
-            dense_vec = get_dense_embedding(query_text.strip())
-            sparse_vec = get_sparse_embedding(query_text.strip())
-
             must_conditions = []
             if doc_type:
                 if doc_type == "doc":
@@ -325,6 +322,9 @@ class QdrantVectorStore(VectorStore):
             query_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
 
             mode = (search_mode or "hybrid").lower().strip()
+            if mode not in ("hybrid", "semantic", "lexical"):
+                mode = "hybrid"
+
             if mode == "semantic":
                 alpha = 1.0
             elif mode == "lexical":
@@ -343,10 +343,22 @@ class QdrantVectorStore(VectorStore):
                     alpha = 0.5
                 alpha = max(0.0, min(1.0, alpha))
 
+            # Compute embeddings lazily based on mode to avoid unnecessary inference
+            dense_vec = get_dense_embedding(query_text.strip()) if mode in ("hybrid", "semantic") else None
+            sparse_vec = get_sparse_embedding(query_text.strip()) if mode in ("hybrid", "lexical") else None
+
             candidate_limit = max(limit * 5, 50)
 
-            # Pure semantic search or fallback if no sparse vector is available
-            if mode == "semantic" or sparse_vec is None or len(sparse_vec.indices) == 0:
+            # If pure lexical search was explicitly requested but query produced no sparse indices, return empty
+            if mode == "lexical":
+                if sparse_vec is None or len(sparse_vec.indices) == 0:
+                    logger.warning(f"Lexical search requested for '{query_text}', but no sparse BM25 tokens were generated.")
+                    return []
+
+            # Pure semantic search or hybrid fallback if no sparse vector is available
+            if mode == "semantic" or (mode == "hybrid" and (sparse_vec is None or len(sparse_vec.indices) == 0)):
+                if dense_vec is None:
+                    dense_vec = get_dense_embedding(query_text.strip())
                 response = self.client.query_points(
                     collection_name=self.collection_name,
                     query=dense_vec,

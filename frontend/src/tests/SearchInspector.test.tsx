@@ -29,6 +29,12 @@ const mockHits: SearchHit[] = [
 describe('SearchInspector Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/admin/api/repos')) {
+        return Promise.resolve({ ok: true, json: async () => [{ name: 'repo-1' }, { name: 'repo-2' }] });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ results: [] }) });
+    });
   });
 
   it('renders initial prompt and inputs', () => {

@@ -311,4 +311,33 @@ describe('CodeNavigator Container', () => {
       );
     });
   });
+
+  it('handles external navigation and permits subsequent repo changes without loop', async () => {
+    const onConsumed = vi.fn();
+    render(
+      <CodeNavigator
+        initialRepo="repo-core"
+        initialPath="app/main.py"
+        initialStartLine={10}
+        initialEndLine={25}
+        onNavigationConsumed={onConsumed}
+      />
+    );
+
+    await waitFor(() => {
+      expect(onConsumed).toHaveBeenCalled();
+      expect(screen.getByText('main.py')).toBeInTheDocument();
+    });
+
+    // Now user switches repo to repo-web
+    const repoSelect = screen.getByRole('combobox', { name: /repository/i });
+    fireEvent.change(repoSelect, { target: { value: 'repo-web' } });
+
+    await waitFor(() => {
+      expect(repoSelect).toHaveValue('repo-web');
+      expect((globalThis as any).fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/admin/api/navigator/tree?repo=repo-web')
+      );
+    });
+  });
 });

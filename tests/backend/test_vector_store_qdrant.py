@@ -289,7 +289,7 @@ class TestQdrantVectorStoreOperations:
         assert len(res_semantic) == 1
         assert res_semantic[0].score == res_semantic[0].dense_score
 
-    def test_search_modes_semantic_and_lexical(self, memory_store):
+    def test_search_modes_semantic_and_lexical(self, memory_store, monkeypatch):
         doc = VectorDocument(
             id=str(uuid.uuid4()),
             text="Kubernetes ingress controller configuration and TLS termination.",
@@ -309,6 +309,38 @@ class TestQdrantVectorStoreOperations:
         assert len(res_lex) == 1
         assert res_lex[0].sparse_score > 0
         assert res_lex[0].dense_score == 0.0
+
+        # Ensure lazy embedding inference: semantic mode doesn't compute sparse embedding
+        from app.services.vector_store import qdrant_store
+        sparse_called = []
+        monkeypatch.setattr(qdrant_store, "get_sparse_embedding", lambda q: sparse_called.append(q))
+        memory_store.search("TLS ingress", limit=5, search_mode="semantic")
+        assert len(sparse_called) == 0
+
+        # Ensure lexical mode doesn't compute dense embedding
+        dense_called = []
+        monkeypatch.setattr(qdrant_store, "get_dense_embedding", lambda q: dense_called.append(q))
+        memory_store.search("ingress controller", limit=5, search_mode="lexical")
+        assert len(dense_called) == 0
+
+    def test_search_mode_lexical_empty_sparse_no_dense_fallback(self, memory_store, monkeypatch):
+        doc = VectorDocument(
+            id=str(uuid.uuid4()),
+            text="General documentation without specific match.",
+            repo="core",
+            path="/docs/general.md",
+        )
+        memory_store.upsert_documents([doc])
+
+        from app.services.vector_store import qdrant_store
+        class EmptySparse:
+            indices = []
+            values = []
+
+        monkeypatch.setattr(qdrant_store, "get_sparse_embedding", lambda _: EmptySparse())
+        # Pure lexical search must return empty list and NOT fall back to dense semantic results
+        res = memory_store.search("general", search_mode="lexical")
+        assert res == []
 
     def test_search_dense_fallback_without_sparse(self, memory_store):
         doc = VectorDocument(
