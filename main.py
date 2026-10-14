@@ -12,7 +12,7 @@ import os
 import threading
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -132,6 +132,8 @@ class AuthMiddleware:
             or path == "/health"
             or path == "/healthz"
             or path == "/"
+            or path == "/favicon.svg"
+            or path == "/favicon.ico"
             or path.startswith("/assets")
             or (path.startswith("/admin") and not path.startswith("/admin/api"))
             or path.startswith("/api/webhooks")
@@ -193,7 +195,7 @@ class AuthMiddleware:
             })
 
 
-app = FastAPI(title="ContextCortex", version="2.17.0", lifespan=lifespan)
+app = FastAPI(title="ContextCortex", version="2.17.1", lifespan=lifespan)
 app.add_middleware(AuthMiddleware)
 
 # Include API routes
@@ -205,11 +207,39 @@ async def root_redirect():
     return RedirectResponse(url="/admin/")
 
 
-www_dir = "frontend/dist" if os.path.exists("frontend/dist/index.html") else "www"
-assets_dir = os.path.join(www_dir, "assets") if os.path.exists(os.path.join(www_dir, "assets")) else "www/assets"
+if os.path.exists("frontend/dist/index.html") and os.path.exists("frontend/dist/assets"):
+    www_dir = "frontend/dist"
+elif os.path.exists("www/index.html") and os.path.exists("www/assets"):
+    www_dir = "www"
+elif os.path.exists("frontend/dist/index.html"):
+    www_dir = "frontend/dist"
+else:
+    www_dir = "www"
+
+assets_dir = os.path.join(www_dir, "assets")
 
 app.mount("/admin", StaticFiles(directory=www_dir, html=True), name="admin")
 app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+
+@app.get("/favicon.svg")
+async def favicon_svg():
+    svg_path = os.path.join(www_dir, "favicon.svg")
+    if os.path.exists(svg_path):
+        return FileResponse(svg_path, media_type="image/svg+xml")
+    return JSONResponse(status_code=404, content={"detail": "Favicon not found"})
+
+
+@app.get("/favicon.ico")
+async def favicon_ico():
+    ico_path = os.path.join(www_dir, "favicon.ico")
+    if os.path.exists(ico_path):
+        return FileResponse(ico_path)
+    svg_path = os.path.join(www_dir, "favicon.svg")
+    if os.path.exists(svg_path):
+        return FileResponse(svg_path, media_type="image/svg+xml")
+    return JSONResponse(status_code=404, content={"detail": "Favicon not found"})
+
 
 # Mount FastMCP SSE and Streamable HTTP endpoints
 for route in mcp_server.sse_app().routes:

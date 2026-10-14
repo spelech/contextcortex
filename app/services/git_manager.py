@@ -137,7 +137,8 @@ GIT_ENV = {
     **os.environ,
     "GIT_TERMINAL_PROMPT": "0",
     "GIT_ASKPASS": "",
-    "SSH_ASKPASS": ""
+    "SSH_ASKPASS": "",
+    "GIT_CONFIG_PARAMETERS": "'http.https://github.com/.extraheader='",
 }
 
 def get_remote_head_sha(

@@ -1,4 +1,4 @@
-# Developer Documentation: ContextCortex (v2.17.0)
+# Developer Documentation: ContextCortex (v2.17.1)
 
 This document provides instructions for developing, testing, configuring, and running ContextCortex locally.
 
