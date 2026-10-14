@@ -82,3 +82,21 @@ def test_api_stats_reports_healthy_with_real_embedded_store(tmp_path):
         assert data["vector_db_status"] == "Healthy"
         assert data["vector_store_provider"] == "qdrant"
         assert data["vector_store_mode"] == "embedded"
+
+
+def test_main_app_favicon_and_root_redirect():
+    """Verify root app redirect, favicon routes, and static asset handling."""
+    from main import app as main_app
+    main_client = TestClient(main_app)
+
+    res_root = main_client.get("/", follow_redirects=False)
+    assert res_root.status_code == 307
+    assert res_root.headers["location"] == "/admin/"
+
+    res_favicon = main_client.get("/favicon.svg")
+    assert res_favicon.status_code == 200
+    assert "image/svg+xml" in res_favicon.headers.get("content-type", "")
+
+    res_ico = main_client.get("/favicon.ico")
+    assert res_ico.status_code == 200
+
