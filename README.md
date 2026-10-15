@@ -163,7 +163,14 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `EMBEDDING_PROVIDER` | Embedding engine (`local` for in-process ONNX, `api` for LiteLLM/OpenAI) | `local` |
 | `EMBEDDING_MODEL` | FastEmbed dense model name | `BAAI/bge-small-en-v1.5` |
 | `SPARSE_MODEL` | FastEmbed sparse BM25 model name | `Qdrant/bm25` |
+| `LITELLM_URL` | OpenAI-compatible gateway base URL, passed to the OpenAI SDK as-is | `http://litellm:4000/v1` |
+| `LITELLM_API_KEY` | API key for the gateway | `dummy` |
+| `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
+| `CHAT_MODEL` | Chat model for file summaries | `gemini-2.5-flash` |
+| `VISION_OCR_MODEL` | Vision model for PDF OCR | `gemini-2.5-flash` |
+| `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) trusted at container start (see `certs/README.md`) | `/certs` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for higher rate limits & private repos | `None` |
+| `GITLAB_TOKEN` | Optional GitLab Personal Access Token for private repos | `None` |
 | `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |
 | `CACHE_DB_PATH` | Path to persistent SQLite cache database | `/app/data/index_cache.db` |
 | `CHUNK_SIZE` | Maximum character length per chunk | `1500` |
@@ -221,6 +228,9 @@ services:
         condition: service_healthy
     ports:
       - "${PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contextcortex}:${POSTGRES_PASSWORD:-cortexsecret}@postgres:5432/${POSTGRES_DB:-contextcortex}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
@@ -228,9 +238,9 @@ services:
       AUTH_JWKS_URI: ${AUTH_JWKS_URI:-}
       AUTH_RESOURCE_INDICATOR: ${AUTH_RESOURCE_INDICATOR:-https://contextcortex.local}
       ADMIN_INITIAL_KEY: ${ADMIN_INITIAL_KEY:-}
-      LOCAL_STORAGE_PATH: ${LOCAL_STORAGE_PATH:-/app/data/storage}
     volumes:
       - repo_cache:/app/data
+      - ./certs:/certs:ro
 
 volumes:
   postgres_data:

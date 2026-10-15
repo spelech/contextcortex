@@ -30,6 +30,11 @@ services:
         condition: service_healthy
     ports:
       - "${PORT:-3000}:3000"
+    # LLM gateway, embedding, and git token settings (see .env.example).
+    # Values in `environment:` below take priority over this file.
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contextcortex}:${POSTGRES_PASSWORD:-cortexsecret}@postgres:5432/${POSTGRES_DB:-contextcortex}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
@@ -39,6 +44,8 @@ services:
       ADMIN_INITIAL_KEY: ${ADMIN_INITIAL_KEY:-}
     volumes:
       - repo_cache:/app/data
+      # Optional private CA certificates (see certs/README.md)
+      - ./certs:/certs:ro
 
 volumes:
   postgres_data:

@@ -80,8 +80,13 @@ def init_embeddings(
     if EMBEDDING_PROVIDER == "api":
         try:
             from openai import OpenAI
+            from app.services.llm_client import get_llm_extra_headers
             logger.info(f"Using OpenAI/LiteLLM API embeddings at {LITELLM_URL} model {DENSE_MODEL_NAME}")
-            _openai_client = OpenAI(base_url=LITELLM_URL, api_key=LITELLM_API_KEY)
+            _openai_client = OpenAI(
+                base_url=LITELLM_URL,
+                api_key=LITELLM_API_KEY,
+                default_headers=get_llm_extra_headers(),
+            )
             # Try initializing sparse model locally even if dense uses API
             try:
                 from fastembed import SparseTextEmbedding

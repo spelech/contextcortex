@@ -20,8 +20,12 @@ Configure the application by setting these environment variables in your system 
 | `EMBEDDING_NUM_THREADS` | Maximum CPU worker threads allocated for ONNX runtime. | `min(2, system_cpus)` | `4` |
 | `EMBEDDING_BATCH_SIZE` | Maximum batch size processed during vector tokenization. | `32` | `64` |
 | `HYBRID_DENSE_WEIGHT` | Default dense semantic weight (`0.0` to `1.0`) for hybrid search fusion. | `0.5` | `0.7` |
-| `LITELLM_URL` | Upstream LiteLLM or OpenAI-compatible proxy base URL for API embeddings, OCR, and file summaries. | None | `http://litellm:4000/v1` |
-| `LITELLM_API_KEY` | Bearer API key for the upstream LiteLLM or OpenAI-compatible gateway. | None | `sk-litellm-proxy-key` |
+| `LITELLM_URL` | OpenAI-compatible gateway base URL. The OpenAI SDK adds `/embeddings` and `/chat/completions` to it. | `http://litellm:4000/v1` | `https://gateway.example.com/api/v3` |
+| `LITELLM_API_KEY` | API key for the gateway. | `dummy` | `sk-xxxxxxxxxxxx` |
+| `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request. | None | `{"X-User-Agent":"contextcortex","X-User-Name":"jdoe"}` |
+| `CHAT_MODEL` | Chat model for file summaries. | `gemini-2.5-flash` | `openai/gpt-4.1-mini` |
+| `VISION_OCR_MODEL` | Vision model for PDF OCR of scanned pages. | `gemini-2.5-flash` | `google/gemini-3.5-flash` |
+| `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) added to the trust store at container start. | `/certs` | `/certs` |
 | `LOCAL_STORAGE_PATH` | Host path for managed file and document uploads. | `/app/data/storage` | `/drives/storage` |
 | `AUTH_ENABLED` | Enables MCP OAuth 2.1 authentication and API key validation. | `false` | `true` |
 | `AUTH_OIDC_ISSUER` | OpenID Connect Identity Provider issuer URL. | None | `https://auth.company.com/realms/master` |
@@ -86,3 +90,36 @@ To use dynamic model discovery with a LiteLLM proxy:
 2. Open the **Settings** tab in the Web Dashboard.
 3. The dashboard queries the LiteLLM proxy models endpoint.
 4. Select your preferred embedding model, vision OCR model, and chat model.
+
+> **Database priority:** On first startup, ContextCortex copies the embedding settings (`EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `SPARSE_MODEL`, `EMBEDDING_NUM_THREADS`, `EMBEDDING_BATCH_SIZE`, `LITELLM_URL`) into the database. After that, the database values take priority, and changes to these environment variables have no effect. To change them later, use the **Settings** tab or `POST /admin/api/settings/embedding`.
+
+### Model discovery URL
+
+Model discovery calls `{LITELLM_URL}/models`. If the URL has no path (for example `http://litellm:4000`), discovery calls `/v1/models`.
+
+| `LITELLM_URL` | Discovery endpoint |
+| :--- | :--- |
+| `http://litellm:4000` | `http://litellm:4000/v1/models` |
+| `http://litellm:4000/v1` | `http://litellm:4000/v1/models` |
+| `https://gateway.example.com/api/v3` | `https://gateway.example.com/api/v3/models` |
+
+### Gateways that need extra headers
+
+Some gateways need headers in addition to `Authorization`, for example an identity header. Set `LLM_EXTRA_HEADERS` to a JSON object. ContextCortex sends these headers on embedding, summary, OCR, and model discovery requests:
+
+```bash
+export LLM_EXTRA_HEADERS='{"X-User-Agent":"contextcortex","X-User-Name":"jdoe"}'
+```
+
+If the value is not a valid JSON object, ContextCortex logs a warning and sends no extra headers.
+
+---
+
+## Private CA Certificates
+
+If your LLM gateway, your Git server, or a TLS-inspecting proxy uses a certificate from a private certificate authority, put the PEM-encoded CA certificates (`*.crt`) in the `certs/` folder:
+
+- **Build time:** `docker compose build` adds the certificates to the trust store of the image, so `npm ci` and `pip install` trust them.
+- **Run time:** `docker-compose.yml` mounts `./certs` at `/certs`. At container start, `docker-entrypoint.sh` adds each `*.crt` file to the system trust store. This also works with the pre-built image.
+
+Python (`httpx`, `openai`, `requests`) and Git use `/etc/ssl/certs/ca-certificates.crt` through `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, and `GIT_SSL_CAINFO`. Git does not track the `*.crt` files in `certs/`.

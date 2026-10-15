@@ -6,7 +6,8 @@ from dataclasses import dataclass, asdict
 from typing import List, Dict, Any, Union, Optional
 import pymupdf
 from openai import OpenAI
-from app.services.database import get_vision_ocr_model
+from app.services.database import get_vision_ocr_model, get_embedding_db_config
+from app.services.llm_client import get_llm_extra_headers
 
 logger = logging.getLogger("contextcortex.pdf")
 
@@ -37,9 +38,23 @@ class PdfExtractionResult:
 
 def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
     """Invokes LiteLLM / OpenAI compatible vision model to transcribe document page."""
-    litellm_url = os.getenv("LITELLM_URL", "http://litellm:4000/v1").strip()
-    litellm_key = os.getenv("LITELLM_API_KEY", "sk-default").strip()
-    client = OpenAI(base_url=litellm_url, api_key=litellm_key)
+    db_cfg: Dict[str, Any] = {}
+    try:
+        db_cfg = get_embedding_db_config()
+    except Exception:
+        pass
+
+    litellm_url = (
+        (db_cfg.get("litellm_url") if db_cfg else None)
+        or os.getenv("LITELLM_URL")
+        or "http://litellm:4000/v1"
+    ).strip()
+    litellm_key = (
+        (db_cfg.get("litellm_api_key") if db_cfg else None)
+        or os.getenv("LITELLM_API_KEY")
+        or "sk-default"
+    ).strip()
+    client = OpenAI(base_url=litellm_url, api_key=litellm_key, default_headers=get_llm_extra_headers())
 
     b64_data = base64.b64encode(png_bytes).decode("utf-8")
     data_url = f"data:image/png;base64,{b64_data}"

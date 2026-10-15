@@ -10,6 +10,7 @@ from app.services.database.connection import (
     get_chat_model,
     get_embedding_db_config,
 )
+from app.services.llm_client import get_llm_extra_headers
 from app.services.vector_store.base import VectorDocument, VectorStore
 from app.services.vector_store.manager import get_vector_store
 
@@ -86,7 +87,7 @@ class SummarizerService:
             or "dummy"
         ).strip()
 
-        self._client = OpenAI(base_url=litellm_url, api_key=litellm_key)
+        self._client = OpenAI(base_url=litellm_url, api_key=litellm_key, default_headers=get_llm_extra_headers())
         return self._client
 
     @client.setter

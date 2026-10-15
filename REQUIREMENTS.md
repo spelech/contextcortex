@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1037 Automated Tests** (684 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1046 Automated Tests** (693 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1012,15 +1012,26 @@ persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
 
-#### `tests/test_litellm_service.py` (8 tests)
+#### `tests/test_litellm_service.py` (9 tests)
 - `test_discover_models_success`
 - `test_discover_models_timeout`
 - `test_discover_models_connect_error`
 - `test_discover_models_http_401_unauthorized`
 - `test_discover_models_http_500_error`
 - `test_discover_models_url_normalization`
+- `test_discover_models_sends_extra_headers`
 - `test_discover_models_default_resolution`
 - `test_discover_models_ssrf_rejection`
+
+#### `tests/test_llm_client.py` (8 tests)
+- `test_extra_headers_unset`
+- `test_extra_headers_empty`
+- `test_extra_headers_valid_json`
+- `test_extra_headers_invalid_json_logs_warning`
+- `test_extra_headers_non_object_logs_warning`
+- `test_extra_headers_skip_null_and_blank_names`
+- `test_vision_ocr_client_uses_saved_settings_and_extra_headers`
+- `test_summarizer_client_sends_extra_headers`
 
 #### `tests/test_local_storage_indexing.py` (4 tests)
 - `test_incremental_indexing_on_save`
