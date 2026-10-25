@@ -110,6 +110,76 @@ async def lifespan(app: FastAPI):
         pass
 
 
+class McpPingMiddleware:
+    """
+    Lightweight MCP JSON-RPC ping interceptor.
+    Bypasses SSE stream allocation, AnyIO task groups, and session memory accumulation
+    when clients (e.g. ModelContextGateway) ping the server for liveness verification.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "").upper()
+        path = scope.get("path", "").rstrip("/") or "/"
+
+        # Check if request targets an MCP endpoint with POST
+        if method == "POST" and path in ("/mcp", "/sse", "/messages", ""):
+            body = b""
+            more_body = True
+            while more_body:
+                message = await receive()
+                body += message.get("body", b"")
+                more_body = message.get("more_body", False)
+
+            if b"ping" in body:
+                try:
+                    payload = json.loads(body.decode("utf-8"))
+                    if isinstance(payload, dict) and payload.get("method") == "ping":
+                        req_id = payload.get("id")
+                        response_body = json.dumps({
+                            "jsonrpc": "2.0",
+                            "id": req_id,
+                            "result": {},
+                        }).encode("utf-8")
+                        await send({
+                            "type": "http.response.start",
+                            "status": 200,
+                            "headers": [
+                                (b"content-type", b"application/json"),
+                                (b"cache-control", b"no-cache, no-transform"),
+                                (b"content-length", str(len(response_body)).encode("latin1")),
+                            ],
+                        })
+                        await send({
+                            "type": "http.response.body",
+                            "body": response_body,
+                        })
+                        return
+                except Exception:
+                    pass
+
+            # Not a ping: replay buffered body to downstream app
+            body_consumed = False
+
+            async def replay_receive():
+                nonlocal body_consumed
+                if not body_consumed:
+                    body_consumed = True
+                    return {"type": "http.request", "body": body, "more_body": False}
+                return await receive()
+
+            await self.app(scope, replay_receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
 class AuthMiddleware:
     """
     ASGI Authentication Middleware enforcing Bearer token / API key security
@@ -197,6 +267,7 @@ class AuthMiddleware:
 
 app = FastAPI(title="ContextCortex", version="2.17.1", lifespan=lifespan)
 app.add_middleware(AuthMiddleware)
+app.add_middleware(McpPingMiddleware)
 
 # Include API routes
 app.include_router(admin_router)
@@ -252,7 +323,14 @@ for route in mcp_server.streamable_http_app().routes:
 @app.get("/health")
 @app.get("/healthz")
 async def health():
-    return JSONResponse(content={"status": "healthy"})
+    return JSONResponse(
+        content={
+            "status": "healthy",
+            "protocolVersion": "2026-07-28",
+            "server": "contextcortex",
+        },
+        headers={"Cache-Control": "no-cache, no-transform"},
+    )
 
 
 if __name__ == "__main__":
