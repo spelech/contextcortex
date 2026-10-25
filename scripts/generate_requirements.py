@@ -109,8 +109,12 @@ def generate_markdown() -> str:
     total_e2e_tests = len(e2e_tests)
     total_all_tests = total_py_tests + total_fe_tests + total_e2e_tests
 
+    main_py = PROJECT_ROOT / "main.py"
+    ver_match = re.search(r'version=["\']([^"\']+)["\']', main_py.read_text(encoding="utf-8")) if main_py.exists() else None
+    app_version = ver_match.group(1).strip() if ver_match else "2.18.0"
+
     lines = [
-        "# Software Requirements Specification: ContextCortex (v2.17.1)",
+        f"# Software Requirements Specification: ContextCortex (v{app_version})",
         "",
         "> **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.",
         "",
