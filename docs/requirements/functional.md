@@ -1,21 +1,21 @@
 # Functional Requirements
 
-This section specifies the functional requirements for ContextCortex.
+This section specifies the functional requirements for ContextCortex (`v2.18.0`).
 
 ---
 
 ### FR-01: Abstract Syntax Tree (AST) Code Chunking
 - **Description**: The system must parse source code into Abstract Syntax Trees using Tree-sitter.
 - **Languages Supported**: Python, TypeScript, JavaScript, Go, Rust, C#, C++, Java, Ruby, and PHP.
-- **Behavior**: The parser must chunk along function and class boundaries. Chunks must preserve symbol names, parameter signatures, and 1-indexed line numbers.
+- **Behavior**: The parser must chunk along function, class, and method boundaries. Chunks must preserve symbol names, parameter signatures, and 1-indexed line numbers.
 - **Maximum Chunk Size**: When a symbol exceeds 512 tokens, child blocks must be segmented while preserving the parent declaration header.
 
 ---
 
-### FR-02: Hybrid Dense and Sparse Vector Retrieval
-- **Description**: The system must support hybrid vector search combining semantic similarity and keyword matching.
-- **Embedding Generation**: The system must generate 384-dimensional dense vectors using FastEmbed (`BAAI/bge-small-en-v1.5`) and lexical sparse vectors using BM25.
-- **Ranking Algorithm**: The system must combine dense cosine similarity scores and sparse BM25 scores using Reciprocal Rank Fusion (RRF with $k=60$).
+### FR-02: Calibrated Hybrid Dense and Sparse Vector Retrieval
+- **Description**: The system must support hybrid vector search combining semantic similarity and lexical keyword matching.
+- **Embedding Generation**: The system must generate 384-dimensional dense vectors (`FastEmbed BAAI/bge-small-en-v1.5` or upstream LiteLLM/OpenAI API embeddings) and lexical sparse vectors (`BM25`).
+- **Calibrated Scoring & Modes**: Search queries must support `hybrid`, `semantic`, and `lexical` modes with a configurable `dense_weight` (`0.0` to `1.0`, default `0.5`), expose decomposed `dense_score` and `sparse_score` metrics, and enrich code hits with AST signatures from `ast_symbols`.
 
 ---
 
@@ -28,22 +28,22 @@ This section specifies the functional requirements for ContextCortex.
 
 ### FR-04: Pluggable Vector Store Backends
 - **Description**: The system must support dynamic vector database adapters without server restarts.
-- **Engines Supported**: Qdrant (remote server and embedded disk), PostgreSQL pgvector, and ChromaDB.
-- **Runtime Switching**: Administrators must be able to test connection health and switch active vector backends via the Settings interface or REST API.
+- **Engines Supported**: Qdrant (remote server and embedded disk), PostgreSQL `pgvector`, and ChromaDB.
+- **Runtime Switching**: Administrators must be able to test connection health and switch active vector backends via the Settings interface or REST API (`/admin/api/vector-store/switch`).
 
 ---
 
-### FR-05: Universal Git Provider Synchronization
+### FR-05: Universal Git Provider Synchronization & Shallow Retention
 - **Description**: The system must ingest remote Git repositories from GitHub, GitLab, Gitea, Forgejo, Bitbucket, and generic Git hosts.
-- **Ephemeral Clones**: The system must perform authenticated shallow clones (`--depth 1`), extract symbols and vectors, and immediately remove repository files from host storage.
+- **Configurable Shallow Clones (`keep_shallow`)**: The system must support both ephemeral shallow clones (`--depth 1`, deleted immediately after extraction to conserve disk storage) and persistent shallow clones (`keep_shallow=1` in `/app/data/repos/{repo_name}`) for full-file inspection and fast delta fetches.
 - **Custom Credential Vault**: The system must store domain-level Git host tokens for internal and self-hosted instances.
 
 ---
 
-### FR-06: Managed Local Storage and Real-Time Indexing
-- **Description**: The system must provide a managed local storage directory (`/app/data/storage`) for uploaded files.
-- **Security**: The system must sanitize all file paths to prevent directory traversal attacks (rejection of `..`, leading slashes, and null bytes).
-- **Immediate Indexing**: Uploaded and modified files must be indexed into the vector store immediately. Deleted files must have their relational records and vector points purged without delay.
+### FR-06: Managed Local Storage, File Reading & Summarization
+- **Description**: The system must provide a managed local storage directory (`/app/data/storage`) for uploaded files and safe reading across indexed sources.
+- **Security**: The system must sanitize all file paths using canonical containment checks to prevent directory traversal attacks (rejection of `..`, leading slashes, and null bytes).
+- **Immediate Indexing & Summarization**: Uploaded and modified files must be indexed immediately. Files exceeding the size threshold (default `500 KB`) must be summarized via the configured LLM (`summarize_file`) and readable via bounded line ranges (`read_file`).
 
 ---
 
@@ -55,10 +55,10 @@ This section specifies the functional requirements for ContextCortex.
 
 ---
 
-### FR-08: Model Context Protocol (MCP) 2.0 Compliance
-- **Description**: The system must implement the official Model Context Protocol (2026-07-28) using `FastMCP`.
-- **Transports**: The system must provide Server-Sent Events (SSE) at `/sse` (with `/messages/`) and Streamable HTTP at `/mcp`.
-- **Tools**: The system must expose 14 dedicated agent tools (`search_code`, `search_docs`, `find_symbol`, `get_file_outline`, `list_repositories`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `get_code_routes`, `trace_call_path`, `manage_local_file`, `what_is_ingested`).
+### FR-08: Model Context Protocol (MCP) 2.0 Compliance & 16 Tools
+- **Description**: The system must implement the official Model Context Protocol using `FastMCP` 2.0.
+- **Transports & Liveness**: The system must provide Server-Sent Events (SSE) at `/sse` (with `/messages/`), Streamable HTTP at `/mcp`, and zero-allocation JSON-RPC `ping` interception via `McpPingMiddleware`.
+- **Tools**: The system must expose **16 dedicated agent tools**: `search_code`, `search_docs`, `find_symbol`, `trace_path`, `find_routes`, `find_api_callers`, `get_file_outline`, `list_repositories`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `manage_local_file`, `what_is_ingested`, `read_file`, and `summarize_file`.
 
 ---
 
@@ -70,18 +70,18 @@ This section specifies the functional requirements for ContextCortex.
 
 ---
 
-### FR-10: 3-Pane Codebase Navigator
-- **Description**: The web dashboard must provide an interactive 3-pane architectural navigator.
-- **Pane 1 (Files & Modules)**: Virtualized tree hierarchy with search filter and symbol badges.
-- **Pane 2 (Symbols & Routes)**: AST declaration list with category chip filters (All, Functions, Classes, Routes).
-- **Pane 3 (Code Intelligence & Impact)**: Display incoming callers, outgoing callees, route endpoints, docstrings, and signature code blocks.
+### FR-10: Hero Split Codebase Navigator & Omni-Search
+- **Description**: The web dashboard must provide an interactive hero split-view architectural navigator and global command palette.
+- **Left Sidebar (Files & Symbols)**: Dual-tab sidebar with per-repository folder expansion persistence (`sessionStorage`), AST symbol outline, and category chip filters (`All`, `Functions`, `Classes`, `Routes`).
+- **Omni-Search (`Ctrl+K` / `Cmd+K`)**: Floating command palette providing fuzzy search across repositories, file paths, AST symbols, and API routes.
+- **Center Hero Viewport**: Full syntax-highlighted source code viewer with target line-range highlighting, GFM + Mermaid document reader, breadcrumb bar, and instant Caller/Callee Impact Inspector.
 
 ---
 
-### FR-11: Dynamic LiteLLM Model Discovery
-- **Description**: The system must discover and classify available models from configured LiteLLM proxy endpoints.
-- **Categorization**: Models must be automatically sorted into Embedding Models, Vision OCR Models, and Chat Models based on model identifiers and capabilities.
-- **Persistence**: Selected model configurations must be persisted to the system metadata database.
+### FR-11: AI Gateway & Dynamic LiteLLM Model Discovery
+- **Description**: The system must discover and classify available models from configured LiteLLM or OpenAI-compatible proxy endpoints (`/admin/api/models/discover`).
+- **Categorization**: Models must be sorted into Embedding Models, Vision OCR Models, and Chat Models based on model identifiers and capabilities.
+- **Persistence**: Selected AI Gateway and embedding configurations must be persisted to the system metadata database.
 
 ---
 
@@ -93,14 +93,14 @@ This section specifies the functional requirements for ContextCortex.
 ---
 
 ### FR-13: Unified Ingestion Catalog
-- **Description**: The system must provide a unified view of all indexed sources via `what_is_ingested`.
+- **Description**: The system must provide a unified view of all indexed sources via `what_is_ingested` and `GET /admin/api/ingestion/catalog`.
 - **Filtering**: Users can filter sources by type (`git`, `monitored_path`, `local_storage`), repository name, path prefix, and file extension.
 
 ---
 
 ### FR-14: Architectural Decision Records (ADR)
 - **Description**: The system must parse and track Architectural Decision Records (MADR format).
-- **Operations**: Agents can query, create, and update ADRs via `manage_adr`.
+- **Operations**: Agents can query, create, update, and supersede ADRs via `manage_adr`.
 
 ---
 

@@ -19,13 +19,15 @@ ContextCortex supports dynamic switching between vector database engines:
 
 ---
 
-## 2. LiteLLM Dynamic Model Discovery
+## 2. AI Gateway & LiteLLM Dynamic Model Discovery
 
-When connected to an upstream LiteLLM proxy (`LITELLM_URL`), ContextCortex queries the model capabilities matrix dynamically and separates models into specialized categories:
+The **AI Gateway & Embedding Settings** panel configures upstream OpenAI-compatible or LiteLLM proxy endpoints (`/admin/api/settings/ai-gateway` and `/admin/api/settings/embedding`):
 
-- **Embedding Models**: Filtered by embedding capabilities (e.g. `BAAI/bge-small-en-v1.5`, `text-embedding-3-small`).
-- **Vision OCR Models**: Multi-modal vision models used to perform automated OCR on diagrams and scanned pages in PDF uploads (e.g. `gemini-2.5-flash`, `qwen3-vl`).
-- **Chat & Summarization Models**: Reasoning models used to generate structured executive summaries for large files (e.g. `gemini-2.5-flash`, `gpt-4o-mini`).
+- **Embedding Provider Mode**: Choose between **Local In-Process ONNX** (`FastEmbed` CPU runtime) and **External API Gateway** (`LiteLLM` / `OpenAI`).
+- **Dynamic Model Discovery**: When connected to an upstream LiteLLM proxy (`LITELLM_URL`), click **Discover Models** (`/admin/api/models/discover`) to query the model capabilities matrix dynamically and populate categorized selectors:
+  - **Embedding Models**: Filtered by embedding capabilities (e.g. `BAAI/bge-small-en-v1.5`, `text-embedding-3-small`).
+  - **Vision OCR Models**: Multi-modal vision models used to perform automated OCR on diagrams and scanned pages in PDF uploads (e.g. `gemini-2.5-flash`, `qwen3-vl`).
+  - **Chat & Summarization Models**: Reasoning models used to generate structured executive summaries for large files (e.g. `gemini-2.5-flash`, `gpt-4o-mini`).
 
 ---
 

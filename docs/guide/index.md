@@ -2,38 +2,50 @@
 
 ContextCortex is a Model Context Protocol (MCP) server for syntax-aware code search and repository intelligence. It connects AI coding assistants to local codebases, documentation, and architecture records.
 
-ContextCortex uses the official Model Context Protocol Python SDK 2.0 (`FastMCP`). The server provides dual communication channels: Server-Sent Events (SSE) and streamable HTTP.
+ContextCortex uses the official Model Context Protocol Python SDK 2.0 (`FastMCP`). The server provides dual communication channels: Server-Sent Events (SSE) and Streamable HTTP, along with a zero-allocation JSON-RPC `ping` health interceptor.
+
+---
 
 ## Purpose
 
-Artificial intelligence agents require fast and accurate context to write good code. Traditional search methods do not understand code syntax or relationship structures.
+Artificial intelligence agents require fast and accurate context to write reliable code. Traditional keyword or fixed-window search methods do not preserve code syntax boundaries or caller-callee relationship structures.
 
-ContextCortex solves this problem. It parses source files into Abstract Syntax Trees (AST) with Tree-sitter. It extracts functions, classes, API routes, and relationships. It stores text and code chunks in vector databases with dense and sparse embeddings.
+ContextCortex solves this problem:
+1. It parses source files into Abstract Syntax Trees (AST) with Tree-sitter across 10 programming languages.
+2. It extracts functions, classes, parameter signatures, REST API routes, and call relationships into relational tables.
+3. It stores text and code chunks in vector databases with both dense semantic embeddings (`384d` BGE-Small) and sparse lexical embeddings (`BM25`).
+
+---
 
 ## Key Capabilities
 
-- **Syntax-Aware Code Search**:
-  The system chunks code along function and class boundaries. It indexes exact line numbers and symbol names.
-- **Dual Relational Architecture**:
-  The system supports PostgreSQL 16 with pgvector for production deployments. It also supports SQLite with Write-Ahead Logging (WAL) for zero-dependency local use.
-- **Multi-Vector Retrieval**:
-  ContextCortex connects to Qdrant, ChromaDB, and PostgreSQL pgvector. It combines dense semantic vectors with BM25 lexical keywords using Reciprocal Rank Fusion (RRF).
-- **Universal Git Ingestion**:
-  The system indexes repositories from GitHub, GitLab, Gitea, Forgejo, Bitbucket, and generic Git hosts. It supports shallow clones and optional persistent copy retention for instant code viewing.
-- **Managed Local Storage**:
-  Users can upload files and PDF documents directly to the system. The system indexes text immediately and extracts text from images with optical character recognition (OCR).
-- **Codebase Navigator & Omni-Search**:
-  A split interface provides file trees, symbol outlines, full code viewing, and caller-callee relationship graphs.
-- **Security and Access Control**:
-  The server supports OAuth 2.1 (RFC 9728) and database-backed API keys. It enforces role-based access control with three privilege levels: Viewer, Editor, and Admin.
+### Syntax-Aware AST Code Search
+The system chunks source code along function, class, and method boundaries. Each chunk preserves 1-indexed line numbers, symbol names, parameter signatures, and Git permalinks.
 
-## Writing Standard Compliance
+### Dual Relational Architecture
+The persistence layer supports PostgreSQL 16 with `pgvector` for production deployments and SQLite with Write-Ahead Logging (WAL) for zero-dependency local operation.
 
-This documentation complies with the ASD-STE100 Simplified Technical English standard (Issue 9). ASD-STE100 establishes clear writing rules:
+### Calibrated Hybrid Vector Retrieval
+ContextCortex connects to Qdrant, ChromaDB, and PostgreSQL `pgvector`. Queries support `hybrid`, `semantic`, and `lexical` modes with a configurable `dense_weight` (`0.0` to `1.0`, default `0.5`) and transparent score decomposition (`dense_score` and `sparse_score`).
 
-1. Sentences contain a maximum of 20 words in procedural instructions.
-2. Sentences contain a maximum of 25 words in descriptive explanations.
-3. Instructions use the imperative mood (command form).
-4. Passive voice is avoided. Active voice is used.
-5. Technical terms are clear and unambiguous. Contractions are not permitted.
-6. Safety information uses standard alert levels (WARNING, CAUTION, NOTE).
+### Universal Git Ingestion & Shallow Retention
+The system indexes repositories from GitHub, GitLab, Gitea, Forgejo, Bitbucket, and generic Git hosts. Administrators can choose between ephemeral shallow clones (`--depth 1`, deleted after indexing) and persistent shallow clones (`keep_shallow`) for instant full-file inspection and fast delta fetches.
+
+### Managed Local Storage & PDF Vision OCR
+Users can upload source files, Markdown notes, and PDF documents directly to managed storage (`/app/data/storage`). The system indexes text immediately, auto-summarizes large files (`> 500 KB`), and extracts text from scanned PDFs and diagrams with AI vision OCR fallback.
+
+### Codebase Navigator & Omni-Search
+A hero split-view interface provides per-repository file trees, AST symbol outlines, interactive breadcrumb navigation, syntax-highlighted source code viewing, GitHub Flavored Markdown + Mermaid rendering, caller/callee impact analysis, and a global `Ctrl+K` / `Cmd+K` Omni-Search command palette.
+
+### Security and Access Control
+The server supports OAuth 2.1 Protected Resource discovery (RFC 9728) and SHA-256 hashed `cc_` API keys. It enforces role-based access control across three privilege tiers: `viewer` (Level 10), `editor` (Level 20), and `admin` (Level 30).
+
+---
+
+## Documentation Roadmap
+
+- **[Getting Started](/guide/getting-started)**: Install ContextCortex via automated setup scripts, manual virtual environments, or Docker Compose.
+- **[Configuration](/guide/configuration)**: Configure environment variables, database profiles, vector stores, and LiteLLM model discovery.
+- **[User Guide](/guide/user-guide)**: Explore all 9 Web Admin Dashboard modules with step-by-step instructions and screenshots.
+- **[System Architecture](/architecture/)**: Review component diagrams, AST ingestion pipelines, MCP protocol flows, and database ERDs.
+- **[Reference Manual](/reference/mcp-tools)**: Inspect all 16 MCP tools, dynamic resources, guided prompts, and Admin REST API endpoints.

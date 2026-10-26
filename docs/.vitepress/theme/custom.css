@@ -240,3 +240,47 @@
   max-width: none !important;
   height: auto !important;
 }
+
+/* Align Mermaid offscreen measurement containers with rendered .mermaid styles to prevent text clipping */
+.vp-doc .mermaid text,
+.mermaid text,
+.mermaid .label,
+.mermaid .nodeLabel,
+.mermaid .edgeLabel,
+div[id^="d"] text,
+div[id^="d"] .label,
+div[id^="d"] .nodeLabel,
+div[id^="d"] .edgeLabel,
+svg[id^="mermaid-"] text,
+svg[id^="mermaid-"] .label,
+svg[id^="mermaid-"] .nodeLabel,
+svg[id^="mermaid-"] .edgeLabel {
+  font-family: var(--vp-font-family-base) !important;
+  line-height: 1.3 !important;
+}
+
+.vp-doc .mermaid p,
+.mermaid p,
+div[id^="d"] p,
+svg[id^="mermaid-"] p {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.3 !important;
+}
+
+.vp-doc .mermaid code,
+.mermaid code,
+div[id^="d"] code,
+svg[id^="mermaid-"] code {
+  padding: 0 3px !important;
+  margin: 0 !important;
+  font-size: 0.9em !important;
+  line-height: 1.2 !important;
+}
+
+.vp-doc .mermaid foreignObject,
+.mermaid foreignObject,
+div[id^="d"] foreignObject,
+svg[id^="mermaid-"] foreignObject {
+  overflow: visible !important;
+}

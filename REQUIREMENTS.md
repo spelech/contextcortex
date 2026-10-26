@@ -25,7 +25,7 @@ ContextCortex provides high-precision, syntax-aware semantic and lexical retriev
 │  │    FastMCP 2.0.0+ Server Engine         │  │   FastAPI Admin REST Router │  │
 │  │    • SSE Transport (/sse, /messages/)   │  │   • app/api/routers/        │  │
 │  │    • Streamable HTTP (/mcp)             │  │   • repos, storage, catalog │  │
-│  │    • 14 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
+│  │    • 16 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
 │  └────────────────────┬────────────────────┘  └──────────────┬──────────────┘  │
 └───────────────────────┼──────────────────────────────────────┼─────────────────┘
                         │                                      │
@@ -260,19 +260,20 @@ classDiagram
 - **FR-1.3 (JSON-RPC Schema Compliance)**: All tool definitions, parameter schemas, resource templates, and prompt descriptions MUST adhere strictly to the Model Context Protocol 2024-11-05 / 2025 specification.
 
 ### FR-2: FastMCP Extended Agent Tools Contract
-- **FR-2.1 (`search_code`)**: MUST execute hybrid (Dense + BM25) code searches with Reciprocal Rank Fusion (RRF), returning code chunks, line ranges, matching symbol metadata, and clickable Git permalinks.
-- **FR-2.2 (`search_docs`)**: MUST execute hybrid searches across markdown notes and documentation, with category and tag filtering.
+- **FR-2.1 (`search_code`)**: MUST execute calibrated hybrid (Dense + BM25) code searches with configurable `dense_weight` and `mode`, returning code chunks, line ranges, decomposed scores, AST symbol signatures, and clickable Git permalinks.
+- **FR-2.2 (`search_docs`)**: MUST execute calibrated hybrid searches across markdown notes and documentation, with category and tag filtering.
 - **FR-2.3 (`find_symbol`)**: MUST perform sub-50ms exact and prefix symbol lookups against SQLite `ast_symbols` without vector search overhead.
 - **FR-2.4 (`get_file_outline`)**: MUST return the structural AST outline (classes, methods, signatures, start/end lines) for a specified file path.
 - **FR-2.5 (`list_repositories`)**: MUST return all registered Git repositories (with provider tags e.g. `[GITHUB]`, `[GITLAB]`, commit SHAs, and sync status) and local paths.
 - **FR-2.6 (`sync_repository`)**: MUST trigger background incremental or shallow sync for a single repo or all sources.
 - **FR-2.7 (`index_status`)**: MUST report vector count, active embedding models, collection name, and provider rate limit status.
 - **FR-2.8 (`get_architecture`)**: MUST synthesize high-level codebase architecture including detected entry points, primary language distributions, core directories, framework components, and architectural decision records.
-- **FR-2.9 (`manage_adr`)**: MUST support querying, listing, creating, and updating Architectural Decision Records (MADR / Nygard format) with lifecycle status tracking.
-- **FR-2.10 (`get_code_routes`)**: MUST return API endpoint routes and HTTP client invocations parsed from backend frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET).
-- **FR-2.11 (`trace_call_path`)**: MUST trace AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections using BFS graph traversal.
+- **FR-2.9 (`manage_adr`)**: MUST support querying, listing, creating, updating, and superseding Architectural Decision Records (MADR / Nygard format) with lifecycle status tracking.
+- **FR-2.10 (`find_routes` & `find_api_callers`)**: MUST return API endpoint routes and HTTP client invocations parsed from backend frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET).
+- **FR-2.11 (`trace_path`)**: MUST trace AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections using BFS graph traversal.
 - **FR-2.12 (`manage_local_file`)**: MUST support uploading, replacing, reading, and deleting files under managed local storage (`LOCAL_STORAGE_PATH`) with real-time vector and symbol indexing.
 - **FR-2.13 (`what_is_ingested`)**: MUST inspect and filter across all ingested Git repositories, monitored local paths, and uploaded local storage files with source type and detail level filtering.
+- **FR-2.14 (`read_file` & `summarize_file`)**: MUST support reading bounded line ranges or full files and generating or retrieving cached LLM executive summaries for large files.
 
 ### FR-3: Dynamic Resources & Prompt Templates
 - **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `knowledge://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.
@@ -287,7 +288,7 @@ classDiagram
 - **FR-4.5 (Credential Masking & URL Sanitization)**: MUST redact all access tokens and passwords from log files, console output, and API responses (e.g. `https://***github.com/...`).
 
 ### FR-5: Multi-Tier Authentication & Credential Vault Hierarchy
-- **FR-5.1 (Resolution Hierarchy)**: Ingestion MUST resolve credentials in strict priority order: 1. Repo Override $\rightarrow$ 2. Host Vault $\rightarrow$ 3. Global DB Tokens $\rightarrow$ 4. Environment Variables.
+- **FR-5.1 (Resolution Hierarchy)**: Ingestion MUST resolve credentials in strict priority order: 1. Repo Override → 2. Host Vault → 3. Global DB Tokens → 4. Environment Variables.
 - **FR-5.2 (Host Credential Vault CRUD)**: MUST provide REST APIs (`GET/POST/DELETE /admin/api/settings/hosts`) to manage self-hosted domain credentials with provider types, auth users, and masked tokens.
 
 ### FR-6: Multi-Language Tree-sitter AST Syntax Chunking
@@ -302,7 +303,7 @@ classDiagram
 
 ### FR-8: Pluggable Multi-Backend Vector Retrieval Engine
 - **FR-8.1 (Supported Vector Backends)**: MUST support PostgreSQL 16 (pgvector), Qdrant (Embedded and Remote) and ChromaDB (Embedded persistent and Remote client) as interchangeable storage engines.
-- **FR-8.2 (Reciprocal Rank Fusion)**: Hybrid search queries MUST fuse dense semantic vectors and sparse lexical search rankings using RRF ($k=60$).
+- **FR-8.2 (Calibrated Hybrid Fusion & RRF)**: Hybrid search queries MUST fuse dense semantic vectors and sparse lexical search rankings using calibrated linear weights (`dense_weight`, default `0.5`) and RRF (`k = 60`).
 - **FR-8.3 (Deterministic UUID5 Point Identification)**: MUST generate deterministic chunk UUIDs from `{repo}:{filepath}#{index}` for atomic, idempotent upserts and updates.
 - **FR-8.4 (Runtime Provider Switching)**: MUST support dynamic vector backend switching via `POST /admin/api/settings/vector-store/switch` with health checking and live schema verification.
 
@@ -348,13 +349,13 @@ classDiagram
 
 ## 4. Non-Functional Requirements (NFR)
 
-- **NFR-1 (Performance & Latency Budgets)**: AST symbol lookup response latency $<50\text{ms}$; Hybrid vector search query latency $<150\text{ms}$ on CPU.
-- **NFR-2 (Zero Disk Bloat & Memory Efficiency)**: Ephemeral shallow cloning MUST leave 0 MB residual cloned files on disk; FastEmbed model memory $\le 1.2\text{ GB}$ RAM.
+- **NFR-1 (Performance & Latency Budgets)**: AST symbol lookup response latency `< 50 ms`; Hybrid vector search query latency `< 150 ms` on CPU.
+- **NFR-2 (Zero Disk Bloat & Memory Efficiency)**: Ephemeral shallow cloning MUST leave 0 MB residual cloned files on disk; FastEmbed model memory `≤ 1.2 GB` RAM.
 - **NFR-3 (Security & Credential Sanitization)**: Personal access tokens, OAuth tokens, and passwords MUST NEVER appear in cleartext in logs, console output, URLs, or client API payloads.
 - **NFR-4 (Reliability & Concurrency)**: SQLite database MUST operate in WAL mode; Vector store schemas MUST automatically auto-heal/upgrade on startup.
 - **NFR-5 (Failure Isolation)**: Failure to sync an individual repository MUST NOT abort other repositories or crash the server.
 - **NFR-6 (Codebase Modularity & File Size Floor)**: All individual Python and TypeScript source code files MUST remain under 500 lines of code for long-term maintainability.
-- **NFR-7 (Test Quality & Coverage Floor)**: Backend statement coverage $\ge 85\%$; Frontend line coverage $\ge 85\%$; 100% Playwright E2E pass rate.
+- **NFR-7 (Test Quality & Coverage Floor)**: Backend statement coverage `≥ 85%`; Frontend line coverage `≥ 85%`; 100% Playwright E2E pass rate.
 
 ---
 
@@ -362,8 +363,8 @@ classDiagram
 
 | Requirement ID | Requirement Description | Implementation Files | Backend Pytest Modules | Frontend Vitest & E2E Suites |
 | :--- | :--- | :--- | :--- | :--- |
-| **FR-1** | FastMCP 2.0 Dual Transport Architecture | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_indexer_sync.py` | E2E Spec 1 |
-| **FR-2** | FastMCP 14 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py`, `test_mcp_storage_tools.py` | E2E Specs 1, 8 |
+| **FR-1** | FastMCP 2.0 Dual Transport Architecture | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_mcp_ping.py`, `test_indexer_sync.py` | E2E Spec 1 |
+| **FR-2** | FastMCP 16 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_file_reader_and_summarizer.py` | E2E Specs 1, 8 |
 | **FR-3** | Dynamic Resources & Prompt Templates | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_tools.py` | E2E Spec 1 |
 | **FR-4** | Universal Multi-Git Provider Ingestion | `app/services/git_manager.py`, `app/services/indexing/git_syncer.py` | `test_multi_git_providers.py`, `test_git_manager.py`, `test_indexer_edge_cases.py` | `GitRepoManager.test.tsx`, E2E Specs 2, 3, 4, 5, 16, 18 |
 | **FR-5** | Multi-Tier Credential Vault & Hierarchy | `app/services/database/credentials.py`, `app/services/git_manager.py` | `test_multi_git_providers.py`, `test_db_and_tools.py` | `Settings.test.tsx`, E2E Specs 10, 11 |

@@ -108,19 +108,22 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 ### Tools & RBAC Permissions
 | Tool | Required Role | Parameters | Description |
 | :--- | :---: | :--- | :--- |
-| `search_code` | `viewer` | `query` (str), `repo` (str, opt), `language` (str, opt), `limit` (int, default 5) | Hybrid semantic + BM25 code search. Returns code blocks with line ranges & clickable git permalinks. |
-| `search_docs` | `viewer` | `query` (str), `repo` (str, opt), `category` (str, opt), `tag` (str, opt), `limit` (int, default 5) | Hybrid search across markdown documentation, system architecture, and runbooks. |
+| `search_code` | `viewer` | `query` (str), `repo` (str, opt), `language` (str, opt), `limit` (int, default 5), `dense_weight` (float, opt), `mode` (str, default `hybrid`) | Calibrated hybrid semantic + BM25 code search with AST signatures, decomposed scores, and Git permalinks. |
+| `search_docs` | `viewer` | `query` (str), `repo` (str, opt), `category` (str, opt), `tag` (str, opt), `limit` (int, default 5), `dense_weight` (float, opt), `mode` (str, default `hybrid`) | Calibrated hybrid search across Markdown documentation, system architecture, summaries, and PDFs. |
 | `find_symbol` | `viewer` | `name` (str), `repo` (str, opt), `exact` (bool, default True), `limit` (int, default 10) | Instant exact or prefix AST symbol lookup (functions, classes, structs, interfaces). |
 | `get_file_outline` | `viewer` | `filepath` (str), `repo` (str, opt) | Returns the AST structure (classes, methods, signatures, lines) without full file token costs. |
+| `trace_path` | `viewer` | `symbol` (str), `repo` (str, opt), `direction` (str, default `both`), `depth` (int, default 2), `limit` (int, default 25) | Traces AST symbol calls, imports, and inheritance relationships via BFS. |
+| `find_routes` | `viewer` | `query` (str, opt), `method` (str, opt), `repo` (str, opt), `limit` (int, default 20) | Lists or searches declared API endpoint routes across backend frameworks. |
+| `find_api_callers` | `viewer` | `path` (str), `method` (str, opt), `repo` (str, opt) | Finds client call sites and services that invoke a specific HTTP endpoint or URL pattern. |
 | `list_repositories` | `viewer` | *None* | Lists all registered Git repositories and local paths with commit SHAs and indexing status. |
-| `sync_repository` | `editor` | `repo` (str, opt) | Triggers background shallow clone sync for a specific repository or all sources. |
+| `sync_repository` | `editor` | `repo` (str, opt) | Triggers background shallow clone or delta sync for a specific repository or all sources. |
 | `index_status` | `viewer` | *None* | Returns vector counts, collection status, embedding models, and GitHub rate limits. |
 | `get_architecture` | `viewer` | `repo` (str, opt) | Synthesizes codebase entry points, language breakdown, core directories, and architectural overview. |
-| `manage_adr` | `editor` | `action` (str: `list`\|`get`\|`create`\|`update`), `repo` (str, opt), `title` (str, opt), `decision` (str, opt), `status` (str, opt) | Query, create, or update Architectural Decision Records (MADR / Nygard format). |
-| `get_code_routes` | `viewer` | `repo` (str, opt), `framework` (str, opt), `http_method` (str, opt) | Returns API endpoint route definitions and HTTP client invocations across backend frameworks. |
-| `trace_call_path` | `viewer` | `target` (str), `repo` (str, opt), `direction` (str, default `downstream`), `depth` (int, default 3) | Traces AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections via BFS. |
+| `manage_adr` | `editor` / `viewer` | `action` (str: `list`\|`get`\|`create`\|`update`\|`supersede`), `repo` (str), `id` (str, opt), `title` (str, opt), `decision` (str, opt), `status` (str, opt) | Query, create, update, or supersede Architectural Decision Records (MADR / Nygard format). |
 | `manage_local_file` | `editor` / `viewer` | `action` (str: `upload`\|`replace`\|`delete`\|`read`), `file_path` (str), `content` (str, opt), `repo` (str, opt), `category` (str, opt) | Manage files in ContextCortex local storage: upload, replace, read, or delete files with immediate vector indexing. |
 | `what_is_ingested` | `viewer` | `source_type` (str, opt), `repo_name` (str, opt), `path_prefix` (str, opt), `file_extension` (str, opt), `detail_level` (str, opt) | Inspect all ingested Git repositories, monitored local paths, and uploaded local storage files with optional filtering. |
+| `read_file` | `viewer` | `path` (str), `repo` (str, opt), `start_line` (int, opt), `end_line` (int, opt) | Read full file content or bounded 1-indexed line ranges from monitored directories, persistent repos, or storage. |
+| `summarize_file` | `viewer` | `path` (str), `repo` (str, opt), `force_refresh` (bool, default False) | Retrieve a cached summary or generate a structured LLM executive summary for a large file. |
 
 ### Resources
 | Resource URI | MIME Type | Description |
@@ -405,8 +408,6 @@ curl -X POST http://localhost:3000/admin/api/auth/keys \
 ---
 
 ## 📚 Documentation & Specifications
-
-The documentation follows the **ASD-STE100 Simplified Technical English (Issue 9)** standard for maximum clarity and technical precision.
 
 - [**Interactive Documentation Site (VitePress)**](https://spelech.github.io/contextcortex/): Complete user guide with component screenshots, interactive Mermaid architecture diagrams, REST API reference, and software requirements specification.
   - Run locally: `npm run docs:dev`

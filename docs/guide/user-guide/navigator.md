@@ -31,10 +31,12 @@ The Codebase Navigator features a modern split layout optimized for code reading
 - **Zero-Shift Floating Overlay**: Floats smoothly over the viewports without altering page heights.
 
 ### 3. Center Hero Viewport: Code Viewer, Doc Reader & Intelligence
+- **Interactive Breadcrumb Bar**:
+  - Displays the active repository, folder path segments, file name, and selected AST symbol at the top of the viewport for quick ancestor navigation.
 - **Full Source Code Viewer**:
   - Syntax highlighting powered by Prism across 8+ languages including C#, Python, JavaScript/TypeScript, C++, Go, Rust, SQL, and COBOL.
-  - Line numbers with target line range highlighting (`targetStartLine`-`targetEndLine`) when jumping from Omni-Search or the symbols outline.
-  - Copy clean file contents or permalinks directly to the clipboard.
+  - Line numbers with ambient symbol scope tinting and distinct header indicator for target line ranges (`targetStartLine`–`targetEndLine`) when jumping from Omni-Search, Search Inspector, or the symbols outline.
+  - Copy clean file contents or Git permalinks directly to the clipboard.
   - Collapsible bottom drawer for quick caller and callee inspection.
 - **Enhanced Markdown Document Reader**:
   - Safe GitHub Flavored Markdown (GFM) renderer for `.md` and `.markdown` files.
@@ -43,6 +45,7 @@ The Codebase Navigator features a modern split layout optimized for code reading
   - Switch seamlessly between **Rendered** and **Raw Source** view modes.
 - **Instant Code Intelligence & Impact Inspector**:
   - Immediately available via the **Intelligence** tab on any opened file—no prior outline clicks required.
+  - Aggregates container class members so class-level selections display total incoming callers and outgoing callees across all methods.
   - Symbol kind, file path, line ranges, and 4-metric overview (Incoming Callers, Outgoing Callees, Total Imports, Language).
   - Framework API route mapping card (`POST /v1/chat/completions`).
   - Formatted signature block and docstring summary.
@@ -56,7 +59,7 @@ The Codebase Navigator features a modern split layout optimized for code reading
   - **Compact**: Tight row spacing and minimal margins designed for high-density multi-file refactoring on laptops and widescreen monitors.
   - **Balanced** *(Default)*: Optimal spacing and font sizing for general architectural review.
   - **Spacious**: Card-based presentation with generous padding and expanded docstring summaries.
-- **Responsive Stacking**: On mobile and narrow viewports ($<900\text{px}$), the 3 panes seamlessly stack vertically with word-wrapping and container safeguards, guaranteeing zero horizontal overflow and zero element collisions.
+- **Responsive Stacking**: On mobile and narrow viewports (`< 900 px`), the panes seamlessly stack vertically with word-wrapping and container safeguards, guaranteeing zero horizontal overflow and zero element collisions.
 
 ---
 

@@ -1,9 +1,9 @@
 # Verification and Test Matrix
 
-ContextCortex is verified by an extensive automated test suite comprising **923 automated tests**:
-- **611 Backend Tests** (Python Pytest suite with 88% code coverage baseline).
-- **266 Frontend Tests** (React 19 / TypeScript Vitest unit and integration suite).
-- **46 End-to-End Tests** (Playwright automated browser suite and Layout Inspector audits).
+ContextCortex is verified by an automated test suite comprising **1,037 automated tests**:
+- **684 Backend Tests** (Python Pytest suite with 88% code coverage baseline).
+- **303 Frontend Tests** (React 19 / TypeScript Vitest unit and component suite).
+- **50 End-to-End Tests** (Playwright automated browser suite and Layout Inspector audits).
 
 ---
 
@@ -11,24 +11,24 @@ ContextCortex is verified by an extensive automated test suite comprising **923 
 
 | Requirement ID | Requirement Title | Verification Method | Associated Test Modules |
 | :--- | :--- | :--- | :--- |
-| **FR-01** | AST Code Chunking | Automated Unit Test | `tests/backend/test_chunking.py`, `test_tree_sitter.py` |
-| **FR-02** | Hybrid Dense + Sparse Search | Automated Integration Test | `tests/backend/test_search.py`, `test_rrf.py` |
-| **FR-03** | Dual Relational Storage | Automated Integration Test | `tests/backend/test_database.py`, `test_sqlite_wal.py` |
-| **FR-04** | Pluggable Vector Backends | Automated Integration Test | `tests/backend/test_vector_store.py`, `test_vector_health.py` |
-| **FR-05** | Universal Git Ingestion | Automated Integration Test | `tests/backend/test_git_manager.py`, `test_shallow_clone.py` |
-| **FR-06** | Managed Local Storage | Automated Unit & Integration | `tests/backend/test_local_storage.py`, `test_storage_api.py` |
-| **FR-07** | PDF Ingestion & Vision OCR | Automated Integration Test | `tests/backend/test_pdf_extractor.py`, `test_pdf_storage_api.py` |
-| **FR-08** | FastMCP 2.0 & 14 Tools | Automated End-to-End Test | `tests/backend/test_mcp_server.py`, `test_mcp_tools.py` |
-| **FR-09** | RFC 9728 OAuth 2.1 & RBAC | Automated Unit & Security | `tests/backend/test_auth.py`, `test_rbac.py`, `test_oauth_metadata.py`|
-| **FR-10** | 3-Pane Codebase Navigator | Automated Component & E2E | `frontend/src/tests/Navigator.test.tsx`, `e2e/navigator.spec.ts` |
-| **FR-11** | Dynamic Model Discovery | Automated Integration Test | `tests/backend/test_litellm_service.py`, `test_model_metadata.py` |
-| **FR-12** | Diagnostic Ring Buffer | Automated Unit Test | `tests/backend/test_logger.py`, `test_logs_api.py` |
-| **FR-13** | Unified Ingestion Catalog | Automated Integration Test | `tests/backend/test_catalog.py`, `frontend/src/tests/Catalog.test.tsx`|
-| **FR-14** | Architecture ADR Management | Automated Integration Test | `tests/backend/test_adr.py` |
-| **FR-15** | Multi-Theme Responsive UI | Automated E2E & Layout | `frontend/src/tests/Theme.test.tsx`, `e2e/layout-inspector.spec.ts` |
-| **NFR-01** | Sub-500 LOC Maintainability | Automated Linter / CI | `oxlint`, `ruff`, repository file size audits |
-| **NFR-04** | Path Traversal Protection | Automated Security Test | `tests/backend/test_local_storage.py::test_path_traversal` |
-| **NFR-07** | Zero Horizontal Overflow | Automated E2E Layout Test | `e2e/layout-inspector.spec.ts` |
+| **FR-01** | AST Code Chunking | Automated Unit Test | `tests/backend/test_chunker.py`, `tests/backend/test_chunker_languages.py` |
+| **FR-02** | Calibrated Hybrid Search & AST Enrichment | Automated Integration Test | `tests/backend/test_search.py`, `tests/backend/test_vector_store_qdrant.py`, `frontend/src/tests/SearchInspector.test.tsx` |
+| **FR-03** | Dual Relational Storage | Automated Integration Test | `tests/backend/test_db_and_tools.py`, `tests/backend/test_postgres_schema.py` |
+| **FR-04** | Pluggable Vector Backends | Automated Integration Test | `tests/backend/test_vector_store_manager.py`, `tests/backend/test_api_vector_store.py` |
+| **FR-05** | Universal Git Ingestion & Shallow Retention | Automated Integration Test | `tests/backend/test_multi_git_providers.py`, `tests/backend/test_git_manager.py`, `frontend/src/tests/GitRepoManager.test.tsx` |
+| **FR-06** | Managed Local Storage, Read & Summarize | Automated Unit & Integration | `tests/backend/test_local_storage_service.py`, `tests/backend/test_file_reader_and_summarizer.py` |
+| **FR-07** | PDF Ingestion & Vision OCR | Automated Integration Test | `tests/test_pdf_extractor.py`, `tests/test_pdf_storage_api.py`, `frontend/src/tests/PdfPreviewModal.test.tsx` |
+| **FR-08** | FastMCP 2.0, 16 Tools & JSON-RPC Ping | Automated End-to-End Test | `tests/backend/test_mcp_v2.py`, `tests/test_mcp_ping.py`, `tests/backend/test_tools.py` |
+| **FR-09** | RFC 9728 OAuth 2.1 & RBAC | Automated Unit & Security | `tests/backend/test_auth_jwt_and_keys.py`, `tests/backend/test_auth_middleware_and_rbac.py` |
+| **FR-10** | Hero Split Codebase Navigator & Omni-Search | Automated Component & E2E | `frontend/src/tests/CodeNavigator.test.tsx`, `NavigatorOmniSearch.test.tsx`, `NavigatorCodeViewer.test.tsx`, `e2e/navigator.spec.ts` |
+| **FR-11** | AI Gateway & Dynamic Model Discovery | Automated Integration Test | `tests/backend/test_ai_gateway_settings.py`, `tests/backend/test_model_discovery.py`, `frontend/src/tests/AIGatewaySettings.test.tsx` |
+| **FR-12** | Diagnostic Ring Buffer | Automated Unit Test | `tests/backend/test_diagnostic_logger.py`, `frontend/src/tests/DiagnosticsViewer.test.tsx` |
+| **FR-13** | Unified Ingestion Catalog | Automated Integration Test | `tests/backend/test_mcp_storage_tools.py`, `frontend/src/tests/IngestionCatalogViewer.test.tsx` |
+| **FR-14** | Architecture ADR Management | Automated Integration Test | `tests/backend/test_architecture_adr.py` |
+| **FR-15** | Multi-Theme Responsive UI | Automated E2E & Layout | `frontend/src/tests/App.test.tsx`, `frontend/e2e/dashboard.spec.ts` |
+| **NFR-01** | Sub-500 LOC Maintainability | Automated Linter / CI | Repository file size audits, `pytest`, `tsc` |
+| **NFR-04** | Path Traversal Protection | Automated Security Test | `tests/backend/test_local_storage_service.py`, `tests/backend/test_file_reader_and_summarizer.py` |
+| **NFR-07** | Zero Horizontal Overflow | Automated E2E Layout Test | `frontend/e2e/navigator.spec.ts`, `frontend/e2e/dashboard.spec.ts` |
 
 ---
 
@@ -51,8 +51,8 @@ Execute React component tests:
 npm --prefix frontend run test
 ```
 
-### 3. Running Playwright Layout Inspector Audits
-Execute viewport and layout overflow audits:
+### 3. Running Playwright End-to-End & Layout Audits
+Execute browser E2E and layout overflow audits:
 ```bash
 npm --prefix frontend run test:layout
 ```

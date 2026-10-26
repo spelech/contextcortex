@@ -23,17 +23,23 @@ ContextCortex maintains an in-memory ring buffer of the latest 500 system events
 
 ---
 
-## Health Check Endpoints
+## Health Check & MCP Liveness Endpoints
 
-ContextCortex exposes standard health check endpoints for container orchestrators (Docker, Kubernetes, Kuma):
+ContextCortex exposes standard HTTP health probes and a zero-allocation MCP JSON-RPC `ping` handler for container orchestrators and MCP gateways (such as Docker, Kubernetes, Uptime Kuma, and Model Context Gateway):
 
 ```bash
-# Basic liveness probe
-curl http://localhost:8021/health
-# Response: {"status":"healthy"}
+# 1. HTTP liveness & readiness probe (/health or /healthz)
+curl -s http://localhost:8021/healthz
+# Response: {"status":"healthy","service":"ContextCortex","version":"2.18.0","protocolVersion":"2025-06-18"}
 
-# Detailed diagnostic status
-curl http://localhost:8021/admin/api/stats
+# 2. Lightweight MCP JSON-RPC ping (bypasses SSE stream/session allocation)
+curl -s -X POST http://localhost:8021/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
+# Response: {"jsonrpc":"2.0","id":1,"result":{}}
+
+# 3. Detailed index and system statistics
+curl -s http://localhost:8021/admin/api/stats
 ```
 
 ---
