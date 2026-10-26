@@ -9,8 +9,11 @@ export default withMermaid(
     cleanUrls: true,
     lastUpdated: true,
     srcExclude: ['superpowers/**', 'TEST_COVERAGE.md', 'REQUIREMENTS.md'],
+    head: [
+      ['link', { rel: 'icon', type: 'image/svg+xml', href: '/contextcortex/logo.svg' }]
+    ],
     themeConfig: {
-      logo: '/assets/theme_midnight_blue.png',
+      logo: '/logo.svg',
       siteTitle: 'ContextCortex',
       outline: {
         level: [2, 3],

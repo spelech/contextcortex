@@ -5,6 +5,9 @@ hero:
   name: ContextCortex
   text: High-Performance Syntax-Aware Code RAG & MCP Server
   tagline: Tree-sitter AST Code Intelligence, Calibrated Hybrid Search, and FastMCP 2.0 Server with Interactive Codebase Navigation
+  image:
+    src: /logo.svg
+    alt: ContextCortex Logo
   actions:
     - theme: brand
       text: Get Started
