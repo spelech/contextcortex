@@ -14,10 +14,11 @@ if [ -d "$CA_DIR" ]; then
         found=1
     done
     if [ "$found" = "1" ]; then
-        if update-ca-certificates >/dev/null 2>&1; then
+        if update-ca-certificates; then
             echo "Loaded private CA certificates from $CA_DIR"
         else
-            echo "Warning: could not update the CA trust store from $CA_DIR" >&2
+            echo "Error: could not update the CA trust store from $CA_DIR" >&2
+            exit 1
         fi
     fi
 fi

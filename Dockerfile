@@ -1,39 +1,60 @@
+# syntax=docker/dockerfile:1
+ARG FRONTEND_IMAGE=node:22-alpine
+ARG PYTHON_IMAGE=python:3.11-slim
+
 # Stage 1: Build Frontend
-FROM node:22-alpine AS frontend-builder
+FROM ${FRONTEND_IMAGE} AS frontend-builder
 WORKDIR /app/frontend
-RUN apk add --no-cache git
-# Optional private CA certificates (certs/*.crt) for npm behind a TLS-inspecting proxy
-COPY certs/ /tmp/extra-ca/
+COPY certs/ /usr/local/share/ca-certificates/extra/
+# Bootstrap trust before apk, then use the system bundle for npm and Git dependencies.
+RUN set -eu; \
+    cp /etc/ssl/cert.pem /tmp/bootstrap-ca.pem; \
+    for cert in /usr/local/share/ca-certificates/extra/*.crt; do \
+        [ -f "$cert" ] || continue; \
+        cat "$cert" >> /tmp/bootstrap-ca.pem; printf '\n' >> /tmp/bootstrap-ca.pem; \
+    done; \
+    SSL_CERT_FILE=/tmp/bootstrap-ca.pem apk add --no-cache ca-certificates git; \
+    update-ca-certificates; \
+    rm /tmp/bootstrap-ca.pem
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
+    GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
 COPY frontend/package*.json ./
-RUN if ls /tmp/extra-ca/*.crt >/dev/null 2>&1; then \
-        cat /tmp/extra-ca/*.crt > /tmp/extra-ca.pem && export NODE_EXTRA_CA_CERTS=/tmp/extra-ca.pem; \
-    fi && npm ci
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Runtime Environment
-FROM python:3.11-slim
+FROM ${PYTHON_IMAGE}
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+COPY certs/ /usr/local/share/ca-certificates/extra/
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
+RUN set -eu; \
+    for cert in /usr/local/share/ca-certificates/extra/*.crt; do \
+        [ -f "$cert" ] || continue; \
+        cat "$cert" >> "$SSL_CERT_FILE"; printf '\n' >> "$SSL_CERT_FILE"; \
+    done; \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     git \
     libpq-dev \
     curl \
     ripgrep \
-    && rm -rf /var/lib/apt/lists/*
-
-# Optional private CA certificates (certs/*.crt). Python, pip, and git use the system bundle.
-COPY certs/ /usr/local/share/ca-certificates/extra/
-RUN update-ca-certificates
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
-    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
-    PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
-    GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=secret,id=pip_config,target=/etc/pip.conf \
+    --mount=type=secret,id=python_constraints,target=/run/secrets/python-constraints.txt \
+    if [ -f /run/secrets/python-constraints.txt ]; then \
+        PIP_CONSTRAINT=/run/secrets/python-constraints.txt pip install --no-cache-dir -r requirements.txt; \
+    else \
+        pip install --no-cache-dir -r requirements.txt; \
+    fi
 
 COPY . .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist

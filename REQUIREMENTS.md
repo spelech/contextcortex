@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1046 Automated Tests** (693 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1047 Automated Tests** (694 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -923,6 +923,9 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_process_file_content_doc_links`
 - `test_graph_builder_doc_links_topology`
 - `test_graph_builder_wikilink_hyphen_space_matching`
+
+#### `tests/test_docker_entrypoint.py` (1 tests)
+- `test_runtime_ca_update_controls_application_start`
 
 #### `tests/test_docker_orchestration.py` (34 tests)
 - `TestDockerComposeConfig::test_compose_version_and_services`

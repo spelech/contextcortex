@@ -1,0 +1,18 @@
+# Deploy an image built with Dockerfile or Dockerfile.overlay; do not rebuild implicitly.
+# Requires Docker Compose 2.24.4+ for !reset.
+services:
+  postgres:
+    profiles: ["bundled-postgres"]
+    container_name: !reset null
+  contextcortex:
+    image: ${CONTEXTCORTEX_IMAGE:-contextcortex-enterprise:local}
+    build: !reset null
+    container_name: !reset null
+    depends_on: !reset {}
+    ports: !override
+      - "${ENTERPRISE_BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: ${ENTERPRISE_DATABASE_URL:?Set ENTERPRISE_DATABASE_URL explicitly}
+      VECTOR_STORE_PROVIDER: ${ENTERPRISE_VECTOR_STORE_PROVIDER:?Set ENTERPRISE_VECTOR_STORE_PROVIDER explicitly}
+      VECTOR_STORE_MODE: ${ENTERPRISE_VECTOR_STORE_MODE:-embedded}
+      CACHE_DB_PATH: ${ENTERPRISE_CACHE_DB_PATH:-/app/data/index_cache.db}

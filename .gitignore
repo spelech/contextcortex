@@ -20,3 +20,4 @@ certs/*
 !certs/README.md
 # Local compose overrides
 docker-compose.override.yml
+/.secrets/

@@ -117,6 +117,9 @@ If the value is not a valid JSON object, ContextCortex logs a warning and sends 
 
 ## Private CA Certificates
 
+For private package mirrors, 30-day package quarantine, and image-overlay builds,
+see [Restricted-network builds and local deployment](enterprise-build.md).
+
 If your LLM gateway, your Git server, or a TLS-inspecting proxy uses a certificate from a private certificate authority, put the PEM-encoded CA certificates (`*.crt`) in the `certs/` folder:
 
 - **Build time:** `docker compose build` adds the certificates to the trust store of the image, so `npm ci` and `pip install` trust them.

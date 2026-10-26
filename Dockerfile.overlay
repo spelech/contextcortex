@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1
+# check=skip=InvalidDefaultArgInFrom
+# Supply an approved ContextCortex release image, preferably pinned by digest.
+ARG RUNTIME_IMAGE
+FROM ${RUNTIME_IMAGE}
+WORKDIR /app
+
+COPY certs/ /usr/local/share/ca-certificates/extra/
+RUN update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
+
+COPY app/ ./app/
+COPY main.py ./main.py
+# The server prefers frontend/dist over www; keep both on this checkout's UI.
+COPY www/ ./www/
+COPY www/ ./frontend/dist/
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
+
+EXPOSE 3000
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["python", "main.py"]
