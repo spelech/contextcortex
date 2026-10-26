@@ -1,47 +1,51 @@
 # System Design and Components
 
-This document describes the runtime components of ContextCortex and their interactions.
+This document describes the runtime components of ContextCortex and their interactions across the client, gateway, core service, and storage layers.
+
+---
 
 ## High-Level System Flowchart
 
-The following diagram illustrates the system boundaries, client interfaces, core services, and storage engines:
+The following diagram illustrates the system boundaries, client interfaces, core modular services, and storage engines:
 
 ```mermaid
 flowchart TD
     subgraph Clients["Clients and Consumers"]
-        Claude["AI Coding Agents\n(Cursor, Claude Desktop, Antigravity)"]
-        Browser["Web Admin Dashboard\n(React 19 Frontend)"]
+        Claude["AI Coding Agents<br/>(Cursor, Claude Desktop, Antigravity)"]
+        Browser["Web Admin Dashboard<br/>(React 19 Frontend)"]
     end
 
     subgraph Gateway["FastAPI and FastMCP Gateway"]
         FastAPI["FastAPI Core Engine"]
-        AuthLayer["Authentication and RBAC Layer\n(app/services/auth/)"]
-        FastMCP["FastMCP 2.0 Server\n(app/mcp/mcp_server.py)"]
-        SSE["SSE Transport\n(/sse, /messages/)"]
-        HTTP["Streamable HTTP Transport\n(/mcp)"]
-        RFC9728["OAuth 2.1 Metadata\n(/.well-known/oauth-protected-resource)"]
-        AdminAPI["Admin REST API Routers\n(app/api/routers/*)"]
-        LogBuffer["Diagnostic Ring Buffer\n(app/services/logger.py)"]
+        PingMW["McpPingMiddleware<br/>(Zero-Allocation JSON-RPC ping)"]
+        AuthLayer["Authentication and RBAC Layer<br/>(app/services/auth/)"]
+        FastMCP["FastMCP 2.0 Server<br/>(app/mcp/mcp_server.py)"]
+        SSE["SSE Transport<br/>(/sse, /messages/)"]
+        HTTP["Streamable HTTP Transport<br/>(/mcp)"]
+        RFC9728["OAuth 2.1 Metadata<br/>(/.well-known/oauth-protected-resource)"]
+        AdminAPI["Admin REST API Routers<br/>(app/api/routers/*)"]
+        LogBuffer["Diagnostic Ring Buffer<br/>(app/services/logger.py)"]
     end
 
     subgraph CoreServices["Core Modular Services"]
-        GitMgr["Universal Git Ingestion\n(app/services/git_manager.py)"]
-        TSLoader["Tree-sitter AST Loader\n(app/services/chunking/)"]
-        EmbeddingSrv["Embedding Engine\n(app/services/embeddings.py)"]
-        SearchSrv["Hybrid Search and RRF\n(app/services/search.py)"]
-        NavigatorSrv["3-Pane Codebase Navigator\n(app/services/navigator.py)"]
-        StorageSrv["Local Storage Service\n(app/services/local_storage.py)"]
-        PdfExtractor["PDF Extraction and OCR\n(app/services/pdf_extractor.py)"]
+        GitMgr["Universal Git Ingestion<br/>(app/services/git_manager.py)"]
+        TSLoader["Tree-sitter AST Loader<br/>(app/services/chunking/)"]
+        EmbeddingSrv["Embedding Engine<br/>(app/services/embeddings.py)"]
+        SearchSrv["Calibrated Hybrid Search<br/>(app/services/search.py)"]
+        NavigatorSrv["Codebase Navigator & Omni-Search<br/>(navigator.py, omni_search.py, file_reader.py)"]
+        StorageSrv["Local Storage Service<br/>(app/services/local_storage.py)"]
+        PdfExtractor["PDF Extraction and OCR<br/>(app/services/pdf_extractor.py)"]
     end
 
     subgraph StorageLayer["Pluggable Storage Layer"]
-        RelationalDB[("SQLAlchemy 2.0 Unified DB\n(PostgreSQL 16 / SQLite WAL)")]
-        VectorDB[("Vector Storage Engines\n(Qdrant / pgvector / ChromaDB)")]
-        ManagedDisk[("Managed Local Disk\n(/app/data/storage)")]
+        RelationalDB[("SQLAlchemy 2.0 Unified DB<br/>(PostgreSQL 16 / SQLite WAL)")]
+        VectorDB[("Vector Storage Engines<br/>(Qdrant / pgvector / ChromaDB)")]
+        ManagedDisk[("Managed Disk & Repo Cache<br/>(/app/data/storage & /app/data/repos)")]
     end
 
-    Claude -->|Bearer Token / API Key| SSE
-    Claude -->|Bearer Token / API Key| HTTP
+    Claude -->|Bearer Token / API Key| PingMW
+    PingMW --> SSE
+    PingMW --> HTTP
     Claude -->|OAuth Discovery| RFC9728
 
     SSE --> AuthLayer
@@ -70,6 +74,7 @@ flowchart TD
     NavigatorSrv --> RelationalDB
     AdminAPI --> RelationalDB
     StorageSrv --> ManagedDisk
+    GitMgr --> ManagedDisk
 ```
 
 ---
@@ -77,17 +82,30 @@ flowchart TD
 ## Component Breakdown
 
 ### 1. Client Layer
-- **MCP Clients**: AI agents communicate via JSON-RPC over Server-Sent Events (SSE) or Streamable HTTP.
-- **Admin Dashboard**: React 19 single-page application communicating over standard REST API endpoints.
+- **MCP Clients**: AI coding assistants (Cursor, Claude Desktop, Antigravity, Windsurf) and MCP gateways (such as Model Context Gateway) communicate via JSON-RPC 2.0 over Server-Sent Events (`/sse` + `/messages/`) or Streamable HTTP (`/mcp`).
+- **Admin Dashboard**: React 19 single-page application served at `/admin/` communicating over REST API endpoints (`/admin/api/*`).
 
 ### 2. Gateway and Security Layer
-- **FastAPI Lifespan Session Manager**: Manages application startup, database migrations, connection pool initialization, and graceful shutdown.
-- **Authentication Layer**: Intercepts requests, validates OAuth 2.1 JWT tokens and API keys, and enforces role-based permission checks.
-- **Diagnostic Ring Buffer**: Captures the last 500 server events, errors, and traces in memory.
+- **FastAPI Lifespan Session Manager**: Manages application startup, database schema migrations, connection pool initialization, background auto-sync poller lifecycle, and graceful shutdown.
+- **Zero-Allocation Ping Interceptor (`McpPingMiddleware`)**: Intercepts `POST /mcp`, `/sse`, and `/messages` requests carrying `"method": "ping"` and returns an immediate JSON-RPC 2.0 response without allocating SSE streams or AnyIO task groups.
+- **Authentication Layer (`app/services/auth/`)**: Validates OAuth 2.1 JWT bearer tokens and SHA-256 hashed `cc_` API keys, and enforces 3-tier role-based permission checks (`viewer`, `editor`, `admin`).
+- **Diagnostic Ring Buffer (`app/services/logger.py`)**: Captures the latest 500 server events, warnings, errors, and stack traces in bounded memory.
 
 ### 3. Core Processing Services
-- **Universal Git Manager**: Handles authenticated shallow repository clones across GitHub, GitLab, Gitea, and Bitbucket.
-- **Tree-sitter Chunking Package**: Parses 10 major programming languages and extracts AST nodes, API routes, and call references.
-- **Embedding Engine**: Generates 384-dimensional dense vectors (FastEmbed BGE-small) and BM25 sparse vectors.
-- **Search Engine**: Merges dense cosine similarity and sparse BM25 scores using Reciprocal Rank Fusion (RRF).
-- **PDF Extraction Service**: Extracts text from PDF files with automated AI vision OCR fallback for embedded diagrams.
+- **Universal Git Manager (`app/services/git_manager.py`)**: Handles authenticated shallow repository clones (`--depth 1`) across GitHub, GitLab, Gitea, Forgejo, Bitbucket, and generic Git hosts, supporting both ephemeral deletion and persistent shallow retention (`keep_shallow`).
+- **Tree-sitter Chunking Package (`app/services/chunking/`)**: Parses 10 programming languages to extract AST declarations, parameter signatures, REST API routes, HTTP client calls, and caller/callee relationships.
+- **Embedding Engine (`app/services/embeddings.py`)**: Generates 384-dimensional dense vectors (`FastEmbed BAAI/bge-small-en-v1.5` or upstream LiteLLM/OpenAI API embeddings) and sparse BM25 lexical vectors.
+- **Calibrated Hybrid Search Engine (`app/services/search.py`)**: Fuses dense cosine similarity and sparse BM25 lexical scores using configurable hybrid weights (`dense_weight`, `mode`), decomposes component scores (`dense_score`, `sparse_score`), and enriches code matches with AST signatures from `ast_symbols`.
+- **Codebase Navigator & File Reader (`navigator.py`, `omni_search.py`, `file_reader.py`)**: Powers directory trees, symbol outlines, `Ctrl+K` Omni-Search, full syntax-highlighted file reading, and LLM executive summaries for large files.
+- **PDF Extraction Service (`app/services/pdf_extractor.py`)**: Extracts digital text from PDF files with automated AI vision OCR fallback for scanned pages and embedded architectural diagrams.
+
+### 4. Pluggable Storage Layer
+- **Unified Relational Database**: SQLAlchemy 2.0 Core schema operating identically over PostgreSQL 16 (`psycopg3` connection pool) and SQLite (WAL mode).
+- **Pluggable Vector Store**: Runtime-switchable vector adapters for Qdrant (embedded or remote), PostgreSQL `pgvector` (HNSW cosine index), and ChromaDB.
+
+---
+
+## Related Architecture Guides
+- [Data Pipeline and Ingestion](/architecture/data-pipeline)
+- [MCP Protocol and Security](/architecture/mcp-protocol)
+- [Database and Storage Schema](/architecture/database-schema)

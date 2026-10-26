@@ -37,7 +37,7 @@ This section specifies the non-functional requirements and quality attributes fo
 
 ### NFR-06: Resource Boundaries and Thread Capping
 - **Requirement**: On-device FastEmbed ONNX embedding generation must not starve host CPU resources.
-- **Thread Cap**: The ONNX runtime worker thread count must default to $\min(2, N_{\text{cpu}})$, with user overrides available via `EMBEDDING_NUM_THREADS`.
+- **Thread Cap**: The ONNX runtime worker thread count must default to `min(2, N_cpu)`, with user overrides available via `EMBEDDING_NUM_THREADS`.
 
 ---
 
@@ -47,10 +47,10 @@ This section specifies the non-functional requirements and quality attributes fo
 
 ---
 
-### NFR-08: Documentation Clarity (ASD-STE100 Compliance)
-- **Requirement**: All user guides, architectural specifications, and requirement documents must comply with the rules of ASD-STE100 Simplified Technical English (Issue 9).
+### NFR-08: Documentation Clarity and Structure
+- **Requirement**: All user guides, architectural specifications, and requirement documents must follow clear, concise technical writing rules.
 - **Constraints**:
-  - Maximum sentence length: 20 words for procedural instructions, 25 words for descriptions.
-  - Active voice must be used. Passive voice is permitted only when the agent is unknown.
-  - Contractions are forbidden.
-  - Vertical lists must be used for complex step enumerations.
+  - Keep procedural instructions under 20 words per sentence and descriptive statements under 25 words where practical.
+  - Use active voice and imperative command verbs for instructions.
+  - Avoid contractions and ambiguous terminology.
+  - Use structured headings, tables, and numbered lists for multi-step procedures.

@@ -10,15 +10,15 @@ Select a guide module below to explore detailed instructions and workflows:
 
 | Module | Description | Guide Link |
 |---|---|:---:|
-| **1. Overview Dashboard** | System health indicators, vector counts, AST symbol metrics, and topic clouds. | [Explore Guide &rarr;](/guide/user-guide/overview) |
-| **2. Codebase Navigator** | 3-pane synchronized file hierarchy, Tree-sitter symbols, API routes, and caller/callee graphs. | [Explore Guide &rarr;](/guide/user-guide/navigator) |
-| **3. Search & Inspector** | Interactive hybrid semantic + lexical search testing with percentage relevance scores. | [Explore Guide &rarr;](/guide/user-guide/search) |
-| **4. Git Repositories** | Shallow clone ingestion, branch tracking, auto-sync polling, and webhooks for GitHub, GitLab, and Gitea. | [Explore Guide &rarr;](/guide/user-guide/git-repositories) |
-| **5. Local Paths & Vaults** | Zero-clone monitoring for Obsidian vaults, Architecture Decision Records (ADRs), and monorepos. | [Explore Guide &rarr;](/guide/user-guide/local-paths) |
-| **6. Local Storage & PDF Ingestion** | Managed uploads, PDF preview modal, AI vision OCR fallback, and large file summarization. | [Explore Guide &rarr;](/guide/user-guide/local-storage) |
-| **7. Settings & Model Discovery** | Dynamic vector store switching (Qdrant, pgvector, ChromaDB), LiteLLM discovery, and Git host credentials. | [Explore Guide &rarr;](/guide/user-guide/settings) |
-| **8. Diagnostics & System Logs** | Real-time 500-event in-memory ring buffer, level filtering, search, and stack trace drawers. | [Explore Guide &rarr;](/guide/user-guide/diagnostics) |
-| **9. Appearance & Themes** | 4 curated dark and light palettes (Deep Ocean, Midnight Blue, Lavender Haze, Amber Warmth). | [Explore Guide &rarr;](/guide/user-guide/themes) |
+| **1. Overview Dashboard** | System health indicators, vector counts, AST symbol metrics, and topic clouds. | [Explore Guide →](/guide/user-guide/overview) |
+| **2. Codebase Navigator** | Hero split-view file hierarchy, Tree-sitter symbols, API routes, source code viewer, and caller/callee graphs. | [Explore Guide →](/guide/user-guide/navigator) |
+| **3. Search & Inspector** | Interactive hybrid, semantic, and lexical search testing with split calibration, score decomposition, and Navigator jump. | [Explore Guide →](/guide/user-guide/search) |
+| **4. Git Repositories** | Shallow clone ingestion, persistent shallow retention, branch tracking, auto-sync polling, and webhooks. | [Explore Guide →](/guide/user-guide/git-repositories) |
+| **5. Local Paths & Vaults** | Zero-clone monitoring for Obsidian vaults, Architecture Decision Records (ADRs), and monorepos. | [Explore Guide →](/guide/user-guide/local-paths) |
+| **6. Local Storage & PDF Ingestion** | Managed uploads, PDF preview modal, AI vision OCR fallback, and large file summarization. | [Explore Guide →](/guide/user-guide/local-storage) |
+| **7. Settings & Model Discovery** | Dynamic vector store switching (Qdrant, pgvector, ChromaDB), AI Gateway & LiteLLM discovery, and Git host credentials. | [Explore Guide →](/guide/user-guide/settings) |
+| **8. Diagnostics & System Logs** | Real-time 500-event in-memory ring buffer, level filtering, search, and stack trace drawers. | [Explore Guide →](/guide/user-guide/diagnostics) |
+| **9. Appearance & Themes** | 4 curated dark and light palettes (Deep Ocean, Midnight Blue, Lavender Haze, Amber Warmth). | [Explore Guide →](/guide/user-guide/themes) |
 
 ---
 

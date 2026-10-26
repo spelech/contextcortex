@@ -19,6 +19,9 @@ Configure the application by setting these environment variables in your system 
 | `SPARSE_MODEL` | Model used for lexical sparse keyword vector generation. | `Qdrant/bm25` | `Qdrant/bm25` |
 | `EMBEDDING_NUM_THREADS` | Maximum CPU worker threads allocated for ONNX runtime. | `min(2, system_cpus)` | `4` |
 | `EMBEDDING_BATCH_SIZE` | Maximum batch size processed during vector tokenization. | `32` | `64` |
+| `HYBRID_DENSE_WEIGHT` | Default dense semantic weight (`0.0` to `1.0`) for hybrid search fusion. | `0.5` | `0.7` |
+| `LITELLM_URL` | Upstream LiteLLM or OpenAI-compatible proxy base URL for API embeddings, OCR, and file summaries. | None | `http://litellm:4000/v1` |
+| `LITELLM_API_KEY` | Bearer API key for the upstream LiteLLM or OpenAI-compatible gateway. | None | `sk-litellm-proxy-key` |
 | `LOCAL_STORAGE_PATH` | Host path for managed file and document uploads. | `/app/data/storage` | `/drives/storage` |
 | `AUTH_ENABLED` | Enables MCP OAuth 2.1 authentication and API key validation. | `false` | `true` |
 | `AUTH_OIDC_ISSUER` | OpenID Connect Identity Provider issuer URL. | None | `https://auth.company.com/realms/master` |

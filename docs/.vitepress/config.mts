@@ -9,9 +9,16 @@ export default withMermaid(
     cleanUrls: true,
     lastUpdated: true,
     srcExclude: ['superpowers/**', 'TEST_COVERAGE.md', 'REQUIREMENTS.md'],
+    head: [
+      ['link', { rel: 'icon', type: 'image/svg+xml', href: '/contextcortex/logo.svg' }]
+    ],
     themeConfig: {
-      logo: '/assets/theme_midnight_blue.png',
+      logo: '/logo.svg',
       siteTitle: 'ContextCortex',
+      outline: {
+        level: [2, 3],
+        label: 'On this page'
+      },
       nav: [
         { text: 'Guide', link: '/guide/' },
         { text: 'User Guide', link: '/guide/user-guide' },
@@ -85,14 +92,26 @@ export default withMermaid(
       ],
       footer: {
         message: 'Released under the MIT License.',
-        copyright: 'Copyright © 2025-2026 Steven T. Pelech. ASD-STE100 Compliant Documentation.'
+        copyright: 'Copyright © 2025-2026 Steven T. Pelech.'
       },
       search: {
         provider: 'local'
       }
     },
     mermaid: {
-      // Mermaid configuration
+      fontFamily: 'var(--vp-font-family-base), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      flowchart: {
+        htmlLabels: true,
+        padding: 16,
+        wrappingWidth: 260
+      },
+      sequence: {
+        boxMargin: 10,
+        boxTextMargin: 8,
+        noteMargin: 10,
+        messageMargin: 35,
+        width: 180
+      }
     }
   })
 )

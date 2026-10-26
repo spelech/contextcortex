@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0a2226"/>
+      <stop offset="100%" stop-color="#07181b"/>
+    </linearGradient>
+    <linearGradient id="topLayer" x1="20" y1="18" x2="80" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="midLayer" x1="18" y1="42" x2="82" y2="66" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2dd4bf"/>
+      <stop offset="100%" stop-color="#0891b2"/>
+    </linearGradient>
+    <linearGradient id="botLayer" x1="18" y1="58" x2="82" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0891b2"/>
+      <stop offset="100%" stop-color="#0e7490"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded Deep Ocean Badge -->
+  <rect width="100" height="100" rx="22" fill="url(#bgGrad)"/>
+  <rect x="2" y="2" width="96" height="96" rx="20" stroke="#15474d" stroke-width="2"/>
+
+  <!-- Bottom Context Layer (Vector Storage Stratum) -->
+  <path d="M 50 84 L 16 67 L 25.5 62.2 L 50 74.5 L 74.5 62.2 L 84 67 Z" fill="url(#botLayer)"/>
+
+  <!-- Middle Context Layer (Hybrid RRF & Graph Stratum) -->
+  <path d="M 50 68 L 16 51 L 25.5 46.2 L 50 58.5 L 74.5 46.2 L 84 51 Z" fill="url(#midLayer)"/>
+
+  <!-- Top Cortex Layer (AST & Semantic Intelligence Diamond) -->
+  <path d="M 50 16 L 84 33 L 50 50 L 16 33 Z" fill="url(#topLayer)"/>
+
+  <!-- Cortex AST Graph Nodes & Edges on Top Layer -->
+  <line x1="50" y1="25" x2="36" y2="33" stroke="#07181b" stroke-width="3" stroke-linecap="round"/>
+  <line x1="50" y1="25" x2="64" y2="33" stroke="#07181b" stroke-width="3" stroke-linecap="round"/>
+  <line x1="36" y1="33" x2="50" y2="41" stroke="#07181b" stroke-width="3" stroke-linecap="round"/>
+  <line x1="64" y1="33" x2="50" y2="41" stroke="#07181b" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="50" cy="25" r="3.8" fill="#07181b"/>
+  <circle cx="36" cy="33" r="3.5" fill="#07181b"/>
+  <circle cx="64" cy="33" r="3.5" fill="#07181b"/>
+  <circle cx="50" cy="41" r="3.8" fill="#07181b"/>
+</svg>

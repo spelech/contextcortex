@@ -35,7 +35,7 @@ For large source code or documentation files exceeding the configured threshold 
 - **Ceiling Protection**: ContextCortex bypasses raw multi-chunk embedding to preserve token budgets and search performance.
 - **Structured LLM Summaries**: Automatically invokes LiteLLM to generate an executive structured markdown summary highlighting architecture, primary exported symbols, dependencies, and responsibilities.
 - **Search Integration**: The executive summary is indexed into the vector store (`doc_type="summary"`) and cached in SQLite, keeping the large file completely discoverable.
-- **Full & Sliced Reading**: MCP clients can retrieve bounded line ranges or full content using the `read_file` tool.
+- **Full & Sliced Reading**: MCP clients can retrieve bounded line ranges or full content using the [`read_file`](/reference/mcp-tools#15-read-file) tool and generate or refresh executive summaries on demand using [`summarize_file`](/reference/mcp-tools#16-summarize-file).
 
 ---
 

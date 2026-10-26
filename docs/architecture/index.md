@@ -19,8 +19,8 @@ ContextCortex adheres to these core design principles:
 3. **Pluggable Vector Store Backends**:
    Vector storage adapters isolate search engines from application logic. Administrators can switch between Qdrant, pgvector, and ChromaDB without application restarts.
 
-4. **Ephemeral Repository Ingestion**:
-   To conserve disk storage, the system clones remote repositories using shallow clones (`--depth 1`). It extracts AST symbols and vector embeddings, then purges the cloned directory immediately.
+4. **Configurable Shallow Repository Ingestion**:
+   The system clones remote repositories using shallow clones (`--depth 1`). Administrators can choose between ephemeral clones (purged immediately after AST and vector extraction to conserve disk storage) and persistent shallow clones (`keep_shallow=1` in `/app/data/repos/{repo_name}`) for instant source inspection and fast delta updates.
 
 5. **Security and Role-Based Access Control**:
    The server enforces RFC 9728 OAuth 2.1 authentication and cryptographically validated API keys across three permission levels (Viewer, Editor, and Admin).

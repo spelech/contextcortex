@@ -86,7 +86,18 @@ Follow these steps for manual installation:
    - Web Admin Dashboard: `http://localhost:3000/admin/`
    - MCP Server-Sent Events: `http://localhost:3000/sse`
    - MCP Streamable HTTP: `http://localhost:3000/mcp`
-   - Health Check: `http://localhost:3000/healthz`
+   - Health Check Probes: `http://localhost:3000/health` and `http://localhost:3000/healthz`
+
+3. Verify server health and MCP JSON-RPC `ping` readiness from a terminal:
+   ```bash
+   # HTTP health probe
+   curl -s http://localhost:3000/healthz
+
+   # Lightweight JSON-RPC ping (zero session allocation)
+   curl -s -X POST http://localhost:3000/mcp \
+     -H "Content-Type: application/json" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
+   ```
 
 > [!NOTE]
 > When `AUTH_ENABLED` is set to `false`, the server operates in local development mode without authentication prompts.

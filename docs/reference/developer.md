@@ -11,8 +11,8 @@ All developers and contributors must adhere to these engineering standards:
 1. **Sub-500 LOC Floor**:
    Every backend Python file and frontend TypeScript file must remain under 500 lines of code. If a file approaches this limit, split its logic into cohesive modules or helper services.
 
-2. **ASD-STE100 English Compliance**:
-   All technical documentation, code comments, and API error messages must follow ASD-STE100 Simplified Technical English (Issue 9) principles. Use short sentences, active voice, and clear terminology. Avoid contractions.
+2. **Clear Technical Writing**:
+   All technical documentation, code comments, and API error messages must use concise sentences, active voice, and unambiguous terminology. Avoid contractions and use numbered steps for procedural instructions.
 
 3. **Test-Driven Development (TDD)**:
    Write automated unit tests before implementing new features or resolving bug reports. Verify that tests fail first, then write minimal implementation code.

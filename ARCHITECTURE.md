@@ -11,8 +11,8 @@ All backend services and frontend components are modularized into cohesive packa
 ```mermaid
 flowchart TD
     subgraph Clients["MCP & Web Clients"]
-        Claude["AI Coding Agents / MCP Clients\n(Cursor, Claude Desktop, Antigravity, Windsurf)"]
-        Browser["Admin Dashboard\n(ContextCortex Dashboard - React 19)"]
+        Claude["AI Coding Agents / MCP Clients<br/>(Cursor, Claude Desktop, Antigravity, Windsurf)"]
+        Browser["Admin Dashboard<br/>(ContextCortex Dashboard - React 19)"]
     end
 
     subgraph Server["FastAPI Core & FastMCP 2.0 Application (main.py)"]
@@ -21,8 +21,8 @@ flowchart TD
         FastMCP["FastMCP Server (app/mcp/mcp_server.py)"]
         SSE["SSE Transport (/sse, /messages/)"]
         HTTP["Streamable HTTP Transport (/mcp)"]
-        WellKnown["RFC 9728 Protected Resource\n(/.well-known/oauth-protected-resource)"]
-        AdminAPI["Admin REST API Routers (app/api/routers/*)\n(repositories, settings, navigator, auth, storage, ingestion)"]
+        WellKnown["RFC 9728 Protected Resource<br/>(/.well-known/oauth-protected-resource)"]
+        AdminAPI["Admin REST API Routers (app/api/routers/*)<br/>(repositories, settings, navigator, auth, storage, ingestion)"]
         Webhooks["Webhook Ingestion (app/api/webhooks.py)"]
         LogBuffer["Diagnostic Ring Buffer (app/services/logger.py)"]
     end
@@ -74,29 +74,29 @@ flowchart TD
             TopoHelpers["helpers.py"]
         end
 
-        NavigatorSrv["Codebase Navigator Service (navigator.py)\nHero Tree, AST Outline & Impact Engine"]
-        OmniSearchSrv["Omni-Search Command Palette (omni_search.py)\nFuzzy Repo, File & Symbol Ranking"]
-        FileReaderSrv["Source & Doc Reader (file_reader.py)\nFull Code & Markdown Content Delivery"]
-        LocalStorageSrv["Local Storage Service (local_storage.py)\nPath Traversal Defense & File Trees"]
-        GitMgr["Universal Shallow Git Ingestion (git_manager.py)\nEphemeral & Persistent Clones"]
-        Embeddings["FastEmbed Engine (embeddings.py)\nDense (384d) + Sparse BM25"]
-        Search["Hybrid & RRF Search (search.py)"]
+        NavigatorSrv["Codebase Navigator Service (navigator.py)<br/>Hero Tree, AST Outline & Impact Engine"]
+        OmniSearchSrv["Omni-Search Command Palette (omni_search.py)<br/>Fuzzy Repo, File & Symbol Ranking"]
+        FileReaderSrv["Source & Doc Reader (file_reader.py)<br/>Full Code & Markdown Content Delivery"]
+        LocalStorageSrv["Local Storage Service (local_storage.py)<br/>Path Traversal Defense & File Trees"]
+        GitMgr["Universal Shallow Git Ingestion (git_manager.py)<br/>Ephemeral & Persistent Clones"]
+        Embeddings["FastEmbed Engine (embeddings.py)<br/>Dense (384d) + Sparse BM25"]
+        Search["Calibrated Hybrid Search (search.py)"]
         Poller["Auto-Sync Poller Daemon (poller.py)"]
         ADRService["ADR Parser & Lifecycle (adr.py)"]
     end
 
     subgraph PersistentStorage["Pluggable Persistent Storage"]
         subgraph RelationalDB["Relational Backend (SQLAlchemy 2.0)"]
-        PostgresDB[("PostgreSQL 16 Engine\n(pgvector/pgvector:pg16)")]
-        SQLiteDB[("SQLite WAL Engine\n(index_cache.db)")]
+        PostgresDB[("PostgreSQL 16 Engine<br/>(pgvector/pgvector:pg16)")]
+        SQLiteDB[("SQLite WAL Engine<br/>(index_cache.db)")]
         end
         subgraph VectorEngines["Vector Search Backends"]
         PgV["pgvector (HNSW Cosine)"]
         Qdrant["Qdrant (Hybrid Dense+BM25)"]
         Chroma["ChromaDB (Embedded/Remote)"]
         end
-        LocalStorageDir[("Managed Local Storage\n(DATA_DIR/storage)")]
-        PersistentRepoDir[("Persistent Shallow Clones\n(DATA_DIR/repos/{repo_name})")]
+        LocalStorageDir[("Managed Local Storage<br/>(DATA_DIR/storage)")]
+        PersistentRepoDir[("Persistent Shallow Clones<br/>(DATA_DIR/repos/{repo_name})")]
     end
 
     Claude -->|Authorization: Bearer cc_... or JWT| SSE
@@ -220,12 +220,13 @@ flowchart TD
   - **Server-Sent Events (SSE)**: Streaming events at `/sse` and message exchanges at `/messages/`.
   - **Streamable HTTP**: Bidirectional JSON-RPC at `/mcp`.
 - **Extended Agent Tools (`app/mcp/tools.py` & `app/mcp/handlers/`)**:
-  - `search_handlers.py`: `search_code`, `search_docs` hybrid search with RRF.
-  - `symbol_handlers.py`: `find_symbol`, `get_file_outline` sub-50ms AST lookups.
+  - `search_handlers.py`: `search_code`, `search_docs` calibrated hybrid search with `dense_weight`, `mode`, score decomposition, and AST signature enrichment.
+  - `symbol_handlers.py`: `find_symbol`, `get_file_outline`, `trace_path` sub-50ms AST lookups and BFS call graph traversal.
   - `repo_handlers.py`: `list_repositories`, `sync_repository`, `index_status`.
-  - `route_handlers.py`: `get_code_routes`, `trace_call_path` cross-repo API calls.
+  - `route_handlers.py`: `find_routes`, `find_api_callers` cross-repo API route and caller discovery.
   - `architecture_handlers.py`: `get_architecture`, `manage_adr` ADR tracking.
   - `storage_handlers.py`: `manage_local_file` (upload, replace, delete, read), `what_is_ingested` (unified multi-source catalog filter).
+  - `file_handlers.py`: `read_file` (bounded line-range file reader) and `summarize_file` (LLM executive file summarizer).
 - **Dynamic Resource Providers**:
   - `knowledge://catalog/summary`: Markdown catalog of repositories, document types, and symbols.
 - **Agent Prompts**:
@@ -291,30 +292,30 @@ The incremental ingestion engine allows documents, notes, and code files uploade
 
 ```mermaid
 flowchart TD
-    Client["Client / Agent Request\n(Upload / Replace / Delete)"]
-    AuthCheck{"RBAC Guard\n(Role.EDITOR)"}
-    PathGuard{"Path Sanitization\n(commonpath == root)"}
+    Client["Client / Agent Request<br/>(Upload / Replace / Delete)"]
+    AuthCheck{"RBAC Guard<br/>(Role.EDITOR)"}
+    PathGuard{"Path Sanitization<br/>(commonpath == root)"}
     
     subgraph StorageOps["Local Storage Operations"]
-        DiskWrite["Save File to Disk\n(LOCAL_STORAGE_PATH / rel_path)"]
+        DiskWrite["Save File to Disk<br/>(LOCAL_STORAGE_PATH / rel_path)"]
         DiskDelete["Remove File from Disk"]
     end
     
     subgraph IncrementalIndexing["Real-Time Indexing Pipeline (processor.py)"]
-        AST["Tree-sitter AST Parsing\n(symbols, relationships, routes)"]
-        Chunk["Semantic Boundary Chunking\n(Markdown headers / code blocks)"]
-        Embed["Embedding Generation\n(Dense 384d + Sparse BM25)"]
-        Cache["Chunk-Hash Deduplication\n(embedding_cache)"]
+        AST["Tree-sitter AST Parsing<br/>(symbols, relationships, routes)"]
+        Chunk["Semantic Boundary Chunking<br/>(Markdown headers / code blocks)"]
+        Embed["Embedding Generation<br/>(Dense 384d + Sparse BM25)"]
+        Cache["Chunk-Hash Deduplication<br/>(embedding_cache)"]
     end
     
     subgraph StoragePersistence["Persistent Store Upserts / Purges"]
-        RelUpsert["Relational Upserts\n(indexed_files, file_summaries,\nast_symbols, ast_relationships,\napi_routes, api_calls)"]
-        VecUpsert["Vector Store Upsert\n(upsert_points deterministic UUID5)"]
-        RelDelete["Relational Purge\n(DELETE WHERE filepath = ?)"]
-        VecDelete["Vector Store Purge\n(delete_by_path)"]
+        RelUpsert["Relational Upserts<br/>(indexed_files, file_summaries,<br/>ast_symbols, ast_relationships,<br/>api_routes, api_calls)"]
+        VecUpsert["Vector Store Upsert<br/>(upsert_points deterministic UUID5)"]
+        RelDelete["Relational Purge<br/>(DELETE WHERE filepath = ?)"]
+        VecDelete["Vector Store Purge<br/>(delete_by_path)"]
     end
     
-    Notify["List Changed Notification\n(trigger_list_changed_notification)"]
+    Notify["List Changed Notification<br/>(trigger_list_changed_notification)"]
 
     Client --> AuthCheck
     AuthCheck -->|Authorized| PathGuard
@@ -556,7 +557,5 @@ erDiagram
 ---
 
 ## 📚 Documentation Reference
-
-This architecture specification complies with the **ASD-STE100 Simplified Technical English (Issue 9)** standard.
 
 Interactive system design diagrams, sequence flows, and component layouts are available on the [VitePress Documentation Site](https://spelech.github.io/contextcortex/architecture/).

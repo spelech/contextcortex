@@ -22,7 +22,7 @@ ContextCortex provides four curated visual palettes designed for high contrast, 
 
 Follow these steps to change your active dashboard theme:
 
-1. Click the **Palette Icon** (<i className="fa-solid fa-palette"></i>) in the upper-right corner of the top navigation bar.
+1. Click the **Theme Selector** button in the upper-right corner of the top navigation bar.
 2. Select your desired theme from the dropdown menu:
    - `Deep Ocean`
    - `Midnight Blue`

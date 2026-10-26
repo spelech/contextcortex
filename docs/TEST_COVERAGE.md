@@ -3,7 +3,7 @@
 This document provides comprehensive test coverage metrics and verification baselines for ContextCortex following the modular architectural restructuring, Codebase Navigator implementation, and test suite expansion.
 
 **Summary Baseline:**
-- **Total Automated Tests:** **775 Tests** (457 Backend Pytest + 272 Frontend Vitest + 46 Playwright E2E User Journeys)
+- **Total Automated Tests:** **1,037 Tests** (684 Backend Pytest + 303 Frontend Vitest + 50 Playwright E2E User Journeys)
 - **Backend Statement Coverage:** **89%** (5,660 / 6,390 statements covered)
 - **Frontend Line Coverage:** **88.45%** across all React 19 components and sub-modules
 - **Codebase Modularity Floor:** 100% of source files maintained strictly under 450 lines of code
@@ -55,7 +55,7 @@ This document provides comprehensive test coverage metrics and verification base
 | `app/models/schemas.py` | 196 | 0 | 100% | Pydantic v2 request / response schemas & validations |
 | `app/services/git_manager.py` | 189 | 8 | 96% | Ephemeral shallow cloning, token masking, permalinks |
 | `app/services/embeddings.py` | 124 | 7 | 94% | Dense BGE-small (384d) + Sparse BM25 via FastEmbed |
-| `app/services/search.py` | 146 | 14 | 90% | Reciprocal Rank Fusion ($k=60$) & hybrid reranking |
+| `app/services/search.py` | 146 | 14 | 90% | Calibrated hybrid fusion (`dense_weight`, `mode`), RRF (`k = 60`), and AST context enrichment |
 | `app/services/logger.py` | 36 | 0 | 100% | In-memory 500-entry ring buffer & level filtering |
 | `app/services/poller.py` | 68 | 2 | 97% | Background repository SHA poller daemon |
 | `app/services/indexing/state.py` | 39 | 0 | 100% | Global indexing locks, session change notifications |
