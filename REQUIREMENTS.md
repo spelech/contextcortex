@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1055 Automated Tests** (702 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -580,10 +580,13 @@ classDiagram
 - `test_git_syncer_nonexistent_repo`
 - `test_git_progress_tracker_pending_cancellation`
 
-#### `tests/backend/test_health_check_status.py` (4 tests)
+#### `tests/backend/test_health_check_status.py` (7 tests)
 - `test_api_stats_reports_healthy_when_store_is_healthy`
 - `test_api_stats_reports_unhealthy_when_store_fails`
 - `test_api_stats_reports_healthy_with_real_embedded_store` - _Verify /admin/api/stats health check against a real embedded Qdrant vector store without mocks._
+- `test_api_stats_healthy_empty_db_returns_zeros` - _Verify that a healthy, empty database returns status 200 with legitimate zero counts._
+- `test_api_stats_missing_table_returns_error` - _Verify that missing table in relational database produces 500 error rather than success-shaped zero counts._
+- `test_api_stats_postgres_reproduction_surfaces_metadata_failure` - _Reproduce #45 PostgreSQL scenario: metadata failure surfaces 500 error instead of 200 zero counts._
 - `test_main_app_favicon_and_root_redirect` - _Verify root app redirect, favicon routes, and static asset handling._
 
 #### `tests/backend/test_indexer_and_embeddings.py` (25 tests)

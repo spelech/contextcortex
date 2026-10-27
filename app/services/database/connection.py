@@ -24,11 +24,16 @@ except Exception:
     pass
 
 
-def get_db_connection() -> sqlite3.Connection:
+def get_db_connection():
     """
-    Returns a SQLite database connection for backward compatibility with legacy modules.
+    Returns a database connection for backward compatibility with legacy modules.
+    If PostgreSQL is configured, delegates to get_connection().
+    Otherwise, returns a SQLite database connection.
     """
-    from app.services.database.engine import get_current_db_path
+    from app.services.database.engine import is_postgres, get_connection, get_current_db_path
+    if is_postgres():
+        return get_connection()
+
     db_path = get_current_db_path()
 
     conn = sqlite3.connect(db_path, timeout=15.0)

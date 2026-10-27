@@ -23,6 +23,8 @@ def mock_db(tmp_path):
         CREATE TABLE git_repositories (id INTEGER PRIMARY KEY, name TEXT UNIQUE, url TEXT, branch TEXT, auth_token TEXT, provider TEXT DEFAULT 'github', auth_user TEXT, commit_sha TEXT, status TEXT DEFAULT 'pending', last_error TEXT, last_synced TEXT, enabled INTEGER DEFAULT 1, auto_sync INTEGER DEFAULT 1, keep_shallow INTEGER DEFAULT 0, webhook_secret TEXT, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE git_host_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, host TEXT UNIQUE NOT NULL, provider TEXT NOT NULL, auth_user TEXT, auth_token TEXT NOT NULL, added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE ast_symbols (id INTEGER PRIMARY KEY, repo TEXT, filepath TEXT, kind TEXT, name TEXT, full_symbol TEXT, signature TEXT, start_line INTEGER, end_line INTEGER, language TEXT);
+        CREATE TABLE ast_relationships (id INTEGER PRIMARY KEY, repo TEXT, source_symbol_id INTEGER, source_filepath TEXT, source_symbol TEXT, target_symbol TEXT, relationship_type TEXT, line_number INTEGER);
+        CREATE TABLE api_routes (id INTEGER PRIMARY KEY, repo TEXT, filepath TEXT, http_method TEXT, route_path TEXT, handler_function TEXT, line_number INTEGER);
         CREATE TABLE file_summaries (filepath TEXT PRIMARY KEY, repo TEXT, title TEXT, folder TEXT, category TEXT, tags TEXT, headings TEXT, keywords TEXT, mtime REAL);
     """)
     conn.commit()
