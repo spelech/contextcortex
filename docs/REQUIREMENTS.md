@@ -14,7 +14,7 @@ The complete specification is maintained and continuously verified by automated 
 2. [**Mermaid Data Models & Entity Relationship Diagrams (ERD)**](../REQUIREMENTS.md#2-mermaid-data-models--entity-relationship-diagrams-erd)
    - **SQLite Relational Schema (ERD)**: `git_repositories`, `git_host_credentials`, `indexed_paths`, `indexed_files`, `ast_symbols`, `ast_relationships`, `api_routes`, `api_client_calls`, `architecture_adrs`, `file_summaries`, `system_metadata`.
    - **Pluggable Vector Store Schema**: Named multi-vector collection (`dense` 384d BGE + `sparse` BM25) and payload models for Qdrant and ChromaDB.
-3. [**Functional Requirements (FR-1 to FR-17)**](../REQUIREMENTS.md#3-comprehensive-functional-requirements-fr)
+3. [**Functional Requirements (FR-1 to FR-18)**](../REQUIREMENTS.md#3-comprehensive-functional-requirements-fr)
    - **FR-1**: FastMCP 2.0 Dual Transport Architecture (SSE, Streamable HTTP & JSON-RPC `ping`).
    - **FR-2**: FastMCP 16 Agent Tools Contract (`search_code`, `search_docs`, `find_symbol`, `trace_path`, `find_routes`, `find_api_callers`, `get_file_outline`, `list_repositories`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `manage_local_file`, `what_is_ingested`, `read_file`, `summarize_file`).
    - **FR-3**: Dynamic Resources & Prompt Templates (`knowledge://catalog/summary`).
@@ -32,6 +32,7 @@ The complete specification is maintained and continuously verified by automated 
    - **FR-15**: Diagnostics & Live In-Memory Log Buffers.
    - **FR-16**: Managed Local Storage Option & Real-Time Incremental Indexing.
    - **FR-17**: Unified Ingestion Catalog (`what_is_ingested` & `/admin/api/ingestion/catalog`).
+   - **FR-18**: Enterprise Private-CA Gateways & Restricted-Network Deployment (`LLM_EXTRA_HEADERS`, `certs/*.crt`, `Dockerfile.overlay`, `docker-compose.enterprise.yml`).
 4. [**Non-Functional Requirements (NFR-1 to NFR-7)**](../REQUIREMENTS.md#4-non-functional-requirements-nfr)
    - Latency budgets, zero disk bloat guarantees, credential sanitization, SQLite WAL concurrency, sub-500 LOC modularity, and test quality floors.
 5. [**Requirement-to-Test Traceability Matrix**](../REQUIREMENTS.md#5-requirement-to-test-traceability-matrix)

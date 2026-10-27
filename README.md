@@ -1,4 +1,4 @@
-# ContextCortex (v2.18.0)
+# ContextCortex (v2.19.0)
 
 
 [![Build and Publish Docker Image](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml)
@@ -42,7 +42,7 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 
 - **Pluggable Dual-Engine Architecture**:
   - **PostgreSQL 16 + pgvector Profile**: Containerized production deployment with native `vector(384)` HNSW cosine distance indexing (`vector_cosine_ops`), `JSONB` metadata payload queries, and robust connection pooling (`psycopg3`).
-  - **SQLite Profile**: Zero-configuration, zero-dependency embedded disk mode with automatic WAL journaling, 5000ms busy timeout, and resilient relational caching.
+  - **SQLite Profile**: Zero-configuration, zero-dependency embedded disk mode with automatic WAL journaling, 15000ms busy timeout, and resilient relational caching.
 - **SQLAlchemy 2.0 Core Unified Schema**: Single source of truth relational schema (`metadata`) shared seamlessly between SQLite and PostgreSQL, with startup connection retry loops (`wait_for_db`) and automatic metadata seeding.
 - **MCP 2026-07-28 OAuth 2.1 & RBAC Security Engine**:
   - **RFC 9728 Protected Resource Metadata**: Standard discovery endpoint at `/.well-known/oauth-protected-resource` exposing resource indicators, authorization server issuers, and MCP scopes.
@@ -90,6 +90,10 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
     - **Instant Intelligence & Impact Tab**: Caller/callee analysis, route mappings, AST signatures, and cross-file jump navigation, immediately clickable and populated upon file selection without requiring manual outline navigation.
   - **Customizable Layout Density & Mobile Responsiveness**: Persisted `Compact` (IDE density), `Balanced` (default), and `Spacious` (cards) modes with responsive vertical stacking and zero horizontal overflow across devices.
 - **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
+- **Enterprise Private-CA Gateways & Restricted-Network Deployment**:
+  - **Private CA Certificate Bootstrap (`certs/*.crt` & `EXTRA_CA_CERTS_DIR`)**: Automatically installs internal CA certificates into the system trust store at both build time (`Dockerfile`, `Dockerfile.overlay`) and runtime (`docker-entrypoint.sh`) for Python (`httpx`, `openai`, `requests`), Node.js (`NODE_EXTRA_CA_CERTS`), and Git (`GIT_SSL_CAINFO`).
+  - **Custom Gateway Base URLs & Request Headers (`LLM_EXTRA_HEADERS`)**: Preserves custom OpenAI-compatible proxy paths (e.g., `/api/v3`) across model discovery, embeddings, file summarization, and PDF vision OCR, and attaches CR/LF-validated custom HTTP headers to every gateway call.
+  - **Private Mirror & Image-Overlay Builds (`docker-compose.enterprise.yml` & `Dockerfile.overlay`)**: Supports internal Debian/apt, PyPI, and npm package mirrors with 30-day quarantine compatibility, or fast CA-only image overlays on pre-built `ghcr.io/spelech/contextcortex` releases.
 - **Multi-Theme Engine & Modern Tabbed Web Dashboard (`/admin/`)**:
   - **Appearance & Theme Settings**: Instant zero-latency switching between 4 distinct dark and light themes (**Deep Ocean**, **Midnight Blue**, **Lavender Haze**, and **Amber Warmth**) with live palette swatches and browser persistence.
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
@@ -166,8 +170,8 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `LITELLM_URL` | OpenAI-compatible gateway base URL, passed to the OpenAI SDK as-is | `http://litellm:4000/v1` |
 | `LITELLM_API_KEY` | API key for the gateway | `dummy` |
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
-| `CHAT_MODEL` | Chat model for file summaries | `gemini-2.5-flash` |
-| `VISION_OCR_MODEL` | Vision model for PDF OCR | `gemini-2.5-flash` |
+| `CHAT_MODEL` | Chat model for file summaries (configured via Settings UI model discovery or env) | `None` |
+| `VISION_OCR_MODEL` | Vision model for PDF OCR (configured via Settings UI model discovery or env) | `None` |
 | `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) trusted at container start (see [certs/README.md](certs/README.md)) | `/certs` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for higher rate limits & private repos | `None` |
 | `GITLAB_TOKEN` | Optional GitLab Personal Access Token for private repos | `None` |
@@ -192,6 +196,15 @@ cp .env.example .env
 
 # 3. Launch PostgreSQL 16 + pgvector and ContextCortex
 docker compose up -d
+```
+
+Once the container is running, open the Web Admin Dashboard (`http://localhost:3000/admin/` → **Settings** → **AI Gateway & Models**), enter your OpenAI-compatible gateway URL (e.g., `http://litellm:4000/v1`), click **Discover Models**, and select your **Chat / Summarization Model** and **Vision OCR Model** from the discovered list to persist them in the database (or pre-seed `CHAT_MODEL` and `VISION_OCR_MODEL` in `.env`).
+
+For environments behind corporate TLS-inspecting proxies, private CA certificates (`certs/*.crt`), internal package mirrors (`APT_MIRROR`, `PIP_INDEX_URL`, `NPM_REGISTRY`), or verified local image overlays (`Dockerfile.overlay`), use the enterprise override file (see [Restricted-Network Builds & Local Deployment](docs/guide/enterprise-build.md)):
+
+```bash
+# Build and deploy using local verified image tag and enterprise mirror/CA overrides
+docker compose -f docker-compose.yml -f docker-compose.enterprise.yml up -d --build
 ```
 
 ### `docker-compose.yml` Architecture:
@@ -423,6 +436,7 @@ curl -X POST http://localhost:3000/admin/api/auth/keys \
   - Run locally: `npm run docs:dev`
   - Build static site: `npm run docs:build`
   - Preview production build: `npm run docs:preview`
+- [**Restricted-Network Builds & Enterprise Deployment (`docs/guide/enterprise-build.md`)**](docs/guide/enterprise-build.md): Private CA certificates, internal apt/pip/npm mirrors, 30-day quarantine workflows, and `Dockerfile.overlay` deployment.
 - [**Software Requirements Specification (`REQUIREMENTS.md`)**](REQUIREMENTS.md): Authoritative functional and non-functional requirements with test traceability matrix and Mermaid ERD data models.
 - [**System Architecture (`ARCHITECTURE.md`)**](ARCHITECTURE.md): FastMCP 2.0 transport topologies, component interaction diagrams, SQLAlchemy 2.0 schema ERD, and vector store data models.
 - [**Developer Documentation (`DEVELOPER_DOCS.md`)**](DEVELOPER_DOCS.md): Setup, configuration, development workflow, and testing guidelines.

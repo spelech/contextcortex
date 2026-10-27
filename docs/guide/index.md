@@ -40,12 +40,19 @@ A hero split-view interface provides per-repository file trees, AST symbol outli
 ### Security and Access Control
 The server supports OAuth 2.1 Protected Resource discovery (RFC 9728) and SHA-256 hashed `cc_` API keys. It enforces role-based access control across three privilege tiers: `viewer` (Level 10), `editor` (Level 20), and `admin` (Level 30).
 
+### Enterprise Private-CA Gateways & Restricted-Network Builds
+ContextCortex natively supports corporate and restricted-network environments:
+- **Custom Gateway Base URLs & Request Headers**: Preserves custom OpenAI-compatible gateway URL paths (such as `/api/v3`) across model discovery, embeddings, file summarization, and PDF vision OCR, and attaches CR/LF-validated JSON headers (`LLM_EXTRA_HEADERS`) on every outbound gateway request.
+- **Dual-Phase Private CA Trust**: Installs PEM certificates (`certs/*.crt` / `EXTRA_CA_CERTS_DIR`) into the container trust store at both build time (`Dockerfile`, `Dockerfile.overlay`) and runtime (`docker-entrypoint.sh`).
+- **Private Mirrors & Image Overlays**: Supports internal Debian/apt, PyPI, and npm package mirrors with 30-day quarantine compatibility, or fast CA-only image overlays (`Dockerfile.overlay`, `docker-compose.enterprise.yml`) on pre-built `ghcr.io/spelech/contextcortex` images.
+
 ---
 
 ## Documentation Roadmap
 
 - **[Getting Started](/guide/getting-started)**: Install ContextCortex via automated setup scripts, manual virtual environments, or Docker Compose.
 - **[Configuration](/guide/configuration)**: Configure environment variables, database profiles, vector stores, and LiteLLM model discovery.
+- **[Restricted-Network Builds](/guide/enterprise-build)**: Configure private CA certificates, internal package mirrors (`APT_MIRROR`, `PIP_INDEX_URL`, `NPM_REGISTRY`), and verified local image overlays.
 - **[User Guide](/guide/user-guide)**: Explore all 9 Web Admin Dashboard modules with step-by-step instructions and screenshots.
 - **[System Architecture](/architecture/)**: Review component diagrams, AST ingestion pipelines, MCP protocol flows, and database ERDs.
 - **[Reference Manual](/reference/mcp-tools)**: Inspect all 16 MCP tools, dynamic resources, guided prompts, and Admin REST API endpoints.

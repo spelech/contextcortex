@@ -121,8 +121,25 @@ To deploy ContextCortex with PostgreSQL 16, pgvector, and Qdrant in containers:
    docker compose logs -f contextcortex
    ```
 
+> [!TIP]
+> **Restricted-Network & Private-CA Environments:** If your environment uses corporate TLS inspection, private CA certificates (`certs/*.crt`), or internal apt/pip/npm mirrors, use `docker-compose.enterprise.yml` or `Dockerfile.overlay`. See [Restricted-Network Builds](/guide/enterprise-build) for full instructions.
+
+## First-Run Onboarding: Discovering & Selecting AI Gateway Models
+
+ContextCortex does not assume or hardcode upstream LLM model identifiers for executive file summarization (`CHAT_MODEL`) or scanned PDF vision OCR (`VISION_OCR_MODEL`). Instead, after starting the server, configure your models from the discovered endpoint catalog:
+
+1. Open the Web Admin Dashboard (`http://localhost:3000/admin/`) and navigate to **Settings** → **AI Gateway & Models** (or **Embedding & Models**).
+2. Enter your OpenAI-compatible gateway **Base URL** (for example, `http://litellm:4000/v1` or `https://gateway.example.com/api/v3`) and **API Key**.
+3. Click **Discover Models** (`/admin/api/models/discover`). ContextCortex queries your gateway's `/models` endpoint and populates the dropdowns with the exact models your endpoint serves.
+4. Select your preferred **Chat / Summarization Model** (e.g., `flash-latest`) and **Vision OCR Model** (e.g., `flash-latest` or `qwen3-vl`), then click **Save AI Gateway Configuration** (or **Save Embedding Settings**).
+5. *(Optional)* In **Settings** → **Files & Summarization**, you can also click **Discover Models** to pick a dedicated **Summarization Chat Model** or leave it inherited from your AI Gateway Chat Model.
+
+> [!NOTE]
+> You can also pre-seed these models for headless/automated deployments via `CHAT_MODEL` and `VISION_OCR_MODEL` in `.env` before first startup; once saved in the UI, database-persisted model selections take precedence.
+
 ## Next Steps
 
 - Open the [User Guide](/guide/user-guide) to explore dashboard components with screenshots.
 - Review the [Configuration Guide](/guide/configuration) to set environment variables.
+- Configure corporate mirrors and private CAs in [Restricted-Network Builds](/guide/enterprise-build).
 - Connect your AI assistant using the [MCP Reference](/reference/mcp-tools).

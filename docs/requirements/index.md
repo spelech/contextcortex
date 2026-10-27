@@ -1,6 +1,6 @@
 # Software Requirements Specification (SRS)
 
-This document establishes the Software Requirements Specification for ContextCortex (`v2.18.0`).
+This document establishes the Software Requirements Specification for ContextCortex (`v2.19.0`).
 
 ---
 
@@ -19,6 +19,7 @@ ContextCortex provides:
 - Managed local storage with automated PDF text extraction, AI vision OCR fallback, and large-file executive summarization.
 - Hero split-view Codebase Navigator with `Ctrl+K` Omni-Search, syntax-highlighted code viewer, and caller/callee impact tracing.
 - Zero-allocation JSON-RPC `ping` health interception, RFC 9728 OAuth 2.1 authentication, and 3-tier role-based access control.
+- Enterprise private-CA trust bootstrap (`certs/*.crt`), custom gateway request headers (`LLM_EXTRA_HEADERS`), and restricted-network mirror/overlay container builds.
 
 ---
 
@@ -33,4 +34,4 @@ The requirements are organized into three primary sections:
    Defines performance targets, security standards, maintainability limits (sub-500 LOC per file), and reliability constraints.
 
 3. **[Verification and Test Matrix](/requirements/verification)**:
-   Traces each requirement directly to the automated test suite comprising **1,037 automated tests** (**684 Backend Pytest + 303 Frontend Vitest + 50 Playwright E2E**).
+   Traces each requirement directly to the automated test suite comprising **1,051 automated tests** (**698 Backend Pytest + 303 Frontend Vitest + 50 Playwright E2E**).

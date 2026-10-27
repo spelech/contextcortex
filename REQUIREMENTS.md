@@ -1,8 +1,8 @@
-# Software Requirements Specification: ContextCortex (v2.18.0)
+# Software Requirements Specification: ContextCortex (v2.19.0)
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1051 Automated Tests** (698 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -345,6 +345,11 @@ classDiagram
 - **FR-17.2 (Granular Multi-Dimensional Filtering)**: MUST support filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo_name`, `path_prefix`, `file_extension`, and `detail_level` (`summary` vs `detailed`).
 - **FR-17.3 (MCP & REST API Parity)**: MUST provide identical catalog inspection capabilities via FastMCP tool (`what_is_ingested`) and REST endpoint (`GET /admin/api/ingestion/catalog`) protected by `Role.VIEWER`.
 
+### FR-18: Enterprise Private-CA Gateways & Restricted-Network Deployment
+- **FR-18.1 (Versioned Gateway URLs & Custom Request Headers)**: MUST preserve custom OpenAI-compatible gateway URL paths (such as `/api/v3`) across model discovery, embeddings, file summarization, and PDF vision OCR, and MUST inject CR/LF-validated JSON headers (`LLM_EXTRA_HEADERS`) without allowing custom headers to override resolved `Authorization` bearer credentials.
+- **FR-18.2 (Dual-Phase Private CA Bootstrap)**: MUST install custom PEM CA certificates (`certs/*.crt` / `EXTRA_CA_CERTS_DIR`) into the container trust store at both build time (`Dockerfile`, `Dockerfile.overlay`) and runtime (`docker-entrypoint.sh`) with stale-certificate cleanup and fail-closed verification.
+- **FR-18.3 (Private Mirror & Image-Overlay Builds)**: MUST support parameterized internal Debian/apt (`APT_MIRROR`), npm (`NPM_REGISTRY`), and PyPI (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST`) mirrors as well as verified local image overlays (`docker-compose.enterprise.yml`).
+
 ---
 
 ## 4. Non-Functional Requirements (NFR)
@@ -380,6 +385,7 @@ classDiagram
 | **FR-15** | Diagnostics & Live In-Memory Log Viewer | `app/services/logger.py`, `frontend/src/DiagnosticsViewer.tsx` | `test_diagnostic_logger.py` | `DiagnosticsViewer.test.tsx`, E2E Specs 13, 21 |
 | **FR-16** | Managed Local Storage & Incremental Indexing | `app/services/local_storage.py`, `app/api/routers/storage.py` | `test_local_storage_service.py`, `test_local_storage_indexing.py`, `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `LocalStorageManager.test.tsx` |
 | **FR-17** | Unified Ingestion Catalog Explorer | `app/api/routers/ingestion.py`, `app/mcp/handlers/storage_handlers.py` | `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `IngestionCatalogViewer.test.tsx` |
+| **FR-18** | Enterprise Private-CA Gateways & Mirror Builds | `app/services/llm_client.py`, `app/services/litellm_service.py`, `docker-entrypoint.sh`, `Dockerfile`, `Dockerfile.overlay`, `docker-compose.enterprise.yml` | `test_llm_client.py`, `test_litellm_service.py`, `test_docker_entrypoint.py`, `test_docker_orchestration.py` | `Settings.test.tsx` |
 | **NFR-1** | Performance & Latency Budgets | `app/services/database/connection.py`, `app/services/search.py` | `test_db_and_tools.py`, `test_search.py` | E2E Specs 8, 9 |
 | **NFR-2** | Zero Disk Bloat & Memory Efficiency | `app/services/git_manager.py`, `app/services/embeddings.py` | `test_git_manager.py`, `test_indexer_and_embeddings.py` | E2E Specs 2, 3 |
 | **NFR-3** | Credential Sanitization in Logs/APIs | `app/services/git_manager.py`, `app/api/routers/*` | `test_multi_git_providers.py`, `test_api_routes.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
@@ -1087,13 +1093,14 @@ and leaves the prior indexed state intact without data loss._
 - `test_set_embedding_db_config_persists_to_system_metadata`
 - `test_update_embedding_config_service`
 
-#### `tests/test_pdf_extractor.py` (8 tests)
+#### `tests/test_pdf_extractor.py` (9 tests)
 - `test_extract_digital_pdf_text`
 - `test_extract_scanned_pdf_triggers_vision_ocr`
 - `test_extract_corrupted_pdf_raises_value_error`
 - `test_extract_nonexistent_file_raises_file_not_found`
 - `test_extract_real_pdf_asd_ste100`
 - `test_call_vision_ocr_unit`
+- `test_call_vision_ocr_skips_when_unconfigured`
 - `test_extract_pdf_ocr_failure_graceful_recovery`
 - `test_extract_oversized_pdf_raises_value_error`
 

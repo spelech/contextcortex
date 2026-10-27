@@ -1,6 +1,6 @@
 # Functional Requirements
 
-This section specifies the functional requirements for ContextCortex (`v2.18.0`).
+This section specifies the functional requirements for ContextCortex (`v2.19.0`).
 
 ---
 
@@ -22,7 +22,7 @@ This section specifies the functional requirements for ContextCortex (`v2.18.0`)
 ### FR-03: Dual Relational Storage Engines
 - **Description**: The system must maintain relational metadata using SQLAlchemy 2.0 Core unified schemas.
 - **PostgreSQL 16 Engine**: Production containerized mode with pooled connections (`psycopg3`) and native `vector(384)` HNSW indexing.
-- **SQLite WAL Engine**: Zero-configuration embedded disk mode with automatic Write-Ahead Logging and a 5000ms busy timeout.
+- **SQLite WAL Engine**: Zero-configuration embedded disk mode with automatic Write-Ahead Logging and a 15000ms busy timeout.
 
 ---
 
@@ -80,8 +80,9 @@ This section specifies the functional requirements for ContextCortex (`v2.18.0`)
 
 ### FR-11: AI Gateway & Dynamic LiteLLM Model Discovery
 - **Description**: The system must discover and classify available models from configured LiteLLM or OpenAI-compatible proxy endpoints (`/admin/api/models/discover`).
+- **Versioned URL & Extra Headers**: The system must preserve custom gateway path prefixes (e.g., `/api/v3/models`) and inject CR/LF-validated custom HTTP headers from `LLM_EXTRA_HEADERS` across model discovery, embeddings, file summarization, and PDF vision OCR without allowing custom headers to clobber resolved `Authorization` bearer credentials.
 - **Categorization**: Models must be sorted into Embedding Models, Vision OCR Models, and Chat Models based on model identifiers and capabilities.
-- **Persistence**: Selected AI Gateway and embedding configurations must be persisted to the system metadata database.
+- **Persistence**: Selected AI Gateway and embedding configurations must be persisted to the system metadata database and dynamically applied without requiring a container restart.
 
 ---
 
@@ -107,3 +108,10 @@ This section specifies the functional requirements for ContextCortex (`v2.18.0`)
 ### FR-15: Multi-Theme User Interface
 - **Description**: The Web Admin Dashboard must provide four visual palettes (Deep Ocean, Midnight Blue, Lavender Haze, Amber Warmth).
 - **Responsiveness**: The UI must support desktop and mobile viewport dimensions without horizontal content overflow.
+
+---
+
+### FR-16: Enterprise Private-CA Trust & Restricted-Network Deployment
+- **Description**: The container build and runtime environment must support corporate TLS inspection, private certificate authorities, and internal package mirrors.
+- **Build & Runtime CA Bootstrap**: Custom PEM certificates (`certs/*.crt` / `EXTRA_CA_CERTS_DIR`) must be added to the system trust bundle at build time (`Dockerfile`, `Dockerfile.overlay`) and synchronized at container start (`docker-entrypoint.sh`) with stale-certificate cleanup and fail-closed verification.
+- **Mirror & Overlay Support**: Container builds must accept `APT_MIRROR`, `NPM_REGISTRY`, `PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST`, and base image overrides (`NODE_BASE_IMAGE`, `PYTHON_BASE_IMAGE`).

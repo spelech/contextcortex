@@ -217,8 +217,8 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
     litellm_url = os.getenv("LITELLM_URL", "http://litellm:4000/v1").strip()
     litellm_api_key = os.getenv("LITELLM_API_KEY", "dummy").strip()
 
-    vision_ocr_model = os.getenv("VISION_OCR_MODEL", "gemini-2.5-flash").strip()
-    chat_model = os.getenv("CHAT_MODEL", "gemini-2.5-flash").strip()
+    vision_ocr_model = os.getenv("VISION_OCR_MODEL", "").strip()
+    chat_model = os.getenv("CHAT_MODEL", "").strip()
 
     return {
         "provider": provider,
@@ -243,8 +243,16 @@ def get_embedding_db_config() -> Dict[str, Any]:
     batch_size_str = get_metadata("embedding_batch_size")
     litellm_url = get_metadata("embedding_litellm_url")
     litellm_api_key = get_metadata("embedding_litellm_api_key")
-    vision_ocr_model = get_metadata("vision_ocr_model") or get_metadata("embedding_vision_ocr_model")
-    chat_model = get_metadata("chat_model") or get_metadata("embedding_chat_model")
+    vision_ocr_model = (
+        get_metadata("openai_vision_model")
+        or get_metadata("vision_ocr_model")
+        or get_metadata("embedding_vision_ocr_model")
+    )
+    chat_model = (
+        get_metadata("openai_chat_model")
+        or get_metadata("chat_model")
+        or get_metadata("embedding_chat_model")
+    )
 
     default_cfg = _resolve_default_embedding_config()
 
@@ -292,9 +300,11 @@ def set_embedding_db_config(
     if litellm_api_key is not None:
         set_metadata("embedding_litellm_api_key", litellm_api_key.strip())
     if vision_ocr_model is not None:
+        set_metadata("openai_vision_model", vision_ocr_model.strip())
         set_metadata("vision_ocr_model", vision_ocr_model.strip())
         set_metadata("embedding_vision_ocr_model", vision_ocr_model.strip())
     if chat_model is not None:
+        set_metadata("openai_chat_model", chat_model.strip())
         set_metadata("chat_model", chat_model.strip())
         set_metadata("embedding_chat_model", chat_model.strip())
 
@@ -304,7 +314,7 @@ def get_vision_ocr_model() -> str:
     stored = get_metadata("openai_vision_model") or get_metadata("vision_ocr_model") or get_metadata("embedding_vision_ocr_model")
     if stored and stored.strip():
         return stored.strip()
-    return (os.getenv("VISION_OCR_MODEL") or "gemini-2.5-flash").strip()
+    return (os.getenv("VISION_OCR_MODEL") or "").strip()
 
 
 def get_chat_model() -> str:
@@ -312,7 +322,7 @@ def get_chat_model() -> str:
     stored = get_metadata("openai_chat_model") or get_metadata("chat_model") or get_metadata("embedding_chat_model")
     if stored and stored.strip():
         return stored.strip()
-    return (os.getenv("CHAT_MODEL") or "gemini-2.5-flash").strip()
+    return (os.getenv("CHAT_MODEL") or "").strip()
 
 
 def get_ai_gateway_config() -> Dict[str, Any]:
@@ -332,9 +342,9 @@ def get_ai_gateway_config() -> Dict[str, Any]:
     if not api_key:
         api_key = os.getenv("LITELLM_API_KEY", "").strip()
     if not chat_model:
-        chat_model = os.getenv("CHAT_MODEL", "gemini-2.5-flash").strip()
+        chat_model = os.getenv("CHAT_MODEL", "").strip()
     if not vision_model:
-        vision_model = os.getenv("VISION_OCR_MODEL", "gemini-2.5-flash").strip()
+        vision_model = os.getenv("VISION_OCR_MODEL", "").strip()
     if not embedding_model:
         embedding_model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5").strip()
 
@@ -448,7 +458,7 @@ def set_file_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
         set_metadata("file_summary_max_size_mb", str(max(1, int(payload["summary_max_file_size_mb"]))))
     if "read_file_max_lines" in payload:
         set_metadata("file_read_max_lines", str(max(10, int(payload["read_file_max_lines"]))))
-    if "summary_chat_model" in payload and payload["summary_chat_model"]:
+    if "summary_chat_model" in payload and payload["summary_chat_model"] is not None:
         set_metadata("file_summary_model", str(payload["summary_chat_model"]).strip())
     return get_file_settings()
 

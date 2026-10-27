@@ -30,7 +30,7 @@ ContextCortex exposes standard HTTP health probes and a zero-allocation MCP JSON
 ```bash
 # 1. HTTP liveness & readiness probe (/health or /healthz)
 curl -s http://localhost:8021/healthz
-# Response: {"status":"healthy","service":"ContextCortex","version":"2.18.0","protocolVersion":"2025-06-18"}
+# Response: {"status":"healthy","service":"ContextCortex","version":"2.19.0","protocolVersion":"2025-06-18"}
 
 # 2. Lightweight MCP JSON-RPC ping (bypasses SSE stream/session allocation)
 curl -s -X POST http://localhost:8021/mcp \

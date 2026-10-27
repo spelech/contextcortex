@@ -111,7 +111,7 @@ def generate_markdown() -> str:
 
     main_py = PROJECT_ROOT / "main.py"
     ver_match = re.search(r'version=["\']([^"\']+)["\']', main_py.read_text(encoding="utf-8")) if main_py.exists() else None
-    app_version = ver_match.group(1).strip() if ver_match else "2.18.0"
+    app_version = ver_match.group(1).strip() if ver_match else "2.19.0"
 
     lines = [
         f"# Software Requirements Specification: ContextCortex (v{app_version})",
@@ -461,6 +461,11 @@ def generate_markdown() -> str:
         "- **FR-17.2 (Granular Multi-Dimensional Filtering)**: MUST support filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo_name`, `path_prefix`, `file_extension`, and `detail_level` (`summary` vs `detailed`).",
         "- **FR-17.3 (MCP & REST API Parity)**: MUST provide identical catalog inspection capabilities via FastMCP tool (`what_is_ingested`) and REST endpoint (`GET /admin/api/ingestion/catalog`) protected by `Role.VIEWER`.",
         "",
+        "### FR-18: Enterprise Private-CA Gateways & Restricted-Network Deployment",
+        "- **FR-18.1 (Versioned Gateway URLs & Custom Request Headers)**: MUST preserve custom OpenAI-compatible gateway URL paths (such as `/api/v3`) across model discovery, embeddings, file summarization, and PDF vision OCR, and MUST inject CR/LF-validated JSON headers (`LLM_EXTRA_HEADERS`) without allowing custom headers to override resolved `Authorization` bearer credentials.",
+        "- **FR-18.2 (Dual-Phase Private CA Bootstrap)**: MUST install custom PEM CA certificates (`certs/*.crt` / `EXTRA_CA_CERTS_DIR`) into the container trust store at both build time (`Dockerfile`, `Dockerfile.overlay`) and runtime (`docker-entrypoint.sh`) with stale-certificate cleanup and fail-closed verification.",
+        "- **FR-18.3 (Private Mirror & Image-Overlay Builds)**: MUST support parameterized internal Debian/apt (`APT_MIRROR`), npm (`NPM_REGISTRY`), and PyPI (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST`) mirrors as well as verified local image overlays (`docker-compose.enterprise.yml`).",
+        "",
         "---",
         "",
         "## 4. Non-Functional Requirements (NFR)",
@@ -496,6 +501,7 @@ def generate_markdown() -> str:
         "| **FR-15** | Diagnostics & Live In-Memory Log Viewer | `app/services/logger.py`, `frontend/src/DiagnosticsViewer.tsx` | `test_diagnostic_logger.py` | `DiagnosticsViewer.test.tsx`, E2E Specs 13, 21 |",
         "| **FR-16** | Managed Local Storage & Incremental Indexing | `app/services/local_storage.py`, `app/api/routers/storage.py` | `test_local_storage_service.py`, `test_local_storage_indexing.py`, `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `LocalStorageManager.test.tsx` |",
         "| **FR-17** | Unified Ingestion Catalog Explorer | `app/api/routers/ingestion.py`, `app/mcp/handlers/storage_handlers.py` | `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `IngestionCatalogViewer.test.tsx` |",
+        "| **FR-18** | Enterprise Private-CA Gateways & Mirror Builds | `app/services/llm_client.py`, `app/services/litellm_service.py`, `docker-entrypoint.sh`, `Dockerfile`, `Dockerfile.overlay`, `docker-compose.enterprise.yml` | `test_llm_client.py`, `test_litellm_service.py`, `test_docker_entrypoint.py`, `test_docker_orchestration.py` | `Settings.test.tsx` |",
         "| **NFR-1** | Performance & Latency Budgets | `app/services/database/connection.py`, `app/services/search.py` | `test_db_and_tools.py`, `test_search.py` | E2E Specs 8, 9 |",
         "| **NFR-2** | Zero Disk Bloat & Memory Efficiency | `app/services/git_manager.py`, `app/services/embeddings.py` | `test_git_manager.py`, `test_indexer_and_embeddings.py` | E2E Specs 2, 3 |",
         "| **NFR-3** | Credential Sanitization in Logs/APIs | `app/services/git_manager.py`, `app/api/routers/*` | `test_multi_git_providers.py`, `test_api_routes.py` | `Settings.test.tsx`, E2E Specs 10, 11 |",
@@ -551,7 +557,7 @@ The complete specification is maintained and continuously verified by automated 
 2. [**Mermaid Data Models & Entity Relationship Diagrams (ERD)**](../REQUIREMENTS.md#2-mermaid-data-models--entity-relationship-diagrams-erd)
    - **SQLite Relational Schema (ERD)**: `git_repositories`, `git_host_credentials`, `indexed_paths`, `indexed_files`, `ast_symbols`, `ast_relationships`, `api_routes`, `api_client_calls`, `architecture_adrs`, `file_summaries`, `system_metadata`.
    - **Pluggable Vector Store Schema**: Named multi-vector collection (`dense` 384d BGE + `sparse` BM25) and payload models for Qdrant and ChromaDB.
-3. [**Functional Requirements (FR-1 to FR-17)**](../REQUIREMENTS.md#3-comprehensive-functional-requirements-fr)
+3. [**Functional Requirements (FR-1 to FR-18)**](../REQUIREMENTS.md#3-comprehensive-functional-requirements-fr)
    - **FR-1**: FastMCP 2.0 Dual Transport Architecture (SSE, Streamable HTTP & JSON-RPC `ping`).
    - **FR-2**: FastMCP 16 Agent Tools Contract (`search_code`, `search_docs`, `find_symbol`, `trace_path`, `find_routes`, `find_api_callers`, `get_file_outline`, `list_repositories`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `manage_local_file`, `what_is_ingested`, `read_file`, `summarize_file`).
    - **FR-3**: Dynamic Resources & Prompt Templates (`knowledge://catalog/summary`).
@@ -569,6 +575,7 @@ The complete specification is maintained and continuously verified by automated 
    - **FR-15**: Diagnostics & Live In-Memory Log Buffers.
    - **FR-16**: Managed Local Storage Option & Real-Time Incremental Indexing.
    - **FR-17**: Unified Ingestion Catalog (`what_is_ingested` & `/admin/api/ingestion/catalog`).
+   - **FR-18**: Enterprise Private-CA Gateways & Restricted-Network Deployment (`LLM_EXTRA_HEADERS`, `certs/*.crt`, `Dockerfile.overlay`, `docker-compose.enterprise.yml`).
 4. [**Non-Functional Requirements (NFR-1 to NFR-7)**](../REQUIREMENTS.md#4-non-functional-requirements-nfr)
    - Latency budgets, zero disk bloat guarantees, credential sanitization, SQLite WAL concurrency, sub-500 LOC modularity, and test quality floors.
 5. [**Requirement-to-Test Traceability Matrix**](../REQUIREMENTS.md#5-requirement-to-test-traceability-matrix)

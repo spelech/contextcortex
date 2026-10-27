@@ -21,6 +21,7 @@ def test_env(tmp_path, monkeypatch):
     storage_dir = tmp_path / "storage"
     storage_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("LOCAL_STORAGE_PATH", str(storage_dir))
+    monkeypatch.setenv("CHAT_MODEL", "flash-latest")
 
     watched_dir = tmp_path / "watched"
     watched_dir.mkdir(parents=True, exist_ok=True)

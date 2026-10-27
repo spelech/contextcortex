@@ -26,6 +26,7 @@ ContextCortex is verified by an automated test suite comprising **1,051 automate
 | **FR-13** | Unified Ingestion Catalog | Automated Integration Test | `tests/backend/test_mcp_storage_tools.py`, `frontend/src/tests/IngestionCatalogViewer.test.tsx` |
 | **FR-14** | Architecture ADR Management | Automated Integration Test | `tests/backend/test_architecture_adr.py` |
 | **FR-15** | Multi-Theme Responsive UI | Automated E2E & Layout | `frontend/src/tests/App.test.tsx`, `frontend/e2e/dashboard.spec.ts` |
+| **FR-16** | Enterprise Private-CA Trust & Mirror Builds | Automated Integration Test | `tests/test_docker_entrypoint.py`, `tests/test_docker_orchestration.py`, `tests/test_llm_client.py` |
 | **NFR-01** | Sub-500 LOC Maintainability | Automated Linter / CI | Repository file size audits, `pytest`, `tsc` |
 | **NFR-04** | Path Traversal Protection | Automated Security Test | `tests/backend/test_local_storage_service.py`, `tests/backend/test_file_reader_and_summarizer.py` |
 | **NFR-07** | Zero Horizontal Overflow | Automated E2E Layout Test | `frontend/e2e/navigator.spec.ts`, `frontend/e2e/dashboard.spec.ts` |

@@ -47,9 +47,9 @@ export function EmbeddingSettings({
   setEmbLitellmUrl,
   embLitellmApiKey = '',
   setEmbLitellmApiKey,
-  embVisionOcrModel = 'gemini-2.5-flash',
+  embVisionOcrModel = '',
   setEmbVisionOcrModel,
-  embChatModel = 'gemini-2.5-flash',
+  embChatModel = '',
   setEmbChatModel,
   discoveryResult = null,
   isDiscovering = false,
@@ -117,11 +117,11 @@ export function EmbeddingSettings({
               </div>
               <div className="spec-row">
                 <span>Vision AI OCR Model:</span>
-                <code>{embeddingConfig.vision_ocr_model || 'gemini-2.5-flash'}</code>
+                <code>{embeddingConfig.vision_ocr_model || 'Not configured'}</code>
               </div>
               <div className="spec-row">
                 <span>Chat Completion Model:</span>
-                <code>{embeddingConfig.chat_model || 'gemini-2.5-flash'}</code>
+                <code>{embeddingConfig.chat_model || 'Not configured'}</code>
               </div>
               {embeddingConfig.provider === 'api' && (
                 <div className="spec-row">
@@ -365,7 +365,7 @@ export function EmbeddingSettings({
                   type="text"
                   value={embVisionOcrModel}
                   onChange={e => setEmbVisionOcrModel?.(e.target.value)}
-                  placeholder="gemini-2.5-flash"
+                  placeholder="Discover models or enter gateway model ID"
                 />
               )}
             </div>
@@ -411,7 +411,7 @@ export function EmbeddingSettings({
                   type="text"
                   value={embChatModel}
                   onChange={e => setEmbChatModel?.(e.target.value)}
-                  placeholder="gemini-2.5-flash"
+                  placeholder="Discover models or enter gateway model ID"
                 />
               )}
             </div>

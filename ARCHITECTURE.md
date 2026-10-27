@@ -1,4 +1,4 @@
-# Architecture: ContextCortex (v2.18.0)
+# Architecture: ContextCortex (v2.19.0)
 
 ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, architecture documents, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, pluggable relational and vector store backends (PostgreSQL 16 with pgvector, Qdrant, ChromaDB, and SQLite), automatic polling daemons, multi-provider webhooks, interactive dependency topology graph explorer, RFC 9728 OAuth 2.1 Protected Resource Server, 3-tier API key RBAC, and a React 19 administrative dashboard.
 
@@ -187,7 +187,7 @@ flowchart TD
 - **Engine Factory & Connection Pool (`engine.py`)**:
   - Dynamic URL normalization for `postgresql+psycopg://` driver connection strings and `sqlite:///` paths.
   - Connection pooling with `pool_pre_ping=True`, configurable `pool_size` (default 10) and `max_overflow` (default 20) for PostgreSQL.
-  - WAL mode, busy timeout (5000ms), and foreign keys enabled automatically on SQLite connections.
+  - WAL mode, busy timeout (15000ms), and foreign keys enabled automatically on SQLite connections.
   - Cold-boot retry loop (`wait_for_db`) with exponential backoff for resilient container orchestration.
   - Idempotent table creation (`metadata.create_all`) and automatic default seeding (system metadata, default prompts, vault paths).
 - **Embedding Cache (`embedding_cache.py`)**:
@@ -376,6 +376,20 @@ flowchart TD
   - Layout density and last selected repository are persisted in `localStorage`.
 - **Zero Horizontal Overflow & Responsive Adaptability**:
   - Flexbox and grid CSS architecture with `min-width: 0`, `overflow-wrap: anywhere`, and nested vertical scroll containers ensuring zero horizontal viewport overflow across desktop (1080p), tablet, and mobile displays.
+
+---
+
+### 14. Enterprise Private-CA Gateways & Restricted-Network Deployment (`app/services/llm_client.py`, `docker-entrypoint.sh`, `Dockerfile`, `Dockerfile.overlay`)
+- **Unified Gateway Client & Header Hardening (`app/services/llm_client.py`)**:
+  - Centralizes OpenAI-compatible client construction (`create_async_openai_client`, `resolve_llm_config`, `build_models_url`, `get_llm_extra_headers`) across embeddings (`embeddings.py`, `litellm_service.py`), large-file executive summarization (`summarizer.py`), PDF vision OCR (`pdf_extractor.py`), and model discovery.
+  - Preserves versioned gateway base URLs (e.g., `https://gateway.internal/api/v3` → `/api/v3/models`) while appending `/v1/models` when no path segment is present.
+  - Parses `LLM_EXTRA_HEADERS` JSON maps and rejects CR/LF characters (`\r`, `\n`) in header keys or values to prevent HTTP header injection, while preserving database-resolved `Authorization` precedence.
+  - Dynamically refreshes cached `AsyncOpenAI` instances in `SummarizerService` whenever database settings or `LLM_EXTRA_HEADERS` change at runtime.
+- **Dual-Phase Private CA Trust Bootstrap (`Dockerfile`, `Dockerfile.overlay`, `docker-entrypoint.sh`)**:
+  - **Build-Time Trust**: Appends any PEM certificates in `certs/*.crt` into `/etc/ssl/certs/ca-certificates.crt` (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `GIT_SSL_CAINFO`, `NODE_EXTRA_CA_CERTS`) before executing `apt-get`, `npm ci`, or `pip install`.
+  - **Runtime Trust**: On container startup, `docker-entrypoint.sh` purges stale runtime certificates in `$RUNTIME_CA_CERTS_DIR` (`/usr/local/share/ca-certificates/contextcortex`), copies mounted certificates from `$EXTRA_CA_CERTS_DIR` (`/certs/*.crt`), and executes `update-ca-certificates` fail-closed before `exec "$@"` launches the FastAPI application.
+- **Restricted-Network Build & Image Overlay Workflows (`docker-compose.enterprise.yml`)**:
+  - Supports full source builds against internal Debian/apt (`APT_MIRROR`), npm (`NPM_REGISTRY`), and PyPI (`PIP_INDEX_URL`, `PIP_EXTRA_INDEX_URL`, `PIP_TRUSTED_HOST`) mirrors with quarantine-compliant dependency floors (`>=`), as well as fast image-overlay builds (`Dockerfile.overlay`) on pre-built `ghcr.io/spelech/contextcortex` images.
 
 ---
 
