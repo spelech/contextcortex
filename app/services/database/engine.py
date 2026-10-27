@@ -93,7 +93,7 @@ def get_db_engine(database_url: Optional[str] = None, reset: bool = False, **kwa
     if url.startswith("sqlite"):
         engine = create_engine(
             url,
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 15.0},
             pool_pre_ping=True,
             **kwargs,
         )
@@ -102,8 +102,8 @@ def get_db_engine(database_url: Optional[str] = None, reset: bool = False, **kwa
         def _set_sqlite_pragmas(dbapi_connection, connection_record):
             if isinstance(dbapi_connection, sqlite3.Connection):
                 cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA busy_timeout=15000;")
                 cursor.execute("PRAGMA journal_mode=WAL;")
-                cursor.execute("PRAGMA busy_timeout=5000;")
                 cursor.execute("PRAGMA foreign_keys=ON;")
                 cursor.close()
 
