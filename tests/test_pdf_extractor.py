@@ -7,6 +7,9 @@ from app.services.pdf_extractor import (
     extract_pdf_pages,
     PdfExtractionResult,
     PdfPageResult,
+    OcrUnconfiguredError,
+    OcrExecutionError,
+    _sanitize_ocr_error,
 )
 
 
@@ -32,10 +35,15 @@ def test_extract_digital_pdf_text():
     assert "Overview" in res.pages[0].text
     assert res.pages[0].page_number == 1
     assert res.pages[0].ocr_applied is False
+    assert res.pages[0].ocr_attempted is False
+    assert res.pages[0].ocr_error is None
     assert "Approved Words" in res.pages[1].text
     assert res.pages[1].page_number == 2
     assert res.pages[1].ocr_applied is False
+    assert res.pages[1].ocr_attempted is False
+    assert res.pages[1].ocr_error is None
     assert len(res.preview_chunks) >= 2
+    assert res.errors == []
     assert res.to_dict()["total_pages"] == 2
 
 
@@ -49,7 +57,10 @@ def test_extract_scanned_pdf_triggers_vision_ocr():
         assert res.total_pages == 1
         assert res.ocr_pages_count == 1
         assert res.pages[0].ocr_applied is True
+        assert res.pages[0].ocr_attempted is True
+        assert res.pages[0].ocr_error is None
         assert "Transcribed STE rule text via OCR" in res.pages[0].text
+        assert res.errors == []
 
 
 def test_extract_corrupted_pdf_raises_value_error():
@@ -94,25 +105,114 @@ def test_call_vision_ocr_unit():
         mock_client.chat.completions.create.assert_called_once()
 
 
-def test_call_vision_ocr_skips_when_unconfigured(monkeypatch):
+def test_call_vision_ocr_raises_when_unconfigured(monkeypatch):
     from app.services.pdf_extractor import _call_vision_ocr
 
     monkeypatch.delenv("VISION_OCR_MODEL", raising=False)
     with patch("app.services.pdf_extractor.get_vision_ocr_model", return_value=""), \
          patch("app.services.pdf_extractor.OpenAI") as mock_openai:
-        ocr_result = _call_vision_ocr(b"fake_png_bytes")
-        assert ocr_result == ""
+        with pytest.raises(OcrUnconfiguredError, match="not configured"):
+            _call_vision_ocr(b"fake_png_bytes")
         mock_openai.assert_not_called()
 
 
-def test_extract_pdf_ocr_failure_graceful_recovery():
+def test_extract_pdf_ocr_unconfigured_error():
     pdf_bytes = create_sample_pdf([""])
-    with patch("app.services.pdf_extractor._call_vision_ocr", side_effect=RuntimeError("Vision model timed out")):
-        res = extract_pdf_pages(pdf_bytes, filename="fallback_fail.pdf", ocr_fallback=True)
+    with patch("app.services.pdf_extractor.get_vision_ocr_model", return_value=""):
+        res = extract_pdf_pages(pdf_bytes, filename="unconfigured.pdf", ocr_fallback=True)
         assert res.total_pages == 1
         assert res.ocr_pages_count == 0
         assert res.pages[0].ocr_applied is False
-        assert res.pages[0].text == ""
+        assert res.pages[0].ocr_attempted is True
+        assert res.pages[0].ocr_error == "Vision OCR model is not configured."
+        assert len(res.errors) == 1
+        assert res.errors[0]["type"] == "ocr_unconfigured"
+
+
+def test_extract_pdf_ocr_nonexistent_model_error():
+    pdf_bytes = create_sample_pdf([""])
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = RuntimeError("Error 404: Model 'invalid-model' does not exist")
+
+    with patch("app.services.pdf_extractor.get_vision_ocr_model", return_value="nonexistent-model"), \
+         patch("app.services.pdf_extractor.OpenAI", return_value=mock_client):
+        res = extract_pdf_pages(pdf_bytes, filename="nonexistent_model.pdf", ocr_fallback=True)
+        assert res.total_pages == 1
+        assert res.ocr_pages_count == 0
+        assert res.pages[0].ocr_applied is False
+        assert res.pages[0].ocr_attempted is True
+        assert "not found or invalid" in res.pages[0].ocr_error
+        assert len(res.errors) == 1
+        assert res.errors[0]["type"] == "ocr_failure"
+
+
+def test_extract_pdf_ocr_timeout_error():
+    pdf_bytes = create_sample_pdf([""])
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = RuntimeError("APITimeoutError: Request timed out")
+
+    with patch("app.services.pdf_extractor.get_vision_ocr_model", return_value="vision-model"), \
+         patch("app.services.pdf_extractor.OpenAI", return_value=mock_client):
+        res = extract_pdf_pages(pdf_bytes, filename="timeout.pdf", ocr_fallback=True)
+        assert res.total_pages == 1
+        assert res.ocr_pages_count == 0
+        assert res.pages[0].ocr_applied is False
+        assert res.pages[0].ocr_attempted is True
+        assert res.pages[0].ocr_error == "Vision OCR request timed out."
+        assert len(res.errors) == 1
+        assert res.errors[0]["type"] == "ocr_failure"
+
+
+def test_extract_pdf_ocr_gateway_rejection_error():
+    pdf_bytes = create_sample_pdf([""])
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = RuntimeError("Error 403: Forbidden - Gateway access rejected")
+
+    with patch("app.services.pdf_extractor.get_vision_ocr_model", return_value="vision-model"), \
+         patch("app.services.pdf_extractor.OpenAI", return_value=mock_client):
+        res = extract_pdf_pages(pdf_bytes, filename="forbidden.pdf", ocr_fallback=True)
+        assert res.total_pages == 1
+        assert res.ocr_pages_count == 0
+        assert res.pages[0].ocr_applied is False
+        assert res.pages[0].ocr_attempted is True
+        assert res.pages[0].ocr_error == "Vision OCR gateway request rejected."
+        assert len(res.errors) == 1
+        assert res.errors[0]["type"] == "ocr_failure"
+
+
+def test_extract_pdf_ocr_mixed_text_and_scanned_pages():
+    pdf_bytes = create_sample_pdf([
+        "Digital page 1 with adequate text content for direct extraction without OCR.",
+        ""  # Scanned page 2
+    ])
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = RuntimeError("APITimeoutError: Gateway timeout")
+
+    with patch("app.services.pdf_extractor.get_vision_ocr_model", return_value="vision-model"), \
+         patch("app.services.pdf_extractor.OpenAI", return_value=mock_client):
+        res = extract_pdf_pages(pdf_bytes, filename="mixed.pdf", ocr_fallback=True)
+        assert res.total_pages == 2
+        assert res.pages[0].ocr_attempted is False
+        assert res.pages[0].ocr_error is None
+        assert "Digital page 1" in res.pages[0].text
+
+        assert res.pages[1].ocr_attempted is True
+        assert res.pages[1].ocr_applied is False
+        assert res.pages[1].ocr_error == "Vision OCR request timed out."
+
+        assert len(res.errors) == 1
+        assert res.errors[0]["page_number"] == 2
+
+
+def test_sanitize_ocr_error_credentials_and_urls():
+    exc = Exception("Error connecting to http://10.0.0.1:4000/v1 with key sk-proj-secret123456789")
+    sanitized = _sanitize_ocr_error(exc)
+
+    assert "http://10.0.0.1:4000/v1" not in sanitized
+    assert "sk-proj-secret123456789" not in sanitized
+    assert "[REDACTED_URL]" in sanitized or "connection failed" in sanitized
+    assert "[REDACTED_KEY]" in sanitized or "connection failed" in sanitized
 
 
 def test_extract_oversized_pdf_raises_value_error(tmp_path):

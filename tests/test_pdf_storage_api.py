@@ -2,7 +2,7 @@ import os
 import io
 import pytest
 import pymupdf
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from main import app
 from app.services.local_storage import LocalStorageService
@@ -61,10 +61,38 @@ def test_pdf_preview_endpoint(client, setup_test_db_and_storage):
     assert "Rule 1" in data["pages"][0]["text"]
     assert "Rule 2" in data["pages"][1]["text"]
     assert len(data["sample_chunks"]) >= 2
+    assert data["errors"] == []
 
     # Verify preview did NOT write anything to disk in storage root
     target = os.path.join(storage.get_storage_root(), "spec.pdf")
     assert not os.path.exists(target)
+
+
+def test_pdf_preview_endpoint_surfaces_ocr_failures(client):
+    pdf_bytes = create_sample_pdf([""])  # Scanned page requiring OCR
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = RuntimeError("Error 404: Model 'deliberately-nonexistent' does not exist")
+
+    with patch("app.services.pdf_extractor.get_vision_ocr_model", return_value="deliberately-nonexistent"), \
+         patch("app.services.pdf_extractor.OpenAI", return_value=mock_client):
+        response = client.post(
+            "/admin/api/storage/pdf/preview",
+            files={"file": ("scanned.pdf", pdf_bytes, "application/pdf")},
+            data={"ocr_fallback": "true"}
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_pages"] == 1
+    assert data["total_characters"] == 0
+    assert data["ocr_pages_count"] == 0
+    assert len(data["errors"]) == 1
+    assert data["errors"][0]["page_number"] == 1
+    assert "not found or invalid" in data["errors"][0]["error"]
+    assert data["pages"][0]["ocr_attempted"] is True
+    assert data["pages"][0]["ocr_applied"] is False
+    assert "not found or invalid" in data["pages"][0]["ocr_error"]
 
 
 def test_pdf_preview_validation_errors(client):

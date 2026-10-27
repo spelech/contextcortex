@@ -112,10 +112,12 @@ class LocalStorageService:
 
         cat = category or os.path.dirname(rel_path) or "root"
 
+        pdf_errors = []
         if abs_path.lower().endswith(".pdf"):
             pdf_res = extract_pdf_pages(abs_path, filename=os.path.basename(rel_path), ocr_fallback=True)
             content = "\n\n".join([f"# Page {p.page_number}\n{p.text}" for p in pdf_res.pages])
             doc_type = "pdf"
+            pdf_errors = pdf_res.errors
         else:
             with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
@@ -194,13 +196,16 @@ class LocalStorageService:
             conn.commit()
 
         trigger_list_changed_notification()
-        return {
-            "status": "success",
+        res = {
+            "status": "success" if not pdf_errors else "partial_success",
             "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
             "abs_path": abs_path,
             "chunks_indexed": len(points),
             "symbols_indexed": len(ast_symbols)
         }
+        if pdf_errors:
+            res["errors"] = pdf_errors
+        return res
 
     def save_file(
         self,
@@ -255,8 +260,8 @@ class LocalStorageService:
         if target_path.lower().endswith(".pdf"):
             pdf_res = extract_pdf_pages(target_path, filename=os.path.basename(rel_path), ocr_fallback=False)
             formatted_text = "\n\n".join([f"# Page {p.page_number}\n{p.text}" for p in pdf_res.pages])
-            return {
-                "status": "success",
+            res = {
+                "status": "success" if not pdf_res.errors else "partial_success",
                 "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
                 "abs_path": target_path,
                 "content": formatted_text,
@@ -265,6 +270,9 @@ class LocalStorageService:
                 "size_bytes": size_bytes,
                 "mtime": mtime
             }
+            if pdf_res.errors:
+                res["errors"] = pdf_res.errors
+            return res
 
         try:
             with open(target_path, "r", encoding="utf-8", errors="replace") as f:
