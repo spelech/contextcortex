@@ -155,6 +155,71 @@ def test_pdf_read_file_content(client, setup_test_db_and_storage):
     assert "# Page 1\n" in api_data["content"]
 
 
+def test_malformed_pdf_upload_rollback(client, setup_test_db_and_storage):
+    storage = setup_test_db_and_storage
+    corrupt_content = b"plain synthetic text, not PDF bytes"
+    rel_path = "synthetic-corrupt.pdf"
+
+    # POST multipart data to /admin/api/storage/upload
+    res = client.post(
+        "/admin/api/storage/upload",
+        files={"file": (rel_path, corrupt_content, "application/pdf")},
+        data={"path": rel_path, "repo": "local_storage"}
+    )
+    assert res.status_code == 400
+
+    # Managed storage file must NOT exist
+    abs_path = os.path.join(storage.get_storage_root(), rel_path)
+    assert not os.path.exists(abs_path)
+
+    # Index DB records must NOT exist
+    with db_service.get_db_connection() as conn:
+        row = conn.execute("SELECT * FROM indexed_files WHERE filepath = ?", (abs_path,)).fetchone()
+        assert row is None
+
+
+def test_failed_pdf_replacement_preserves_original(client, setup_test_db_and_storage):
+    storage = setup_test_db_and_storage
+    rel_path = "docs/original.pdf"
+
+    # 1. Upload valid PDF
+    valid_pdf_bytes = create_sample_pdf(["Original valid content page 1"])
+    res = client.post(
+        "/admin/api/storage/upload",
+        files={"file": (rel_path, valid_pdf_bytes, "application/pdf")},
+        data={"path": rel_path, "repo": "local_storage"}
+    )
+    assert res.status_code == 200
+    abs_path = os.path.join(storage.get_storage_root(), "docs", "original.pdf")
+    assert os.path.exists(abs_path)
+
+    # Verify initial index state
+    with db_service.get_db_connection() as conn:
+        orig_row = conn.execute("SELECT * FROM indexed_files WHERE filepath = ?", (abs_path,)).fetchone()
+        assert orig_row is not None
+        orig_hash = orig_row["hash"]
+
+    # 2. Attempt replacement with corrupt PDF content via PUT /admin/api/storage/file
+    corrupt_payload = {
+        "path": rel_path,
+        "content": "corrupt plain text content, invalid pdf",
+        "repo": "local_storage"
+    }
+    res = client.put("/admin/api/storage/file", json=corrupt_payload)
+    assert res.status_code == 400
+
+    # 3. Verify original file content on disk is preserved
+    read_res = storage.read_file_content(rel_path)
+    assert read_res["status"] == "success"
+    assert "Original valid content" in read_res["content"]
+
+    # 4. Verify original DB index state is preserved
+    with db_service.get_db_connection() as conn:
+        curr_row = conn.execute("SELECT * FROM indexed_files WHERE filepath = ?", (abs_path,)).fetchone()
+        assert curr_row is not None
+        assert curr_row["hash"] == orig_hash
+
+
 def test_real_asd_ste100_pdf_preview_or_indexing(client):
     real_pdf = "/drives/nfs/ASD-STE100_ISSUE9.pdf"
     if not os.path.exists(real_pdf):
