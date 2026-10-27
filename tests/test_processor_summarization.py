@@ -26,7 +26,8 @@ def test_env(tmp_path, monkeypatch):
         "summary_enabled": True,
         "summary_threshold_kb": 10,
         "summary_max_file_size_mb": 5,
-        "read_file_max_lines": 2000
+        "read_file_max_lines": 2000,
+        "summary_chat_model": "flash-latest",
     })
 
     return tmp_path
