@@ -17,7 +17,7 @@ All administrative routes are prefixed with `/admin/api` unless otherwise noted.
   {
     "status": "healthy",
     "service": "ContextCortex",
-    "version": "2.18.0",
+    "version": "2.19.0",
     "protocolVersion": "2025-06-18"
   }
   ```

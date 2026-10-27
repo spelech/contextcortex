@@ -46,7 +46,7 @@ ContextCortex supports two primary database profiles:
 ### 1. SQLite Profile (Default Development Mode)
 - **Zero Configuration**: Requires no external database container.
 - **Write-Ahead Logging (WAL)**: Automatically enabled for concurrent read and write operations.
-- **Connection Timeout**: Set to 5000 milliseconds to avoid disk lock errors.
+- **Connection Timeout**: Set to 15000 milliseconds to avoid disk lock errors.
 - **Relational Cache**: Stored on disk at `/app/data/index_cache.db`.
 
 ### 2. PostgreSQL 16 + pgvector Profile (Production Mode)

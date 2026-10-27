@@ -30,7 +30,7 @@ This section specifies the non-functional requirements and quality attributes fo
 ---
 
 ### NFR-05: Concurrency and Thread Safety
-- **Requirement**: In SQLite mode, database operations must use Write-Ahead Logging (WAL) and a 5000ms busy timeout to prevent `database is locked` operational errors under concurrent indexing and search loads.
+- **Requirement**: In SQLite mode, database operations must use Write-Ahead Logging (WAL) and a 15000ms busy timeout to prevent `database is locked` operational errors under concurrent indexing and search loads.
 - **PostgreSQL Mode**: Connection pooling via `psycopg3` must handle up to 20 concurrent connections with automatic reconnect logic.
 
 ---

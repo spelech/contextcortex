@@ -121,8 +121,12 @@ To deploy ContextCortex with PostgreSQL 16, pgvector, and Qdrant in containers:
    docker compose logs -f contextcortex
    ```
 
+> [!TIP]
+> **Restricted-Network & Private-CA Environments:** If your environment uses corporate TLS inspection, private CA certificates (`certs/*.crt`), or internal apt/pip/npm mirrors, use `docker-compose.enterprise.yml` or `Dockerfile.overlay`. See [Restricted-Network Builds](/guide/enterprise-build) for full instructions.
+
 ## Next Steps
 
 - Open the [User Guide](/guide/user-guide) to explore dashboard components with screenshots.
 - Review the [Configuration Guide](/guide/configuration) to set environment variables.
+- Configure corporate mirrors and private CAs in [Restricted-Network Builds](/guide/enterprise-build).
 - Connect your AI assistant using the [MCP Reference](/reference/mcp-tools).

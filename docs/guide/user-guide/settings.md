@@ -28,6 +28,8 @@ The **AI Gateway & Embedding Settings** panel configures upstream OpenAI-compati
   - **Embedding Models**: Filtered by embedding capabilities (e.g. `BAAI/bge-small-en-v1.5`, `text-embedding-3-small`).
   - **Vision OCR Models**: Multi-modal vision models used to perform automated OCR on diagrams and scanned pages in PDF uploads (e.g. `gemini-2.5-flash`, `qwen3-vl`).
   - **Chat & Summarization Models**: Reasoning models used to generate structured executive summaries for large files (e.g. `gemini-2.5-flash`, `gpt-4o-mini`).
+- **Versioned Gateway Base URLs**: Custom gateway paths (such as `https://gateway.example.com/api/v3`) are preserved verbatim across model discovery (`/api/v3/models`), embeddings (`/api/v3/embeddings`), file summarization, and PDF vision OCR.
+- **Custom Request Headers & Private CA Trust**: Gateways requiring identity or routing headers in addition to `Authorization` can be configured via the `LLM_EXTRA_HEADERS` JSON environment variable, and internal TLS certificates placed in `certs/*.crt` (`EXTRA_CA_CERTS_DIR`) are trusted automatically at container startup. See [Configuration](/guide/configuration) and [Restricted-Network Builds](/guide/enterprise-build) for details.
 
 ---
 

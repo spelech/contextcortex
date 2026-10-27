@@ -1,4 +1,4 @@
-# Developer Documentation: ContextCortex (v2.18.0)
+# Developer Documentation: ContextCortex (v2.19.0)
 
 This document provides instructions for developing, testing, configuring, and running ContextCortex locally.
 
@@ -92,10 +92,10 @@ cd contextcortex
 
 ### Backend Tests (Python Pytest & Coverage)
 ```bash
-# Run all backend unit and integration tests (522+ tests)
+# Run all backend unit and integration tests (698 tests)
 pytest -v
 
-# Run backend tests with code coverage report (88%+ coverage baseline)
+# Run backend tests with code coverage report (89%+ coverage baseline)
 pytest -v --cov=app --cov-report=term-missing
 ```
 
@@ -103,13 +103,13 @@ pytest -v --cov=app --cov-report=term-missing
 ```bash
 cd frontend
 
-# Run unit and component tests via Vitest (315 tests across 32 test files)
+# Run unit and component tests via Vitest (303 tests across 32 test files)
 npm test
 
 # Run component tests with code coverage
 npm run test:coverage
 
-# Run end-to-end user journey tests via Playwright
+# Run end-to-end user journey tests via Playwright (50 tests)
 npx playwright test
 ```
 
@@ -151,6 +151,12 @@ npm run docs:preview
 | `EMBEDDING_PROVIDER` | Embedding engine (`local` for in-process ONNX, `api` for LiteLLM/OpenAI) | `local` |
 | `EMBEDDING_MODEL` | FastEmbed dense model name | `BAAI/bge-small-en-v1.5` |
 | `SPARSE_MODEL` | FastEmbed sparse BM25 model name | `Qdrant/bm25` |
+| `LITELLM_URL` | OpenAI-compatible gateway base URL passed to the OpenAI SDK | `http://litellm:4000/v1` |
+| `LITELLM_API_KEY` | API key for the OpenAI-compatible gateway | `dummy` |
+| `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
+| `CHAT_MODEL` | Chat model used for executive file summaries | `gemini-2.5-flash` |
+| `VISION_OCR_MODEL` | Vision model used for scanned PDF OCR fallback | `gemini-2.5-flash` |
+| `EXTRA_CA_CERTS_DIR` | Directory of private CA certificates (`*.crt`) trusted at container start | `/certs` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for rate limits & private repos | `None` |
 | `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |
 | `CACHE_DB_PATH` | Path to persistent SQLite cache database | `/app/data/index_cache.db` |
@@ -188,13 +194,21 @@ contextcortex/
 │       ├── local_storage.py# Safe path resolution, disk file persistence, and tree inspection
 │       ├── git_manager.py # Shallow git clone (ephemeral & persistent), token masking, permalinks
 │       ├── embeddings.py  # FastEmbed dense (384d) & sparse BM25 multi-vector engine
+│       ├── llm_client.py  # Shared OpenAI-compatible gateway config, URL builder & header validator
+│       ├── litellm_service.py # Model discovery, API embeddings & gateway health checks
+│       ├── summarizer.py  # Large-file executive LLM summarization service
+│       ├── pdf_extractor.py # PDF text extraction with Vision OCR fallback
 │       ├── search.py      # Hybrid search & Reciprocal Rank Fusion (RRF) reranker
 │       ├── poller.py      # Background scheduled repo SHA poller daemon
 │       ├── adr.py         # MADR / Nygard format ADR ingestion and lifecycle
 │       ├── architecture.py# Codebase entry point, language distribution synthesis
 │       └── logger.py      # In-memory 500-event ring buffer diagnostic logger
-├── tests/                 # Backend pytest test suite (522+ tests, 88%+ coverage)
+├── tests/                 # Backend pytest test suite (698 tests, 89%+ coverage)
 │   ├── backend/           # Unit and integration test modules
+│   ├── test_llm_client.py            # Gateway URL resolution, extra headers & real-DB fallback tests
+│   ├── test_litellm_service.py       # LiteLLM model discovery & embedding header propagation tests
+│   ├── test_docker_entrypoint.py     # Runtime CA certificate bootstrap & fail-closed tests
+│   ├── test_docker_orchestration.py  # Dockerfile, overlay, and Compose contract verification tests
 │   ├── test_navigator_router.py      # REST navigator endpoints tests
 │   ├── test_navigator_service.py     # Tree, outline, and impact service tests
 │   ├── test_local_storage_service.py # Path security and local disk storage tests
@@ -215,8 +229,12 @@ contextcortex/
 │   │   └── tests/         # Vitest component unit tests
 │   ├── e2e/               # Playwright E2E test specs (26 user journeys)
 │   └── dist/              # Compiled production distribution assets
+├── certs/                 # Private CA certificates (*.crt) for build-time and runtime trust
 ├── requirements.txt       # Python dependencies
-├── Dockerfile             # Container definition with Python 3.11 & Git
+├── Dockerfile             # Multi-stage container definition with mirror & CA support
+├── Dockerfile.overlay     # Fast CA-trust overlay on pre-built ContextCortex image
+├── docker-entrypoint.sh   # Runtime private CA certificate bootstrap entrypoint
+├── docker-compose.enterprise.yml # Compose override for verified local image & custom CA mounts
 ├── ARCHITECTURE.md        # Deep architectural design specification
 ├── DEVELOPER_DOCS.md      # Local developer setup and test guide
 └── docs/
@@ -265,7 +283,7 @@ Example configuration:
 }
 ```
 
-### Available MCP Tools (14 Tools):
+### Available MCP Tools (16 Tools):
 - `search_code(query="JWT authentication handler", repo="backend-api")` [Role: `viewer`]
 - `search_docs(query="caddy reverse proxy configuration")` [Role: `viewer`]
 - `find_symbol(name="extract_symbols_and_chunks", exact=true)` [Role: `viewer`]
@@ -280,6 +298,8 @@ Example configuration:
 - `manage_adr(action="list", repo="backend-api")` [Role: `editor`]
 - `manage_local_file(action="upload", file_path="notes/spec.md", content="# Spec")` [Role: `editor` for mutations, `viewer` for read]
 - `what_is_ingested(source_type="all", detail_level="summary")` [Role: `viewer`]
+- `read_file(path="app/services/search.py", repo="backend-api", start_line=1, end_line=120)` [Role: `viewer`]
+- `summarize_file(path="app/services/search.py", repo="backend-api")` [Role: `viewer`]
 
 ### Available MCP Resources:
 - `knowledge://catalog/summary`
