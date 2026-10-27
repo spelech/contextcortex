@@ -186,6 +186,8 @@ class EmbeddingSettingsRequest(BaseModel):
     litellm_api_key: Optional[str] = None
     vision_ocr_model: Optional[str] = None
     chat_model: Optional[str] = None
+    rebuild_index: Optional[bool] = Field(default=False, description="Explicitly confirm index rebuild when changing embedding dimensions or models")
+    rebuild: Optional[bool] = Field(default=None, description="Alias for rebuild_index")
 
 # Topology Graph Models
 class TopologyNode(BaseModel):

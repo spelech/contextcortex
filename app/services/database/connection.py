@@ -462,3 +462,23 @@ def set_file_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
         set_metadata("file_summary_model", str(payload["summary_chat_model"]).strip())
     return get_file_settings()
 
+
+def clear_indexing_metadata():
+    """
+    Clears all relational index tables (indexed_files, file_summaries, ast_symbols,
+    ast_relationships, api_routes, api_client_calls, embedding_cache) and resets
+    git repository sync markers so that subsequent reindexing passes fully re-process
+    and re-embed all sources.
+    """
+    with get_db_connection() as conn:
+        for table in ("indexed_files", "file_summaries", "ast_symbols", "ast_relationships", "api_routes", "api_client_calls", "embedding_cache"):
+            try:
+                conn.execute(f"DELETE FROM {table}")
+            except Exception as e:
+                logger.debug(f"Error clearing table {table}: {e}")
+        try:
+            conn.execute("UPDATE git_repositories SET commit_sha = NULL, last_synced = NULL")
+        except Exception as e:
+            logger.debug(f"Error resetting git_repositories sync state: {e}")
+        conn.commit()
+    logger.info("Relational indexing metadata and embedding cache cleared.")

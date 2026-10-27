@@ -322,9 +322,12 @@ async def api_test_search(payload: SearchRequest):
             "dense_weight": payload.dense_weight,
             "results": results
         }
+    except ValueError as ve:
+        logger.warning(f"Vector search rejected due to dimension or configuration error: {ve}")
+        return JSONResponse(status_code=400, content={"status": "error", "error": str(ve), "message": str(ve)})
     except Exception as e:
         logger.error(f"Error testing search: {e}")
-        return JSONResponse(status_code=500, content={"error": "Failed to execute search test."})
+        return JSONResponse(status_code=500, content={"error": "Failed to execute search test.", "message": str(e)})
 
 @router.get("/admin/api/browse")
 async def api_browse_dir(path: str = "/"):

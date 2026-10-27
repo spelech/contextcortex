@@ -426,6 +426,7 @@ async def api_get_embedding_settings():
 @router.post("/admin/api/settings/embedding")
 async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
     try:
+        do_rebuild = bool(payload.rebuild_index or payload.rebuild)
         updated_cfg = emb_service.update_embedding_config(
             provider=payload.provider,
             dense_model=payload.dense_model,
@@ -436,12 +437,19 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
             litellm_api_key=payload.litellm_api_key,
             vision_ocr_model=payload.vision_ocr_model,
             chat_model=payload.chat_model,
+            rebuild_index=do_rebuild,
         )
         return {
             "status": "success",
             "message": "Embedding engine settings updated successfully.",
             "config": updated_cfg
         }
+    except ValueError as ve:
+        logger.warning(f"Rejected embedding settings update: {ve}")
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": str(ve), "message": str(ve)}
+        )
     except Exception as e:
         logger.error(f"Error updating embedding settings: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to update embedding settings.", "message": "Failed to update embedding settings."})

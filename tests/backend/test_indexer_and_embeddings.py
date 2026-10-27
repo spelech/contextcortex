@@ -19,6 +19,16 @@ from app.services.embeddings import (
 )
 from app.services.database import init_db, get_db_connection
 
+@pytest.fixture(autouse=True)
+def reset_local_embeddings():
+    emb_module.EMBEDDING_PROVIDER = "local"
+    emb_module.DENSE_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+    init_embeddings(provider="local", dense_model="BAAI/bge-small-en-v1.5")
+    yield
+    emb_module.EMBEDDING_PROVIDER = "local"
+    emb_module.DENSE_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+    init_embeddings(provider="local", dense_model="BAAI/bge-small-en-v1.5")
+
 @pytest.fixture
 def temp_indexer_db(tmp_path):
     db_file = str(tmp_path / "test_indexer.db")

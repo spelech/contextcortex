@@ -61,6 +61,27 @@ class PgVectorStore(VectorStore):
                         f"Could not automatically create 'vector' extension (may require superuser or already exist): {ext_err}"
                     )
 
+                # Check existing table vector dimension
+                try:
+                    check_dim_sql = f"""
+                    SELECT atttypmod FROM pg_attribute
+                    WHERE attrelid = '{self.table_name}'::regclass AND attname = 'embedding';
+                    """
+                    row = conn.execute(text(check_dim_sql)).fetchone()
+                    if row and row[0] is not None and row[0] > 0 and row[0] != self.dimension:
+                        logger.warning(
+                            f"PgVectorStore table '{self.table_name}' dimension mismatch: expected {self.dimension}d, found {row[0]}d. Recreating..."
+                        )
+                        conn.execute(text(f"DROP TABLE IF EXISTS {self.table_name} CASCADE;"))
+                        conn.commit()
+                        try:
+                            from app.services.database import clear_indexing_metadata
+                            clear_indexing_metadata()
+                        except Exception as cm_err:
+                            logger.warning(f"Failed to clear indexing metadata during PgVector table recreation: {cm_err}")
+                except Exception:
+                    pass
+
                 # 2. Create vector documents table
                 create_table_sql = f"""
                 CREATE TABLE IF NOT EXISTS {self.table_name} (
@@ -283,6 +304,11 @@ class PgVectorStore(VectorStore):
 
         try:
             query_vec = get_dense_embedding(query_text.strip())
+            if len(query_vec) != self.dimension:
+                msg = f"Vector dimension mismatch: query vector ({len(query_vec)}d) does not match PgVectorStore table '{self.table_name}' ({self.dimension}d). An index rebuild is required."
+                logger.error(msg)
+                raise ValueError(msg)
+
             query_vec_str = str(query_vec)
 
             conditions = ["1=1"]
@@ -348,7 +374,14 @@ class PgVectorStore(VectorStore):
                     )
                 )
             return results
+        except ValueError:
+            raise
         except Exception as e:
+            err_str = str(e).lower()
+            if "dimension" in err_str or "different size" in err_str or "mismatch" in err_str:
+                msg = f"Vector dimension mismatch during PgVector search in table '{self.table_name}': {e}. An index rebuild is required."
+                logger.error(msg)
+                raise ValueError(msg) from e
             logger.error(f"Error searching PgVectorStore table '{self.table_name}': {e}", exc_info=True)
             return []
 

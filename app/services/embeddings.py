@@ -121,6 +121,47 @@ def get_embedding_config() -> Dict[str, Any]:
         "system_memory_gb": sys_res["memory_gb"],
     }
 
+def get_dense_dim_for_config(
+    provider: Optional[str] = None,
+    dense_model: Optional[str] = None,
+    litellm_url: Optional[str] = None,
+    litellm_api_key: Optional[str] = None,
+    threads: Optional[int] = None,
+) -> int:
+    """Probes dense embedding dimension for candidate configuration parameters without mutating global state."""
+    target_provider = (provider or EMBEDDING_PROVIDER or "local").lower().strip()
+    target_dense = (dense_model or DENSE_MODEL_NAME or "BAAI/bge-small-en-v1.5").strip()
+    target_url = (litellm_url or LITELLM_URL or "http://litellm:4000/v1").strip()
+    target_key = (litellm_api_key or LITELLM_API_KEY or "dummy").strip()
+    target_threads = int(threads if threads is not None else EMBEDDING_NUM_THREADS)
+
+    if target_provider == "local":
+        try:
+            from fastembed import TextEmbedding
+            temp_model = TextEmbedding(model_name=target_dense, threads=target_threads)
+            res = list(temp_model.embed(["dimension test"], batch_size=1))
+            return len(res[0])
+        except Exception as e:
+            logger.warning(f"Failed to probe local FastEmbed model '{target_dense}': {e}. Falling back to API probe.")
+            target_provider = "api"
+
+    if target_provider == "api":
+        from openai import OpenAI
+        from app.services.llm_client import get_llm_extra_headers
+        temp_client = OpenAI(
+            base_url=target_url,
+            api_key=target_key,
+            default_headers=get_llm_extra_headers(),
+        )
+        response = temp_client.embeddings.create(
+            input=["dimension test"],
+            model=target_dense
+        )
+        return len(response.data[0].embedding)
+
+    raise ValueError(f"Unsupported provider '{target_provider}' for dimension probe.")
+
+
 def update_embedding_config(
     provider: Optional[str] = None,
     dense_model: Optional[str] = None,
@@ -131,9 +172,63 @@ def update_embedding_config(
     litellm_api_key: Optional[str] = None,
     vision_ocr_model: Optional[str] = None,
     chat_model: Optional[str] = None,
+    rebuild_index: bool = False,
 ) -> Dict[str, Any]:
-    """Updates embedding configuration in SQLite and hot-reloads models in memory."""
-    from app.services.database import set_embedding_db_config
+    """Updates embedding configuration in SQLite and hot-reloads models in memory.
+
+    If model or dimensions change and existing vector points/indexed files exist,
+    requires rebuild_index=True to perform a coordinated reset and reindex.
+    """
+    from app.services.database import set_embedding_db_config, clear_indexing_metadata, get_db_connection
+    from app.services.vector_store import get_vector_store
+
+    target_provider = (provider or EMBEDDING_PROVIDER).lower().strip()
+    target_dense = (dense_model or DENSE_MODEL_NAME).strip()
+
+    # Check if active index contains indexed content
+    has_indexed_content = False
+    try:
+        store = get_vector_store()
+        stats = store.get_stats()
+        points_cnt = stats.get("points_count", 0)
+        with get_db_connection() as conn:
+            files_cnt = conn.execute("SELECT count(*) FROM indexed_files").fetchone()[0]
+        if points_cnt > 0 or files_cnt > 0:
+            has_indexed_content = True
+    except Exception as e:
+        logger.debug(f"Error checking active index count: {e}")
+
+    # Calculate candidate dimension and check for changes
+    new_dim = None
+    try:
+        new_dim = get_dense_dim_for_config(
+            provider=target_provider,
+            dense_model=target_dense,
+            litellm_url=litellm_url,
+            litellm_api_key=litellm_api_key,
+            threads=threads,
+        )
+    except Exception as probe_err:
+        logger.warning(f"Failed to probe candidate embedding dimension: {probe_err}")
+
+    current_dim = None
+    try:
+        current_dim = get_dense_dim()
+    except Exception:
+        pass
+
+    dim_changed = (new_dim is not None and current_dim is not None and new_dim != current_dim)
+    model_changed = (target_dense != DENSE_MODEL_NAME or target_provider != EMBEDDING_PROVIDER)
+
+    if has_indexed_content and (dim_changed or model_changed) and not rebuild_index:
+        msg = (
+            f"Embedding configuration change detected (provider: '{EMBEDDING_PROVIDER}' -> '{target_provider}', "
+            f"model: '{DENSE_MODEL_NAME}' -> '{target_dense}', dim: {current_dim}d -> {new_dim}d). "
+            f"Active index contains existing vectors. Explicit rebuild confirmation is required (set 'rebuild_index': true)."
+        )
+        raise ValueError(msg)
+
+    # Apply configuration update
     set_embedding_db_config(
         provider=provider,
         dense_model=dense_model,
@@ -156,6 +251,22 @@ def update_embedding_config(
         vision_ocr_model=vision_ocr_model,
         chat_model=chat_model,
     )
+
+    if (dim_changed or model_changed or rebuild_index) and has_indexed_content:
+        logger.info("Coordinating safe index rebuild for embedding model change...")
+        clear_indexing_metadata()
+        try:
+            store = get_vector_store(force_reload=True)
+            store.ensure_collection()
+        except Exception as e:
+            logger.error(f"Failed to recreate vector collection during model transition: {e}")
+
+        try:
+            from app.services.indexing import run_full_indexing
+            threading.Thread(target=run_full_indexing, daemon=True).start()
+        except Exception as re_err:
+            logger.error(f"Failed to dispatch background reindexing pass: {re_err}")
+
     return get_embedding_config()
 
 def get_dense_embedding(text: str) -> List[float]:
