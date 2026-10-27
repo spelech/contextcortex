@@ -102,9 +102,18 @@ def get_db_engine(database_url: Optional[str] = None, reset: bool = False, **kwa
         def _set_sqlite_pragmas(dbapi_connection, connection_record):
             if isinstance(dbapi_connection, sqlite3.Connection):
                 cursor = dbapi_connection.cursor()
-                cursor.execute("PRAGMA busy_timeout=15000;")
-                cursor.execute("PRAGMA journal_mode=WAL;")
-                cursor.execute("PRAGMA foreign_keys=ON;")
+                try:
+                    cursor.execute("PRAGMA busy_timeout=15000;")
+                except Exception as e:
+                    logger.debug(f"Failed to set busy_timeout: {e}")
+                try:
+                    cursor.execute("PRAGMA journal_mode=WAL;")
+                except Exception as e:
+                    logger.debug(f"Failed to set journal_mode WAL: {e}")
+                try:
+                    cursor.execute("PRAGMA foreign_keys=ON;")
+                except Exception as e:
+                    logger.debug(f"Failed to set foreign_keys ON: {e}")
                 cursor.close()
 
     else:
