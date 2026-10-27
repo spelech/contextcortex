@@ -139,6 +139,40 @@ def test_api_test_vector_store_remote_missing_url():
     assert "url" in data["message"].lower()
 
 
+def test_api_test_vector_store_unreachable_remote_qdrant(setup_test_environment):
+    """Test POST /admin/api/vector-store/test fails for unreachable remote Qdrant."""
+    payload = {
+        "provider": "qdrant",
+        "mode": "remote",
+        "url": "http://127.0.0.1:1",
+        "collection": "feasibility_unreachable"
+    }
+    res = client.post("/admin/api/vector-store/test", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is False
+    assert data["provider"] == "qdrant"
+    assert data["mode"] == "remote"
+    assert "connection test failed" in data["message"].lower() or "failed to connect" in data["message"].lower()
+
+
+def test_api_test_vector_store_unreachable_remote_chroma(setup_test_environment):
+    """Test POST /admin/api/vector-store/test fails for unreachable remote Chroma."""
+    payload = {
+        "provider": "chroma",
+        "mode": "remote",
+        "url": "http://127.0.0.1:1",
+        "collection": "feasibility_unreachable"
+    }
+    res = client.post("/admin/api/vector-store/test", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is False
+    assert data["provider"] == "chroma"
+    assert data["mode"] == "remote"
+    assert "connection test failed" in data["message"].lower() or "failed to connect" in data["message"].lower()
+
+
 def test_api_test_vector_store_exception():
     """Test dry-run validation when unexpected exception occurs."""
     with patch("app.services.vector_store.test_vector_store_connection", side_effect=RuntimeError("Test crash")):

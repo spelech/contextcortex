@@ -75,6 +75,7 @@ class ChromaVectorStore(VectorStore):
         url: Optional[str] = None,
         client: Optional[Any] = None,
         auto_init: bool = True,
+        allow_fallback: Optional[bool] = None,
     ):
         self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "knowledge_rag_v1")
         self.collection = None
@@ -94,17 +95,25 @@ class ChromaVectorStore(VectorStore):
         target_ssl = ssl if ssl is not None else os.getenv("CHROMA_SSL", "false").lower() in ("true", "1", "yes")
         target_storage = storage_path or get_default_chroma_storage_path()
 
-
         if prefer_remote is None:
             prefer_remote = os.getenv("CHROMA_PREFER_REMOTE", "false").lower() in ("true", "1", "yes")
             if host is not None:
                 prefer_remote = True
 
+        if allow_fallback is None:
+            allow_fallback = os.getenv("CHROMA_ALLOW_FALLBACK", "false").lower() in ("true", "1", "yes")
+
+        self.fallback_active = False
+        self.fallback_reason = None
+
         if client is not None:
             self.client = client
+            self.configured_mode = "custom"
+            self.effective_mode = "custom"
             self.mode = "custom"
             self.location = "injected_client"
         elif prefer_remote:
+            self.configured_mode = "remote"
             try:
                 remote_client = chromadb.HttpClient(
                     host=target_host,
@@ -115,32 +124,45 @@ class ChromaVectorStore(VectorStore):
                 remote_client.heartbeat()
                 self.client = remote_client
                 self.mode = "remote"
+                self.effective_mode = "remote"
                 self.location = f"{'https' if target_ssl else 'http'}://{target_host}:{target_port}"
                 logger.info(f"Connected to remote Chroma server at {self.location}")
             except Exception as e:
+                if not allow_fallback:
+                    logger.error(f"Failed to connect to remote Chroma at {target_host}:{target_port}: {e}")
+                    raise ConnectionError(f"Failed to connect to remote Chroma at {target_host}:{target_port}: {e}") from e
+
+                self.fallback_active = True
+                self.fallback_reason = str(e)
                 logger.warning(
                     f"Failed to connect to remote Chroma at {target_host}:{target_port}: {e}. "
-                    f"Falling back to persistent disk storage at {target_storage}"
+                    f"Falling back to persistent disk storage at {target_storage} (opt-in fallback active)"
                 )
                 if target_storage == ":memory:":
                     self.client = chromadb.EphemeralClient()
                     self.mode = "memory"
+                    self.effective_mode = "memory"
                     self.location = target_storage
                 else:
                     clean_storage = validate_chroma_storage_path(target_storage)
                     os.makedirs(clean_storage, exist_ok=True)
                     self.client = chromadb.PersistentClient(path=clean_storage)
                     self.mode = "persistent"
+                    self.effective_mode = "persistent"
                     self.location = clean_storage
         else:
             if target_storage == ":memory:":
                 self.client = chromadb.EphemeralClient()
+                self.configured_mode = "memory"
+                self.effective_mode = "memory"
                 self.mode = "memory"
                 self.location = target_storage
             else:
                 clean_storage = validate_chroma_storage_path(target_storage)
                 os.makedirs(clean_storage, exist_ok=True)
                 self.client = chromadb.PersistentClient(path=clean_storage)
+                self.configured_mode = "persistent"
+                self.effective_mode = "persistent"
                 self.mode = "persistent"
                 self.location = clean_storage
             logger.info(f"Initialized local Chroma client at {self.location}")
@@ -331,31 +353,39 @@ class ChromaVectorStore(VectorStore):
     def get_stats(self) -> Dict[str, Any]:
         """Returns collection info including point count, backend, and mode."""
         try:
+            base_stats = {
+                "backend": "chroma",
+                "mode": self.mode,
+                "configured_mode": getattr(self, "configured_mode", self.mode),
+                "effective_mode": getattr(self, "effective_mode", self.mode),
+                "fallback_active": getattr(self, "fallback_active", False),
+                "fallback_reason": getattr(self, "fallback_reason", None),
+                "collection_name": self.collection_name,
+                "location": self.location,
+            }
             if self.collection is None:
-                return {
-                    "backend": "chroma",
-                    "mode": self.mode,
-                    "collection_name": self.collection_name,
+                base_stats.update({
                     "exists": False,
                     "points_count": 0,
                     "status": "not_initialized",
-                    "location": self.location,
-                }
+                })
+                return base_stats
             count = self.collection.count()
-            return {
-                "backend": "chroma",
-                "mode": self.mode,
-                "collection_name": self.collection_name,
+            base_stats.update({
                 "exists": True,
                 "points_count": count,
                 "status": "ok",
-                "location": self.location,
-            }
+            })
+            return base_stats
         except Exception as e:
             logger.error(f"Error getting stats for Chroma collection '{self.collection_name}': {e}")
             return {
                 "backend": "chroma",
                 "mode": self.mode,
+                "configured_mode": getattr(self, "configured_mode", self.mode),
+                "effective_mode": getattr(self, "effective_mode", self.mode),
+                "fallback_active": getattr(self, "fallback_active", False),
+                "fallback_reason": getattr(self, "fallback_reason", None),
                 "collection_name": self.collection_name,
                 "exists": False,
                 "error": str(e),
@@ -367,7 +397,8 @@ class ChromaVectorStore(VectorStore):
         try:
             hb = self.client.heartbeat()
             count = self.collection.count() if self.collection is not None else 0
-            return True, f"Chroma ({self.mode} @ {self.location}) is healthy; heartbeat: {hb}, collection '{self.collection_name}' count: {count}"
+            fallback_note = f" [DEGRADED: Fallback to {self.effective_mode} from {self.configured_mode} active; reason: {self.fallback_reason}]" if getattr(self, "fallback_active", False) else ""
+            return True, f"Chroma ({self.effective_mode} @ {self.location}) is healthy; heartbeat: {hb}, collection '{self.collection_name}' count: {count}{fallback_note}"
         except Exception as e:
             logger.warning(f"Chroma ({self.mode}) health check failed: {e}")
             return False, f"Chroma ({self.mode}) health check failed."

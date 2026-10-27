@@ -58,6 +58,18 @@ class TestChromaVectorStoreInit:
             assert "remote-chroma" in store.location
             mock_client.heartbeat.assert_called_once()
 
+    def test_init_remote_unreachable_raises_error(self, tmp_path):
+        with patch("app.services.vector_store.chroma_store.chromadb.HttpClient", side_effect=ValueError("Could not connect")):
+            with pytest.raises(ConnectionError, match="Failed to connect to remote Chroma"):
+                ChromaVectorStore(
+                    host="broken-chroma",
+                    port=8000,
+                    storage_path=str(tmp_path / "fallback_chroma"),
+                    collection_name="test_fb_coll",
+                    prefer_remote=True,
+                    allow_fallback=False
+                )
+
     def test_init_remote_fallback_to_persistent_on_error(self, tmp_path):
         fallback_path = str(tmp_path / "fallback_chroma")
         coll_name = f"test_fb_{uuid.uuid4().hex[:8]}"
@@ -68,12 +80,24 @@ class TestChromaVectorStoreInit:
                 port=8000,
                 storage_path=fallback_path,
                 collection_name=coll_name,
-                prefer_remote=True
+                prefer_remote=True,
+                allow_fallback=True
             )
-            assert store.mode == "persistent"
+            assert store.configured_mode == "remote"
+            assert store.effective_mode == "persistent"
+            assert store.fallback_active is True
             assert store.location == fallback_path
             assert store.client is not None
             assert store.collection is not None
+
+            stats = store.get_stats()
+            assert stats["configured_mode"] == "remote"
+            assert stats["effective_mode"] == "persistent"
+            assert stats["fallback_active"] is True
+
+            healthy, msg = store.health_check()
+            assert healthy is True
+            assert "[DEGRADED:" in msg
 
     def test_custom_injected_client(self):
         custom_client = chromadb.EphemeralClient()

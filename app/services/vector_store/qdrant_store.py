@@ -44,6 +44,7 @@ class QdrantVectorStore(VectorStore):
         timeout: float = 5.0,
         client: Optional[QdrantClient] = None,
         auto_init: bool = True,
+        allow_fallback: Optional[bool] = None,
     ):
         self.collection_name = collection_name or os.getenv("COLLECTION_NAME", "knowledge_rag_v1")
         self.timeout = timeout
@@ -54,11 +55,20 @@ class QdrantVectorStore(VectorStore):
         if prefer_remote is None:
             prefer_remote = os.getenv("QDRANT_PREFER_REMOTE", "true").lower() in ("true", "1", "yes")
 
+        if allow_fallback is None:
+            allow_fallback = os.getenv("QDRANT_ALLOW_FALLBACK", "false").lower() in ("true", "1", "yes")
+
+        self.fallback_active = False
+        self.fallback_reason = None
+
         if client is not None:
             self.client = client
+            self.configured_mode = "custom"
+            self.effective_mode = "custom"
             self.mode = "custom"
             self.location = "injected_client"
         elif prefer_remote and (storage_path is None or url is not None):
+            self.configured_mode = "remote"
             target_url = url or url_env
             target_storage = storage_path or storage_path_env
             try:
@@ -66,33 +76,46 @@ class QdrantVectorStore(VectorStore):
                 remote_client.get_collections()
                 self.client = remote_client
                 self.mode = "remote"
+                self.effective_mode = "remote"
                 self.location = target_url
                 logger.info(f"Connected to remote Qdrant server at {target_url}")
             except Exception as e:
+                if not allow_fallback:
+                    logger.error(f"Failed to connect to remote Qdrant at {target_url}: {e}")
+                    raise ConnectionError(f"Failed to connect to remote Qdrant at {target_url}: {e}") from e
+
+                self.fallback_active = True
+                self.fallback_reason = str(e)
                 logger.warning(
                     f"Failed to connect to remote Qdrant at {target_url}: {e}. "
-                    f"Falling back to embedded disk storage at {target_storage}"
+                    f"Falling back to embedded disk storage at {target_storage} (opt-in fallback active)"
                 )
                 if target_storage == ":memory:":
                     self.client = QdrantClient(location=":memory:")
                     self.mode = "memory"
+                    self.effective_mode = "memory"
                     self.location = target_storage
                 else:
                     clean_storage = validate_qdrant_storage_path(target_storage)
                     os.makedirs(clean_storage, exist_ok=True)
                     self.client = QdrantClient(path=clean_storage)
                     self.mode = "embedded"
+                    self.effective_mode = "embedded"
                     self.location = clean_storage
         else:
             target_storage = storage_path or storage_path_env
             if target_storage == ":memory:":
                 self.client = QdrantClient(location=":memory:")
+                self.configured_mode = "memory"
+                self.effective_mode = "memory"
                 self.mode = "memory"
                 self.location = target_storage
             else:
                 clean_storage = validate_qdrant_storage_path(target_storage)
                 os.makedirs(clean_storage, exist_ok=True)
                 self.client = QdrantClient(path=clean_storage)
+                self.configured_mode = "embedded"
+                self.effective_mode = "embedded"
                 self.mode = "embedded"
                 self.location = clean_storage
             logger.info(f"Initialized embedded Qdrant client at {self.location}")
@@ -489,34 +512,42 @@ class QdrantVectorStore(VectorStore):
     def get_stats(self) -> Dict[str, Any]:
         """Returns collection info including point count, backend, and mode."""
         try:
+            base_stats = {
+                "backend": "qdrant",
+                "mode": self.mode,
+                "configured_mode": getattr(self, "configured_mode", self.mode),
+                "effective_mode": getattr(self, "effective_mode", self.mode),
+                "fallback_active": getattr(self, "fallback_active", False),
+                "fallback_reason": getattr(self, "fallback_reason", None),
+                "collection_name": self.collection_name,
+                "location": self.location,
+            }
             if not self.client.collection_exists(self.collection_name):
-                return {
-                    "backend": "qdrant",
-                    "mode": self.mode,
-                    "collection_name": self.collection_name,
+                base_stats.update({
                     "exists": False,
                     "points_count": 0,
                     "status": "not_found",
-                    "location": self.location,
-                }
+                })
+                return base_stats
             info = self.client.get_collection(self.collection_name)
             points_count = info.points_count or 0
             vectors_count = getattr(info, "vectors_count", points_count)
-            return {
-                "backend": "qdrant",
-                "mode": self.mode,
-                "collection_name": self.collection_name,
+            base_stats.update({
                 "exists": True,
                 "points_count": points_count,
                 "vectors_count": vectors_count,
                 "status": str(info.status),
-                "location": self.location,
-            }
+            })
+            return base_stats
         except Exception as e:
             logger.error(f"Error getting stats for Qdrant collection '{self.collection_name}': {e}")
             return {
                 "backend": "qdrant",
                 "mode": self.mode,
+                "configured_mode": getattr(self, "configured_mode", self.mode),
+                "effective_mode": getattr(self, "effective_mode", self.mode),
+                "fallback_active": getattr(self, "fallback_active", False),
+                "fallback_reason": getattr(self, "fallback_reason", None),
                 "collection_name": self.collection_name,
                 "exists": False,
                 "error": str(e),
@@ -528,7 +559,8 @@ class QdrantVectorStore(VectorStore):
         try:
             self.client.get_collections()
             exists = self.client.collection_exists(self.collection_name)
-            return True, f"Qdrant ({self.mode} @ {self.location}) is healthy; collection '{self.collection_name}' exists: {exists}"
+            fallback_note = f" [DEGRADED: Fallback to {self.effective_mode} from {self.configured_mode} active; reason: {self.fallback_reason}]" if getattr(self, "fallback_active", False) else ""
+            return True, f"Qdrant ({self.effective_mode} @ {self.location}) is healthy; collection '{self.collection_name}' exists: {exists}{fallback_note}"
         except Exception as e:
             logger.warning(f"Qdrant ({self.mode}) health check failed: {e}")
             return False, f"Qdrant ({self.mode}) health check failed."
