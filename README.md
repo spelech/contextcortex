@@ -168,7 +168,7 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
 | `CHAT_MODEL` | Chat model for file summaries | `gemini-2.5-flash` |
 | `VISION_OCR_MODEL` | Vision model for PDF OCR | `gemini-2.5-flash` |
-| `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) trusted at container start (see `certs/README.md`) | `/certs` |
+| `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) trusted at container start (see [certs/README.md](certs/README.md)) | `/certs` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for higher rate limits & private repos | `None` |
 | `GITLAB_TOKEN` | Optional GitLab Personal Access Token for private repos | `None` |
 | `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |

@@ -83,6 +83,8 @@ class TestDockerComposeConfig:
         assert "AUTH_JWKS_URI" in env
         assert "AUTH_RESOURCE_INDICATOR" in env
         assert "ADMIN_INITIAL_KEY" in env
+        assert "env_file" in cc
+        assert any("./certs:/certs:ro" in v for v in cc.get("volumes", []))
 
     def test_volumes_declared(self, compose_data):
         volumes = compose_data.get("volumes", {})
@@ -109,6 +111,8 @@ class TestEnvExampleDocumentation:
     def test_contains_vector_store_vars(self, env_content):
         assert "VECTOR_STORE_PROVIDER=" in env_content
         assert "EMBEDDING_PROVIDER=" in env_content
+        assert "LLM_EXTRA_HEADERS=" in env_content
+        assert "EXTRA_CA_CERTS_DIR=" in env_content
 
 
 class TestAdminKeyBootstrap:

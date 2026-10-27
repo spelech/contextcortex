@@ -178,7 +178,11 @@ async def test_discover_models_url_normalization():
 
 @pytest.mark.asyncio
 async def test_discover_models_sends_extra_headers(monkeypatch):
-    monkeypatch.setenv("LLM_EXTRA_HEADERS", '{"X-User-Agent": "contextcortex", "X-User-Name": "jdoe"}')
+    """Verifies that model discovery merges LLM_EXTRA_HEADERS while preserving the Bearer Authorization token."""
+    monkeypatch.setenv(
+        "LLM_EXTRA_HEADERS",
+        '{"X-User-Agent": "contextcortex", "X-User-Name": "jdoe", "Authorization": "Bearer ignored-override"}',
+    )
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 200
     mock_response.json.return_value = {"data": []}

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1046 Automated Tests** (693 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1047 Automated Tests** (694 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -374,7 +374,7 @@ classDiagram
 | **FR-9** | Codebase & Dependency Topology Graph | `app/services/topology/*`, `app/api/routers/graph.py` | `test_topology_graph.py`, `test_trace_path.py` | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
 | **FR-10** | Architecture ADRs & System Synthesis | `app/services/adr.py`, `app/services/architecture.py`, `app/services/database/adrs.py` | `test_architecture_adr.py` | `SearchInspector.test.tsx` |
 | **FR-11** | Auto-Sync Poller Daemon & Webhooks | `app/services/poller.py`, `app/api/webhooks.py`, `app/services/database/sync_config.py` | `test_poller.py`, `test_webhooks.py`, `test_auto_sync_api.py`, `test_auto_sync_db.py` | `GitRepoManager.test.tsx`, `Settings.test.tsx`, E2E Specs 22, 23, 24 |
-| **FR-12** | Administrative REST APIs & Subrouters | `app/api/routes.py`, `app/api/routers/*` | `test_api_routes.py`, `test_api_vector_store.py`, `test_diagnostic_logger.py`, `test_storage_api_routes.py` | `Overview.test.tsx`, `DiagnosticsViewer.test.tsx`, E2E Specs 1-26 |
+| **FR-12** | Administrative REST APIs & Subrouters | `app/api/routes.py`, `app/api/routers/*`, `app/services/litellm_service.py`, `app/services/llm_client.py` | `test_api_routes.py`, `test_api_vector_store.py`, `test_diagnostic_logger.py`, `test_storage_api_routes.py`, `test_litellm_service.py`, `test_llm_client.py` | `Overview.test.tsx`, `DiagnosticsViewer.test.tsx`, E2E Specs 1-26 |
 | **FR-13** | React 19 Single Page Admin Dashboard | `frontend/src/*`, `frontend/src/components/*` | N/A | `App.test.tsx`, `GitRepoManager.test.tsx`, `LocalPathManager.test.tsx`, `LocalStorageManager.test.tsx`, `IngestionCatalogViewer.test.tsx`, `Settings.test.tsx`, `Overview.test.tsx`, E2E Specs 1-26 |
 | **FR-14** | Interactive Visual Topology Explorer UI | `frontend/src/TopologyExplorer.tsx`, `frontend/src/components/topology/*` | N/A | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
 | **FR-15** | Diagnostics & Live In-Memory Log Viewer | `app/services/logger.py`, `frontend/src/DiagnosticsViewer.tsx` | `test_diagnostic_logger.py` | `DiagnosticsViewer.test.tsx`, E2E Specs 13, 21 |
@@ -1019,19 +1019,20 @@ and leaves the prior indexed state intact without data loss._
 - `test_discover_models_http_401_unauthorized`
 - `test_discover_models_http_500_error`
 - `test_discover_models_url_normalization`
-- `test_discover_models_sends_extra_headers`
+- `test_discover_models_sends_extra_headers` - _Verifies that model discovery merges LLM_EXTRA_HEADERS while preserving the Bearer Authorization token._
 - `test_discover_models_default_resolution`
 - `test_discover_models_ssrf_rejection`
 
-#### `tests/test_llm_client.py` (8 tests)
-- `test_extra_headers_unset`
-- `test_extra_headers_empty`
-- `test_extra_headers_valid_json`
-- `test_extra_headers_invalid_json_logs_warning`
-- `test_extra_headers_non_object_logs_warning`
-- `test_extra_headers_skip_null_and_blank_names`
-- `test_vision_ocr_client_uses_saved_settings_and_extra_headers`
-- `test_summarizer_client_sends_extra_headers`
+#### `tests/test_llm_client.py` (9 tests)
+- `test_extra_headers_unset` - _Verifies that an unset LLM_EXTRA_HEADERS variable returns an empty dictionary._
+- `test_extra_headers_empty` - _Verifies that a whitespace-only LLM_EXTRA_HEADERS variable returns an empty dictionary._
+- `test_extra_headers_valid_json` - _Verifies that valid JSON header objects are normalized to string key-value pairs._
+- `test_extra_headers_invalid_json_logs_warning` - _Verifies that malformed JSON in LLM_EXTRA_HEADERS logs a warning and returns an empty dict._
+- `test_extra_headers_non_object_logs_warning` - _Verifies that non-object JSON values in LLM_EXTRA_HEADERS log a warning and return an empty dict._
+- `test_extra_headers_skip_null_and_blank_names` - _Verifies that null header values, blank keys, and CR/LF header injection values are omitted._
+- `test_vision_ocr_client_uses_saved_settings_and_extra_headers` - _Verifies that PDF vision OCR reads persisted SQLite gateway settings and attaches extra headers._
+- `test_summarizer_client_sends_extra_headers` - _Verifies that SummarizerService builds its real OpenAI client from SQLite settings and refreshes on rotation._
+- `test_embeddings_api_client_sends_extra_headers` - _Verifies that API embedding initialization configures OpenAI with persisted settings and extra headers._
 
 #### `tests/test_local_storage_indexing.py` (4 tests)
 - `test_incremental_indexing_on_save`
