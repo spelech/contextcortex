@@ -214,9 +214,8 @@ class LocalStorageService:
             raise ValueError("Path traversal or invalid path detected")
 
         existed_before = os.path.exists(target_path) and os.path.isfile(target_path)
-        backup_path = self.resolve_safe_path(rel_path + ".tmp_bak") if existed_before else None
-        if backup_path and not backup_path.startswith(self.storage_root):
-            raise ValueError("Path traversal or invalid path detected")
+        backup_rel = ".tmp_bak_" + hashlib.sha256(rel_path.encode("utf-8")).hexdigest()
+        backup_path = self.resolve_safe_path(backup_rel) if existed_before else None
 
         if existed_before and backup_path:
             shutil.copy2(target_path, backup_path)
@@ -225,23 +224,16 @@ class LocalStorageService:
             save_info = self.save_file_content(rel_path, content, repo=repo, category=category)
             idx_info = self.index_file(rel_path, repo=repo, category=category)
             save_info.update(idx_info)
-            if backup_path and os.path.exists(backup_path):
-                os.remove(backup_path)
+            if backup_path:
+                self.delete_file_disk(backup_rel)
             return save_info
         except Exception as exc:
             if existed_before and backup_path and os.path.exists(backup_path):
                 shutil.move(backup_path, target_path)
             else:
-                if os.path.exists(target_path):
-                    try:
-                        os.remove(target_path)
-                    except Exception:
-                        pass
-                if backup_path and os.path.exists(backup_path):
-                    try:
-                        os.remove(backup_path)
-                    except Exception:
-                        pass
+                self.delete_file_disk(rel_path)
+                if backup_path:
+                    self.delete_file_disk(backup_rel)
             raise exc
 
     def delete_file(self, rel_path: str, repo: str = "local_storage") -> Dict[str, Any]:
