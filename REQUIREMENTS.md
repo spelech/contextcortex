@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1058 Automated Tests** (705 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -934,7 +934,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_runtime_ca_update_controls_application_start` - _Verifies that runtime CA bundle updates copy certificates and fail closed when update-ca-certificates errors._
 - `test_runtime_ca_empty_or_missing_dir_skips_update_and_starts` - _Verifies that an empty or missing EXTRA_CA_CERTS_DIR skips CA trust updates and launches the command cleanly._
 
-#### `tests/test_docker_orchestration.py` (36 tests)
+#### `tests/test_docker_orchestration.py` (42 tests)
 - `TestDockerComposeConfig::test_compose_version_and_services`
 - `TestDockerComposeConfig::test_postgres_service_config`
 - `TestDockerComposeConfig::test_contextcortex_service_config`
@@ -953,6 +953,9 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `TestStartupDatabaseInitialization::test_init_application_database_without_env`
 - `TestStartupDatabaseInitialization::test_init_application_database_with_admin_key_env`
 - `TestStartupDatabaseInitialization::test_wait_for_db_retry_success` - _Ensures wait_for_db returns True upon successful database connectivity._
+- `TestPythonConstraintsBaseline::test_constraints_file_exists_and_contains_metadata`
+- `TestPythonConstraintsBaseline::test_constraints_covers_all_requirements_with_exact_pins`
+- `TestPythonConstraintsBaseline::test_pip_check_clean_dependency_tree`
 - `test_compose_version_and_services`
 - `test_postgres_service_config`
 - `test_contextcortex_service_config`
@@ -971,6 +974,9 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_init_application_database_without_env`
 - `test_init_application_database_with_admin_key_env`
 - `test_wait_for_db_retry_success` - _Ensures wait_for_db returns True upon successful database connectivity._
+- `test_constraints_file_exists_and_contains_metadata`
+- `test_constraints_covers_all_requirements_with_exact_pins`
+- `test_pip_check_clean_dependency_tree`
 
 #### `tests/test_embedding_cache.py` (4 tests)
 - `test_embedding_cache_set_and_get`

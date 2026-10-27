@@ -235,3 +235,60 @@ class TestStartupDatabaseInitialization:
     def test_wait_for_db_retry_success(self, db_engine):
         """Ensures wait_for_db returns True upon successful database connectivity."""
         assert wait_for_db(engine=db_engine, max_retries=3, initial_delay=0.01) is True
+
+
+class TestPythonConstraintsBaseline:
+    """Validates the approved Python constraints baseline for enterprise mirror builds."""
+
+    def test_constraints_file_exists_and_contains_metadata(self):
+        constraints_path = REPO_ROOT / "python-constraints.txt"
+        assert constraints_path.exists(), "python-constraints.txt must exist in repository root"
+
+        content = constraints_path.read_text(encoding="utf-8")
+        assert "Approved Python Mirror Constraints Baseline" in content
+        assert "Quarantine Policy:" in content
+        assert "Approval Timestamp:" in content
+        assert "qdrant-client==" in content
+        assert "fastembed==" in content
+        assert "tree-sitter==" in content
+        assert "tree-sitter-language-pack==" in content
+
+    def test_constraints_covers_all_requirements_with_exact_pins(self):
+        reqs_path = REPO_ROOT / "requirements.txt"
+        constraints_path = REPO_ROOT / "python-constraints.txt"
+
+        raw_reqs = reqs_path.read_text(encoding="utf-8").strip().splitlines()
+        raw_constraints = constraints_path.read_text(encoding="utf-8").strip().splitlines()
+
+        # Parse constraints exact pins
+        pinned_packages = {}
+        for line in raw_constraints:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "==" in line:
+                pkg, ver = line.split("==", 1)
+                pinned_packages[pkg.strip().lower()] = ver.strip()
+
+        # Check that key packages from requirements.txt are pinned
+        key_req_names = [
+            "mcp", "qdrant-client", "openai", "fastapi", "uvicorn",
+            "python-frontmatter", "fastembed", "tree-sitter",
+            "tree-sitter-language-pack", "pytest", "pytest-cov",
+            "pytest-asyncio", "chromadb", "sqlalchemy", "psycopg",
+            "pgvector", "pyjwt", "cryptography", "httpx", "pymupdf"
+        ]
+
+        for req_name in key_req_names:
+            assert req_name in pinned_packages, f"Package {req_name} from requirements.txt must be pinned in python-constraints.txt"
+
+    def test_pip_check_clean_dependency_tree(self):
+        import sys
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "check"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        assert result.returncode == 0, f"pip check failed with output: {result.stdout}\n{result.stderr}"
