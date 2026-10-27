@@ -238,6 +238,23 @@ api_keys = Table(
     Index("idx_api_keys_prefix", "key_prefix"),
 )
 
+# 15. PDF Extracted Cache
+pdf_extracted_cache = Table(
+    "pdf_extracted_cache",
+    metadata,
+    Column("filepath", Text, primary_key=True),
+    Column("repo", Text, default="local", server_default="local"),
+    Column("extracted_text", Text, nullable=False),
+    Column("pages_json", Text, nullable=True),
+    Column("total_pages", Integer, default=0),
+    Column("ocr_pages_count", Integer, default=0),
+    Column("total_characters", Integer, default=0),
+    Column("mtime", Float, nullable=True),
+    Column("hash", Text, nullable=True),
+    Column("created_at", DateTime, server_default=func.current_timestamp()),
+    Index("idx_pdf_cache_repo", "repo"),
+)
+
 # Dictionary mapping table names to SQLAlchemy Table objects
 TABLES: Dict[str, Table] = {t.name: t for t in metadata.tables.values()}
 
@@ -258,4 +275,5 @@ __all__ = [
     "architecture_decision_records",
     "custom_prompts",
     "api_keys",
+    "pdf_extracted_cache",
 ]
