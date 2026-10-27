@@ -154,8 +154,8 @@ npm run docs:preview
 | `LITELLM_URL` | OpenAI-compatible gateway base URL passed to the OpenAI SDK | `http://litellm:4000/v1` |
 | `LITELLM_API_KEY` | API key for the OpenAI-compatible gateway | `dummy` |
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
-| `CHAT_MODEL` | Chat model used for executive file summaries | `gemini-2.5-flash` |
-| `VISION_OCR_MODEL` | Vision model used for scanned PDF OCR fallback | `gemini-2.5-flash` |
+| `CHAT_MODEL` | Chat model used for executive file summaries (configured via UI model discovery or env) | `None` |
+| `VISION_OCR_MODEL` | Vision model used for scanned PDF OCR fallback (configured via UI model discovery or env) | `None` |
 | `EXTRA_CA_CERTS_DIR` | Directory of private CA certificates (`*.crt`) trusted at container start | `/certs` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for rate limits & private repos | `None` |
 | `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |

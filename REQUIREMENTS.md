@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1051 Automated Tests** (698 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1093,13 +1093,14 @@ and leaves the prior indexed state intact without data loss._
 - `test_set_embedding_db_config_persists_to_system_metadata`
 - `test_update_embedding_config_service`
 
-#### `tests/test_pdf_extractor.py` (8 tests)
+#### `tests/test_pdf_extractor.py` (9 tests)
 - `test_extract_digital_pdf_text`
 - `test_extract_scanned_pdf_triggers_vision_ocr`
 - `test_extract_corrupted_pdf_raises_value_error`
 - `test_extract_nonexistent_file_raises_file_not_found`
 - `test_extract_real_pdf_asd_ste100`
 - `test_call_vision_ocr_unit`
+- `test_call_vision_ocr_skips_when_unconfigured`
 - `test_extract_pdf_ocr_failure_graceful_recovery`
 - `test_extract_oversized_pdf_raises_value_error`
 

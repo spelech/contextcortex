@@ -27,11 +27,11 @@ def test_embedding_db_config_defaults(tmp_path, monkeypatch):
     cfg = get_embedding_db_config()
     assert "vision_ocr_model" in cfg
     assert "chat_model" in cfg
-    assert cfg["vision_ocr_model"] == "gemini-2.5-flash"
-    assert cfg["chat_model"] == "gemini-2.5-flash"
+    assert cfg["vision_ocr_model"] == ""
+    assert cfg["chat_model"] == ""
 
-    assert get_vision_ocr_model() == "gemini-2.5-flash"
-    assert get_chat_model() == "gemini-2.5-flash"
+    assert get_vision_ocr_model() == ""
+    assert get_chat_model() == ""
 
 
 def test_env_variable_fallbacks(tmp_path, monkeypatch):

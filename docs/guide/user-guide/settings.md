@@ -43,7 +43,7 @@ Configure file access ceilings and LLM summarization thresholds:
 | **Auto-Summarize Threshold (KB)** | `500 KB` | File size threshold beyond which ingestion triggers automated LLM summarization. |
 | **Maximum File Size (MB)** | `10 MB` | Absolute hard ceiling above which files are skipped entirely. |
 | **Max Lines Per Read** | `2,000 lines` | Line range ceiling returned by the `read_file` tool to protect agent context windows. |
-| **Summary Chat Model** | `gemini-2.5-flash` | Dedicated LLM model identifier used for generating executive file summaries. |
+| **Summary Chat Model** | Configured via Model Discovery | Dedicated LLM model identifier selected from discovered gateway models for generating executive file summaries. |
 
 ---
 

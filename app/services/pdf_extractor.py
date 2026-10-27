@@ -38,6 +38,13 @@ class PdfExtractionResult:
 
 def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
     """Invokes LiteLLM / OpenAI compatible vision model to transcribe document page."""
+    active_model = model_name or get_vision_ocr_model()
+    if not active_model:
+        logger.info(
+            "Skipping PDF vision OCR: no vision OCR model configured in AI Gateway settings or VISION_OCR_MODEL."
+        )
+        return ""
+
     db_cfg: Dict[str, Any] = {}
     try:
         db_cfg = get_embedding_db_config()
@@ -63,8 +70,6 @@ def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
         "Transcribe all text, numbers, specifications, headings, and tables from this document page verbatim. "
         "Preserve list structures and code blocks where applicable. Do not summarize or extrapolate."
     )
-
-    active_model = model_name or get_vision_ocr_model()
 
     response = client.chat.completions.create(
         model=active_model,

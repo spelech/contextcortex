@@ -40,8 +40,8 @@ export function AIGatewaySettings({
   const [isChangingKey, setIsChangingKey] = useState(false);
   const [showKeyText, setShowKeyText] = useState(false);
 
-  const [chatModel, setChatModel] = useState(config?.chat_model || 'gemini-2.5-flash');
-  const [visionModel, setVisionModel] = useState(config?.vision_ocr_model || 'gemini-2.5-flash');
+  const [chatModel, setChatModel] = useState(config?.chat_model || '');
+  const [visionModel, setVisionModel] = useState(config?.vision_ocr_model || '');
   const [embeddingModel, setEmbeddingModel] = useState(config?.embedding_model || 'BAAI/bge-small-en-v1.5');
 
   const [customChat, setCustomChat] = useState(false);
@@ -61,12 +61,25 @@ export function AIGatewaySettings({
     }
   }, [config]);
 
+  const applyDefaultDiscoveredModels = (res: ModelDiscoveryResult | null) => {
+    if (!res || res.status !== 'success') return;
+    const discoveredChat = normalizeModelList(res.chat_models);
+    const discoveredVision = normalizeModelList(res.vision_models);
+    if (!chatModel && discoveredChat.length > 0) {
+      setChatModel(discoveredChat[0]);
+    }
+    if (!visionModel && discoveredVision.length > 0) {
+      setVisionModel(discoveredVision[0]);
+    }
+  };
+
   const handleDiscover = async () => {
     setIsDiscovering(true);
     try {
       if (onTestConnection) {
         const res = await onTestConnection(url, isChangingKey ? apiKey : undefined);
         setDiscoveryResult(res);
+        applyDefaultDiscoveredModels(res);
       } else {
         const params = new URLSearchParams();
         if (url) params.set('url', url);
@@ -74,6 +87,7 @@ export function AIGatewaySettings({
         const res = await fetch(`/admin/api/models/discover?${params.toString()}`);
         const data: ModelDiscoveryResult = await res.json();
         setDiscoveryResult(data);
+        applyDefaultDiscoveredModels(data);
         if (data.status === 'success') {
           toast.success(`Connected to gateway: ${data.total_models} models available`);
         } else {
@@ -299,16 +313,17 @@ export function AIGatewaySettings({
                   type="text"
                   value={chatModel}
                   onChange={(e) => setChatModel(e.target.value)}
-                  placeholder="e.g. gemini-2.5-flash or gpt-4o"
+                  placeholder="Discover models or enter gateway model ID"
                 />
               ) : (
                 <select value={chatModel} onChange={(e) => setChatModel(e.target.value)}>
+                  {!chatModel && <option value="">-- Select discovered model --</option>}
                   {chatOptions.map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>
                   ))}
-                  {!chatOptions.includes(chatModel) && (
+                  {chatModel && !chatOptions.includes(chatModel) && (
                     <option value={chatModel}>{chatModel} (Current)</option>
                   )}
                 </select>
@@ -332,16 +347,17 @@ export function AIGatewaySettings({
                   type="text"
                   value={visionModel}
                   onChange={(e) => setVisionModel(e.target.value)}
-                  placeholder="e.g. gemini-2.5-flash or gpt-4o-mini"
+                  placeholder="Discover models or enter gateway model ID"
                 />
               ) : (
                 <select value={visionModel} onChange={(e) => setVisionModel(e.target.value)}>
+                  {!visionModel && <option value="">-- Select discovered model --</option>}
                   {visionOptions.map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>
                   ))}
-                  {!visionOptions.includes(visionModel) && (
+                  {visionModel && !visionOptions.includes(visionModel) && (
                     <option value={visionModel}>{visionModel} (Current)</option>
                   )}
                 </select>

@@ -156,11 +156,16 @@ class SummarizerService:
         folder = os.path.dirname(rel_path) or ""
 
         active_model = self._get_active_chat_model()
+        if not active_model and not self._custom_client:
+            logger.info(
+                f"Skipping LLM summarization for '{filepath}': no chat model configured in AI Gateway settings or CHAT_MODEL."
+            )
+            return ("", None)
         user_prompt = format_user_prompt(filepath=rel_path, content=content, repo=repo)
 
         try:
             response = self.client.chat.completions.create(
-                model=active_model,
+                model=active_model or "unconfigured",
                 messages=[
                     {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

@@ -23,8 +23,8 @@ EMBEDDING_NUM_THREADS = _initial_cfg["threads"]
 EMBEDDING_BATCH_SIZE = _initial_cfg["batch_size"]
 LITELLM_URL = _initial_cfg["litellm_url"]
 LITELLM_API_KEY = _initial_cfg.get("litellm_api_key", os.getenv("LITELLM_API_KEY", "dummy"))
-VISION_OCR_MODEL = _initial_cfg.get("vision_ocr_model", os.getenv("VISION_OCR_MODEL", "gemini-2.5-flash"))
-CHAT_MODEL = _initial_cfg.get("chat_model", os.getenv("CHAT_MODEL", "gemini-2.5-flash"))
+VISION_OCR_MODEL = _initial_cfg.get("vision_ocr_model", os.getenv("VISION_OCR_MODEL", ""))
+CHAT_MODEL = _initial_cfg.get("chat_model", os.getenv("CHAT_MODEL", ""))
 
 _dense_model = None
 _sparse_model = None
@@ -57,8 +57,8 @@ def init_embeddings(
     EMBEDDING_BATCH_SIZE = int(batch_size if batch_size is not None else cfg.get("batch_size", 32))
     LITELLM_URL = (litellm_url or cfg.get("litellm_url") or "http://litellm:4000/v1").strip()
     LITELLM_API_KEY = (litellm_api_key or cfg.get("litellm_api_key") or "dummy").strip()
-    VISION_OCR_MODEL = (vision_ocr_model or cfg.get("vision_ocr_model") or os.getenv("VISION_OCR_MODEL", "gemini-2.5-flash")).strip()
-    CHAT_MODEL = (chat_model or cfg.get("chat_model") or os.getenv("CHAT_MODEL", "gemini-2.5-flash")).strip()
+    VISION_OCR_MODEL = (vision_ocr_model if vision_ocr_model is not None else (cfg.get("vision_ocr_model") or os.getenv("VISION_OCR_MODEL", ""))).strip()
+    CHAT_MODEL = (chat_model if chat_model is not None else (cfg.get("chat_model") or os.getenv("CHAT_MODEL", ""))).strip()
 
     # Set underlying OpenMP / BLAS thread guard
     os.environ["OMP_NUM_THREADS"] = str(EMBEDDING_NUM_THREADS)

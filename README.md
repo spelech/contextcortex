@@ -170,8 +170,8 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `LITELLM_URL` | OpenAI-compatible gateway base URL, passed to the OpenAI SDK as-is | `http://litellm:4000/v1` |
 | `LITELLM_API_KEY` | API key for the gateway | `dummy` |
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
-| `CHAT_MODEL` | Chat model for file summaries | `gemini-2.5-flash` |
-| `VISION_OCR_MODEL` | Vision model for PDF OCR | `gemini-2.5-flash` |
+| `CHAT_MODEL` | Chat model for file summaries (configured via Settings UI model discovery or env) | `None` |
+| `VISION_OCR_MODEL` | Vision model for PDF OCR (configured via Settings UI model discovery or env) | `None` |
 | `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) trusted at container start (see [certs/README.md](certs/README.md)) | `/certs` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for higher rate limits & private repos | `None` |
 | `GITLAB_TOKEN` | Optional GitLab Personal Access Token for private repos | `None` |

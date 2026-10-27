@@ -89,9 +89,20 @@ def test_call_vision_ocr_unit():
     mock_client.chat.completions.create.return_value = mock_resp
 
     with patch("app.services.pdf_extractor.OpenAI", return_value=mock_client):
-        ocr_result = _call_vision_ocr(b"fake_png_bytes")
+        ocr_result = _call_vision_ocr(b"fake_png_bytes", model_name="test-vision-model")
         assert ocr_result == "Recognized Table Content"
         mock_client.chat.completions.create.assert_called_once()
+
+
+def test_call_vision_ocr_skips_when_unconfigured(monkeypatch):
+    from app.services.pdf_extractor import _call_vision_ocr
+
+    monkeypatch.delenv("VISION_OCR_MODEL", raising=False)
+    with patch("app.services.pdf_extractor.get_vision_ocr_model", return_value=""), \
+         patch("app.services.pdf_extractor.OpenAI") as mock_openai:
+        ocr_result = _call_vision_ocr(b"fake_png_bytes")
+        assert ocr_result == ""
+        mock_openai.assert_not_called()
 
 
 def test_extract_pdf_ocr_failure_graceful_recovery():

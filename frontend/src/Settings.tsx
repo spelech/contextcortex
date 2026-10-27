@@ -85,8 +85,8 @@ export default function Settings({
   const [embSparseModel, setEmbSparseModel] = useState('Qdrant/bm25');
   const [embLitellmUrl, setEmbLitellmUrl] = useState('http://litellm:4000/v1');
   const [embLitellmApiKey, setEmbLitellmApiKey] = useState('');
-  const [embVisionOcrModel, setEmbVisionOcrModel] = useState('gemini-2.5-flash');
-  const [embChatModel, setEmbChatModel] = useState('gemini-2.5-flash');
+  const [embVisionOcrModel, setEmbVisionOcrModel] = useState('');
+  const [embChatModel, setEmbChatModel] = useState('');
   const [discoveryResult, setDiscoveryResult] = useState<ModelDiscoveryResult | null>(null);
   const [isDiscovering, setIsDiscovering] = useState(false);
 
@@ -249,6 +249,14 @@ export default function Settings({
       const data: ModelDiscoveryResult = await res.json();
       setDiscoveryResult(data);
       if (data.status === 'success') {
+        if (!embChatModel && Array.isArray(data.chat_models) && data.chat_models.length > 0) {
+          const firstChat = typeof data.chat_models[0] === 'string' ? data.chat_models[0] : (data.chat_models[0] as any)?.id || '';
+          if (firstChat) setEmbChatModel(firstChat);
+        }
+        if (!embVisionOcrModel && Array.isArray(data.vision_models) && data.vision_models.length > 0) {
+          const firstVision = typeof data.vision_models[0] === 'string' ? data.vision_models[0] : (data.vision_models[0] as any)?.id || '';
+          if (firstVision) setEmbVisionOcrModel(firstVision);
+        }
         toast.success(`Discovered ${data.total_models} models from OpenAI-compatible endpoint`);
       } else {
         toast.error(data.message || 'Model discovery returned an error');

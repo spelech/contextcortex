@@ -9,8 +9,11 @@ export function FileSettings() {
     summary_threshold_kb: 500,
     summary_max_file_size_mb: 10,
     read_file_max_lines: 2000,
-    summary_chat_model: 'gemini-2.5-flash',
+    summary_chat_model: '',
   });
+  const [discoveredChatModels, setDiscoveredChatModels] = useState<string[]>([]);
+  const [customModelInput, setCustomModelInput] = useState(false);
+  const [isDiscovering, setIsDiscovering] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const toast = useToast();
@@ -26,13 +29,37 @@ export function FileSettings() {
           summary_threshold_kb: data.summary_threshold_kb ?? 500,
           summary_max_file_size_mb: data.summary_max_file_size_mb ?? 10,
           read_file_max_lines: data.read_file_max_lines ?? 2000,
-          summary_chat_model: data.summary_chat_model || 'gemini-2.5-flash',
+          summary_chat_model: data.summary_chat_model || '',
         });
       }
     } catch (e) {
       console.error('Failed to load file settings:', e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDiscoverModels = async () => {
+    setIsDiscovering(true);
+    try {
+      const discRes = await fetch('/admin/api/models/discover');
+      if (discRes && discRes.ok) {
+        const discData = await discRes.json();
+        if (discData?.status === 'success' && Array.isArray(discData.chat_models)) {
+          const models = discData.chat_models
+            .map((m: any) => (typeof m === 'string' ? m : m?.id || m?.name || ''))
+            .filter(Boolean);
+          setDiscoveredChatModels(models);
+          setCustomModelInput(false);
+          if (!settings.summary_chat_model && models.length > 0) {
+            setSettings((prev) => ({ ...prev, summary_chat_model: models[0] }));
+          }
+        }
+      }
+    } catch {
+      toast.error('Failed to discover models from gateway');
+    } finally {
+      setIsDiscovering(false);
     }
   };
 
@@ -171,21 +198,64 @@ export function FileSettings() {
 
             {/* Summarization Chat Model */}
             <div>
-              <label htmlFor="summary-chat-model-input" style={{ fontSize: '0.85rem', fontWeight: 500, display: 'block', marginBottom: '6px' }}>
-                Summarization Chat Model
-              </label>
-              <input
-                id="summary-chat-model-input"
-                type="text"
-                value={settings.summary_chat_model}
-                onChange={(e) => setSettings({ ...settings, summary_chat_model: e.target.value })}
-                placeholder="e.g. gemini-2.5-flash or gpt-4o-mini"
-                className="input-field"
-                style={{ width: '100%' }}
-                disabled={!settings.summary_enabled}
-              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label htmlFor="summary-chat-model-input" style={{ fontSize: '0.85rem', fontWeight: 500, display: 'block', margin: 0 }}>
+                  Summarization Chat Model
+                </label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={handleDiscoverModels}
+                    disabled={isDiscovering || !settings.summary_enabled}
+                    style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.75rem' }}
+                  >
+                    <i className={`fa-solid ${isDiscovering ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}`} style={{ marginRight: '4px' }}></i>
+                    {isDiscovering ? 'Discovering...' : 'Discover Models'}
+                  </button>
+                  {discoveredChatModels.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomModelInput(!customModelInput)}
+                      style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.75rem' }}
+                    >
+                      {customModelInput ? 'Use Discovered List' : 'Custom Input'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {!customModelInput && discoveredChatModels.length > 0 ? (
+                <select
+                  id="summary-chat-model-input"
+                  value={settings.summary_chat_model}
+                  onChange={(e) => setSettings({ ...settings, summary_chat_model: e.target.value })}
+                  className="input-field"
+                  style={{ width: '100%' }}
+                  disabled={!settings.summary_enabled}
+                >
+                  <option value="">-- Use AI Gateway Chat Model --</option>
+                  {discoveredChatModels.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                  {settings.summary_chat_model && !discoveredChatModels.includes(settings.summary_chat_model) && (
+                    <option value={settings.summary_chat_model}>{settings.summary_chat_model} (Current)</option>
+                  )}
+                </select>
+              ) : (
+                <input
+                  id="summary-chat-model-input"
+                  type="text"
+                  value={settings.summary_chat_model}
+                  onChange={(e) => setSettings({ ...settings, summary_chat_model: e.target.value })}
+                  placeholder="Select from discovered models or enter gateway model ID"
+                  className="input-field"
+                  style={{ width: '100%' }}
+                  disabled={!settings.summary_enabled}
+                />
+              )}
               <span className="text-muted" style={{ fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
-                LiteLLM chat model identifier used for generating file summaries.
+                Chat model identifier from your configured AI Gateway endpoint used for generating file summaries.
               </span>
             </div>
 

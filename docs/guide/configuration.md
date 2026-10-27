@@ -23,8 +23,8 @@ Configure the application by setting these environment variables in your system 
 | `LITELLM_URL` | OpenAI-compatible gateway base URL. The OpenAI SDK adds `/embeddings` and `/chat/completions` to it. | `http://litellm:4000/v1` | `https://gateway.example.com/api/v3` |
 | `LITELLM_API_KEY` | API key for the gateway. | `dummy` | `sk-xxxxxxxxxxxx` |
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request. | None | `{"X-User-Agent":"contextcortex","X-User-Name":"jdoe"}` |
-| `CHAT_MODEL` | Chat model for file summaries. | `gemini-2.5-flash` | `openai/gpt-4.1-mini` |
-| `VISION_OCR_MODEL` | Vision model for PDF OCR of scanned pages. | `gemini-2.5-flash` | `google/gemini-3.5-flash` |
+| `CHAT_MODEL` | Chat model for file summaries (configured via Settings UI model discovery or env). | None | `openai/gpt-4.1-mini` |
+| `VISION_OCR_MODEL` | Vision model for PDF OCR of scanned pages (configured via Settings UI model discovery or env). | None | `qwen3-vl` |
 | `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) added to the trust store at container start. | `/certs` | `/certs` |
 | `LOCAL_STORAGE_PATH` | Host path for managed file and document uploads. | `/app/data/storage` | `/drives/storage` |
 | `AUTH_ENABLED` | Enables MCP OAuth 2.1 authentication and API key validation. | `false` | `true` |
