@@ -26,4 +26,16 @@ def get_llm_extra_headers() -> Dict[str, str]:
         logger.warning("Ignoring LLM_EXTRA_HEADERS: value must be a JSON object")
         return {}
 
-    return {str(k).strip(): str(v) for k, v in parsed.items() if str(k).strip() and v is not None}
+    headers: Dict[str, str] = {}
+    for k, v in parsed.items():
+        if v is None:
+            continue
+        name = str(k).strip()
+        val = str(v)
+        if not name:
+            continue
+        if "\r" in name or "\n" in name or "\r" in val or "\n" in val:
+            logger.warning(f"Ignoring header '{name}' in LLM_EXTRA_HEADERS: CR/LF characters are not permitted")
+            continue
+        headers[name] = val
+    return headers

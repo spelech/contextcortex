@@ -82,7 +82,7 @@ async def discover_models(
 
     endpoint = urlunsplit((parsed.scheme, parsed.netloc, endpoint_path, "", ""))
 
-    headers = {"Authorization": f"Bearer {resolved_api_key}", **get_llm_extra_headers()}
+    headers = {**get_llm_extra_headers(), "Authorization": f"Bearer {resolved_api_key}"}
 
     try:
         async with httpx.AsyncClient(timeout=6.0) as client:

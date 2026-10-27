@@ -1,7 +1,7 @@
 # Verification and Test Matrix
 
-ContextCortex is verified by an automated test suite comprising **1,037 automated tests**:
-- **684 Backend Tests** (Python Pytest suite with 88% code coverage baseline).
+ContextCortex is verified by an automated test suite comprising **1,051 automated tests**:
+- **698 Backend Tests** (Python Pytest suite with 88% code coverage baseline).
 - **303 Frontend Tests** (React 19 / TypeScript Vitest unit and component suite).
 - **50 End-to-End Tests** (Playwright automated browser suite and Layout Inspector audits).
 
@@ -21,7 +21,7 @@ ContextCortex is verified by an automated test suite comprising **1,037 automate
 | **FR-08** | FastMCP 2.0, 16 Tools & JSON-RPC Ping | Automated End-to-End Test | `tests/backend/test_mcp_v2.py`, `tests/test_mcp_ping.py`, `tests/backend/test_tools.py` |
 | **FR-09** | RFC 9728 OAuth 2.1 & RBAC | Automated Unit & Security | `tests/backend/test_auth_jwt_and_keys.py`, `tests/backend/test_auth_middleware_and_rbac.py` |
 | **FR-10** | Hero Split Codebase Navigator & Omni-Search | Automated Component & E2E | `frontend/src/tests/CodeNavigator.test.tsx`, `NavigatorOmniSearch.test.tsx`, `NavigatorCodeViewer.test.tsx`, `e2e/navigator.spec.ts` |
-| **FR-11** | AI Gateway & Dynamic Model Discovery | Automated Integration Test | `tests/backend/test_ai_gateway_settings.py`, `tests/backend/test_model_discovery.py`, `frontend/src/tests/AIGatewaySettings.test.tsx` |
+| **FR-11** | AI Gateway & Dynamic Model Discovery | Automated Integration Test | `tests/backend/test_ai_gateway_settings.py`, `tests/test_litellm_service.py`, `tests/test_llm_client.py`, `tests/test_model_discovery_api.py`, `frontend/src/tests/AIGatewaySettings.test.tsx` |
 | **FR-12** | Diagnostic Ring Buffer | Automated Unit Test | `tests/backend/test_diagnostic_logger.py`, `frontend/src/tests/DiagnosticsViewer.test.tsx` |
 | **FR-13** | Unified Ingestion Catalog | Automated Integration Test | `tests/backend/test_mcp_storage_tools.py`, `frontend/src/tests/IngestionCatalogViewer.test.tsx` |
 | **FR-14** | Architecture ADR Management | Automated Integration Test | `tests/backend/test_architecture_adr.py` |

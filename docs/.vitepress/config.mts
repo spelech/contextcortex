@@ -33,7 +33,8 @@ export default withMermaid(
             items: [
               { text: 'Overview', link: '/guide/' },
               { text: 'Getting Started', link: '/guide/getting-started' },
-              { text: 'Configuration', link: '/guide/configuration' }
+              { text: 'Configuration', link: '/guide/configuration' },
+              { text: 'Restricted-Network Builds', link: '/guide/enterprise-build' }
             ]
           },
           {

@@ -33,6 +33,7 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
     GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
 RUN set -eu; \
+    mkdir -p "$(dirname "$SSL_CERT_FILE")"; \
     for cert in /usr/local/share/ca-certificates/extra/*.crt; do \
         [ -f "$cert" ] || continue; \
         cat "$cert" >> "$SSL_CERT_FILE"; printf '\n' >> "$SSL_CERT_FILE"; \

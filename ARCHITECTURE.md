@@ -79,7 +79,7 @@ flowchart TD
         FileReaderSrv["Source & Doc Reader (file_reader.py)<br/>Full Code & Markdown Content Delivery"]
         LocalStorageSrv["Local Storage Service (local_storage.py)<br/>Path Traversal Defense & File Trees"]
         GitMgr["Universal Shallow Git Ingestion (git_manager.py)<br/>Ephemeral & Persistent Clones"]
-        Embeddings["FastEmbed Engine (embeddings.py)<br/>Dense (384d) + Sparse BM25"]
+        Embeddings["FastEmbed & Gateway Engine (embeddings.py, llm_client.py)<br/>Dense (384d) + Sparse BM25 + Extra Headers"]
         Search["Calibrated Hybrid Search (search.py)"]
         Poller["Auto-Sync Poller Daemon (poller.py)"]
         ADRService["ADR Parser & Lifecycle (adr.py)"]

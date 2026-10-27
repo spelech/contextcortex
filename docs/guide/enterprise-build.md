@@ -6,6 +6,24 @@ checkout's application and bundled dashboard to an approved ContextCortex releas
 image, without contacting Python or npm registries. The latter does not prove
 that the dependencies in the base image satisfy your package-age policy.
 
+```mermaid
+flowchart TD
+    Certs["certs/*.crt<br/>(Public PEM CAs)"]
+    Secrets[".secrets/<br/>(pip.conf, npmrc, python-constraints.txt)"]
+    SourceBuild["Path A: Source Build (Dockerfile)<br/>BuildKit Secret Mounts + Approved Mirrors"]
+    OverlayBuild["Path B: Image Overlay (Dockerfile.overlay)<br/>Digest-Pinned Approved Release Image"]
+    Image["contextcortex-enterprise:local"]
+    Deploy["Local Compose Profile<br/>(docker-compose.yml + docker-compose.enterprise.yml)<br/>127.0.0.1 + SQLite WAL + Embedded Qdrant"]
+
+    Certs --> SourceBuild
+    Secrets --> SourceBuild
+    Certs --> OverlayBuild
+    SourceBuild --> Image
+    OverlayBuild --> Image
+    Image --> Deploy
+    Certs -->|"/certs:ro runtime mount"| Deploy
+```
+
 Use Docker with BuildKit and Docker Compose 2.24.4 or newer. Run commands from
 the checkout root. The PowerShell examples use backticks for line continuation.
 Do not use `setup.ps1` or `setup.sh` for the controlled build below: those are
