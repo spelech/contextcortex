@@ -4,16 +4,21 @@ import json
 import sqlite3
 import logging
 from typing import Optional
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 
+from app.services.auth import Role
+from app.api.routers.auth import require_role
 import app.services.topology as topo_service
 
 logger = logging.getLogger("contextcortex.api")
 
 router = APIRouter()
 
-@router.get("/admin/api/graph/topology")
+@router.get(
+    "/admin/api/graph/topology",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_graph_topology(
     repo: str,
     view_type: str = "files",
@@ -44,7 +49,10 @@ async def api_get_graph_topology(
         logger.error(f"Error generating topology graph: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to generate topology graph."})
 
-@router.get("/admin/api/graph/node-details")
+@router.get(
+    "/admin/api/graph/node-details",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_graph_node_details(id: str):
     try:
         details = topo_service.get_node_details(id)

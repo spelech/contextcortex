@@ -6,8 +6,10 @@ import threading
 import logging
 import asyncio
 from typing import Optional
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
+from app.services.auth import Role
+from app.api.routers.auth import require_role
 
 from app.models.schemas import RepoConfig, LocalPathConfig, AutoSyncToggleRequest, KeepShallowToggleRequest, SearchRequest
 import app.services.database as db_service
@@ -21,7 +23,10 @@ logger = logging.getLogger("contextcortex.api")
 
 router = APIRouter()
 
-@router.get("/admin/api/repos")
+@router.get(
+    "/admin/api/repos",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_repos():
     try:
         with db_service.get_db_connection() as conn:
@@ -45,7 +50,10 @@ async def api_get_repos():
         logger.error(f"Error fetching repos: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to fetch repositories."})
 
-@router.post("/admin/api/repos")
+@router.post(
+    "/admin/api/repos",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_add_repo(repo: RepoConfig):
     if not repo.name or not repo.name.strip() or not repo.url or not repo.url.strip():
         return JSONResponse(status_code=400, content={"error": "Name and URL are required"})
@@ -74,7 +82,10 @@ async def api_add_repo(repo: RepoConfig):
         logger.error(f"Error adding repo: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to add repository."})
 
-@router.patch("/admin/api/repos/{repo_id}/auto-sync")
+@router.patch(
+    "/admin/api/repos/{repo_id}/auto-sync",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_toggle_repo_auto_sync(repo_id: int, payload: AutoSyncToggleRequest):
     try:
         updated = db_service.set_repo_auto_sync(repo_id, payload.auto_sync)
@@ -85,7 +96,10 @@ async def api_toggle_repo_auto_sync(repo_id: int, payload: AutoSyncToggleRequest
         logger.error(f"Error toggling auto-sync for repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to toggle auto-sync for repository."})
 
-@router.patch("/admin/api/repos/{repo_id}/keep-shallow")
+@router.patch(
+    "/admin/api/repos/{repo_id}/keep-shallow",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_toggle_repo_keep_shallow(repo_id: int, payload: KeepShallowToggleRequest):
     try:
         with db_service.get_db_connection() as conn:
@@ -100,8 +114,14 @@ async def api_toggle_repo_keep_shallow(repo_id: int, payload: KeepShallowToggleR
         logger.error(f"Error toggling keep-shallow for repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to toggle keep-shallow for repository."})
 
-@router.post("/admin/api/repos/{repo_id}/sync")
-@router.post("/admin/api/repos/sync/{repo_id}")
+@router.post(
+    "/admin/api/repos/{repo_id}/sync",
+    dependencies=[Depends(require_role(Role.EDITOR))],
+)
+@router.post(
+    "/admin/api/repos/sync/{repo_id}",
+    dependencies=[Depends(require_role(Role.EDITOR))],
+)
 async def api_sync_repo(repo_id: int):
     try:
         with db_service.get_db_connection() as conn:
@@ -122,11 +142,17 @@ async def api_sync_repo(repo_id: int):
 
 STREAM_KEEPALIVE_TIMEOUT = 15.0
 
-@router.get("/admin/api/repos/sync-status")
+@router.get(
+    "/admin/api/repos/sync-status",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_all_sync_status():
     return progress_tracker.get_snapshot()
 
-@router.get("/admin/api/repos/sync/stream")
+@router.get(
+    "/admin/api/repos/sync/stream",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_stream_repo_sync(request: Request):
     queue = progress_tracker.subscribe()
 
@@ -159,21 +185,30 @@ async def api_stream_repo_sync(request: Request):
         }
     )
 
-@router.get("/admin/api/repos/{repo_id}/sync-status")
+@router.get(
+    "/admin/api/repos/{repo_id}/sync-status",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_repo_sync_status(repo_id: int):
     snapshot = progress_tracker.get_snapshot(repo_id)
     if not snapshot:
         return JSONResponse(status_code=404, content={"error": f"No active sync job for repo {repo_id}"})
     return snapshot
 
-@router.post("/admin/api/repos/{repo_id}/cancel-sync")
+@router.post(
+    "/admin/api/repos/{repo_id}/cancel-sync",
+    dependencies=[Depends(require_role(Role.EDITOR))],
+)
 async def api_cancel_repo_sync(repo_id: int):
     cancelled = progress_tracker.cancel_job(repo_id)
     if not cancelled:
         return JSONResponse(status_code=400, content={"error": f"Repo {repo_id} is not currently syncing"})
     return {"status": "cancelled", "repo_id": repo_id}
 
-@router.delete("/admin/api/repos/{repo_id}")
+@router.delete(
+    "/admin/api/repos/{repo_id}",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_delete_repo(repo_id: int):
     try:
         with db_service.get_db_connection() as conn:
@@ -206,7 +241,10 @@ async def api_delete_repo(repo_id: int):
         logger.error(f"Error deleting repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to delete repository."})
 
-@router.get("/admin/api/paths")
+@router.get(
+    "/admin/api/paths",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_paths():
     try:
         with db_service.get_db_connection() as conn:
@@ -216,7 +254,10 @@ async def api_get_paths():
         logger.error(f"Error getting paths: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to get paths."})
 
-@router.post("/admin/api/paths")
+@router.post(
+    "/admin/api/paths",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_add_path(config: LocalPathConfig):
     try:
         raw_path = config.path.strip() if config.path else ""
@@ -252,7 +293,10 @@ async def api_add_path(config: LocalPathConfig):
         logger.error(f"Error adding path: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to add path."})
 
-@router.delete("/admin/api/paths/{path_id}")
+@router.delete(
+    "/admin/api/paths/{path_id}",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_delete_path(path_id: int):
     try:
         with db_service.get_db_connection() as conn:
@@ -276,8 +320,14 @@ async def api_delete_path(path_id: int):
         logger.error(f"Error deleting path {path_id}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to delete path."})
 
-@router.post("/admin/api/sync")
-@router.post("/admin/api/reindex")
+@router.post(
+    "/admin/api/sync",
+    dependencies=[Depends(require_role(Role.EDITOR))],
+)
+@router.post(
+    "/admin/api/reindex",
+    dependencies=[Depends(require_role(Role.EDITOR))],
+)
 async def api_trigger_sync():
     is_idx = idx_service.is_indexing
     if (is_idx() if callable(is_idx) else is_idx):
@@ -286,7 +336,10 @@ async def api_trigger_sync():
     threading.Thread(target=idx_service.run_full_indexing, daemon=True).start()
     return {"status": "success", "message": "Background ingestion pipeline dispatched."}
 
-@router.post("/admin/api/search/test")
+@router.post(
+    "/admin/api/search/test",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_test_search(payload: SearchRequest):
     try:
         query = payload.query.strip() if payload.query else ""
@@ -326,7 +379,10 @@ async def api_test_search(payload: SearchRequest):
         logger.error(f"Error testing search: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to execute search test."})
 
-@router.get("/admin/api/browse")
+@router.get(
+    "/admin/api/browse",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_browse_dir(path: str = "/"):
     cleaned = path.strip() if path else "/"
     if "\x00" in cleaned or any(part in ("..", ".") for part in cleaned.replace("\\", "/").split("/") if part):

@@ -1,8 +1,10 @@
 import logging
 from typing import Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from fastapi.responses import JSONResponse
 
+from app.services.auth import Role
+from app.api.routers.auth import require_role
 import app.services.navigator as nav_service
 
 logger = logging.getLogger("contextcortex.api.navigator")
@@ -10,7 +12,10 @@ logger = logging.getLogger("contextcortex.api.navigator")
 router = APIRouter()
 
 
-@router.get("/admin/api/navigator/tree")
+@router.get(
+    "/admin/api/navigator/tree",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_navigator_tree(
     repo: str = Query(..., description="Repository name or '__all__'")
 ):
@@ -27,7 +32,10 @@ async def api_get_navigator_tree(
         return JSONResponse(status_code=500, content={"error": "Failed to generate navigator tree."})
 
 
-@router.get("/admin/api/navigator/file-outline")
+@router.get(
+    "/admin/api/navigator/file-outline",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_file_outline(
     repo: str = Query(..., description="Repository name or '__all__'"),
     filepath: str = Query(..., description="Relative file path")
@@ -45,7 +53,10 @@ async def api_get_file_outline(
         return JSONResponse(status_code=500, content={"error": "Failed to retrieve file outline."})
 
 
-@router.get("/admin/api/navigator/symbol-impact")
+@router.get(
+    "/admin/api/navigator/symbol-impact",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_symbol_impact(
     repo: str = Query(..., description="Repository name or '__all__'"),
     symbol_id: int = Query(..., description="AST symbol ID")
@@ -63,7 +74,10 @@ async def api_get_symbol_impact(
         return JSONResponse(status_code=500, content={"error": "Failed to retrieve symbol impact."})
 
 
-@router.get("/admin/api/navigator/omni-search")
+@router.get(
+    "/admin/api/navigator/omni-search",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_omni_search(
     repo: str = Query(..., description="Repository name or '__all__'"),
     q: str = Query("", description="Search query string"),

@@ -6,8 +6,10 @@ import logging
 import tempfile
 from typing import Optional
 from urllib.parse import urlsplit
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
+from app.services.auth import Role
+from app.api.routers.auth import require_role
 
 from app.models.schemas import (
     TokenRequest, HostCredentialRequest,
@@ -27,7 +29,10 @@ logger = logging.getLogger("contextcortex.api")
 
 router = APIRouter()
 
-@router.get("/admin/api/stats")
+@router.get(
+    "/admin/api/stats",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_stats():
     try:
         with db_service.get_db_connection() as conn:
@@ -140,7 +145,10 @@ async def api_get_stats():
         logger.error(f"Error fetching stats: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to fetch stats."})
 
-@router.get("/admin/api/settings/hosts")
+@router.get(
+    "/admin/api/settings/hosts",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_get_host_credentials():
     try:
         hosts = db_service.list_git_host_credentials()
@@ -159,7 +167,10 @@ async def api_get_host_credentials():
         logger.error(f"Error listing host credentials: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to list host credentials."})
 
-@router.post("/admin/api/settings/hosts")
+@router.post(
+    "/admin/api/settings/hosts",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_save_host_credential(payload: HostCredentialRequest):
     try:
         host_id = db_service.save_git_host_credential(
@@ -175,7 +186,10 @@ async def api_save_host_credential(payload: HostCredentialRequest):
         logger.error(f"Error saving host credential: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to save host credential."})
 
-@router.delete("/admin/api/settings/hosts/{host_id}")
+@router.delete(
+    "/admin/api/settings/hosts/{host_id}",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_delete_host_credential(host_id: int):
     try:
         deleted = db_service.delete_git_host_credential(host_id)
@@ -186,7 +200,10 @@ async def api_delete_host_credential(host_id: int):
         logger.error(f"Error deleting host credential: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to delete host credential."})
 
-@router.post("/admin/api/settings/token")
+@router.post(
+    "/admin/api/settings/token",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_save_token(payload: TokenRequest):
     try:
         if payload.github_token is not None:
@@ -217,7 +234,10 @@ async def api_save_token(payload: TokenRequest):
         logger.error(f"Error saving tokens: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to save tokens."})
 
-@router.get("/admin/api/settings/auto-sync")
+@router.get(
+    "/admin/api/settings/auto-sync",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_get_auto_sync_settings():
     try:
         interval = db_service.get_auto_sync_interval()
@@ -231,7 +251,10 @@ async def api_get_auto_sync_settings():
         logger.error(f"Error loading auto-sync settings: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to load auto-sync settings."})
 
-@router.post("/admin/api/settings/auto-sync")
+@router.post(
+    "/admin/api/settings/auto-sync",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_save_auto_sync_settings(payload: AutoSyncSettingsRequest):
     try:
         if payload.interval_mins is not None:
@@ -251,7 +274,10 @@ async def api_save_auto_sync_settings(payload: AutoSyncSettingsRequest):
         logger.error(f"Error saving auto-sync settings: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to save auto-sync settings."})
 
-@router.get("/admin/api/logs")
+@router.get(
+    "/admin/api/logs",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_get_logs(limit: int = 200, level: Optional[str] = None, search: Optional[str] = None):
     try:
         return log_service.get_diagnostic_logs(limit=limit, level=level, search=search)
@@ -259,7 +285,10 @@ async def api_get_logs(limit: int = 200, level: Optional[str] = None, search: Op
         logger.error(f"Error fetching diagnostic logs: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to fetch diagnostic logs."})
 
-@router.delete("/admin/api/logs")
+@router.delete(
+    "/admin/api/logs",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_clear_logs():
     try:
         log_service.clear_diagnostic_logs()
@@ -268,7 +297,10 @@ async def api_clear_logs():
         logger.error(f"Error clearing diagnostic logs: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to clear diagnostic logs."})
 
-@router.get("/admin/api/vector-store")
+@router.get(
+    "/admin/api/vector-store",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_get_vector_store():
     try:
         cfg = vs_service.get_vector_store_config()
@@ -300,7 +332,10 @@ def _validate_vector_storage_path(storage_path: Optional[str]) -> Optional[str]:
     raise ValueError(f"Storage path '{sp}' is outside authorized directories.")
 
 
-@router.post("/admin/api/vector-store/test")
+@router.post(
+    "/admin/api/vector-store/test",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_test_vector_store(payload: VectorStoreTestRequest):
     try:
         safe_sp = payload.storage_path
@@ -328,7 +363,10 @@ async def api_test_vector_store(payload: VectorStoreTestRequest):
         logger.error(f"Error testing vector store: {e}")
         return JSONResponse(status_code=500, content={"success": False, "error": "Failed to test vector store.", "message": "Failed to test vector store."})
 
-@router.post("/admin/api/vector-store/switch")
+@router.post(
+    "/admin/api/vector-store/switch",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
     try:
         safe_sp = payload.storage_path
@@ -364,7 +402,10 @@ async def api_switch_vector_store(payload: VectorStoreSwitchRequest):
         logger.error(f"Error switching vector store backend: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to switch vector store backend.", "message": "Failed to switch vector store backend."})
 
-@router.get("/admin/api/models/discover")
+@router.get(
+    "/admin/api/models/discover",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_discover_models(url: Optional[str] = None, api_key: Optional[str] = None):
     try:
         if url:
@@ -386,7 +427,10 @@ async def api_discover_models(url: Optional[str] = None, api_key: Optional[str] 
         logger.error(f"Error discovering models: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to discover models."})
 
-@router.get("/admin/api/settings/ai-gateway")
+@router.get(
+    "/admin/api/settings/ai-gateway",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_get_ai_gateway_settings():
     try:
         cfg = db_service.get_ai_gateway_config()
@@ -395,7 +439,10 @@ async def api_get_ai_gateway_settings():
         logger.error(f"Error reading AI gateway settings: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to read AI gateway settings."})
 
-@router.post("/admin/api/settings/ai-gateway")
+@router.post(
+    "/admin/api/settings/ai-gateway",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_save_ai_gateway_settings(payload: AIGatewaySettingsRequest):
     try:
         updated = db_service.set_ai_gateway_config(
@@ -414,7 +461,10 @@ async def api_save_ai_gateway_settings(payload: AIGatewaySettingsRequest):
         logger.error(f"Error saving AI gateway settings: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to save AI gateway settings."})
 
-@router.get("/admin/api/settings/embedding")
+@router.get(
+    "/admin/api/settings/embedding",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_get_embedding_settings():
     try:
         cfg = emb_service.get_embedding_config()
@@ -423,7 +473,10 @@ async def api_get_embedding_settings():
         logger.error(f"Error reading embedding settings: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to read embedding settings."})
 
-@router.post("/admin/api/settings/embedding")
+@router.post(
+    "/admin/api/settings/embedding",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
     try:
         updated_cfg = emb_service.update_embedding_config(
@@ -446,7 +499,10 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
         logger.error(f"Error updating embedding settings: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to update embedding settings.", "message": "Failed to update embedding settings."})
 
-@router.get("/admin/api/settings/files")
+@router.get(
+    "/admin/api/settings/files",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_get_file_settings():
     try:
         cfg = db_service.get_file_settings()
@@ -455,7 +511,10 @@ async def api_get_file_settings():
         logger.error(f"Error reading file settings: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to read file settings."})
 
-@router.post("/admin/api/settings/files")
+@router.post(
+    "/admin/api/settings/files",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
 async def api_save_file_settings(payload: FileSettingsRequest):
     try:
         data = payload.model_dump(exclude_unset=True)

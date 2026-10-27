@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1056 Automated Tests** (703 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1191,6 +1191,12 @@ and leaves the prior indexed state intact without data loss._
 - `test_env`
 - `test_large_file_auto_summarization`
 - `test_large_file_disabled_summarization`
+
+#### `tests/test_rest_role_permissions.py` (4 tests)
+- `test_anonymous_and_invalid_key_requests_denied` - _Anonymous or invalid/revoked requests receive 401 Unauthorized._
+- `test_viewer_role_permissions` - _Viewer key can read resources but is denied content mutations & administrative settings (403)._
+- `test_editor_role_permissions` - _Editor key can perform content mutations and syncs, but is denied administrative settings (403)._
+- `test_admin_role_permissions` - _Admin key has full permissions across configuration, editor, and viewer endpoints._
 
 #### `tests/test_storage_api_routes.py` (4 tests)
 - `test_storage_upload_and_get_file`
