@@ -152,7 +152,11 @@ def test_dimension_mismatch_during_search_raises_explicit_error(monkeypatch):
     ])
 
     # Suppose query embedding generates 1536d vector (mismatched)
-    with patch("app.services.vector_store.qdrant_store.get_dense_embedding", return_value=[0.5] * 1536):
+    fake_vec = [0.5] * 1536
+    with patch("app.services.embeddings.get_dense_embedding", return_value=fake_vec), \
+         patch("app.services.vector_store.qdrant_store.get_dense_embedding", return_value=fake_vec), \
+         patch("app.services.vector_store.chroma_store.get_dense_embedding", return_value=fake_vec), \
+         patch("app.services.vector_store.pgvector_store.get_dense_embedding", return_value=fake_vec):
         with pytest.raises(ValueError) as exc_info:
             store.search("hello world")
         assert "Vector dimension mismatch" in str(exc_info.value)
@@ -185,7 +189,10 @@ def test_restart_clears_relational_metadata_on_collection_recreate(monkeypatch):
         conn.commit()
 
     # Change active dense model in memory to 1536d model, simulating app restart with updated config
-    with patch("app.services.vector_store.qdrant_store.get_dense_dim", return_value=1536):
+    with patch("app.services.embeddings.get_dense_dim", return_value=1536), \
+         patch("app.services.vector_store.qdrant_store.get_dense_dim", return_value=1536), \
+         patch("app.services.vector_store.chroma_store.get_dense_dim", return_value=1536), \
+         patch("app.services.vector_store.pgvector_store.get_dense_dim", return_value=1536):
         # Trigger ensure_collection
         ok = store.ensure_collection()
         assert ok is True

@@ -9,7 +9,7 @@ import chromadb
 
 
 from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
-from app.services.embeddings import get_dense_embedding
+from app.services.embeddings import get_dense_embedding, get_dense_dim
 
 logger = logging.getLogger("contextcortex.vector_store.chroma")
 
@@ -151,15 +151,14 @@ class ChromaVectorStore(VectorStore):
     def ensure_collection(self) -> bool:
         """Initializes or retrieves the collection with cosine distance metric."""
         try:
-            from app.services.embeddings import get_dense_dim
             dim = get_dense_dim()
 
             try:
                 col = self.client.get_collection(name=self.collection_name)
                 # Check for existing points dimension if collection exists
                 if col.count() > 0:
-                    peek_res = col.peek(limit=1)
-                    if peek_res and peek_res.get("embeddings") and len(peek_res["embeddings"]) > 0:
+                    peek_res = col.get(limit=1, include=["embeddings"])
+                    if peek_res and peek_res.get("embeddings") is not None and len(peek_res["embeddings"]) > 0:
                         existing_dim = len(peek_res["embeddings"][0])
                         if existing_dim != dim:
                             logger.warning(
