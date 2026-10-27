@@ -5,6 +5,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from app.services.database import get_embedding_db_config
+from app.services.llm_client import get_llm_extra_headers
 
 logger = logging.getLogger("contextcortex.litellm")
 
@@ -68,18 +69,20 @@ async def discover_models(
             "chat_models": [],
         }
 
-    # Normalize URL to target /models endpoint safely
+    # Normalize URL to target /models endpoint safely. Only a bare host gets the
+    # default /v1 prefix; any other base path (e.g. /api/v3) is used as-is, which
+    # matches how the OpenAI SDK appends endpoints to base_url.
     clean_path = parsed.path.rstrip("/")
     if clean_path.endswith("/models"):
         endpoint_path = clean_path
+    elif not clean_path:
+        endpoint_path = "/v1/models"
     else:
-        if not clean_path.endswith("/v1"):
-            clean_path = f"{clean_path}/v1"
         endpoint_path = f"{clean_path}/models"
 
     endpoint = urlunsplit((parsed.scheme, parsed.netloc, endpoint_path, "", ""))
 
-    headers = {"Authorization": f"Bearer {resolved_api_key}"}
+    headers = {**get_llm_extra_headers(), "Authorization": f"Bearer {resolved_api_key}"}
 
     try:
         async with httpx.AsyncClient(timeout=6.0) as client:

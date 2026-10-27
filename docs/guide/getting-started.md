@@ -118,7 +118,7 @@ To deploy ContextCortex with PostgreSQL 16, pgvector, and Qdrant in containers:
 
 3. View real-time container logs:
    ```bash
-   docker compose logs -f app
+   docker compose logs -f contextcortex
    ```
 
 ## Next Steps

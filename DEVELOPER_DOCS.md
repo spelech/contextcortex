@@ -75,6 +75,8 @@ cd contextcortex
    export SPARSE_MODEL="Qdrant/bm25"
    export EMBEDDING_NUM_THREADS=2 # CPU thread cap for ONNX (defaults to min(2, system_cpus))
    export EMBEDDING_BATCH_SIZE=32 # Batch size for tokenization (defaults to 32)
+   export LLM_EXTRA_HEADERS='{"X-User-Agent":"contextcortex"}' # Optional JSON extra headers for LLM gateway requests
+   export EXTRA_CA_CERTS_DIR="/certs" # Optional directory of private CA certificates (*.crt)
    export GITHUB_TOKEN="ghp_your_token" # Optional: For higher rate limits & private repos
    ```
 

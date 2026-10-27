@@ -14,3 +14,9 @@ node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 /dist/
+
+# Local private CA certificates (see certs/README.md)
+certs/*
+!certs/README.md
+# Local compose overrides
+docker-compose.override.yml

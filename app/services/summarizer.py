@@ -10,6 +10,7 @@ from app.services.database.connection import (
     get_chat_model,
     get_embedding_db_config,
 )
+from app.services.llm_client import get_llm_extra_headers
 from app.services.vector_store.base import VectorDocument, VectorStore
 from app.services.vector_store.manager import get_vector_store
 
@@ -62,11 +63,13 @@ class SummarizerService:
         vector_store: Optional[VectorStore] = None,
     ):
         self._client = client
+        self._custom_client = client is not None
+        self._client_config: Optional[Tuple[str, str, Tuple[Tuple[str, str], ...]]] = None
         self._vector_store = vector_store
 
     @property
     def client(self) -> Any:
-        if self._client is not None:
+        if self._custom_client and self._client is not None:
             return self._client
 
         db_cfg = {}
@@ -85,13 +88,23 @@ class SummarizerService:
             or os.getenv("LITELLM_API_KEY")
             or "dummy"
         ).strip()
+        extra_headers = get_llm_extra_headers()
+        cfg_key = (litellm_url, litellm_key, tuple(sorted(extra_headers.items())))
 
-        self._client = OpenAI(base_url=litellm_url, api_key=litellm_key)
+        if self._client is None or self._client_config != cfg_key:
+            self._client = OpenAI(
+                base_url=litellm_url,
+                api_key=litellm_key,
+                default_headers=extra_headers,
+            )
+            self._client_config = cfg_key
         return self._client
 
     @client.setter
     def client(self, client_instance: Any):
         self._client = client_instance
+        self._custom_client = client_instance is not None
+        self._client_config = None
 
     @property
     def vector_store(self) -> Optional[VectorStore]:

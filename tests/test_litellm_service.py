@@ -161,6 +161,44 @@ async def test_discover_models_url_normalization():
         args, _ = mock_get.call_args
         assert args[0] == "http://litellm:4000/v1/models"
 
+        # Test bare host without trailing slash gets the default /v1 prefix
+        await discover_models(url="http://litellm:4000", api_key="dummy")
+        args, _ = mock_get.call_args
+        assert args[0] == "http://litellm:4000/v1/models"
+
+        # Test gateway with its own versioned base path (no /v1 appended)
+        await discover_models(url="https://gateway.example.com/api/v3", api_key="dummy")
+        args, _ = mock_get.call_args
+        assert args[0] == "https://gateway.example.com/api/v3/models"
+
+        await discover_models(url="https://gateway.example.com/api/v3/", api_key="dummy")
+        args, _ = mock_get.call_args
+        assert args[0] == "https://gateway.example.com/api/v3/models"
+
+
+@pytest.mark.asyncio
+async def test_discover_models_sends_extra_headers(monkeypatch):
+    """Verifies that model discovery merges LLM_EXTRA_HEADERS while preserving the Bearer Authorization token."""
+    monkeypatch.setenv(
+        "LLM_EXTRA_HEADERS",
+        '{"X-User-Agent": "contextcortex", "X-User-Name": "jdoe", "Authorization": "Bearer ignored-override"}',
+    )
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"data": []}
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        res = await discover_models(url="https://gateway.example.com/api/v3", api_key="sk-test")
+
+    assert res["status"] == "success"
+    _, kwargs = mock_get.call_args
+    assert kwargs["headers"] == {
+        "Authorization": "Bearer sk-test",
+        "X-User-Agent": "contextcortex",
+        "X-User-Name": "jdoe",
+    }
+
 
 @pytest.mark.asyncio
 async def test_discover_models_default_resolution(monkeypatch):
