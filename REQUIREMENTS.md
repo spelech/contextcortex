@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1058 Automated Tests** (705 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1112,7 +1112,7 @@ and leaves the prior indexed state intact without data loss._
 - `test_pdf_read_file_content`
 - `test_real_asd_ste100_pdf_preview_or_indexing`
 
-#### `tests/test_pgvector_store.py` (54 tests)
+#### `tests/test_pgvector_store.py` (60 tests)
 - `TestPgVectorStoreImports::test_import_pgvector_store`
 - `TestPgVectorStoreImports::test_manager_supported_providers_includes_postgres_and_pgvector`
 - `TestPgVectorStoreLifecycle::test_initialization_defaults`
@@ -1140,6 +1140,9 @@ and leaves the prior indexed state intact without data loss._
 - `TestVectorStoreManagerPgVectorDispatch::test_create_store_postgres_provider`
 - `TestVectorStoreManagerPgVectorDispatch::test_create_store_postgresql_provider`
 - `TestVectorStoreManagerPgVectorDispatch::test_test_connection_pgvector`
+- `TestPgVectorCollectionIsolation::test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
+- `TestPgVectorCollectionIsolation::test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
+- `TestPgVectorCollectionIsolation::test_dimension_mismatch_warning` - _Test logging warning when table dimension differs from store dimension._
 - `test_import_pgvector_store`
 - `test_manager_supported_providers_includes_postgres_and_pgvector`
 - `test_initialization_defaults`
@@ -1167,6 +1170,9 @@ and leaves the prior indexed state intact without data loss._
 - `test_create_store_postgres_provider`
 - `test_create_store_postgresql_provider`
 - `test_test_connection_pgvector`
+- `test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
+- `test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
+- `test_dimension_mismatch_warning` - _Test logging warning when table dimension differs from store dimension._
 
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`
