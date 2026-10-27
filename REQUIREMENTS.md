@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1057 Automated Tests** (704 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -580,11 +580,16 @@ classDiagram
 - `test_git_syncer_nonexistent_repo`
 - `test_git_progress_tracker_pending_cancellation`
 
-#### `tests/backend/test_health_check_status.py` (4 tests)
+#### `tests/backend/test_health_check_status.py` (9 tests)
 - `test_api_stats_reports_healthy_when_store_is_healthy`
 - `test_api_stats_reports_unhealthy_when_store_fails`
 - `test_api_stats_reports_healthy_with_real_embedded_store` - _Verify /admin/api/stats health check against a real embedded Qdrant vector store without mocks._
 - `test_main_app_favicon_and_root_redirect` - _Verify root app redirect, favicon routes, and static asset handling._
+- `test_health_endpoints_cheap_liveness` - _Verify GET /health and /healthz return cheap liveness HTTP 200 responses._
+- `test_readiness_endpoint_success` - _Verify GET /ready and aliases return HTTP 200 when database schema is initialized._
+- `test_readiness_endpoint_missing_schema` - _Verify GET /ready returns HTTP 503 when required schema tables are missing._
+- `test_readiness_split_database_failure` - _Verify split-database scenario (#45) where direct connection targets empty DB and fails readiness._
+- `test_readiness_sanitized_public_response` - _Verify public readiness response never leaks credentials, host details, or raw stack traces._
 
 #### `tests/backend/test_indexer_and_embeddings.py` (25 tests)
 - `test_embeddings_generation`

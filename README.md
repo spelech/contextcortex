@@ -322,7 +322,7 @@ The server starts on port `3000`:
 - **MCP SSE Transport**: `http://localhost:3000/sse`
 - **MCP Streamable HTTP Transport**: `http://localhost:3000/mcp`
 - **OAuth Protected Resource Metadata**: `http://localhost:3000/.well-known/oauth-protected-resource`
-- **Health Check**: `http://localhost:3000/health`
+- **Health Check Probes**: Liveness at `http://localhost:3000/health`, Readiness at `http://localhost:3000/ready`
 
 ---
 

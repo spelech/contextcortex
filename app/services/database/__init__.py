@@ -43,6 +43,7 @@ from app.services.database.connection import (
     get_file_settings,
     set_file_settings,
     ensure_file_summaries_columns,
+    check_db_readiness,
 )
 from app.services.database.credentials import (
     list_git_host_credentials,

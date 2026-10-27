@@ -100,3 +100,87 @@ def test_main_app_favicon_and_root_redirect():
     res_ico = main_client.get("/favicon.ico")
     assert res_ico.status_code == 200
 
+
+def test_health_endpoints_cheap_liveness():
+    """Verify GET /health and /healthz return cheap liveness HTTP 200 responses."""
+    from main import app as main_app
+    main_client = TestClient(main_app)
+
+    for endpoint in ["/health", "/healthz"]:
+        res = main_client.get(endpoint)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "healthy"
+        assert data["server"] == "contextcortex"
+
+
+def test_readiness_endpoint_success(tmp_path):
+    """Verify GET /ready and aliases return HTTP 200 when database schema is initialized."""
+    from app.services.database import init_db
+    from main import app as main_app
+
+    db_path = str(tmp_path / "readiness_init.db")
+    with patch("app.services.database.engine.get_default_db_path", return_value=db_path), \
+         patch("app.services.database.connection.CACHE_DB_PATH", db_path):
+        init_db(vault_path=str(tmp_path))
+        main_client = TestClient(main_app)
+
+        for endpoint in ["/ready", "/readiness", "/health/ready", "/healthz/ready"]:
+            res = main_client.get(endpoint)
+            assert res.status_code == 200
+            data = res.json()
+            assert data["status"] == "ready"
+            assert data["database"]["status"] == "ok"
+
+
+def test_readiness_endpoint_missing_schema():
+    """Verify GET /ready returns HTTP 503 when required schema tables are missing."""
+    from main import app as main_app
+    main_client = TestClient(main_app)
+
+    with patch("main.check_db_readiness", return_value=(False, {"status": "error", "type": "sqlite"})):
+        res = main_client.get("/ready")
+        assert res.status_code == 503
+        data = res.json()
+        assert data["status"] == "not_ready"
+        assert data["database"]["status"] == "error"
+        assert "error" in data
+
+
+def test_readiness_split_database_failure(tmp_path):
+    """Verify split-database scenario (#45) where direct connection targets empty DB and fails readiness."""
+    from main import app as main_app
+    empty_db = str(tmp_path / "empty_cache.db")
+    # Touch empty file without schema
+    sqlite3.connect(empty_db).close()
+
+    main_client = TestClient(main_app)
+
+    with patch("app.services.database.connection.get_db_connection") as mock_direct:
+        def get_empty_conn():
+            c = sqlite3.connect(empty_db)
+            c.row_factory = sqlite3.Row
+            return c
+        mock_direct.side_effect = get_empty_conn
+
+        res = main_client.get("/ready")
+        assert res.status_code == 503
+        data = res.json()
+        assert data["status"] == "not_ready"
+        assert data["database"]["status"] == "error"
+
+
+def test_readiness_sanitized_public_response():
+    """Verify public readiness response never leaks credentials, host details, or raw stack traces."""
+    from main import app as main_app
+    main_client = TestClient(main_app)
+
+    with patch("main.check_db_readiness", side_effect=Exception("postgresql://user:secret_pass@db.internal:5432/cortex")):
+        res = main_client.get("/ready")
+        assert res.status_code == 503
+        data = res.json()
+        assert data["status"] == "not_ready"
+        body_str = res.text
+        assert "secret_pass" not in body_str
+        assert "db.internal" not in body_str
+        assert "postgresql://" not in body_str

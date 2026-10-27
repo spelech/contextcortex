@@ -24,7 +24,7 @@ from app.services.auth import (
     get_auth_service,
     set_current_auth_context,
 )
-from app.services.database import init_db
+from app.services.database import init_db, check_db_readiness
 import app.services.indexing as indexer
 from app.services.indexing import run_full_indexing, VAULT_PATH
 from app.services.poller import start_poller_daemon, stop_poller_daemon
@@ -201,6 +201,10 @@ class AuthMiddleware:
             path == "/.well-known/oauth-protected-resource"
             or path == "/health"
             or path == "/healthz"
+            or path == "/ready"
+            or path == "/readiness"
+            or path == "/health/ready"
+            or path == "/healthz/ready"
             or path == "/"
             or path == "/favicon.svg"
             or path == "/favicon.ico"
@@ -331,6 +335,43 @@ async def health():
         },
         headers={"Cache-Control": "no-cache, no-transform"},
     )
+
+
+@app.get("/ready")
+@app.get("/readiness")
+@app.get("/health/ready")
+@app.get("/healthz/ready")
+async def readiness():
+    try:
+        is_ready, db_info = check_db_readiness()
+    except Exception as e:
+        logger.warning(f"Readiness check unhandled exception: {e}")
+        is_ready = False
+        db_info = {"status": "error", "type": "unknown"}
+
+    if is_ready:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "ready",
+                "protocolVersion": "2026-07-28",
+                "server": "contextcortex",
+                "database": db_info,
+            },
+            headers={"Cache-Control": "no-cache, no-transform"},
+        )
+    else:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "protocolVersion": "2026-07-28",
+                "server": "contextcortex",
+                "database": db_info,
+                "error": "Required database schema or metadata unavailable",
+            },
+            headers={"Cache-Control": "no-cache, no-transform"},
+        )
 
 
 if __name__ == "__main__":
