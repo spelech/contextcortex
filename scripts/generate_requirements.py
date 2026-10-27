@@ -499,7 +499,7 @@ def generate_markdown() -> str:
         "| **NFR-1** | Performance & Latency Budgets | `app/services/database/connection.py`, `app/services/search.py` | `test_db_and_tools.py`, `test_search.py` | E2E Specs 8, 9 |",
         "| **NFR-2** | Zero Disk Bloat & Memory Efficiency | `app/services/git_manager.py`, `app/services/embeddings.py` | `test_git_manager.py`, `test_indexer_and_embeddings.py` | E2E Specs 2, 3 |",
         "| **NFR-3** | Credential Sanitization in Logs/APIs | `app/services/git_manager.py`, `app/api/routers/*` | `test_multi_git_providers.py`, `test_api_routes.py` | `Settings.test.tsx`, E2E Specs 10, 11 |",
-        "| **NFR-4** | SQLite WAL & Vector Store Auto-Healing | `app/services/database/*`, `app/services/vector_store/*` | `test_db_and_tools.py`, `test_vector_store_manager.py` | E2E Spec 1 |",
+        "| **NFR-4** | SQLite WAL & Vector Store Auto-Healing | `app/services/database/*`, `app/services/vector_store/*`, `docker-entrypoint.sh` | `test_db_and_tools.py`, `test_vector_store_manager.py`, `test_docker_orchestration.py`, `test_docker_entrypoint.py` | E2E Spec 1 |",
         "| **NFR-5** | Sync Failure Isolation | `app/services/indexing/*` | `test_indexer_edge_cases.py`, `test_indexer_sync.py` | `GitRepoManager.test.tsx`, E2E Spec 5 |",
         "| **NFR-6** | Codebase Modularity & File Size Floor | `app/` (all < 450 LOC), `frontend/src/` (all < 450 LOC) | N/A | Sub-500 LOC CI Check |",
         "| **NFR-7** | Test Quality & Coverage Floors | Entire Test Suite | `pytest` (415+ tests, 88% cov) | `vitest` (174 tests, 87% cov), `playwright` (26 tests) |",

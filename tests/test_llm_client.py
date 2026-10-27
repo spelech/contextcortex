@@ -20,7 +20,10 @@ def isolated_gateway_db(tmp_path, monkeypatch):
         litellm_url="https://gateway.example.com/api/v3",
         litellm_api_key="saved-key",
     )
-    return engine
+    try:
+        yield engine
+    finally:
+        engine.dispose()
 
 
 def test_extra_headers_unset(monkeypatch):

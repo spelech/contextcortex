@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1047 Automated Tests** (694 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1051 Automated Tests** (698 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -383,7 +383,7 @@ classDiagram
 | **NFR-1** | Performance & Latency Budgets | `app/services/database/connection.py`, `app/services/search.py` | `test_db_and_tools.py`, `test_search.py` | E2E Specs 8, 9 |
 | **NFR-2** | Zero Disk Bloat & Memory Efficiency | `app/services/git_manager.py`, `app/services/embeddings.py` | `test_git_manager.py`, `test_indexer_and_embeddings.py` | E2E Specs 2, 3 |
 | **NFR-3** | Credential Sanitization in Logs/APIs | `app/services/git_manager.py`, `app/api/routers/*` | `test_multi_git_providers.py`, `test_api_routes.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
-| **NFR-4** | SQLite WAL & Vector Store Auto-Healing | `app/services/database/*`, `app/services/vector_store/*` | `test_db_and_tools.py`, `test_vector_store_manager.py` | E2E Spec 1 |
+| **NFR-4** | SQLite WAL & Vector Store Auto-Healing | `app/services/database/*`, `app/services/vector_store/*`, `docker-entrypoint.sh` | `test_db_and_tools.py`, `test_vector_store_manager.py`, `test_docker_orchestration.py`, `test_docker_entrypoint.py` | E2E Spec 1 |
 | **NFR-5** | Sync Failure Isolation | `app/services/indexing/*` | `test_indexer_edge_cases.py`, `test_indexer_sync.py` | `GitRepoManager.test.tsx`, E2E Spec 5 |
 | **NFR-6** | Codebase Modularity & File Size Floor | `app/` (all < 450 LOC), `frontend/src/` (all < 450 LOC) | N/A | Sub-500 LOC CI Check |
 | **NFR-7** | Test Quality & Coverage Floors | Entire Test Suite | `pytest` (415+ tests, 88% cov) | `vitest` (174 tests, 87% cov), `playwright` (26 tests) |
@@ -924,11 +924,16 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_graph_builder_doc_links_topology`
 - `test_graph_builder_wikilink_hyphen_space_matching`
 
-#### `tests/test_docker_orchestration.py` (34 tests)
+#### `tests/test_docker_entrypoint.py` (2 tests)
+- `test_runtime_ca_update_controls_application_start` - _Verifies that runtime CA bundle updates copy certificates and fail closed when update-ca-certificates errors._
+- `test_runtime_ca_empty_or_missing_dir_skips_update_and_starts` - _Verifies that an empty or missing EXTRA_CA_CERTS_DIR skips CA trust updates and launches the command cleanly._
+
+#### `tests/test_docker_orchestration.py` (36 tests)
 - `TestDockerComposeConfig::test_compose_version_and_services`
 - `TestDockerComposeConfig::test_postgres_service_config`
 - `TestDockerComposeConfig::test_contextcortex_service_config`
 - `TestDockerComposeConfig::test_volumes_declared`
+- `TestDockerComposeConfig::test_enterprise_compose_override_and_overlay_dockerfile` - _Verifies enterprise Compose override and overlay Dockerfile exist and enforce explicit configuration._
 - `TestEnvExampleDocumentation::test_contains_database_vars`
 - `TestEnvExampleDocumentation::test_contains_auth_vars`
 - `TestEnvExampleDocumentation::test_contains_vector_store_vars`
@@ -946,6 +951,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_postgres_service_config`
 - `test_contextcortex_service_config`
 - `test_volumes_declared`
+- `test_enterprise_compose_override_and_overlay_dockerfile` - _Verifies enterprise Compose override and overlay Dockerfile exist and enforce explicit configuration._
 - `test_contains_database_vars`
 - `test_contains_auth_vars`
 - `test_contains_vector_store_vars`

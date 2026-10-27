@@ -91,6 +91,24 @@ class TestDockerComposeConfig:
         assert "postgres_data" in volumes
         assert "repo_cache" in volumes
 
+    def test_enterprise_compose_override_and_overlay_dockerfile(self):
+        """Verifies enterprise Compose override and overlay Dockerfile exist and enforce explicit configuration."""
+        enterprise_path = REPO_ROOT / "docker-compose.enterprise.yml"
+        overlay_path = REPO_ROOT / "Dockerfile.overlay"
+        assert enterprise_path.exists()
+        assert overlay_path.exists()
+
+        raw_enterprise = enterprise_path.read_text(encoding="utf-8")
+        assert "127.0.0.1" in raw_enterprise
+        assert "ENTERPRISE_DATABASE_URL:?" in raw_enterprise
+        assert "ENTERPRISE_VECTOR_STORE_PROVIDER:?" in raw_enterprise
+        assert "bundled-postgres" in raw_enterprise
+
+        raw_overlay = overlay_path.read_text(encoding="utf-8")
+        assert "ARG RUNTIME_IMAGE" in raw_overlay
+        assert "FROM ${RUNTIME_IMAGE}" in raw_overlay
+        assert "ENTRYPOINT [\"docker-entrypoint.sh\"]" in raw_overlay
+
 
 class TestEnvExampleDocumentation:
     """Validates .env.example contains all required configuration options."""
