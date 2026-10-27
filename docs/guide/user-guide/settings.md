@@ -21,13 +21,15 @@ ContextCortex supports dynamic switching between vector database engines:
 
 ## 2. AI Gateway & LiteLLM Dynamic Model Discovery
 
-The **AI Gateway & Embedding Settings** panel configures upstream OpenAI-compatible or LiteLLM proxy endpoints (`/admin/api/settings/ai-gateway` and `/admin/api/settings/embedding`):
+The **AI Gateway & Embedding Settings** panel configures upstream OpenAI-compatible or LiteLLM proxy endpoints (`/admin/api/settings/ai-gateway` and `/admin/api/settings/embedding`). Because ContextCortex does not hardcode default chat or vision model names, configure your active models via dynamic discovery on first setup:
 
+1. Enter your **Gateway Base URL** (e.g. `http://litellm:4000/v1` or `https://gateway.example.com/api/v3`) and **API Key**.
+2. Click **Discover Models** (`/admin/api/models/discover`) to query the upstream `/models` catalog and populate the model selectors.
+3. Choose your **Chat / Summarization Model** and **Vision OCR Model** from the discovered dropdowns and click **Save**:
+   - **Embedding Models**: Filtered by embedding capabilities (e.g. `BAAI/bge-small-en-v1.5`, `text-embedding-3-small`, `gemini-embedding-2`).
+   - **Vision OCR Models**: Multi-modal vision models used to perform automated OCR on diagrams and scanned pages in PDF uploads (e.g. `flash-latest`, `qwen3-vl`). If left unconfigured, PDF ingestion extracts native digital text and skips vision OCR fallback.
+   - **Chat & Summarization Models**: Reasoning models used to generate structured executive summaries for large files (e.g. `flash-latest`, `gpt-4o-mini`). If left unconfigured, automated LLM file summarization is skipped until a model is selected.
 - **Embedding Provider Mode**: Choose between **Local In-Process ONNX** (`FastEmbed` CPU runtime) and **External API Gateway** (`LiteLLM` / `OpenAI`).
-- **Dynamic Model Discovery**: When connected to an upstream LiteLLM proxy (`LITELLM_URL`), click **Discover Models** (`/admin/api/models/discover`) to query the model capabilities matrix dynamically and populate categorized selectors:
-  - **Embedding Models**: Filtered by embedding capabilities (e.g. `BAAI/bge-small-en-v1.5`, `text-embedding-3-small`).
-  - **Vision OCR Models**: Multi-modal vision models used to perform automated OCR on diagrams and scanned pages in PDF uploads (e.g. `gemini-2.5-flash`, `qwen3-vl`).
-  - **Chat & Summarization Models**: Reasoning models used to generate structured executive summaries for large files (e.g. `gemini-2.5-flash`, `gpt-4o-mini`).
 - **Versioned Gateway Base URLs**: Custom gateway paths (such as `https://gateway.example.com/api/v3`) are preserved verbatim across model discovery (`/api/v3/models`), embeddings (`/api/v3/embeddings`), file summarization, and PDF vision OCR.
 - **Custom Request Headers & Private CA Trust**: Gateways requiring identity or routing headers in addition to `Authorization` can be configured via the `LLM_EXTRA_HEADERS` JSON environment variable, and internal TLS certificates placed in `certs/*.crt` (`EXTRA_CA_CERTS_DIR`) are trusted automatically at container startup. See [Configuration](/guide/configuration) and [Restricted-Network Builds](/guide/enterprise-build) for details.
 

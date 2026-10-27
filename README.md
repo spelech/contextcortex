@@ -198,6 +198,8 @@ cp .env.example .env
 docker compose up -d
 ```
 
+Once the container is running, open the Web Admin Dashboard (`http://localhost:3000/admin/` → **Settings** → **AI Gateway & Models**), enter your OpenAI-compatible gateway URL (e.g., `http://litellm:4000/v1`), click **Discover Models**, and select your **Chat / Summarization Model** and **Vision OCR Model** from the discovered list to persist them in the database (or pre-seed `CHAT_MODEL` and `VISION_OCR_MODEL` in `.env`).
+
 For environments behind corporate TLS-inspecting proxies, private CA certificates (`certs/*.crt`), internal package mirrors (`APT_MIRROR`, `PIP_INDEX_URL`, `NPM_REGISTRY`), or verified local image overlays (`Dockerfile.overlay`), use the enterprise override file (see [Restricted-Network Builds & Local Deployment](docs/guide/enterprise-build.md)):
 
 ```bash
