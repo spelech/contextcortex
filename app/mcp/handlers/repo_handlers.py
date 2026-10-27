@@ -100,7 +100,11 @@ async def handle_index_status() -> str:
         gh_tok, _, gh_src = get_effective_git_token("https://github.com", provider="github")
         gl_tok, _, gl_src = get_effective_git_token("https://gitlab.com", provider="gitlab")
         gt_tok, _, gt_src = get_effective_git_token("https://gitea.com", provider="gitea")
-        vault_creds = list_git_host_credentials()
+        try:
+            vault_creds = list_git_host_credentials()
+        except Exception as e:
+            logger.error(f"Failed to list vault credentials for status: {e}")
+            vault_creds = []
         rate_info = check_github_rate_limit(gh_tok)
 
         lines = [

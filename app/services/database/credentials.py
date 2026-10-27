@@ -13,7 +13,7 @@ def list_git_host_credentials() -> List[Dict[str, Any]]:
             return [dict(r) for r in rows]
     except Exception as e:
         logger.error(f"Failed to list git host credentials: {e}")
-        return []
+        raise
 
 def get_git_host_credential(host: str) -> Optional[Dict[str, Any]]:
     if not host:

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1053 Automated Tests** (700 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -647,13 +647,14 @@ classDiagram
 - `test_search_code_empty_and_missing_ast_boundaries`
 - `test_search_docs_with_dense_weight_and_score_breakdown`
 
-#### `tests/backend/test_multi_git_providers.py` (9 tests)
+#### `tests/backend/test_multi_git_providers.py` (10 tests)
 - `test_detect_git_provider`
 - `test_build_authenticated_url_multi_provider`
 - `test_sanitize_url_for_logging_multi_scheme`
 - `test_git_host_credentials_vault_crud`
 - `test_effective_git_token_hierarchy`
 - `test_host_credentials_api_endpoints`
+- `test_host_credentials_api_query_failure_and_empty_success`
 - `test_multi_token_settings_api`
 - `test_process_file_content_with_custom_provider`
 - `test_sync_single_git_repo_triggers_notification`
