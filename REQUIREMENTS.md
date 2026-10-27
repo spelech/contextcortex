@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1053 Automated Tests** (700 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -586,12 +586,13 @@ classDiagram
 - `test_api_stats_reports_healthy_with_real_embedded_store` - _Verify /admin/api/stats health check against a real embedded Qdrant vector store without mocks._
 - `test_main_app_favicon_and_root_redirect` - _Verify root app redirect, favicon routes, and static asset handling._
 
-#### `tests/backend/test_indexer_and_embeddings.py` (25 tests)
+#### `tests/backend/test_indexer_and_embeddings.py` (26 tests)
 - `test_embeddings_generation`
 - `test_empty_embeddings_batches`
 - `test_api_embeddings_mode`
 - `test_sparse_embeddings_failures`
 - `test_init_embeddings_fallbacks`
+- `test_offline_missing_assets_no_unexpected_outbound_requests` - _Asserts that when local assets are missing and fallback is disabled, no outbound requests occur and RuntimeError is raised on embedding attempts._
 - `test_chunk_uuid_consistency`
 - `test_extract_keywords`
 - `test_ensure_collection`

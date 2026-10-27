@@ -436,6 +436,8 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
             litellm_api_key=payload.litellm_api_key,
             vision_ocr_model=payload.vision_ocr_model,
             chat_model=payload.chat_model,
+            allow_fallback=payload.allow_fallback,
+            fallback_dense_model=payload.fallback_dense_model,
         )
         return {
             "status": "success",
