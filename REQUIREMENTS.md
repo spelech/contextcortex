@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1054 Automated Tests** (701 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1104,12 +1104,14 @@ and leaves the prior indexed state intact without data loss._
 - `test_extract_pdf_ocr_failure_graceful_recovery`
 - `test_extract_oversized_pdf_raises_value_error`
 
-#### `tests/test_pdf_storage_api.py` (6 tests)
+#### `tests/test_pdf_storage_api.py` (8 tests)
 - `test_pdf_preview_endpoint`
 - `test_pdf_preview_validation_errors`
 - `test_pdf_preview_oversized`
 - `test_pdf_upload_and_indexing`
 - `test_pdf_read_file_content`
+- `test_malformed_pdf_upload_rollback`
+- `test_failed_pdf_replacement_preserves_original`
 - `test_real_asd_ste100_pdf_preview_or_indexing`
 
 #### `tests/test_pgvector_store.py` (54 tests)

@@ -210,8 +210,13 @@ class LocalStorageService:
         category: Optional[str] = None
     ) -> Dict[str, Any]:
         target_path = self.resolve_safe_path(rel_path)
+        if not target_path.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
+
         existed_before = os.path.exists(target_path) and os.path.isfile(target_path)
-        backup_path = target_path + ".tmp_bak" if existed_before else None
+        backup_path = self.resolve_safe_path(rel_path + ".tmp_bak") if existed_before else None
+        if backup_path and not backup_path.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
 
         if existed_before and backup_path:
             shutil.copy2(target_path, backup_path)
