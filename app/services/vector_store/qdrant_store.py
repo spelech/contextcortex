@@ -322,7 +322,9 @@ class QdrantVectorStore(VectorStore):
             query_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
 
             mode = (search_mode or "hybrid").lower().strip()
-            if mode not in ("hybrid", "semantic", "lexical"):
+            caps = self.get_capabilities()
+            supported = caps.get("search_modes", ["hybrid", "semantic", "lexical"])
+            if mode not in supported:
                 mode = "hybrid"
 
             if mode == "semantic":
@@ -486,6 +488,13 @@ class QdrantVectorStore(VectorStore):
             logger.error(f"Error searching Qdrant collection '{self.collection_name}': {e}")
             return []
 
+    def get_capabilities(self) -> Dict[str, Any]:
+        """Returns capabilities supported by Qdrant vector store backend."""
+        return {
+            "search_modes": ["hybrid", "semantic", "lexical"],
+            "supports_weighting": True,
+        }
+
     def get_stats(self) -> Dict[str, Any]:
         """Returns collection info including point count, backend, and mode."""
         try:
@@ -498,6 +507,7 @@ class QdrantVectorStore(VectorStore):
                     "points_count": 0,
                     "status": "not_found",
                     "location": self.location,
+                    "capabilities": self.get_capabilities(),
                 }
             info = self.client.get_collection(self.collection_name)
             points_count = info.points_count or 0
@@ -511,6 +521,7 @@ class QdrantVectorStore(VectorStore):
                 "vectors_count": vectors_count,
                 "status": str(info.status),
                 "location": self.location,
+                "capabilities": self.get_capabilities(),
             }
         except Exception as e:
             logger.error(f"Error getting stats for Qdrant collection '{self.collection_name}': {e}")
@@ -521,6 +532,7 @@ class QdrantVectorStore(VectorStore):
                 "exists": False,
                 "error": str(e),
                 "location": self.location,
+                "capabilities": self.get_capabilities(),
             }
 
     def health_check(self) -> Tuple[bool, str]:

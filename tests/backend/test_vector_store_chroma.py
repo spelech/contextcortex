@@ -366,6 +366,36 @@ class TestChromaVectorStoreOperations:
         for res in results:
             assert res.payload.get("repo") != "repo-x"
 
+    def test_get_capabilities_and_search_mode_validation(self, memory_store):
+        caps = memory_store.get_capabilities()
+        assert caps == {"search_modes": ["semantic"], "supports_weighting": False}
+
+        stats = memory_store.get_stats()
+        assert "capabilities" in stats
+        assert stats["capabilities"]["search_modes"] == ["semantic"]
+
+        doc = VectorDocument(
+            id="mode-test-1",
+            text="Vector search capabilities test document",
+            repo="repo-caps",
+            path="/docs/caps.md"
+        )
+        memory_store.upsert_documents([doc])
+
+        # Semantic mode works
+        res = memory_store.search("capabilities", search_mode="semantic")
+        assert len(res) == 1
+
+        # Lexical mode raises ValueError
+        with pytest.raises(ValueError) as exc_info:
+            memory_store.search("capabilities", search_mode="lexical")
+        assert "Search mode 'lexical' is not supported by Chroma vector store" in str(exc_info.value)
+
+        # Hybrid mode raises ValueError
+        with pytest.raises(ValueError) as exc_info:
+            memory_store.search("capabilities", search_mode="hybrid")
+        assert "Search mode 'hybrid' is not supported by Chroma vector store" in str(exc_info.value)
+
     def test_get_stats_and_health_check(self, memory_store):
         stats = memory_store.get_stats()
         assert stats["backend"] == "chroma"

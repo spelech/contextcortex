@@ -293,7 +293,7 @@ async def api_test_search(payload: SearchRequest):
         if not query:
             return JSONResponse(status_code=400, content={"error": "Query required"})
 
-        search_mode = payload.search_mode or "hybrid"
+        search_mode = (payload.search_mode or "hybrid").lower().strip()
         hits = search_service.execute_hybrid_search(
             query_text=query,
             doc_type=payload.type,

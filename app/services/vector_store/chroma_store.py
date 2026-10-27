@@ -254,11 +254,20 @@ class ChromaVectorStore(VectorStore):
         tag: Optional[str] = None,
         limit: int = 5,
         dense_weight: Optional[float] = None,
-        search_mode: str = "hybrid"
+        search_mode: str = "semantic"
     ) -> List[VectorSearchResult]:
         """Performs dense vector search returning ranked results."""
         if not query_text or not query_text.strip():
             return []
+
+        mode = (search_mode or "semantic").lower().strip()
+        caps = self.get_capabilities()
+        supported = caps.get("search_modes", ["semantic"])
+        if mode not in supported:
+            raise ValueError(
+                f"Search mode '{search_mode}' is not supported by Chroma vector store. "
+                f"Supported modes: {supported}"
+            )
 
         try:
             if self.collection is None:
@@ -328,6 +337,13 @@ class ChromaVectorStore(VectorStore):
             logger.error(f"Error searching Chroma collection '{self.collection_name}': {e}")
             return []
 
+    def get_capabilities(self) -> Dict[str, Any]:
+        """Returns capabilities supported by Chroma vector store backend."""
+        return {
+            "search_modes": ["semantic"],
+            "supports_weighting": False,
+        }
+
     def get_stats(self) -> Dict[str, Any]:
         """Returns collection info including point count, backend, and mode."""
         try:
@@ -340,6 +356,7 @@ class ChromaVectorStore(VectorStore):
                     "points_count": 0,
                     "status": "not_initialized",
                     "location": self.location,
+                    "capabilities": self.get_capabilities(),
                 }
             count = self.collection.count()
             return {
@@ -350,6 +367,7 @@ class ChromaVectorStore(VectorStore):
                 "points_count": count,
                 "status": "ok",
                 "location": self.location,
+                "capabilities": self.get_capabilities(),
             }
         except Exception as e:
             logger.error(f"Error getting stats for Chroma collection '{self.collection_name}': {e}")
@@ -360,6 +378,7 @@ class ChromaVectorStore(VectorStore):
                 "exists": False,
                 "error": str(e),
                 "location": self.location,
+                "capabilities": self.get_capabilities(),
             }
 
     def health_check(self) -> Tuple[bool, str]:

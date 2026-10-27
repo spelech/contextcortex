@@ -30,6 +30,10 @@ export default function SearchInspector({ onOpenInNavigator }: SearchInspectorPr
   const [searchMode, setSearchMode] = useState<'hybrid' | 'semantic' | 'lexical'>('hybrid');
   const [denseWeight, setDenseWeight] = useState(0.5);
 
+  const [supportedModes, setSupportedModes] = useState<string[]>(['hybrid', 'semantic', 'lexical']);
+  const [supportsWeighting, setSupportsWeighting] = useState<boolean>(true);
+  const [backendName, setBackendName] = useState<string>('');
+
   const [availableRepos, setAvailableRepos] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [results, setResults] = useState<SearchHit[] | null>(null);
@@ -37,6 +41,32 @@ export default function SearchInspector({ onOpenInNavigator }: SearchInspectorPr
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   useEffect(() => {
+    const fetchCapabilities = async () => {
+      try {
+        const res = await fetch('/admin/api/vector-store');
+        if (res.ok) {
+          const data = await res.json();
+          const caps = data?.capabilities || data?.stats?.capabilities;
+          if (caps) {
+            if (Array.isArray(caps.search_modes)) {
+              setSupportedModes(caps.search_modes);
+              if (!caps.search_modes.includes(searchMode)) {
+                setSearchMode(caps.search_modes[0] || 'semantic');
+              }
+            }
+            if (typeof caps.supports_weighting === 'boolean') {
+              setSupportsWeighting(caps.supports_weighting);
+            }
+          }
+          if (data?.provider) {
+            setBackendName(data.provider);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load vector store capabilities:', e);
+      }
+    };
+
     const fetchRepos = async () => {
       try {
         const res = await fetch('/admin/api/repos');
@@ -50,6 +80,7 @@ export default function SearchInspector({ onOpenInNavigator }: SearchInspectorPr
         console.error('Failed to load repositories list:', e);
       }
     };
+    fetchCapabilities();
     fetchRepos();
   }, []);
 
@@ -108,38 +139,52 @@ export default function SearchInspector({ onOpenInNavigator }: SearchInspectorPr
           Test hybrid, semantic, and lexical search results with configurable scoring calibration and AST context.
         </p>
 
+        {/* Capability indicator if backend only supports dense search */}
+        {supportedModes.length === 1 && supportedModes.includes('semantic') && (
+          <div className="text-muted" style={{ marginTop: '12px', fontSize: '0.8rem', fontStyle: 'italic' }}>
+            <i className="fa-solid fa-circle-info" style={{ marginRight: '6px' }}></i>
+            Active vector store backend ({backendName || 'Chroma/pgvector'}) supports dense semantic search only. Hybrid/Lexical modes are disabled.
+          </div>
+        )}
+
         {/* Search Mode Segmented Control */}
         <div style={{ marginTop: '16px' }}>
           <div className="search-mode-segmented" role="group" aria-label="Search Mode">
-            <button
-              type="button"
-              className={`search-mode-btn ${searchMode === 'hybrid' ? 'active' : ''}`}
-              onClick={() => setSearchMode('hybrid')}
-              data-testid="mode-hybrid-btn"
-            >
-              <i className="fa-solid fa-code-merge"></i> Hybrid Fusion
-            </button>
-            <button
-              type="button"
-              className={`search-mode-btn ${searchMode === 'semantic' ? 'active' : ''}`}
-              onClick={() => setSearchMode('semantic')}
-              data-testid="mode-semantic-btn"
-            >
-              <i className="fa-solid fa-brain"></i> Semantic (Dense)
-            </button>
-            <button
-              type="button"
-              className={`search-mode-btn ${searchMode === 'lexical' ? 'active' : ''}`}
-              onClick={() => setSearchMode('lexical')}
-              data-testid="mode-lexical-btn"
-            >
-              <i className="fa-solid fa-font"></i> Lexical (BM25)
-            </button>
+            {supportedModes.includes('hybrid') && (
+              <button
+                type="button"
+                className={`search-mode-btn ${searchMode === 'hybrid' ? 'active' : ''}`}
+                onClick={() => setSearchMode('hybrid')}
+                data-testid="mode-hybrid-btn"
+              >
+                <i className="fa-solid fa-code-merge"></i> Hybrid Fusion
+              </button>
+            )}
+            {supportedModes.includes('semantic') && (
+              <button
+                type="button"
+                className={`search-mode-btn ${searchMode === 'semantic' ? 'active' : ''}`}
+                onClick={() => setSearchMode('semantic')}
+                data-testid="mode-semantic-btn"
+              >
+                <i className="fa-solid fa-brain"></i> Semantic (Dense)
+              </button>
+            )}
+            {supportedModes.includes('lexical') && (
+              <button
+                type="button"
+                className={`search-mode-btn ${searchMode === 'lexical' ? 'active' : ''}`}
+                onClick={() => setSearchMode('lexical')}
+                data-testid="mode-lexical-btn"
+              >
+                <i className="fa-solid fa-font"></i> Lexical (BM25)
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Configurable Hybrid Split Slider (only shown in hybrid mode) */}
-        {searchMode === 'hybrid' && (
+        {/* Configurable Hybrid Split Slider (only shown in hybrid mode when weighting is supported) */}
+        {searchMode === 'hybrid' && supportsWeighting && (
           <div className="hybrid-slider-container">
             <div className="hybrid-slider-header">
               <span><strong>Hybrid Scoring Split:</strong></span>
