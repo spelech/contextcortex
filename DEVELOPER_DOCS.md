@@ -4,6 +4,30 @@ This document provides instructions for developing, testing, configuring, and ru
 
 ---
 
+## 🗄️ Relational Database Selection, Schema Migration & Rollback
+
+ContextCortex supports unified relational database selection across **SQLite** (default local embedded storage) and **PostgreSQL** (enterprise local deployment profiles).
+
+### Database Engine Selection
+- **SQLite (Default)**: Used when `DATABASE_URL` is unset or starts with `sqlite:///`. Relational metadata and index caches are stored at `/app/data/index_cache.db` (configurable via `CACHE_DB_PATH`).
+- **PostgreSQL**: Selected by setting `DATABASE_URL` to a valid PostgreSQL connection string (e.g., `postgresql+psycopg://user:password@postgres:5432/contextcortex`).
+  - When PostgreSQL is selected, all relational access across repositories, settings, credentials, indexing, file summaries, AST symbols, API routes, relationships, search, ADRs, and file deletion routes through the unified `PostgresConnectionAdapter`.
+  - **No Fallback SQLite Files**: When PostgreSQL is selected, the application operates exclusively against PostgreSQL and will never create or query an unrelated fallback SQLite file.
+
+### Schema Migration
+1. **Automated Schema Initialization**: Schema tables and initial seed data (custom prompts, system metadata, vector store configuration) are initialized on startup via `init_db()`.
+2. **Canonical SQLAlchemy Core Schema**: Table definitions are specified in `app/services/database/schema.py`. Running `init_db()` calls `metadata.create_all(bind=engine)` to idempotently create missing tables across SQLite and PostgreSQL.
+3. **Column Migration Checks**: `ensure_git_repositories_columns()` and `ensure_file_summaries_columns()` verify table columns on startup (e.g. `keep_shallow`, `summary_text`) using `information_schema` on PostgreSQL or `PRAGMA table_info` on SQLite.
+4. **pgvector Extension**: When initializing PostgreSQL, `init_db()` executes `CREATE EXTENSION IF NOT EXISTS vector;` to enable vector operations for pgvector storage.
+
+### Database Rollback Strategy
+If you need to roll back or switch storage engines between PostgreSQL and SQLite:
+1. **Switch Connection URL**: Set `DATABASE_URL` to the desired storage target (e.g., unset `DATABASE_URL` or set `DATABASE_URL="sqlite:////app/data/index_cache.db"` to revert to SQLite).
+2. **Initialize Target Schema**: Start the application (`python main.py`) or call `init_db()`. The database engine factory initializes target schema tables idempotently without modifying or destroying data in the previously active database.
+3. **Re-index Content**: Trigger re-indexing (`run_full_indexing()` or via the UI/API) to populate repository files, symbols, and summaries into the target relational database.
+
+---
+
 ## 🛠️ Prerequisites
 
 - **Python 3.11+**
