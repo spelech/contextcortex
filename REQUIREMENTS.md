@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1115 Automated Tests** (757 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1124 Automated Tests** (766 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1033,6 +1033,17 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_file_settings_defaults`
 - `test_set_file_settings_persists`
 - `test_file_settings_api_endpoints`
+
+#### `tests/test_frontend_artifact.py` (9 tests)
+- `test_fresh_build_syncs_exact_output_and_removes_obsolete_assets`
+- `test_unverified_bundle_cannot_be_stamped_or_synced`
+- `test_source_or_output_changes_reject_previously_built_bundle`
+- `test_deleted_asset_is_rejected`
+- `test_source_line_endings_do_not_invalidate_transferred_artifacts`
+- `test_failed_build_cannot_reuse_old_output_or_publish_manifest`
+- `test_source_change_during_build_cannot_be_attested`
+- `test_overlay_build_rejects_unverified_dashboard`
+- `test_overlay_installs_verified_output_in_both_served_directories`
 
 #### `tests/test_git_incremental.py` (6 tests)
 - `test_compute_git_repo_delta`
