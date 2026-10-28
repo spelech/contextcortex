@@ -454,10 +454,15 @@ def check_db_readiness() -> Tuple[bool, Dict[str, Any]]:
                     conn.execute(select(func.count()).select_from(TABLES[table_name])).scalar()
 
         # 2. Verify direct connection pathway used by legacy/subrouter queries
-        with get_db_connection() as raw_conn:
-            cursor = raw_conn.cursor()
-            for table_name in required_tables:
-                cursor.execute(f"SELECT 1 FROM {table_name} LIMIT 1")
+        if is_postgres():
+            with get_connection() as raw_conn:
+                for table_name in required_tables:
+                    raw_conn.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
+        else:
+            with get_db_connection() as raw_conn:
+                cursor = raw_conn.cursor()
+                for table_name in required_tables:
+                    cursor.execute(f"SELECT 1 FROM {table_name} LIMIT 1")
 
         return True, {"status": "ok", "type": db_type}
     except Exception as e:
