@@ -2,9 +2,6 @@ import os
 import pytest
 from unittest.mock import patch
 
-if "QDRANT_URL" not in os.environ:
-    os.environ["QDRANT_URL"] = "http://localhost:8010"
-
 
 @pytest.fixture(autouse=True)
 def stop_background_poller():
@@ -28,6 +25,9 @@ def isolate_test_db(tmp_path, monkeypatch):
     monkeypatch.setattr("app.services.database.CACHE_DB_PATH", temp_db, raising=False)
     monkeypatch.setattr("app.services.database.connection.CACHE_DB_PATH", temp_db, raising=False)
     monkeypatch.setenv("VECTOR_STORE_STORAGE_PATH", temp_storage)
+    monkeypatch.setenv("VECTOR_STORE_MODE", "embedded")
+    monkeypatch.setenv("QDRANT_PREFER_REMOTE", "false")
+    monkeypatch.delenv("QDRANT_URL", raising=False)
 
     from app.services.database import init_db, get_db_engine
     from app.services.vector_store import VectorStoreManager
