@@ -1,4 +1,4 @@
-# Test Coverage Report: ContextCortex (v2.19.0)
+# Test Coverage Report: ContextCortex (v2.20.0)
 
 This document provides comprehensive test coverage metrics and verification baselines for ContextCortex following the modular architectural restructuring, Codebase Navigator implementation, and test suite expansion.
 

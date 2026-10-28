@@ -1,4 +1,4 @@
-# ContextCortex (v2.19.0)
+# ContextCortex (v2.20.0)
 
 
 [![Build and Publish Docker Image](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml)

@@ -1,6 +1,6 @@
 # Software Requirements Specification (SRS)
 
-This document establishes the Software Requirements Specification for ContextCortex (`v2.19.0`).
+This document establishes the Software Requirements Specification for ContextCortex (`v2.20.0`).
 
 ---
 

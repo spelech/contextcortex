@@ -111,7 +111,7 @@ def generate_markdown() -> str:
 
     main_py = PROJECT_ROOT / "main.py"
     ver_match = re.search(r'version=["\']([^"\']+)["\']', main_py.read_text(encoding="utf-8")) if main_py.exists() else None
-    app_version = ver_match.group(1).strip() if ver_match else "2.19.0"
+    app_version = ver_match.group(1).strip() if ver_match else "2.20.0"
 
     lines = [
         f"# Software Requirements Specification: ContextCortex (v{app_version})",
