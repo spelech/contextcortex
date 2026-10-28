@@ -66,7 +66,11 @@ async def handle_manage_local_file(
                 pdf_extractor_fn = _get_tools_attr("extract_pdf_pages", extract_pdf_pages)
                 pdf_res = pdf_extractor_fn(abs_path, filename=os.path.basename(file_path), ocr_fallback=False)
                 first_page_text = pdf_res.pages[0].text[:1000] if pdf_res.pages else ""
-                err_summary = f"- **Errors:** {len(pdf_res.errors)}\n" if pdf_res.errors else ""
+                if pdf_res.errors:
+                    err_lines = [f"  - Page {e.get('page_number', '?')}: {e.get('error', 'Unknown error')}" for e in pdf_res.errors]
+                    err_summary = f"- **Errors:** {len(pdf_res.errors)}\n" + "\n".join(err_lines) + "\n"
+                else:
+                    err_summary = ""
                 return (
                     f"### PDF Extraction Preview: {file_path}\n"
                     f"- **Total Pages:** {pdf_res.total_pages}\n"
