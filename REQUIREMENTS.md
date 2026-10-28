@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1099 Automated Tests** (746 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1105 Automated Tests** (752 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -999,6 +999,14 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_embedding_cache_model_isolation`
 - `test_embedding_cache_invalidation`
 - `test_embedding_cache_empty_inputs`
+
+#### `tests/test_embedding_model_transition.py` (6 tests)
+- `test_update_embedding_config_rejection_when_index_has_content` - _Verifies that changing dense model/dimension without rebuild_index=True raises ValueError if index has content._
+- `test_api_save_embedding_settings_rejection_returns_400` - _Verifies POST /admin/api/settings/embedding returns HTTP 400 when change is rejected._
+- `test_update_embedding_config_success_with_rebuild` - _Verifies that update_embedding_config succeeds when rebuild_index=True and triggers metadata reset._
+- `test_dimension_mismatch_during_search_raises_explicit_error` - _Verifies that vector search with mismatched query vector dimension raises ValueError and returns HTTP 400._
+- `test_restart_clears_relational_metadata_on_collection_recreate` - _Verifies that on app restart, if ensure_collection detects a dimension mismatch and recreates the collection, relational metadata is cleared._
+- `test_rollback_and_complete_rebuild` - _Tests model transition, rollback, and complete rebuild across local paths._
 
 #### `tests/test_file_mcp_and_api.py` (5 tests)
 - `test_env`

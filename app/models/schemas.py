@@ -188,6 +188,8 @@ class EmbeddingSettingsRequest(BaseModel):
     chat_model: Optional[str] = None
     allow_fallback: Optional[bool] = None
     fallback_dense_model: Optional[str] = None
+    rebuild_index: Optional[bool] = Field(default=False, description="Explicitly confirm index rebuild when changing embedding dimensions or models")
+    rebuild: Optional[bool] = Field(default=None, description="Alias for rebuild_index")
 
 # Topology Graph Models
 class TopologyNode(BaseModel):

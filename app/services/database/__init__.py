@@ -45,6 +45,7 @@ from app.services.database.connection import (
     set_file_settings,
     ensure_file_summaries_columns,
     check_db_readiness,
+    clear_indexing_metadata,
 )
 from app.services.database.credentials import (
     list_git_host_credentials,
@@ -118,6 +119,7 @@ __all__ = [
     "get_file_settings",
     "set_file_settings",
     "ensure_file_summaries_columns",
+    "clear_indexing_metadata",
     "list_git_host_credentials",
     "get_git_host_credential",
     "save_git_host_credential",

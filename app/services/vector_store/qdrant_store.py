@@ -153,7 +153,16 @@ class QdrantVectorStore(VectorStore):
                     needs_recreate = True
 
                 if needs_recreate:
+                    logger.warning(
+                        f"Recreating Qdrant collection '{self.collection_name}' due to schema/dimension mismatch. "
+                        f"Clearing relational index metadata..."
+                    )
                     self.client.delete_collection(self.collection_name)
+                    try:
+                        from app.services.database import clear_indexing_metadata
+                        clear_indexing_metadata()
+                    except Exception as cm_err:
+                        logger.warning(f"Failed to clear indexing metadata during collection recreation: {cm_err}")
 
             if not self.client.collection_exists(self.collection_name):
                 logger.info(f"Creating Hybrid Qdrant collection: {self.collection_name} (Dense: {dim}d, Sparse: BM25)")
@@ -370,6 +379,16 @@ class QdrantVectorStore(VectorStore):
             dense_vec = get_dense_embedding(query_text.strip()) if mode in ("hybrid", "semantic") else None
             sparse_vec = get_sparse_embedding(query_text.strip()) if mode in ("hybrid", "lexical") else None
 
+            if dense_vec is not None:
+                info = self.client.get_collection(self.collection_name)
+                vectors_config = getattr(info.config.params, "vectors", None)
+                if isinstance(vectors_config, dict) and "dense" in vectors_config:
+                    col_dim = getattr(vectors_config["dense"], "size", None)
+                    if col_dim is not None and len(dense_vec) != col_dim:
+                        msg = f"Vector dimension mismatch: query vector ({len(dense_vec)}d) does not match collection '{self.collection_name}' ({col_dim}d). An index rebuild is required."
+                        logger.error(msg)
+                        raise ValueError(msg)
+
             candidate_limit = max(limit * 5, 50)
 
             # If pure lexical search was explicitly requested but query produced no sparse indices, return empty
@@ -505,7 +524,14 @@ class QdrantVectorStore(VectorStore):
 
             scored_results.sort(key=lambda r: r.score, reverse=True)
             return scored_results[:limit]
+        except ValueError:
+            raise
         except Exception as e:
+            err_str = str(e).lower()
+            if "dimension" in err_str or "size" in err_str or "mismatch" in err_str:
+                msg = f"Vector dimension mismatch during Qdrant search in collection '{self.collection_name}': {e}. An index rebuild is required."
+                logger.error(msg)
+                raise ValueError(msg) from e
             logger.error(f"Error searching Qdrant collection '{self.collection_name}': {e}")
             return []
 

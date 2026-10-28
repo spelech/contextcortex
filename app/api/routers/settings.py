@@ -504,6 +504,7 @@ async def api_get_embedding_settings():
 )
 async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
     try:
+        do_rebuild = bool(payload.rebuild_index or payload.rebuild)
         updated_cfg = emb_service.update_embedding_config(
             provider=payload.provider,
             dense_model=payload.dense_model,
@@ -516,6 +517,7 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
             chat_model=payload.chat_model,
             allow_fallback=payload.allow_fallback,
             fallback_dense_model=payload.fallback_dense_model,
+            rebuild_index=do_rebuild,
         )
         return {
             "status": "success",
@@ -523,8 +525,11 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
             "config": updated_cfg
         }
     except ValueError as ve:
-        logger.warning(f"Validation error updating embedding settings: {ve}")
-        return JSONResponse(status_code=400, content={"status": "error", "error": str(ve), "message": str(ve)})
+        logger.warning(f"Rejected embedding settings update: {ve}")
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "error": str(ve), "message": str(ve)}
+        )
     except Exception as e:
         logger.error(f"Error updating embedding settings: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to update embedding settings.", "message": "Failed to update embedding settings."})

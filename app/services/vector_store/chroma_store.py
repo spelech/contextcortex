@@ -9,7 +9,7 @@ import chromadb
 
 
 from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
-from app.services.embeddings import get_dense_embedding
+from app.services.embeddings import get_dense_embedding, get_dense_dim
 
 logger = logging.getLogger("contextcortex.vector_store.chroma")
 
@@ -173,6 +173,28 @@ class ChromaVectorStore(VectorStore):
     def ensure_collection(self) -> bool:
         """Initializes or retrieves the collection with cosine distance metric."""
         try:
+            dim = get_dense_dim()
+
+            try:
+                col = self.client.get_collection(name=self.collection_name)
+                # Check for existing points dimension if collection exists
+                if col.count() > 0:
+                    peek_res = col.get(limit=1, include=["embeddings"])
+                    if peek_res and peek_res.get("embeddings") is not None and len(peek_res["embeddings"]) > 0:
+                        existing_dim = len(peek_res["embeddings"][0])
+                        if existing_dim != dim:
+                            logger.warning(
+                                f"Chroma collection '{self.collection_name}' dimension mismatch: expected {dim}d, found {existing_dim}d. Recreating..."
+                            )
+                            self.client.delete_collection(name=self.collection_name)
+                            try:
+                                from app.services.database import clear_indexing_metadata
+                                clear_indexing_metadata()
+                            except Exception as cm_err:
+                                logger.warning(f"Failed to clear indexing metadata during Chroma collection recreation: {cm_err}")
+            except Exception:
+                pass
+
             self.collection = self.client.get_or_create_collection(
                 name=self.collection_name,
                 metadata={"hnsw:space": "cosine"}
@@ -346,7 +368,14 @@ class ChromaVectorStore(VectorStore):
                     )
 
             return results
+        except ValueError:
+            raise
         except Exception as e:
+            err_str = str(e).lower()
+            if "dimension" in err_str or "size" in err_str or "mismatch" in err_str:
+                msg = f"Vector dimension mismatch during Chroma search in collection '{self.collection_name}': {e}. An index rebuild is required."
+                logger.error(msg)
+                raise ValueError(msg) from e
             logger.error(f"Error searching Chroma collection '{self.collection_name}': {e}")
             return []
 

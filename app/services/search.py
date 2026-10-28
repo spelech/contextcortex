@@ -335,6 +335,8 @@ def execute_hybrid_search(
         )
         _enrich_code_ast_metadata(results)
         return results
+    except ValueError:
+        raise
     except Exception as e:
         logger.error(f"Error executing vector search: {e}")
         return []

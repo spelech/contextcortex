@@ -59,6 +59,7 @@ def test_api_embedding_settings_get_and_post_with_models(tmp_path, monkeypatch):
         "litellm_api_key": "sk-test-key",
         "vision_ocr_model": "gemini-2.5-flash",
         "chat_model": "gemini-2.5-pro",
+        "rebuild_index": True,
     }
 
     post_resp = client.post("/admin/api/settings/embedding", json=post_payload)
