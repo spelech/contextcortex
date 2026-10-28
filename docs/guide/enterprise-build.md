@@ -103,34 +103,42 @@ artifacts/lockfiles or mirror support for those tarball requests. Do not disable
 preparation scripts or fall back to public npm to hide the failure. The local
 frontend-only build currently reaches this blocker in a Git helper dependency.
 
-### The 30-day quarantine
+### The 30-day quarantine & Approved Mirror Baseline
 
 Let the internal mirror enforce its package-age policy; a package being
-available on public PyPI is not authorization to fetch it. For repeatability,
-provide `.secrets\python-constraints.txt` containing the complete reviewed
-direct and transitive version set for the target Python/OS/architecture, using
-`package==version` lines. Include build dependencies where source distributions
-are allowed. Match the Python version in `PYTHON_IMAGE`; current default is 3.11.
+available on public PyPI is not authorization to fetch it. Package age is defined
+and measured from the official release publication date on public PyPI (or artifact upload timestamp)
+prior to admission into the approved private mirror. All dependencies must satisfy the environment's
+30-day quarantine period before admission.
 
-Generate/review that file from an eligible mirror snapshot, recording the
-approval date and the organization's definition of release age. A constraints
-file alone does not certify age or make a missing package available. Do not
-invent older pins or lower package minimums without compatibility testing.
-This repository does not ship an unverified enterprise lock.
+For repeatability across supported platforms (Linux / Python 3.11 in Docker builds and Windows / Python 3.12 on enterprise hosts),
+the repository provides a complete reviewed exact-version baseline in `python-constraints.txt` (and `.secrets\python-constraints.txt`).
+This file records exact pins (`package==version`) for all direct, transitive, and build dependencies required by `requirements.txt`.
+It includes provenance comments, approval timestamps, and quarantine verification status.
 
-You can check resolution on a configured host without installing anything:
+A constraints file enforces exact pinned versions during resolution without altering lower bounds in `requirements.txt`.
+Do not lower minimum version requirements or attempt to use public extra-index fallbacks to bypass mirror quarantine.
+Selecting `pgvector` or another vector store backend at runtime does **not** remove `qdrant-client` or `fastembed` from backend imports;
+all direct and transitive packages must be approved and present on the private mirror.
+
+You can verify clean resolution against the approved mirror baseline on a configured host without modifying installed packages:
 
 ```powershell
-python -m pip install --dry-run --ignore-installed `
+python -m pip install --no-cache-dir --dry-run --ignore-installed `
   --constraint .secrets\python-constraints.txt -r requirements.txt
 ```
 
-A "No matching distribution" result requires checking mirror approval/import,
-age eligibility, Python version and platform wheels. In the assessed environment,
-Qdrant, FastEmbed and the tree-sitter language pack were unavailable in compatible
-mirror probes. Those must be admitted as eligible packages (including their
-transitive dependencies) before a source build can succeed. Selecting another
-vector backend is not sufficient to remove them from the current imports.
+> [!TIP]
+> Always pass `--no-cache-dir` when testing mirror resolution to avoid reusing locally cached wheels, ensuring every dependency is verified against the private repository quarantine.
+
+After resolution, confirm dependency tree consistency by running:
+
+```powershell
+pip check
+```
+
+A "No matching distribution" result indicates missing package mirror approval, quarantine hold, or incompatible target architecture wheels.
+Arrange mirror import and approval for missing direct or transitive packages (`qdrant-client`, `fastembed`, `tree-sitter`, `tree-sitter-language-pack`, `mcp`, etc.) before initiating a restricted-network build.
 
 Build with your approved configurations and constraints:
 
