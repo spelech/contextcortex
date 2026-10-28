@@ -33,8 +33,12 @@ def save_git_host_credential(host: str, provider: str, auth_token: str, auth_use
         with get_db_connection() as conn:
             cur = conn.cursor()
             cur.execute(
-                """INSERT OR REPLACE INTO git_host_credentials (host, provider, auth_user, auth_token)
-                   VALUES (?, ?, ?, ?)""",
+                """INSERT INTO git_host_credentials (host, provider, auth_user, auth_token)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(host) DO UPDATE SET
+                       provider = EXCLUDED.provider,
+                       auth_user = EXCLUDED.auth_user,
+                       auth_token = EXCLUDED.auth_token""",
                 (clean_host, provider.lower().strip(), auth_user.strip() if auth_user else None, auth_token.strip())
             )
             conn.commit()

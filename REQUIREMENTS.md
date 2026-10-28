@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1094 Automated Tests** (741 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1099 Automated Tests** (746 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1216,6 +1216,16 @@ and leaves the prior indexed state intact without data loss._
 - `test_poller_daemon_lifecycle`
 - `test_poller_worker_cycle`
 - `test_poller_worker_disabled_interval`
+
+#### `tests/test_postgres_unified_connection.py` (5 tests)
+- `test_dict_row_compatibility` - _Verify DictRow supports dict lookup, index lookup, attribute access, and dict conversion._
+- `test_convert_sql_placeholders` - _Verify placeholder conversion converts ? to :p1, :p2 and appends RETURNING id for inserts._
+- `test_postgres_selection_never_creates_fallback_sqlite` - _Asserts that when PostgreSQL is selected, get_db_connection() returns the PostgreSQL adapter
+and NEVER creates or queries the fallback SQLite index_cache.db file._
+- `test_postgres_full_relational_crud_and_indexing` - _Tests full relational lifecycle (repositories, settings, credentials, indexing,
+file summaries, AST symbols/routes/relationships, ADRs, search and deletion)
+over the PostgresConnectionAdapter using an initialized test engine._
+- `test_ensure_columns_postgres` - _Verify ensure_git_repositories_columns and ensure_file_summaries_columns run without error when on PostgreSQL._
 
 #### `tests/test_processor_caching.py` (6 tests)
 - `test_compute_text_hash`

@@ -154,17 +154,35 @@ def sync_local_paths():
             logger.error(f"Failed to upsert points to vector store: {e}")
             return False
 
-    # Batch update SQLite tables
+    # Batch update database tables
     try:
         with db_service.get_db_connection() as conn:
             if files_to_update_cache:
                 conn.executemany(
-                    "INSERT OR REPLACE INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime) VALUES (?, ?, ?, ?, ?, ?)",
+                    """INSERT INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(filepath) DO UPDATE SET
+                           repo = EXCLUDED.repo,
+                           doc_type = EXCLUDED.doc_type,
+                           language = EXCLUDED.language,
+                           commit_sha = EXCLUDED.commit_sha,
+                           mtime = EXCLUDED.mtime""",
                     files_to_update_cache
                 )
             if all_summaries:
                 conn.executemany(
-                    "INSERT OR REPLACE INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    """INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(filepath) DO UPDATE SET
+                           repo = EXCLUDED.repo,
+                           title = EXCLUDED.title,
+                           folder = EXCLUDED.folder,
+                           category = EXCLUDED.category,
+                           tags = EXCLUDED.tags,
+                           headings = EXCLUDED.headings,
+                           keywords = EXCLUDED.keywords,
+                           summary_text = EXCLUDED.summary_text,
+                           mtime = EXCLUDED.mtime""",
                     all_summaries
                 )
             if all_symbols:

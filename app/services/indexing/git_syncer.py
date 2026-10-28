@@ -322,13 +322,32 @@ def sync_single_git_repo(repo_id: int):
                 with db_service.get_db_connection() as conn:
                     if batch_indexed_files:
                         conn.executemany(
-                            "INSERT OR REPLACE INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            """INSERT INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime, hash)
+                               VALUES (?, ?, ?, ?, ?, ?, ?)
+                               ON CONFLICT(filepath) DO UPDATE SET
+                                   repo = EXCLUDED.repo,
+                                   doc_type = EXCLUDED.doc_type,
+                                   language = EXCLUDED.language,
+                                   commit_sha = EXCLUDED.commit_sha,
+                                   mtime = EXCLUDED.mtime,
+                                   hash = EXCLUDED.hash""",
                             batch_indexed_files
                         )
                         batch_indexed_files.clear()
                     if batch_summaries:
                         conn.executemany(
-                            "INSERT OR REPLACE INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            """INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               ON CONFLICT(filepath) DO UPDATE SET
+                                   repo = EXCLUDED.repo,
+                                   title = EXCLUDED.title,
+                                   folder = EXCLUDED.folder,
+                                   category = EXCLUDED.category,
+                                   tags = EXCLUDED.tags,
+                                   headings = EXCLUDED.headings,
+                                   keywords = EXCLUDED.keywords,
+                                   summary_text = EXCLUDED.summary_text,
+                                   mtime = EXCLUDED.mtime""",
                             batch_summaries
                         )
                         batch_summaries.clear()

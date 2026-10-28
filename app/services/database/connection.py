@@ -18,23 +18,36 @@ from app.services.database.engine import (
 logger = logging.getLogger("contextcortex.db")
 
 CACHE_DB_PATH = get_default_db_path()
-try:
-    os.makedirs(os.path.dirname(CACHE_DB_PATH), exist_ok=True)
-except Exception:
-    pass
+if not is_postgres():
+    try:
+        os.makedirs(os.path.dirname(CACHE_DB_PATH), exist_ok=True)
+    except Exception:
+        pass
 
+from app.services.database.postgres_compat import (
+    DictRow,
+    TABLES_WITH_ID,
+    _convert_sql_placeholders,
+    _SingleRowResult,
+    PostgresResultAdapter,
+    PostgresCursorAdapter,
+    PostgresConnectionAdapter,
+)
 
-def get_db_connection():
+def get_db_connection() -> Any:
     """
-    Returns a database connection for backward compatibility with legacy modules.
-    If PostgreSQL is configured, delegates to get_connection().
-    Otherwise, returns a SQLite database connection.
+    Returns a database connection (PostgreSQL adapter or SQLite connection)
+    based on database selection.
     """
-    from app.services.database.engine import is_postgres, get_connection, get_current_db_path
     if is_postgres():
-        return get_connection()
+        return PostgresConnectionAdapter()
 
+    from app.services.database.engine import get_current_db_path
     db_path = get_current_db_path()
+    try:
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    except Exception:
+        pass
 
     conn = sqlite3.connect(db_path, timeout=15.0)
     conn.row_factory = sqlite3.Row
@@ -43,13 +56,11 @@ def get_db_connection():
     conn.execute("PRAGMA foreign_keys=ON;")
     return conn
 
-
 def init_db(vault_path: str = "/docs", engine=None):
     """
     Initializes database schema and seed data via SQLAlchemy Core engine.
     """
     return engine_init_db(vault_path=vault_path, engine=engine)
-
 
 def get_metadata(key: str, default: Optional[str] = None) -> Optional[str]:
     try:
@@ -60,7 +71,6 @@ def get_metadata(key: str, default: Optional[str] = None) -> Optional[str]:
             return str(val) if val is not None else default
     except Exception:
         return default
-
 
 def set_metadata(key: str, value: str):
     try:
@@ -75,7 +85,6 @@ def set_metadata(key: str, value: str):
     except Exception as e:
         logger.error(f"Failed to set metadata key {key}: {e}")
 
-
 def get_default_vector_storage_path() -> str:
     env_path = os.getenv("VECTOR_STORE_STORAGE_PATH")
     if env_path:
@@ -83,7 +92,6 @@ def get_default_vector_storage_path() -> str:
     if os.path.exists("/app") and os.access("/app", os.W_OK):
         return "/app/data/vector_storage"
     return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "vector_storage")
-
 
 def _resolve_default_vector_store_config(conn: Optional[Any] = None) -> Dict[str, str]:
     provider = os.getenv("VECTOR_STORE") or os.getenv("VECTOR_STORE_PROVIDER") or (
@@ -132,7 +140,6 @@ def _resolve_default_vector_store_config(conn: Optional[Any] = None) -> Dict[str
         "collection": collection.strip(),
     }
 
-
 def get_vector_store_db_config() -> Dict[str, str]:
     provider = get_metadata("vector_store_provider")
     mode = get_metadata("vector_store_mode")
@@ -149,7 +156,6 @@ def get_vector_store_db_config() -> Dict[str, str]:
         "url": (url if url is not None else default_cfg["url"]).strip(),
         "collection": (collection or default_cfg["collection"]).strip(),
     }
-
 
 def set_vector_store_db_config(
     provider: Optional[str] = None,
@@ -168,7 +174,6 @@ def set_vector_store_db_config(
         set_metadata("vector_store_url", url.strip())
     if collection is not None:
         set_metadata("vector_store_collection", collection.strip())
-
 
 def detect_system_resources() -> Dict[str, Any]:
     """Detects available CPU cores and RAM in the execution environment, respecting container quotas."""
@@ -204,7 +209,6 @@ def detect_system_resources() -> Dict[str, Any]:
     except Exception:
         pass
     return {"cpus": cpus, "memory_gb": mem_gb}
-
 
 def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, Any]:
     sys_res = detect_system_resources()
@@ -244,7 +248,6 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
         "system_cpus": sys_res["cpus"],
         "system_memory_gb": sys_res["memory_gb"],
     }
-
 
 def get_embedding_db_config() -> Dict[str, Any]:
     provider = get_metadata("embedding_provider")
@@ -293,7 +296,6 @@ def get_embedding_db_config() -> Dict[str, Any]:
         "system_memory_gb": default_cfg["system_memory_gb"],
     }
 
-
 def set_embedding_db_config(
     provider: Optional[str] = None,
     dense_model: Optional[str] = None,
@@ -334,7 +336,6 @@ def set_embedding_db_config(
     if fallback_dense_model is not None:
         set_metadata("embedding_fallback_dense_model", fallback_dense_model.strip())
 
-
 def get_vision_ocr_model() -> str:
     """Returns stored vision OCR model or fallback to env/default."""
     stored = get_metadata("openai_vision_model") or get_metadata("vision_ocr_model") or get_metadata("embedding_vision_ocr_model")
@@ -342,14 +343,12 @@ def get_vision_ocr_model() -> str:
         return stored.strip()
     return (os.getenv("VISION_OCR_MODEL") or "").strip()
 
-
 def get_chat_model() -> str:
     """Returns stored chat model or fallback to env/default."""
     stored = get_metadata("openai_chat_model") or get_metadata("chat_model") or get_metadata("embedding_chat_model")
     if stored and stored.strip():
         return stored.strip()
     return (os.getenv("CHAT_MODEL") or "").strip()
-
 
 def get_ai_gateway_config() -> Dict[str, Any]:
     """
@@ -392,7 +391,6 @@ def get_ai_gateway_config() -> Dict[str, Any]:
         "embedding_model": embedding_model,
     }
 
-
 def set_ai_gateway_config(
     url: Optional[str] = None,
     api_key: Optional[str] = None,
@@ -423,38 +421,56 @@ def set_ai_gateway_config(
 
     return get_ai_gateway_config()
 
-
 def ensure_git_repositories_columns(conn=None):
     """Ensures keep_shallow column exists on git_repositories table."""
     try:
-        raw_conn = get_db_connection()
-        try:
-            cols = [r["name"] for r in raw_conn.execute("PRAGMA table_info(git_repositories)").fetchall()]
-            if cols and "keep_shallow" not in cols:
-                raw_conn.execute("ALTER TABLE git_repositories ADD COLUMN keep_shallow INTEGER DEFAULT 0")
-                raw_conn.commit()
-                logger.info("Migrated git_repositories: added keep_shallow column")
-        finally:
-            raw_conn.close()
+        if is_postgres():
+            from sqlalchemy import text
+            with get_connection() as sa_conn:
+                res = sa_conn.execute(
+                    text("SELECT column_name FROM information_schema.columns WHERE table_name='git_repositories' AND column_name='keep_shallow'")
+                ).fetchone()
+                if not res:
+                    sa_conn.execute(text("ALTER TABLE git_repositories ADD COLUMN keep_shallow INTEGER DEFAULT 0"))
+                    sa_conn.commit()
+                    logger.info("Migrated git_repositories: added keep_shallow column")
+        else:
+            raw_conn = get_db_connection()
+            try:
+                cols = [r["name"] for r in raw_conn.execute("PRAGMA table_info(git_repositories)").fetchall()]
+                if cols and "keep_shallow" not in cols:
+                    raw_conn.execute("ALTER TABLE git_repositories ADD COLUMN keep_shallow INTEGER DEFAULT 0")
+                    raw_conn.commit()
+                    logger.info("Migrated git_repositories: added keep_shallow column")
+            finally:
+                raw_conn.close()
     except Exception as e:
         logger.debug(f"Migration error for git_repositories: {e}")
-
 
 def ensure_file_summaries_columns(conn=None):
     """Ensures summary_text column exists on file_summaries table and git_repositories has keep_shallow."""
     try:
         ensure_git_repositories_columns(conn)
-        raw_conn = get_db_connection()
-        try:
-            cols = [r["name"] for r in raw_conn.execute("PRAGMA table_info(file_summaries)").fetchall()]
-            if cols and "summary_text" not in cols:
-                raw_conn.execute("ALTER TABLE file_summaries ADD COLUMN summary_text TEXT")
-                raw_conn.commit()
-        finally:
-            raw_conn.close()
+        if is_postgres():
+            from sqlalchemy import text
+            with get_connection() as sa_conn:
+                res = sa_conn.execute(
+                    text("SELECT column_name FROM information_schema.columns WHERE table_name='file_summaries' AND column_name='summary_text'")
+                ).fetchone()
+                if not res:
+                    sa_conn.execute(text("ALTER TABLE file_summaries ADD COLUMN summary_text TEXT"))
+                    sa_conn.commit()
+        else:
+            raw_conn = get_db_connection()
+            try:
+                cols = [r["name"] for r in raw_conn.execute("PRAGMA table_info(file_summaries)").fetchall()]
+                if cols and "summary_text" not in cols:
+                    raw_conn.execute("ALTER TABLE file_summaries ADD COLUMN summary_text TEXT")
+                    raw_conn.commit()
+            finally:
+                raw_conn.close()
     except Exception as e:
         logger.debug(f"Migration error for file_summaries: {e}")
-
 
 def check_db_readiness() -> Tuple[bool, Dict[str, Any]]:
     """
@@ -494,9 +510,6 @@ def check_db_readiness() -> Tuple[bool, Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Database readiness check failed ({db_type}): {e}")
         return False, {"status": "error", "type": db_type}
-
-
-
 def get_file_settings() -> Dict[str, Any]:
     """Retrieves file reading and large file summarization settings."""
     enabled_val = get_metadata("file_summary_enabled")
@@ -512,7 +525,6 @@ def get_file_settings() -> Dict[str, Any]:
         "read_file_max_lines": int(max_lines_val) if max_lines_val and max_lines_val.isdigit() else 2000,
         "summary_chat_model": (model_val or get_chat_model()).strip(),
     }
-
 
 def set_file_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Updates file reading and summarization settings."""

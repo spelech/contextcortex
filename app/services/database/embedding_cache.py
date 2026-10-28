@@ -47,8 +47,12 @@ def set_cached_embeddings_batch(items: List[Dict[str, Any]]) -> None:
         ))
     with get_db_connection() as conn:
         conn.executemany(
-            """INSERT OR REPLACE INTO embedding_cache (chunk_hash, dense_vector, sparse_indices, sparse_values, model_name)
-               VALUES (?, ?, ?, ?, ?)""",
+            """INSERT INTO embedding_cache (chunk_hash, dense_vector, sparse_indices, sparse_values, model_name)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(chunk_hash, model_name) DO UPDATE SET
+                   dense_vector = EXCLUDED.dense_vector,
+                   sparse_indices = EXCLUDED.sparse_indices,
+                   sparse_values = EXCLUDED.sparse_values""",
             rows_to_insert
         )
         conn.commit()
