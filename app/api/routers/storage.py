@@ -42,7 +42,8 @@ async def api_preview_pdf(
             "total_characters": res.total_characters,
             "ocr_pages_count": res.ocr_pages_count,
             "pages": [asdict(p) for p in res.pages],
-            "sample_chunks": res.preview_chunks[:50]
+            "sample_chunks": res.preview_chunks[:50],
+            "errors": res.errors
         }
     except ValueError as ve:
         logger.warning(f"Validation error previewing PDF file: {ve}")

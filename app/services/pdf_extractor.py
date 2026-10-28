@@ -1,8 +1,9 @@
 import os
 import io
+import re
 import base64
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Union, Optional
 import pymupdf
 from openai import OpenAI
@@ -15,12 +16,53 @@ MAX_PDF_SIZE_BYTES = int(os.getenv("MAX_PDF_SIZE_MB", "50")) * 1024 * 1024
 OCR_TEXT_THRESHOLD_CHARS = 50
 
 
+class OcrError(Exception):
+    """Base exception for OCR processing failures."""
+    pass
+
+
+class OcrUnconfiguredError(OcrError):
+    """Raised when vision OCR is attempted but no model is configured."""
+    pass
+
+
+class OcrExecutionError(OcrError):
+    """Raised when vision OCR invocation fails."""
+    pass
+
+
+def _sanitize_ocr_error(exc: Exception) -> str:
+    """Sanitizes exception messages to prevent exposing private gateway URLs, IP addresses, or API keys."""
+    raw_msg = str(exc)
+    exc_type = type(exc).__name__.lower()
+    raw_lower = raw_msg.lower()
+
+    if "timeout" in exc_type or "timeout" in raw_lower:
+        return "Vision OCR request timed out."
+    if "notfound" in exc_type or "404" in raw_msg or "model_not_found" in raw_lower or "does not exist" in raw_lower:
+        return "Vision OCR model not found or invalid."
+    if "authentication" in exc_type or "401" in raw_msg or "invalid_api_key" in raw_lower or "unauthorized" in raw_lower:
+        return "Vision OCR gateway authentication failed."
+    if "permission" in exc_type or "403" in raw_msg or "forbidden" in raw_lower:
+        return "Vision OCR gateway request rejected."
+    if "connection" in exc_type or "connect" in raw_lower:
+        return "Vision OCR gateway connection failed."
+
+    # General pattern sanitization
+    msg = re.sub(r'https?://[^\s\'"]+', '[REDACTED_URL]', raw_msg)
+    msg = re.sub(r'\b(?:sk-[a-zA-Z0-9_\-]+|key-[a-zA-Z0-9_\-]+|Bearer\s+[a-zA-Z0-9_\-\.]+)\b', '[REDACTED_KEY]', msg)
+    msg = re.sub(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b', '[REDACTED_IP]', msg)
+    return f"Vision OCR failed: {msg}"
+
+
 @dataclass
 class PdfPageResult:
     page_number: int
     text: str
     char_count: int
     ocr_applied: bool
+    ocr_attempted: bool = False
+    ocr_error: Optional[str] = None
 
 
 @dataclass
@@ -31,6 +73,7 @@ class PdfExtractionResult:
     ocr_pages_count: int
     pages: List[PdfPageResult]
     preview_chunks: List[Dict[str, Any]]
+    errors: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -43,7 +86,7 @@ def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
         logger.info(
             "Skipping PDF vision OCR: no vision OCR model configured in AI Gateway settings or VISION_OCR_MODEL."
         )
-        return ""
+        raise OcrUnconfiguredError("Vision OCR model is not configured.")
 
     db_cfg: Dict[str, Any] = {}
     try:
@@ -61,34 +104,40 @@ def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
         or os.getenv("LITELLM_API_KEY")
         or "sk-default"
     ).strip()
-    client = OpenAI(base_url=litellm_url, api_key=litellm_key, default_headers=get_llm_extra_headers())
 
-    b64_data = base64.b64encode(png_bytes).decode("utf-8")
-    data_url = f"data:image/png;base64,{b64_data}"
+    try:
+        client = OpenAI(base_url=litellm_url, api_key=litellm_key, default_headers=get_llm_extra_headers())
 
-    system_prompt = (
-        "Transcribe all text, numbers, specifications, headings, and tables from this document page verbatim. "
-        "Preserve list structures and code blocks where applicable. Do not summarize or extrapolate."
-    )
+        b64_data = base64.b64encode(png_bytes).decode("utf-8")
+        data_url = f"data:image/png;base64,{b64_data}"
 
-    response = client.chat.completions.create(
-        model=active_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Please transcribe this page."},
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                ],
-            },
-        ],
-        max_tokens=4096,
-        temperature=0.0,
-    )
-    if response.choices and len(response.choices) > 0:
-        return response.choices[0].message.content or ""
-    return ""
+        system_prompt = (
+            "Transcribe all text, numbers, specifications, headings, and tables from this document page verbatim. "
+            "Preserve list structures and code blocks where applicable. Do not summarize or extrapolate."
+        )
+
+        response = client.chat.completions.create(
+            model=active_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Please transcribe this page."},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+            max_tokens=4096,
+            temperature=0.0,
+        )
+        if response.choices and len(response.choices) > 0:
+            return response.choices[0].message.content or ""
+        return ""
+    except Exception as e:
+        sanitized = _sanitize_ocr_error(e)
+        logger.warning(f"Vision OCR failed: {sanitized}")
+        raise OcrExecutionError(sanitized) from e
 
 
 def extract_pdf_pages(
@@ -119,6 +168,7 @@ def extract_pdf_pages(
     try:
         total_pages = len(doc)
         page_results: List[PdfPageResult] = []
+        errors: List[Dict[str, Any]] = []
         ocr_pages_count = 0
         total_characters = 0
         preview_chunks: List[Dict[str, Any]] = []
@@ -130,8 +180,11 @@ def extract_pdf_pages(
             raw_text = page.get_text() or ""
             text = raw_text.strip()
             ocr_applied = False
+            ocr_attempted = False
+            ocr_error: Optional[str] = None
 
             if len(text) < OCR_TEXT_THRESHOLD_CHARS and ocr_fallback:
+                ocr_attempted = True
                 try:
                     pixmap = page.get_pixmap(dpi=150)
                     png_bytes = pixmap.tobytes("png")
@@ -140,8 +193,22 @@ def extract_pdf_pages(
                         text = ocr_text.strip()
                         ocr_applied = True
                         ocr_pages_count += 1
+                except OcrUnconfiguredError as err:
+                    ocr_error = str(err)
+                    logger.info(f"OCR skipped for page {page_num}: {ocr_error}")
+                    errors.append({
+                        "page_number": page_num,
+                        "error": ocr_error,
+                        "type": "ocr_unconfigured"
+                    })
                 except Exception as ocr_err:
-                    logger.warning(f"OCR fallback failed for page {page_num}: {ocr_err}")
+                    ocr_error = str(ocr_err) if isinstance(ocr_err, OcrError) else _sanitize_ocr_error(ocr_err)
+                    logger.warning(f"OCR fallback failed for page {page_num}: {ocr_error}")
+                    errors.append({
+                        "page_number": page_num,
+                        "error": ocr_error,
+                        "type": "ocr_failure"
+                    })
 
             char_count = len(text)
             total_characters += char_count
@@ -151,6 +218,8 @@ def extract_pdf_pages(
                     text=text,
                     char_count=char_count,
                     ocr_applied=ocr_applied,
+                    ocr_attempted=ocr_attempted,
+                    ocr_error=ocr_error,
                 )
             )
 
@@ -180,6 +249,7 @@ def extract_pdf_pages(
             ocr_pages_count=ocr_pages_count,
             pages=page_results,
             preview_chunks=preview_chunks,
+            errors=errors,
         )
     finally:
         doc.close()

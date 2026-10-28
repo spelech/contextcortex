@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1060 Automated Tests** (707 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1066 Automated Tests** (713 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1093,19 +1093,25 @@ and leaves the prior indexed state intact without data loss._
 - `test_set_embedding_db_config_persists_to_system_metadata`
 - `test_update_embedding_config_service`
 
-#### `tests/test_pdf_extractor.py` (9 tests)
+#### `tests/test_pdf_extractor.py` (14 tests)
 - `test_extract_digital_pdf_text`
 - `test_extract_scanned_pdf_triggers_vision_ocr`
 - `test_extract_corrupted_pdf_raises_value_error`
 - `test_extract_nonexistent_file_raises_file_not_found`
 - `test_extract_real_pdf_asd_ste100`
 - `test_call_vision_ocr_unit`
-- `test_call_vision_ocr_skips_when_unconfigured`
-- `test_extract_pdf_ocr_failure_graceful_recovery`
+- `test_call_vision_ocr_raises_when_unconfigured`
+- `test_extract_pdf_ocr_unconfigured_error`
+- `test_extract_pdf_ocr_nonexistent_model_error`
+- `test_extract_pdf_ocr_timeout_error`
+- `test_extract_pdf_ocr_gateway_rejection_error`
+- `test_extract_pdf_ocr_mixed_text_and_scanned_pages`
+- `test_sanitize_ocr_error_credentials_and_urls`
 - `test_extract_oversized_pdf_raises_value_error`
 
-#### `tests/test_pdf_storage_api.py` (8 tests)
+#### `tests/test_pdf_storage_api.py` (9 tests)
 - `test_pdf_preview_endpoint`
+- `test_pdf_preview_endpoint_surfaces_ocr_failures`
 - `test_pdf_preview_validation_errors`
 - `test_pdf_preview_oversized`
 - `test_pdf_upload_and_indexing`
