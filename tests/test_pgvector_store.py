@@ -5,10 +5,18 @@ import json
 import pytest
 from unittest.mock import MagicMock, patch, call
 from sqlalchemy import create_engine, text
+from sqlalchemy.dialects import postgresql
 
 from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
 from app.services.vector_store import manager as vs_manager
 from app.services.vector_store.manager import VectorStoreManager, SUPPORTED_PROVIDERS
+
+
+@pytest.fixture(autouse=True)
+def embedding_dimension():
+    # These unit tests exercise the store, not an external embedding service.
+    with patch("app.services.vector_store.pgvector_store.get_dense_dim", return_value=384):
+        yield
 
 
 class TestPgVectorStoreImports:
@@ -44,6 +52,9 @@ class TestPgVectorStoreLifecycle:
         mock_engine = MagicMock()
         mock_conn = MagicMock()
         mock_engine.connect.return_value.__enter__.return_value = mock_conn
+        mock_conn.execute.return_value.scalar.return_value = None
+        mock_conn.execute.return_value.fetchone.return_value = None
+        mock_conn.execute.return_value.fetchall.return_value = [("collection_name",), ("id",)]
 
         store = PgVectorStore(engine=mock_engine, auto_init=False)
         success = store.ensure_collection()
@@ -58,7 +69,8 @@ class TestPgVectorStoreLifecycle:
         assert "hnsw" in full_sql.lower()
         assert "vector_cosine_ops" in full_sql
 
-    def test_ensure_collection_handles_extension_permission_warning(self):
+    @pytest.mark.parametrize("installed", [False, True])
+    def test_ensure_collection_extension_permissions(self, installed):
         from app.services.vector_store.pgvector_store import PgVectorStore
         mock_engine = MagicMock()
         mock_conn = MagicMock()
@@ -66,20 +78,30 @@ class TestPgVectorStoreLifecycle:
 
         def execute_side_effect(statement, *args, **kwargs):
             if "CREATE EXTENSION" in str(statement):
-                raise Exception("permission denied to create extension")
-            return MagicMock()
+                raise PermissionError("permission denied to create extension")
+            result = MagicMock()
+            result.scalar.return_value = 1 if installed else None
+            result.fetchone.return_value = None
+            result.fetchall.return_value = [("collection_name",), ("id",)]
+            return result
 
         mock_conn.execute.side_effect = execute_side_effect
         store = PgVectorStore(engine=mock_engine, auto_init=False)
-        success = store.ensure_collection()
-        assert success is True
+        if installed:
+            assert store.ensure_collection() is True
+        else:
+            with pytest.raises(RuntimeError, match="initialize") as error:
+                store.ensure_collection()
+            assert isinstance(error.value.__cause__, PermissionError)
 
     def test_ensure_collection_failure(self):
         from app.services.vector_store.pgvector_store import PgVectorStore
         mock_engine = MagicMock()
         mock_engine.connect.side_effect = Exception("DB Connection Error")
         store = PgVectorStore(engine=mock_engine, auto_init=False)
-        assert store.ensure_collection() is False
+        with pytest.raises(RuntimeError, match="initialize") as error:
+            store.ensure_collection()
+        assert str(error.value.__cause__) == "DB Connection Error"
 
     def test_health_check_success(self):
         from app.services.vector_store.pgvector_store import PgVectorStore
@@ -273,7 +295,7 @@ class TestPgVectorStoreUpsertAndSearch:
         mock_engine = MagicMock()
         mock_engine.connect.side_effect = Exception("Write error")
         store = PgVectorStore(engine=mock_engine, auto_init=False)
-        assert store.upsert_documents([VectorDocument(id="1", text="abc")]) is False
+        assert store.upsert_documents([VectorDocument(id="1", text="abc", dense_vector=[0.1] * 384)]) is False
 
     def test_search_executes_cosine_distance_query(self):
         from app.services.vector_store.pgvector_store import PgVectorStore
@@ -519,9 +541,9 @@ class TestPgVectorCollectionIsolation:
         mock_conn = MagicMock()
         mock_engine.connect.return_value.__enter__.return_value = mock_conn
 
-        # Mock primary key check returning ['id']
+        mock_engine.dialect = postgresql.dialect()
         mock_conn.execute.return_value.fetchall.return_value = [("id",)]
-        mock_conn.execute.return_value.fetchone.return_value = ("vector_documents_pkey",)
+        mock_conn.execute.return_value.fetchone.side_effect = [(384,), ("vector_documents_pkey",)]
 
         store = PgVectorStore(engine=mock_engine, collection_name="collection_test", auto_init=False)
         success = store.ensure_collection()
@@ -535,8 +557,8 @@ class TestPgVectorCollectionIsolation:
         assert "ALTER TABLE vector_documents DROP CONSTRAINT vector_documents_pkey" in full_sql
         assert "ALTER TABLE vector_documents ADD PRIMARY KEY (collection_name, id)" in full_sql
 
-    def test_dimension_mismatch_warning(self):
-        """Test logging warning when table dimension differs from store dimension."""
+    def test_dimension_mismatch_requires_explicit_rebuild(self):
+        """A populated shared table cannot be silently recreated."""
         from app.services.vector_store.pgvector_store import PgVectorStore
 
         mock_engine = MagicMock()
@@ -548,8 +570,5 @@ class TestPgVectorCollectionIsolation:
         mock_conn.execute.return_value.fetchone.return_value = (1536,)
 
         store = PgVectorStore(engine=mock_engine, dimension=384, auto_init=False)
-        with patch("app.services.vector_store.pgvector_store.logger.warning") as mock_warn:
+        with pytest.raises(ValueError, match="dimension mismatch.*explicit rebuild"):
             store.ensure_collection()
-            mock_warn.assert_called()
-            warning_msg = mock_warn.call_args[0][0]
-            assert "embedding dimension (1536) does not match configured dimension (384)" in warning_msg
