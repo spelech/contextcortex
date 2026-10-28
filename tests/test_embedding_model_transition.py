@@ -18,6 +18,10 @@ client = TestClient(app)
 def setup_test_environment(tmp_path, monkeypatch):
     db_file = tmp_path / "test_transition.db"
     db_url = f"sqlite:///{db_file}"
+    vs_dir = tmp_path / "qdrant"
+    vs_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("QDRANT_STORAGE_PATH", str(vs_dir))
+    monkeypatch.setenv("QDRANT_PREFER_REMOTE", "false")
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("EMBEDDING_PROVIDER", "local")
     monkeypatch.setenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
