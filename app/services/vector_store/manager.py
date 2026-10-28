@@ -313,6 +313,7 @@ class VectorStoreManager:
                 "storage_path": target_storage,
                 "url": target_url.strip(),
                 "collection": target_collection,
+                "allow_fallback": False,
             }
 
             # Check if this matches active store to prevent locked embedded directory collisions
