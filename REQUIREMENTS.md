@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1115 Automated Tests** (757 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1120 Automated Tests** (762 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1264,6 +1264,13 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_storage_upload_multipart_and_put`
 - `test_storage_validation_and_errors`
 - `test_ingestion_catalog_endpoint`
+
+#### `tests/test_storage_vector_failures.py` (5 tests)
+- `test_upsert_false_returns_500_rolls_back_disk_and_allows_retry`
+- `test_delete_false_is_not_reported_as_success`
+- `test_store_initialization_exception_rolls_back_upload`
+- `test_failed_multichunk_upsert_removes_partial_vectors`
+- `test_empty_replacement_succeeds_without_leaving_old_vectors`
 
 #### `tests/test_summarizer.py` (12 tests)
 - `test_db` - _Sets up an isolated SQLite database for summarizer testing._
