@@ -444,6 +444,9 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
             "message": "Embedding engine settings updated successfully.",
             "config": updated_cfg
         }
+    except ValueError as ve:
+        logger.warning(f"Validation error updating embedding settings: {ve}")
+        return JSONResponse(status_code=400, content={"status": "error", "error": str(ve), "message": str(ve)})
     except Exception as e:
         logger.error(f"Error updating embedding settings: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "error": "Failed to update embedding settings.", "message": "Failed to update embedding settings."})
