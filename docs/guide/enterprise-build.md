@@ -168,7 +168,49 @@ credential-bearing proxy URLs in the image.
 ## Build an overlay without package-registry access
 
 Use this when you already have an approved ContextCortex release image with
-compatible dependencies and want to build these integration changes locally:
+compatible dependencies and want to build these integration changes locally.
+The overlay itself needs no npm access, but it **requires a dashboard built from
+the matching frontend inputs**. It fails closed for missing provenance, changed
+source/configuration/lockfiles, or missing, modified, or extra output files.
+The historical checked-in bundle has no such provenance and is rejected.
+
+On an approved build host with Python 3.11+, Node 22, and the locked frontend
+dependencies installed, publish the dashboard from the checkout root:
+
+```powershell
+# Only when dependencies are not already installed; use your approved npm config.
+npm ci --prefix frontend
+python scripts\frontend_artifact.py build
+python scripts\frontend_artifact.py sync
+python scripts\frontend_artifact.py verify
+```
+
+`build` deletes old `frontend/dist`, runs the existing `npm run build`, and writes
+`build-manifest.json` only after successful compilation with unchanged inputs.
+`sync` verifies that output and replaces `www` exactly, removing obsolete assets.
+There is deliberately no command to stamp an existing bundle. Plain `npm run build`
+still supports local development, but does not publish an overlay artifact.
+Review and commit the regenerated `frontend/dist` and `www` assets, including
+their manifests, together with the frontend change. Transfer the matching checkout
+and generated assets to an offline overlay builder if needed.
+
+The manifest detects accidental staleness and output corruption; it is not a
+signature or a substitute for trusted build provenance. It hashes frontend root
+files and `src`, `public`, `packages`, and `scripts`, excluding npm credentials,
+logs, and TypeScript build caches. Keep frontend build inputs in these locations.
+UTF-8 source line endings are normalized for Windows/Linux checkouts; output
+hashes cover exact bytes, preserved by `.gitattributes` for generated assets.
+Frontend `.env` inputs excluded by `.dockerignore` cannot be verified in the
+overlay; do not use them for a published overlay build. Root runtime `.env` is
+unaffected.
+
+If the approved mirror lacks an exact locked dependency (for example
+`@antfu/install-pkg@2.1.0`), arrange mirror approval/import before building.
+Do not downgrade dependencies, bypass the mirror, disable TLS/integrity checks,
+or create a manifest for the old bundle. Until a genuine build is available,
+the overlay is intentionally unavailable rather than serving a pre-auth dashboard.
+
+Then build the overlay:
 
 ```powershell
 docker build --file Dockerfile.overlay --tag contextcortex-enterprise:local `
@@ -178,9 +220,12 @@ docker build --file Dockerfile.overlay --tag contextcortex-enterprise:local `
 `RUNTIME_IMAGE` is intentionally required; there is no implicit mutable `latest`
 fallback. Use a release image matching this checkout's requirements and verify
 compatibility. Review/scan/promote the base image according to enterprise policy.
-This build uses the checked-in dashboard bundle, not a new npm build, and does
-not upgrade dependencies. Dependency upgrades require a new approved base/source
-build. Private CAs and the runtime entrypoint are included.
+This build verifies the published dashboard before copying the same exact files
+into both `/app/www` and the server-preferred `/app/frontend/dist`, removing any
+base-image leftovers. It does not run npm or upgrade dependencies. Dependency
+upgrades require a new approved base/source build. Private CAs and the runtime
+entrypoint are included. The full source `Dockerfile` continues to compile the
+frontend directly in its build stage instead of consuming `www`.
 
 ## Run the built image
 
