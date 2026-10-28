@@ -86,12 +86,15 @@ Follow these steps for manual installation:
    - Web Admin Dashboard: `http://localhost:3000/admin/`
    - MCP Server-Sent Events: `http://localhost:3000/sse`
    - MCP Streamable HTTP: `http://localhost:3000/mcp`
-   - Health Check Probes: `http://localhost:3000/health` and `http://localhost:3000/healthz`
+   - Health Check Probes: Liveness (`http://localhost:3000/health`, `/healthz`) and Readiness (`http://localhost:3000/ready`, `/readiness`, `/health/ready`)
 
 3. Verify server health and MCP JSON-RPC `ping` readiness from a terminal:
    ```bash
-   # HTTP health probe
+   # HTTP process liveness probe
    curl -s http://localhost:3000/healthz
+
+   # HTTP application readiness probe (verifies relational database & schema accessibility)
+   curl -s http://localhost:3000/ready
 
    # Lightweight JSON-RPC ping (zero session allocation)
    curl -s -X POST http://localhost:3000/mcp \

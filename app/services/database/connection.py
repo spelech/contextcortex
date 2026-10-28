@@ -2,9 +2,9 @@ import os
 import sys
 import sqlite3
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.services.database.schema import TABLES
 from app.services.database.engine import (
@@ -454,6 +454,46 @@ def ensure_file_summaries_columns(conn=None):
             raw_conn.close()
     except Exception as e:
         logger.debug(f"Migration error for file_summaries: {e}")
+
+
+def check_db_readiness() -> Tuple[bool, Dict[str, Any]]:
+    """
+    Verifies that the application database engine and core connection pathways are reachable
+    and that required relational schema tables exist and are readable.
+    Returns (is_ready, sanitized_info).
+    """
+    db_type = "postgresql" if is_postgres() else "sqlite"
+    required_tables = [
+        "system_metadata",
+        "git_repositories",
+        "indexed_paths",
+        "indexed_files",
+        "ast_symbols",
+        "file_summaries",
+    ]
+
+    try:
+        # 1. Verify primary SQLAlchemy engine connectivity & schema access
+        with get_connection() as conn:
+            for table_name in required_tables:
+                if table_name in TABLES:
+                    conn.execute(select(func.count()).select_from(TABLES[table_name])).scalar()
+
+        # 2. Verify direct connection pathway used by legacy/subrouter queries
+        if is_postgres():
+            with get_connection() as raw_conn:
+                for table_name in required_tables:
+                    raw_conn.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
+        else:
+            with get_db_connection() as raw_conn:
+                cursor = raw_conn.cursor()
+                for table_name in required_tables:
+                    cursor.execute(f"SELECT 1 FROM {table_name} LIMIT 1")
+
+        return True, {"status": "ok", "type": db_type}
+    except Exception as e:
+        logger.warning(f"Database readiness check failed ({db_type}): {e}")
+        return False, {"status": "error", "type": db_type}
 
 
 
