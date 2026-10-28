@@ -209,10 +209,33 @@ class LocalStorageService:
         repo: str = "local_storage",
         category: Optional[str] = None
     ) -> Dict[str, Any]:
-        save_info = self.save_file_content(rel_path, content, repo=repo, category=category)
-        idx_info = self.index_file(rel_path, repo=repo, category=category)
-        save_info.update(idx_info)
-        return save_info
+        target_path = self.resolve_safe_path(rel_path)
+        if not target_path.startswith(self.storage_root):
+            raise ValueError("Path traversal or invalid path detected")
+
+        existed_before = os.path.exists(target_path) and os.path.isfile(target_path)
+        backup_rel = os.path.join(".tmp", "bak_" + hashlib.sha256(rel_path.encode("utf-8")).hexdigest())
+        backup_path = self.resolve_safe_path(backup_rel) if existed_before else None
+
+        if existed_before and backup_path:
+            os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+            shutil.copy2(target_path, backup_path)
+
+        try:
+            save_info = self.save_file_content(rel_path, content, repo=repo, category=category)
+            idx_info = self.index_file(rel_path, repo=repo, category=category)
+            save_info.update(idx_info)
+            if backup_path:
+                self.delete_file_disk(backup_rel)
+            return save_info
+        except Exception as exc:
+            if existed_before and backup_path and os.path.exists(backup_path):
+                shutil.move(backup_path, target_path)
+            else:
+                self.delete_file_disk(rel_path)
+                if backup_path:
+                    self.delete_file_disk(backup_rel)
+            raise exc
 
     def delete_file(self, rel_path: str, repo: str = "local_storage") -> Dict[str, Any]:
         abs_path = self.resolve_safe_path(rel_path)
