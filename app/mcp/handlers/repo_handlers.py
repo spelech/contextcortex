@@ -100,9 +100,16 @@ async def handle_index_status() -> str:
         gh_tok, _, gh_src = get_effective_git_token("https://github.com", provider="github")
         gl_tok, _, gl_src = get_effective_git_token("https://gitlab.com", provider="gitlab")
         gt_tok, _, gt_src = get_effective_git_token("https://gitea.com", provider="gitea")
-        vault_creds = list_git_host_credentials()
+        vault_failed = False
+        try:
+            vault_creds = list_git_host_credentials()
+        except Exception as e:
+            logger.error(f"Failed to list vault credentials for status: {e}")
+            vault_creds = []
+            vault_failed = True
         rate_info = check_github_rate_limit(gh_tok)
 
+        vault_str = "[Unavailable - Query Failed]" if vault_failed else f"{len(vault_creds)}"
         lines = [
             f"Vector Store Provider: {provider}",
             f"Storage Mode: {mode_str} ({mode_val})",
@@ -113,7 +120,7 @@ async def handle_index_status() -> str:
             f"Total Indexed Files: {files_count}",
             f"Total AST Symbols: {symbols_count}",
             f"Registered Git Repos: {git_count}",
-            f"Git Auth Sources: GitHub ({gh_src}: {mask_token(gh_tok)}), GitLab ({gl_src}), Gitea ({gt_src}), Host Vaults ({len(vault_creds)})",
+            f"Git Auth Sources: GitHub ({gh_src}: {mask_token(gh_tok)}), GitLab ({gl_src}), Gitea ({gt_src}), Host Vaults ({vault_str})",
         ]
         if gh_tok:
             lines.append(f"GitHub API Rate Limit: {rate_info.get('remaining', 0)} / {rate_info.get('limit', 60)}")

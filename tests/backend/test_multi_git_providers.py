@@ -143,6 +143,32 @@ def test_host_credentials_api_endpoints(temp_db):
     assert res_del.status_code == 200
     assert res_del.json()["status"] == "success"
 
+def test_host_credentials_api_query_failure_and_empty_success(temp_db):
+    # 1. Empty credential store returns HTTP 200 with []
+    res_empty = client.get("/admin/api/settings/hosts")
+    assert res_empty.status_code == 200
+    assert res_empty.json() == []
+
+    # 2. Query failure returns HTTP 500 sanitized error response instead of []
+    with patch("app.services.database.credentials.get_db_connection") as mock_conn:
+        mock_conn.side_effect = Exception("no such table: git_host_credentials (database connection or table error)")
+        res_fail = client.get("/admin/api/settings/hosts")
+        assert res_fail.status_code == 500
+        fail_json = res_fail.json()
+        assert fail_json == {"error": "Failed to list host credentials."}
+        # Ensure error response does not expose internal exception text, connection string, or secret tokens
+        assert "no such table" not in json.dumps(fail_json)
+
+    # 3. Non-empty success response retains existing credential masking
+    save_git_host_credential("github.company.com", "github", "ghp_secret_token_12345", auth_user="git")
+    res_non_empty = client.get("/admin/api/settings/hosts")
+    assert res_non_empty.status_code == 200
+    data = res_non_empty.json()
+    assert len(data) == 1
+    assert data[0]["host"] == "github.company.com"
+    assert "ghp_secret_token_12345" not in data[0]["masked_token"]
+    assert "..." in data[0]["masked_token"] or "***" in data[0]["masked_token"] or len(data[0]["masked_token"]) < 20
+
 def test_multi_token_settings_api(temp_db):
     res = client.post("/admin/api/settings/token", json={
         "github_token": "ghp_updated123",
