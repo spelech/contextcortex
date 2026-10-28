@@ -126,10 +126,27 @@ def get_db_engine(database_url: Optional[str] = None, reset: bool = False, **kwa
         )
 
     if database_url is None or database_url == os.getenv("DATABASE_URL"):
+        if _GLOBAL_ENGINE is not None and _GLOBAL_ENGINE_URL != url:
+            try:
+                _GLOBAL_ENGINE.dispose()
+            except Exception:
+                pass
         _GLOBAL_ENGINE = engine
         _GLOBAL_ENGINE_URL = url
 
     return engine
+
+
+def dispose_global_engine() -> None:
+    """Disposes cached global database engine and clears references."""
+    global _GLOBAL_ENGINE, _GLOBAL_ENGINE_URL
+    if _GLOBAL_ENGINE is not None:
+        try:
+            _GLOBAL_ENGINE.dispose()
+        except Exception:
+            pass
+        _GLOBAL_ENGINE = None
+        _GLOBAL_ENGINE_URL = None
 
 
 @contextmanager

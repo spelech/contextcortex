@@ -35,6 +35,8 @@ async def handle_search_code(
     try:
         from app.services.auth import enforce_tool_permission, Role
         enforce_tool_permission(Role.VIEWER)
+
+        requested_mode = (mode or "hybrid").lower().strip()
         hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(
             query_text=query,
             doc_type="code",
@@ -42,7 +44,7 @@ async def handle_search_code(
             language=language,
             limit=limit,
             dense_weight=dense_weight,
-            search_mode=mode or "hybrid"
+            search_mode=requested_mode
         )
         if not hits:
             return f"No matching code snippets found for query: '{query}'."
@@ -101,6 +103,8 @@ async def handle_search_docs(
     try:
         from app.services.auth import enforce_tool_permission, Role
         enforce_tool_permission(Role.VIEWER)
+
+        requested_mode = (mode or "hybrid").lower().strip()
         hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(
             query_text=query,
             doc_type="doc",
@@ -109,7 +113,7 @@ async def handle_search_docs(
             tag=tag,
             limit=limit,
             dense_weight=dense_weight,
-            search_mode=mode or "hybrid"
+            search_mode=requested_mode
         )
         if not hits:
             return f"No matching documentation found for query: '{query}'."

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1105 Automated Tests** (752 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1109 Automated Tests** (756 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -750,7 +750,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_vector_document_validation` - _Verify required field validation in VectorDocument._
 - `test_vector_search_result_creation_and_payload` - _Verify VectorSearchResult creation and payload access._
 
-#### `tests/backend/test_vector_store_chroma.py` (36 tests)
+#### `tests/backend/test_vector_store_chroma.py` (38 tests)
 - `TestChromaVectorStoreInit::test_init_in_memory`
 - `TestChromaVectorStoreInit::test_init_persistent_disk`
 - `TestChromaVectorStoreInit::test_init_remote_success`
@@ -768,6 +768,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `TestChromaVectorStoreOperations::test_search_metadata_filtering`
 - `TestChromaVectorStoreOperations::test_delete_by_path`
 - `TestChromaVectorStoreOperations::test_delete_by_repo`
+- `TestChromaVectorStoreOperations::test_get_capabilities_and_search_mode_validation`
 - `TestChromaVectorStoreOperations::test_get_stats_and_health_check`
 - `test_init_in_memory`
 - `test_init_persistent_disk`
@@ -786,6 +787,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_search_metadata_filtering`
 - `test_delete_by_path`
 - `test_delete_by_repo`
+- `test_get_capabilities_and_search_mode_validation`
 - `test_get_stats_and_health_check`
 
 #### `tests/backend/test_vector_store_manager.py` (38 tests)
@@ -1152,7 +1154,7 @@ and leaves the prior indexed state intact without data loss._
 - `test_scanned_pdf_cache_invalidation_on_replace_and_delete`
 - `test_real_asd_ste100_pdf_preview_or_indexing`
 
-#### `tests/test_pgvector_store.py` (60 tests)
+#### `tests/test_pgvector_store.py` (62 tests)
 - `TestPgVectorStoreImports::test_import_pgvector_store`
 - `TestPgVectorStoreImports::test_manager_supported_providers_includes_postgres_and_pgvector`
 - `TestPgVectorStoreLifecycle::test_initialization_defaults`
@@ -1161,6 +1163,7 @@ and leaves the prior indexed state intact without data loss._
 - `TestPgVectorStoreLifecycle::test_ensure_collection_failure`
 - `TestPgVectorStoreLifecycle::test_health_check_success`
 - `TestPgVectorStoreLifecycle::test_health_check_failure`
+- `TestPgVectorStoreLifecycle::test_get_capabilities_and_search_mode_validation`
 - `TestPgVectorStoreLifecycle::test_get_stats_success`
 - `TestPgVectorStoreLifecycle::test_get_stats_failure`
 - `TestPgVectorStoreLifecycle::test_close_method`
@@ -1191,6 +1194,7 @@ and leaves the prior indexed state intact without data loss._
 - `test_ensure_collection_failure`
 - `test_health_check_success`
 - `test_health_check_failure`
+- `test_get_capabilities_and_search_mode_validation`
 - `test_get_stats_success`
 - `test_get_stats_failure`
 - `test_close_method`

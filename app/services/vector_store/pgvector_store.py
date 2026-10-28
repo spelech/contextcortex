@@ -375,13 +375,22 @@ class PgVectorStore(VectorStore):
         tag: Optional[str] = None,
         limit: int = 5,
         dense_weight: Optional[float] = None,
-        search_mode: str = "hybrid",
+        search_mode: str = "semantic",
     ) -> List[VectorSearchResult]:
         """
         Performs cosine distance vector search returning ranked results.
         """
         if not query_text or not query_text.strip():
             return []
+
+        mode = (search_mode or "semantic").lower().strip()
+        caps = self.get_capabilities()
+        supported = caps.get("search_modes", ["semantic"])
+        if mode not in supported:
+            raise ValueError(
+                f"Search mode '{search_mode}' is not supported by PgVector vector store. "
+                f"Supported modes: {supported}"
+            )
 
         try:
             query_vec = get_dense_embedding(query_text.strip())
@@ -467,6 +476,13 @@ class PgVectorStore(VectorStore):
             logger.error(f"Error searching PgVectorStore table '{self.table_name}': {e}", exc_info=True)
             return []
 
+    def get_capabilities(self) -> Dict[str, Any]:
+        """Returns capabilities supported by PgVector vector store backend."""
+        return {
+            "search_modes": ["semantic"],
+            "supports_weighting": False,
+        }
+
     def get_stats(self) -> Dict[str, Any]:
         """Returns table statistics including row count and backend mode."""
         try:
@@ -484,6 +500,7 @@ class PgVectorStore(VectorStore):
                 "points_count": int(count),
                 "vectors_count": int(count),
                 "location": self.location,
+                "capabilities": self.get_capabilities(),
             }
         except Exception as e:
             logger.error(f"Error getting stats from PgVectorStore: {e}")
@@ -495,6 +512,7 @@ class PgVectorStore(VectorStore):
                 "exists": False,
                 "error": str(e),
                 "location": self.location,
+                "capabilities": self.get_capabilities(),
             }
 
     def health_check(self) -> Tuple[bool, str]:

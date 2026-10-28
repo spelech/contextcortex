@@ -103,6 +103,24 @@ class TestPgVectorStoreLifecycle:
         assert healthy is False
         assert "health check failed" in msg.lower()
 
+    def test_get_capabilities_and_search_mode_validation(self):
+        from app.services.vector_store.pgvector_store import PgVectorStore
+        mock_engine = MagicMock()
+        store = PgVectorStore(engine=mock_engine, auto_init=False)
+
+        caps = store.get_capabilities()
+        assert caps == {"search_modes": ["semantic"], "supports_weighting": False}
+
+        # Lexical mode raises ValueError
+        with pytest.raises(ValueError) as exc_info:
+            store.search("capabilities test", search_mode="lexical")
+        assert "Search mode 'lexical' is not supported by PgVector vector store" in str(exc_info.value)
+
+        # Hybrid mode raises ValueError
+        with pytest.raises(ValueError) as exc_info:
+            store.search("capabilities test", search_mode="hybrid")
+        assert "Search mode 'hybrid' is not supported by PgVector vector store" in str(exc_info.value)
+
     def test_get_stats_success(self):
         from app.services.vector_store.pgvector_store import PgVectorStore
         mock_engine = MagicMock()

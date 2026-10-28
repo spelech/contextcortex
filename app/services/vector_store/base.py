@@ -132,6 +132,13 @@ class VectorStore(ABC):
         """Performs vector search returning ranked results."""
         pass
 
+    def get_capabilities(self) -> Dict[str, Any]:
+        """Returns capabilities supported by this vector store backend."""
+        return {
+            "search_modes": ["semantic"],
+            "supports_weighting": False,
+        }
+
     @abstractmethod
     def get_stats(self) -> Dict[str, Any]:
         """Returns collection info including point count, backend, and mode."""

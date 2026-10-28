@@ -15,6 +15,8 @@ def temp_mcp_db(tmp_path):
     with patch("app.services.database.CACHE_DB_PATH", db_file):
         init_db()
         yield db_file
+        from app.services.database.engine import dispose_global_engine
+        dispose_global_engine()
 
 
 @pytest.mark.asyncio

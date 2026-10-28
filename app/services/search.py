@@ -322,6 +322,24 @@ def execute_hybrid_search(
 
     try:
         store = get_vector_store()
+        try:
+            caps = store.get_capabilities()
+            if isinstance(caps, dict):
+                supported = caps.get("search_modes", ["hybrid", "semantic", "lexical"])
+            else:
+                supported = ["hybrid", "semantic", "lexical"]
+        except Exception:
+            supported = ["hybrid", "semantic", "lexical"]
+
+        mode = (search_mode or "hybrid").lower().strip()
+        if mode not in supported:
+            if mode == "hybrid" and "semantic" in supported:
+                mode = "semantic"
+            else:
+                raise ValueError(
+                    f"Search mode '{search_mode}' is not supported by the active vector store backend ({store.__class__.__name__}). Supported modes: {supported}"
+                )
+
         results = store.search(
             query_text=query_text.strip(),
             doc_type=doc_type,
@@ -331,7 +349,7 @@ def execute_hybrid_search(
             tag=tag,
             limit=limit,
             dense_weight=dense_weight,
-            search_mode=search_mode
+            search_mode=mode
         )
         _enrich_code_ast_metadata(results)
         return results

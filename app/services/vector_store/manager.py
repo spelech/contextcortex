@@ -140,11 +140,13 @@ class VectorStoreManager:
                 store = cls.get_vector_store()
                 healthy, health_msg = store.health_check()
                 stats = store.get_stats()
+                capabilities = store.get_capabilities()
             except Exception as e:
                 logger.error(f"Error connecting to vector store during config load: {e}")
                 healthy = False
                 health_msg = "Error connecting to vector store."
                 stats = {"error": "Error retrieving vector store statistics."}
+                capabilities = {"search_modes": ["semantic"], "supports_weighting": False}
 
             configured_mode = cfg["mode"]
             effective_mode = stats.get("effective_mode", stats.get("mode", configured_mode))
@@ -162,6 +164,7 @@ class VectorStoreManager:
                 "healthy": healthy,
                 "health_message": health_msg,
                 "stats": stats,
+                "capabilities": capabilities,
             }
 
     @classmethod
