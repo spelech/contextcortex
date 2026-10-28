@@ -4,6 +4,9 @@
 [![Build and Publish Docker Image](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml)
 [![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fcontextcortex-blue?logo=docker)](https://github.com/spelech/contextcortex/pkgs/container/contextcortex)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue?logo=github)](https://spelech.github.io/contextcortex/)
+[![Python](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![MCP](https://img.shields.io/badge/MCP-2026--07--28-0052CC)](https://modelcontextprotocol.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, **Pluggable Dual-Engine Architecture (PostgreSQL 16 + pgvector & SQLite)**, **MCP 2026-07-28 OAuth 2.1 & 3-Tier RBAC**, and **Universal Git Provider indexing** with an integrated Web Admin Dashboard (ContextCortex) and real-time Diagnostic Observability.
 <details>
