@@ -1,12 +1,13 @@
 import logging
 from typing import Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from fastapi.responses import JSONResponse
 
 from app.services.file_reader import get_file_reader_service
 from app.services.summarizer import get_summarizer_service
-from app.services.auth import ForbiddenError
+from app.services.auth import Role, ForbiddenError
+from app.api.routers.auth import require_role
 
 logger = logging.getLogger("contextcortex.api.files")
 router = APIRouter()
@@ -18,7 +19,10 @@ class FileSummarizePayload(BaseModel):
     force_refresh: bool = Field(False, description="Whether to bypass cache and regenerate summary")
 
 
-@router.get("/admin/api/files/read")
+@router.get(
+    "/admin/api/files/read",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_read_file(
     path: str = Query(..., description="Target file path (relative to repo/storage or absolute within indexed root)"),
     repo: Optional[str] = Query(None, description="Optional repo or storage namespace"),
@@ -57,7 +61,10 @@ async def api_read_file(
         return JSONResponse(status_code=500, content={"error": "Internal server error reading file."})
 
 
-@router.post("/admin/api/files/summarize")
+@router.post(
+    "/admin/api/files/summarize",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_summarize_file(payload: FileSummarizePayload):
     try:
         raw_path = payload.path.strip() if payload.path else ""

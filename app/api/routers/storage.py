@@ -2,12 +2,13 @@ import os
 import logging
 from typing import Optional
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Request, UploadFile, File, Form, Query
+from fastapi import APIRouter, Request, UploadFile, File, Form, Query, Depends
 from fastapi.responses import JSONResponse
 
 from dataclasses import asdict
 from app.services.local_storage import get_local_storage_service
 from app.services.auth import Role, enforce_tool_permission
+from app.api.routers.auth import require_role
 from app.services.pdf_extractor import extract_pdf_pages, MAX_PDF_SIZE_BYTES
 
 logger = logging.getLogger("contextcortex.api.storage")
@@ -19,7 +20,10 @@ class FileUploadPayload(BaseModel):
     repo: Optional[str] = "local_storage"
     category: Optional[str] = None
 
-@router.post("/admin/api/storage/pdf/preview")
+@router.post(
+    "/admin/api/storage/pdf/preview",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_preview_pdf(
     file: UploadFile = File(...),
     ocr_fallback: bool = Form(True)
@@ -52,7 +56,10 @@ async def api_preview_pdf(
         logger.error(f"Error previewing PDF file: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to preview PDF file."})
 
-@router.post("/admin/api/storage/upload")
+@router.post(
+    "/admin/api/storage/upload",
+    dependencies=[Depends(require_role(Role.EDITOR))],
+)
 async def api_upload_storage_file(request: Request):
     try:
         storage = get_local_storage_service()
@@ -101,7 +108,10 @@ async def api_upload_storage_file(request: Request):
         logger.error(f"Error uploading storage file: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to upload storage file."})
 
-@router.put("/admin/api/storage/file")
+@router.put(
+    "/admin/api/storage/file",
+    dependencies=[Depends(require_role(Role.EDITOR))],
+)
 async def api_replace_storage_file(payload: FileUploadPayload):
     try:
         storage = get_local_storage_service()
@@ -114,7 +124,10 @@ async def api_replace_storage_file(payload: FileUploadPayload):
         logger.error(f"Error replacing storage file: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to replace storage file."})
 
-@router.get("/admin/api/storage/file")
+@router.get(
+    "/admin/api/storage/file",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_storage_file(path: str = Query(..., description="Relative file path")):
     try:
         storage = get_local_storage_service()
@@ -128,7 +141,10 @@ async def api_get_storage_file(path: str = Query(..., description="Relative file
         logger.error(f"Error reading storage file '{path}': {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to read storage file."})
 
-@router.delete("/admin/api/storage/file")
+@router.delete(
+    "/admin/api/storage/file",
+    dependencies=[Depends(require_role(Role.EDITOR))],
+)
 async def api_delete_storage_file(path: str = Query(..., description="Relative file path")):
     try:
         storage = get_local_storage_service()
@@ -141,7 +157,10 @@ async def api_delete_storage_file(path: str = Query(..., description="Relative f
         logger.error(f"Error deleting storage file '{path}': {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to delete storage file."})
 
-@router.get("/admin/api/storage/tree")
+@router.get(
+    "/admin/api/storage/tree",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_storage_tree(folder: Optional[str] = Query(None, description="Subfolder to inspect")):
     try:
         storage = get_local_storage_service()

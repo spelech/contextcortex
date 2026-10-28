@@ -1,15 +1,20 @@
 import logging
 from typing import Optional
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from fastapi.responses import JSONResponse
 
+from app.services.auth import Role
+from app.api.routers.auth import require_role
 from app.services.database import get_db_connection
 from app.services.local_storage import get_local_storage_service
 
 logger = logging.getLogger("contextcortex.api.ingestion")
 router = APIRouter()
 
-@router.get("/admin/api/ingestion/catalog")
+@router.get(
+    "/admin/api/ingestion/catalog",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
 async def api_get_ingestion_catalog(
     source_type: str = Query("all", description="Source type filter"),
     repo_name: Optional[str] = Query(None, description="Repository filter"),
