@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1052 Automated Tests** (699 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1058 Automated Tests** (700 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -856,10 +856,11 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
 
-#### `tests/test_auth_endpoints.py` (8 tests)
+#### `tests/test_auth_endpoints.py` (9 tests)
 - `test_oauth_protected_resource_metadata` - _Verify GET /.well-known/oauth-protected-resource returns valid RFC 9728 JSON._
 - `test_local_dev_bypass_allows_unauthenticated_requests` - _When AUTH_ENABLED=false, endpoints allow access without authorization header._
 - `test_protected_endpoints_challenge_401_when_auth_enabled` - _When AUTH_ENABLED=true, unauthenticated requests receive 401 with WWW-Authenticate header._
+- `test_auth_me_endpoint` - _Verify /admin/api/auth/me returns current auth info for bypass, unauth, and auth states._
 - `test_api_key_lifecycle_endpoints` - _Test POST, GET, and DELETE /admin/api/auth/keys endpoints._
 - `test_api_key_management_requires_admin_role` - _Test that viewer and editor roles cannot access /admin/api/auth/keys._
 - `test_mcp_tools_rbac_viewer_vs_editor_vs_admin` - _Test RBAC role enforcement across MCP tools:
@@ -1256,6 +1257,13 @@ and leaves the prior indexed state intact without data loss._
 - toggles mobile navigation drawer and closes upon tab selection
 - renders vector database health badge in header when vector_db_status is present
 - renders ChromaDB provider and unhealthy status badge in header
+
+#### `AuthModal.test.tsx` (5 tests)
+- manages localStorage token read/write/clear correctly
+- renders AuthModal when isOpen is true
+- shows warning alert when AUTH_ENABLED=true and isUnauthorized=true
+- allows saving token and calling checkAuthStatus
+- handles clearing token via Clear Token button
 
 #### `CodeNavigator.test.tsx` (6 tests)
 - renders toolbar, hero layout, and fetches initial tree data
