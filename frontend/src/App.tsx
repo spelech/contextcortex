@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import './index.css';
 import Overview from './Overview';
+import { AuthModal } from './components/AuthModal';
+import {
+  checkAuthStatus,
+  subscribeAuth,
+  setupGlobalFetchInterceptor,
+  type AuthUser,
+} from './services/auth';
 import GitRepoManager from './GitRepoManager';
 import FilesAndStorage from './FilesAndStorage';
 import SearchInspector from './SearchInspector';
@@ -14,6 +21,9 @@ function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [isUnauthorized, setIsUnauthorized] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [navigatorTarget, setNavigatorTarget] = useState<{
     repo: string;
     path: string;
@@ -34,9 +44,22 @@ function App() {
   };
 
   useEffect(() => {
-    loadStats();
+    setupGlobalFetchInterceptor();
+
+    const unsubscribe = subscribeAuth((user, unauthorized) => {
+      setAuthUser(user);
+      setIsUnauthorized(unauthorized);
+    });
+
+    checkAuthStatus().then(() => {
+      loadStats();
+    });
+
     const interval = setInterval(loadStats, 8000);
-    return () => clearInterval(interval);
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, []);
 
   return (
@@ -86,6 +109,35 @@ function App() {
               <span className="label">Collection</span>
               <span className="value code">{stats?.vector_store_collection || 'knowledge_rag_v1'}</span>
             </div>
+            <div className="status-item">
+              <span className="label">Authentication</span>
+              <span className="value">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  style={{ fontSize: '0.75rem', padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  data-testid="auth-status-btn"
+                >
+                  <i className="fa-solid fa-key"></i>
+                  {authUser?.auth_enabled ? (
+                    isUnauthorized ? (
+                      <span className="badge badge-danger">
+                        <i className="fa-solid fa-lock" style={{ marginRight: '3px' }}></i> Locked
+                      </span>
+                    ) : (
+                      <span className="badge badge-success">
+                        <i className="fa-solid fa-shield-halved" style={{ marginRight: '3px' }}></i> {authUser.role}
+                      </span>
+                    )
+                  ) : (
+                    <span className="badge badge-secondary">
+                      <i className="fa-solid fa-shield" style={{ marginRight: '3px' }}></i> Dev Bypass
+                    </span>
+                  )}
+                </button>
+              </span>
+            </div>
           </div>
 
           <button
@@ -133,6 +185,18 @@ function App() {
         </nav>
 
         <main className="dashboard-main">
+          {authUser?.auth_enabled && isUnauthorized && (
+            <div className="alert alert-warning" style={{ margin: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} data-testid="auth-required-banner">
+              <div>
+                <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '8px' }}></i>
+                <strong>Authentication Required:</strong> AUTH_ENABLED=true is set on the server. Configure your API token to interact with admin endpoints.
+              </div>
+              <button className="btn btn-sm btn-primary" onClick={() => setIsAuthModalOpen(true)}>
+                Configure Token
+              </button>
+            </div>
+          )}
+
           {activeTab === 'overview' && <Overview stats={stats} refreshStats={loadStats} />}
           {(activeTab === 'navigator' || activeTab === 'topology') && (
             <CodeNavigator
@@ -165,6 +229,14 @@ function App() {
           <p>ContextCortex MCP &bull; Universal Code & Knowledge RAG &bull; 2026</p>
         </footer>
       </div>
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        authUser={authUser}
+        isUnauthorized={isUnauthorized}
+        onAuthSuccess={loadStats}
+      />
     </>
   );
 }

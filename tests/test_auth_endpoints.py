@@ -123,6 +123,45 @@ async def test_protected_endpoints_challenge_401_when_auth_enabled(isolated_db_a
         assert resp_health.status_code == 200
 
 
+@pytest.mark.asyncio
+async def test_auth_me_endpoint(isolated_db_and_auth, monkeypatch):
+    """Verify /admin/api/auth/me returns current auth info for bypass, unauth, and auth states."""
+    # 1. Dev bypass mode (AUTH_ENABLED=false)
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    get_auth_service(reset=True, auth_enabled=False, key_service=isolated_db_and_auth["key_service"])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        resp = await client.get("/admin/api/auth/me")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["auth_enabled"] is False
+        assert data["is_authenticated"] is True
+        assert data["role"] == "admin"
+        assert data["auth_type"] == "bypass"
+
+    # 2. Auth enabled mode (AUTH_ENABLED=true) - Unauthenticated -> 401
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    auth_srv = get_auth_service(reset=True, auth_enabled=True, key_service=isolated_db_and_auth["key_service"])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        unauth_resp = await client.get("/admin/api/auth/me")
+        assert unauth_resp.status_code == 401
+
+        # 3. Auth enabled mode - Authenticated with API key
+        editor_key = auth_srv.issue_api_key(name="Test Editor", role=Role.EDITOR)
+        auth_resp = await client.get(
+            "/admin/api/auth/me",
+            headers={"Authorization": f"Bearer {editor_key.secret_key}"}
+        )
+        assert auth_resp.status_code == 200
+        auth_data = auth_resp.json()
+        assert auth_data["auth_enabled"] is True
+        assert auth_data["is_authenticated"] is True
+        assert auth_data["role"] == "editor"
+        assert auth_data["auth_type"] == "api_key"
+        assert auth_data["key_id"] == editor_key.id
+
+
 # =============================================================================
 # 3. API Key Management Endpoints (/admin/api/auth/keys)
 # =============================================================================

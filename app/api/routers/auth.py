@@ -93,7 +93,31 @@ async def get_oauth_protected_resource():
 
 
 # =============================================================================
-# 2. Admin API Key Management Endpoints
+# 2. Current Auth Status Endpoint
+# =============================================================================
+
+@router.get("/admin/api/auth/me")
+async def get_current_auth_me(auth: AuthContext = Depends(get_current_auth)):
+    """
+    Returns current authentication status, role, and principal information.
+    Bypasses seamlessly when AUTH_ENABLED=false.
+    """
+    auth_service = get_auth_service()
+    return {
+        "auth_enabled": auth_service.is_auth_enabled(),
+        "is_authenticated": auth.is_authenticated,
+        "user_id": auth.user_id,
+        "name": auth.name,
+        "role": auth.role.value if isinstance(auth.role, Role) else auth.role,
+        "scopes": auth.scopes,
+        "auth_type": auth.auth_type,
+        "key_id": auth.key_id,
+        "group_name": auth.group_name,
+    }
+
+
+# =============================================================================
+# 3. Admin API Key Management Endpoints
 # =============================================================================
 
 @router.get(
