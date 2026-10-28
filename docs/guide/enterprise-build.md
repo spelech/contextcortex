@@ -103,39 +103,73 @@ artifacts/lockfiles or mirror support for those tarball requests. Do not disable
 preparation scripts or fall back to public npm to hide the failure. The local
 frontend-only build currently reaches this blocker in a Git helper dependency.
 
-### The 30-day quarantine & Approved Mirror Baseline
+### The 30-day quarantine and candidate validation (issue #43 remains open)
 
-Let the internal mirror enforce its package-age policy; a package being
-available on public PyPI is not authorization to fetch it. Package age is defined
-and measured from the official release publication date on public PyPI (or artifact upload timestamp)
-prior to admission into the approved private mirror. All dependencies must satisfy the environment's
-30-day quarantine period before admission.
+**There is currently no verified approved Python baseline in this repository.**
+The checked-in `python-constraints.txt` retains the previous pins only to
+reproduce the failure; its former approval and cross-platform verification
+claims were unsupported. On Windows / Python 3.12.10 and Linux / Python 3.11,
+clean constrained resolution fails at `mcp==1.30.0`. The Windows retest's
+configured approved mirror advertises
+`1.28.1`, `1.27.2` and `1.23.3`, not that pin. Changing just MCP would not
+establish availability or compatibility of the remaining dependency graph.
 
-For repeatability across supported platforms (Linux / Python 3.11 in Docker builds and Windows / Python 3.12 on enterprise hosts),
-the repository provides a complete reviewed exact-version baseline in `python-constraints.txt` (and `.secrets\python-constraints.txt`).
-This file records exact pins (`package==version`) for all direct, transitive, and build dependencies required by `requirements.txt`.
-It includes provenance comments, approval timestamps, and quarantine verification status.
+Let the internal mirror enforce its package-age policy; public availability or
+successful resolution is not approval. The mirror owner must agree whether the
+30-day clock starts at release publication, artifact upload or mirror admission.
+That decision and per-artifact evidence are still missing. Code cannot grant
+approval or import missing mirror artifacts.
 
 A constraints file enforces exact pinned versions during resolution without altering lower bounds in `requirements.txt`.
 Do not lower minimum version requirements or attempt to use public extra-index fallbacks to bypass mirror quarantine.
 Selecting `pgvector` or another vector store backend at runtime does **not** remove `qdrant-client` or `fastembed` from backend imports;
 all direct and transitive packages must be approved and present on the private mirror.
 
-You can verify clean resolution against the approved mirror baseline on a configured host without modifying installed packages:
+For a proposed replacement, put reviewed candidate exact pins in an ignored
+local file such as `.secrets\python-constraints.txt`. Configure pip to use only
+the approved mirror (including removing any public extra index from local pip
+configuration/environment). The probe inherits that configuration; it does not
+configure or authorize a registry. Never publish pip configuration or raw
+resolver reports: they can contain credentials and private endpoints.
+
+Run this stdlib-only probe on each actual target: Windows / Python 3.12 and
+Linux / Python 3.11. It does not install application packages:
 
 ```powershell
-python -m pip install --no-cache-dir --dry-run --ignore-installed `
-  --constraint .secrets\python-constraints.txt -r requirements.txt
+python scripts\probe_python_baseline.py `
+  --constraints .secrets\python-constraints.txt
 ```
 
-> [!TIP]
-> Always pass `--no-cache-dir` when testing mirror resolution to avoid reusing locally cached wheels, ensuring every dependency is verified against the private repository quarantine.
+The probe runs pip with `--no-cache-dir --dry-run --ignore-installed`, exact
+constraints, zero retries and bounded timeouts. It fails on missing/mismatched
+transitive pins or absent SHA-256 hashes. It emits only a sanitized **unreviewed
+candidate** inventory (versions, selected artifact hashes, target and normalized
+UTF-8 constraints-text hash), never download URLs or approval claims. Failure
+output is withheld; inspect detailed pip errors privately if necessary.
+It requires wheels (`--only-binary=:all:`) to avoid executing source-build
+hooks during the probe. Source-only packages require separate approved build
+dependency/artifact review, not removing this guard to bypass quarantine.
+This inventory is not a hash-enforced lock or evidence of installed backend
+behavior, source-build dependency completeness, approval or 30-day age.
 
-After resolution, confirm dependency tree consistency by running:
+Before promoting a candidate, the mirror owner/reviewer must record privately:
 
-```powershell
-pip check
-```
+- Every target's direct, transitive and build artifacts, exact versions,
+  filenames, SHA-256 hashes and provenance; a constraints file alone does not
+  record artifact identity or enforce those hashes during installation.
+- The agreed age basis, underlying timestamps, age of at least 30 days at
+  approval, approval timestamp and accountable reviewer.
+- Clean constrained resolution **and installation** into a new isolated native
+  environment on each supported target, followed by that environment's
+  `python -m pip check` with exit code zero (no filtered exceptions). `pip check`
+  in an existing environment after a dry-run does not validate the candidate.
+- Backend smoke/focused tests and a clean Docker **source** build using those
+  same reviewed constraints, followed by `python -m pip check` in the resulting
+  image. An existing image/overlay or mocked probe test is not this validation.
+
+These are remaining blockers for #43, not completed checks. No replacement
+baseline is endorsed here; preserve `requirements.txt` minimums while arranging
+approved mirror artifacts and review.
 
 A "No matching distribution" result indicates missing package mirror approval, quarantine hold, or incompatible target architecture wheels.
 Arrange mirror import and approval for missing direct or transitive packages (`qdrant-client`, `fastembed`, `tree-sitter`, `tree-sitter-language-pack`, `mcp`, etc.) before initiating a restricted-network build.
