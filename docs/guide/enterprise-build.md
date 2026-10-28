@@ -124,9 +124,12 @@ all direct and transitive packages must be approved and present on the private m
 You can verify clean resolution against the approved mirror baseline on a configured host without modifying installed packages:
 
 ```powershell
-python -m pip install --dry-run --ignore-installed `
+python -m pip install --no-cache-dir --dry-run --ignore-installed `
   --constraint .secrets\python-constraints.txt -r requirements.txt
 ```
+
+> [!TIP]
+> Always pass `--no-cache-dir` when testing mirror resolution to avoid reusing locally cached wheels, ensuring every dependency is verified against the private repository quarantine.
 
 After resolution, confirm dependency tree consistency by running:
 
