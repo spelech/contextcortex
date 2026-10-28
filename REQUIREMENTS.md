@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1115 Automated Tests** (757 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1117 Automated Tests** (759 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1125,6 +1125,10 @@ and leaves the prior indexed state intact without data loss._
 - `test_env_variable_fallbacks`
 - `test_set_embedding_db_config_persists_to_system_metadata`
 - `test_update_embedding_config_service`
+
+#### `tests/test_pdf_cache_backends.py` (2 tests)
+- `test_pdf_upload_replacement_persists_cache_and_index`
+- `test_pdf_read_populates_and_refreshes_existing_cache`
 
 #### `tests/test_pdf_extractor.py` (14 tests)
 - `test_extract_digital_pdf_text`
