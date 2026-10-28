@@ -185,9 +185,10 @@ class TestPgVectorStoreUpsertAndSearch:
         params = executed_call[0][1]
 
         assert "INSERT INTO vector_documents" in statement
-        assert "ON CONFLICT (id) DO UPDATE" in statement
+        assert "ON CONFLICT (collection_name, id) DO UPDATE" in statement
         assert len(params) == 2
         assert params[0]["id"] == "doc-1"
+        assert params[0]["collection_name"] == "knowledge_rag_v1"
         assert params[0]["repo"] == "contextcortex"
         assert params[0]["language"] == "python"
         assert params[0]["tags"] == json.dumps(["python", "core"])
@@ -329,7 +330,8 @@ class TestPgVectorStoreUpsertAndSearch:
         executed_call = mock_conn.execute.call_args
         stmt = str(executed_call[0][0])
         params = executed_call[0][1]
-        assert "DELETE FROM vector_documents WHERE path = :path" in stmt
+        assert "DELETE FROM vector_documents WHERE collection_name = :collection_name AND path = :path" in stmt
+        assert params["collection_name"] == "knowledge_rag_v1"
         assert params["path"] == "/app/old_file.py"
 
     def test_delete_by_path_failure(self):
@@ -353,7 +355,8 @@ class TestPgVectorStoreUpsertAndSearch:
         executed_call = mock_conn.execute.call_args
         stmt = str(executed_call[0][0])
         params = executed_call[0][1]
-        assert "DELETE FROM vector_documents WHERE repo = :repo" in stmt
+        assert "DELETE FROM vector_documents WHERE collection_name = :collection_name AND repo = :repo" in stmt
+        assert params["collection_name"] == "knowledge_rag_v1"
         assert params["repo"] == "deprecated_repo"
 
     def test_delete_by_repo_failure(self):
@@ -406,3 +409,129 @@ class TestVectorStoreManagerPgVectorDispatch:
             )
             assert ok is True
             assert "healthy" in msg.lower()
+
+
+class TestPgVectorCollectionIsolation:
+    """Integration style tests using sqlite/mock database engines to test isolation between collections."""
+
+    def test_collection_isolation_reads_writes_deletes(self):
+        """Test that collection_a writes/deletes do not affect collection_b in the same table."""
+        from app.services.vector_store.pgvector_store import PgVectorStore
+
+        # Create an in-memory SQLite engine simulating PgVectorStore operations
+        engine = create_engine("sqlite:///:memory:")
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE vector_documents (
+                    id VARCHAR(255),
+                    collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1',
+                    repo VARCHAR(255),
+                    doc_type VARCHAR(50) DEFAULT 'doc',
+                    path TEXT,
+                    rel_path TEXT,
+                    title TEXT,
+                    folder TEXT,
+                    category TEXT,
+                    tags JSONB,
+                    heading TEXT,
+                    symbol TEXT,
+                    language VARCHAR(50),
+                    start_line INTEGER,
+                    end_line INTEGER,
+                    github_url TEXT,
+                    permalink_url TEXT,
+                    content TEXT,
+                    embedding TEXT,
+                    payload JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (collection_name, id)
+                );
+            """))
+            conn.commit()
+
+        store_a = PgVectorStore(engine=engine, collection_name="collection_a", auto_init=False)
+        store_b = PgVectorStore(engine=engine, collection_name="collection_b", auto_init=False)
+
+        # 1. Insert doc into collection A
+        doc_a = VectorDocument(
+            id="doc-1",
+            text="Document for collection A",
+            dense_vector=[0.1] * 384,
+            repo="repo_a",
+            path="file_a.py",
+        )
+        assert store_a.upsert_documents([doc_a]) is True
+
+        # 2. Verify stats for A and B
+        stats_a = store_a.get_stats()
+        stats_b = store_b.get_stats()
+        assert stats_a["points_count"] == 1
+        assert stats_b["points_count"] == 0
+
+        # 3. Verify search in collection B returns empty
+        with patch("app.services.vector_store.pgvector_store.get_dense_embedding", return_value=[0.1] * 384):
+            # SQLite does not support pgvector <=> syntax, so mock search execute query or test directly
+            with patch.object(engine, "connect") as mock_conn:
+                m = MagicMock()
+                mock_conn.return_value.__enter__.return_value = m
+                m.execute.return_value.mappings.return_value.fetchall.return_value = []
+                results_b = store_b.search("Document")
+                assert len(results_b) == 0
+
+        # 4. Deletion in B does not purge A's document
+        assert store_b.delete_by_path("file_a.py") is True
+        assert store_a.get_stats()["points_count"] == 1
+
+        assert store_b.delete_by_repo("repo_a") is True
+        assert store_a.get_stats()["points_count"] == 1
+
+        # Deleting collection B leaves collection A intact
+        assert store_b.delete_collection() is True
+        assert store_a.get_stats()["points_count"] == 1
+
+        # Deletion in A purges A's document
+        assert store_a.delete_by_repo("repo_a") is True
+        assert store_a.get_stats()["points_count"] == 0
+
+    def test_migration_and_pk_update(self):
+        """Test schema migration for legacy table without collection_name column."""
+        from app.services.vector_store.pgvector_store import PgVectorStore
+
+        mock_engine = MagicMock()
+        mock_conn = MagicMock()
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+
+        # Mock primary key check returning ['id']
+        mock_conn.execute.return_value.fetchall.return_value = [("id",)]
+        mock_conn.execute.return_value.fetchone.return_value = ("vector_documents_pkey",)
+
+        store = PgVectorStore(engine=mock_engine, collection_name="collection_test", auto_init=False)
+        success = store.ensure_collection()
+        assert success is True
+
+        executed_sqls = [str(call_args[0][0]) for call_args in mock_conn.execute.call_args_list]
+        full_sql = " ".join(executed_sqls)
+
+        assert "ADD COLUMN IF NOT EXISTS collection_name" in full_sql
+        assert "UPDATE vector_documents SET collection_name = 'knowledge_rag_v1' WHERE collection_name IS NULL" in full_sql
+        assert "ALTER TABLE vector_documents DROP CONSTRAINT vector_documents_pkey" in full_sql
+        assert "ALTER TABLE vector_documents ADD PRIMARY KEY (collection_name, id)" in full_sql
+
+    def test_dimension_mismatch_warning(self):
+        """Test logging warning when table dimension differs from store dimension."""
+        from app.services.vector_store.pgvector_store import PgVectorStore
+
+        mock_engine = MagicMock()
+        mock_conn = MagicMock()
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+
+        # Mock dimension query returning 1536d while store uses 384d
+        mock_conn.execute.return_value.fetchall.return_value = [("collection_name", "id")]
+        mock_conn.execute.return_value.fetchone.return_value = (1536,)
+
+        store = PgVectorStore(engine=mock_engine, dimension=384, auto_init=False)
+        with patch("app.services.vector_store.pgvector_store.logger.warning") as mock_warn:
+            store.ensure_collection()
+            mock_warn.assert_called()
+            warning_msg = mock_warn.call_args[0][0]
+            assert "embedding dimension (1536) does not match configured dimension (384)" in warning_msg

@@ -64,7 +64,8 @@ class PgVectorStore(VectorStore):
                 # 2. Create vector documents table
                 create_table_sql = f"""
                 CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    id VARCHAR(255) PRIMARY KEY,
+                    id VARCHAR(255),
+                    collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1',
                     repo VARCHAR(255),
                     doc_type VARCHAR(50) DEFAULT 'doc',
                     path TEXT,
@@ -83,10 +84,69 @@ class PgVectorStore(VectorStore):
                     content TEXT,
                     embedding vector({self.dimension}),
                     payload JSONB,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (collection_name, id)
                 );
                 """
                 conn.execute(text(create_table_sql))
+
+                # Migration for existing tables: add collection_name column if missing and adjust PK constraint
+                try:
+                    conn.execute(text(
+                        f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1';"
+                    ))
+                    conn.commit()
+                except Exception as alter_err:
+                    logger.debug(f"Migration add collection_name column info: {alter_err}")
+
+                # Ensure null collection_name values in legacy rows are updated
+                try:
+                    conn.execute(text(
+                        f"UPDATE {self.table_name} SET collection_name = 'knowledge_rag_v1' WHERE collection_name IS NULL;"
+                    ))
+                    conn.commit()
+                except Exception as update_err:
+                    logger.debug(f"Migration update null collection_name info: {update_err}")
+
+                # Check and update PK constraint if it was on id alone
+                try:
+                    pk_check_sql = text("""
+                        SELECT a.attname
+                        FROM pg_index i
+                        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                        WHERE i.indrelid = :table_name::regclass AND i.indisprimary;
+                    """)
+                    pk_cols = [row[0] for row in conn.execute(pk_check_sql, {"table_name": self.table_name}).fetchall()]
+                    if pk_cols and "collection_name" not in pk_cols:
+                        # Find constraint name
+                        conname_sql = text("""
+                            SELECT conname
+                            FROM pg_constraint
+                            WHERE conrelid = :table_name::regclass AND contype = 'p';
+                        """)
+                        conname_row = conn.execute(conname_sql, {"table_name": self.table_name}).fetchone()
+                        if conname_row:
+                            conname = conname_row[0]
+                            conn.execute(text(f"ALTER TABLE {self.table_name} DROP CONSTRAINT {conname};"))
+                            conn.execute(text(f"ALTER TABLE {self.table_name} ADD PRIMARY KEY (collection_name, id);"))
+                            conn.commit()
+                except Exception as pk_err:
+                    logger.debug(f"Migration update primary key info: {pk_err}")
+
+                # Validate embedding dimension compatibility if table exists
+                try:
+                    dim_check_sql = text("""
+                        SELECT atttypmod
+                        FROM pg_attribute
+                        WHERE attrelid = :table_name::regclass AND attname = 'embedding';
+                    """)
+                    dim_row = conn.execute(dim_check_sql, {"table_name": self.table_name}).fetchone()
+                    if dim_row and dim_row[0] > 0 and dim_row[0] != self.dimension:
+                        logger.warning(
+                            f"Table '{self.table_name}' embedding dimension ({dim_row[0]}) does not match configured dimension ({self.dimension})."
+                        )
+                except Exception as dim_err:
+                    logger.debug(f"Embedding dimension validation info: {dim_err}")
 
                 # 3. Create HNSW cosine index
                 hnsw_index_sql = f"""
@@ -96,6 +156,7 @@ class PgVectorStore(VectorStore):
                 conn.execute(text(hnsw_index_sql))
 
                 # 4. Create metadata indexes
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_collection ON {self.table_name}(collection_name);"))
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_repo ON {self.table_name}(repo);"))
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_type ON {self.table_name}(doc_type);"))
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_path ON {self.table_name}(path);"))
@@ -172,6 +233,7 @@ class PgVectorStore(VectorStore):
 
             records.append({
                 "id": doc_id,
+                "collection_name": self.collection_name,
                 "repo": repo,
                 "doc_type": doc_type,
                 "path": path,
@@ -194,15 +256,15 @@ class PgVectorStore(VectorStore):
 
         upsert_sql = text(f"""
         INSERT INTO {self.table_name} (
-            id, repo, doc_type, path, rel_path, title, folder,
+            id, collection_name, repo, doc_type, path, rel_path, title, folder,
             category, tags, heading, symbol, language, start_line,
             end_line, github_url, permalink_url, content, embedding, payload
         ) VALUES (
-            :id, :repo, :doc_type, :path, :rel_path, :title, :folder,
+            :id, :collection_name, :repo, :doc_type, :path, :rel_path, :title, :folder,
             :category, :tags, :heading, :symbol, :language, :start_line,
             :end_line, :github_url, :permalink_url, :content, :embedding, :payload
         )
-        ON CONFLICT (id) DO UPDATE SET
+        ON CONFLICT (collection_name, id) DO UPDATE SET
             repo = EXCLUDED.repo,
             doc_type = EXCLUDED.doc_type,
             path = EXCLUDED.path,
@@ -240,8 +302,8 @@ class PgVectorStore(VectorStore):
         try:
             with self.engine.connect() as conn:
                 conn.execute(
-                    text(f"DELETE FROM {self.table_name} WHERE path = :path"),
-                    {"path": filepath},
+                    text(f"DELETE FROM {self.table_name} WHERE collection_name = :collection_name AND path = :path"),
+                    {"collection_name": self.collection_name, "path": filepath},
                 )
                 conn.commit()
             return True
@@ -254,14 +316,33 @@ class PgVectorStore(VectorStore):
         try:
             with self.engine.connect() as conn:
                 conn.execute(
-                    text(f"DELETE FROM {self.table_name} WHERE repo = :repo"),
-                    {"repo": repo_name},
+                    text(f"DELETE FROM {self.table_name} WHERE collection_name = :collection_name AND repo = :repo"),
+                    {"collection_name": self.collection_name, "repo": repo_name},
                 )
                 conn.commit()
             return True
         except Exception as e:
             logger.error(f"Error deleting by repo '{repo_name}' in PgVectorStore: {e}")
             return False
+
+    def delete_collection(self, collection_name: Optional[str] = None) -> bool:
+        """Purges all vectors belonging to a specific collection (defaults to active collection)."""
+        target_coll = collection_name or self.collection_name
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(
+                    text(f"DELETE FROM {self.table_name} WHERE collection_name = :collection_name"),
+                    {"collection_name": target_coll},
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting collection '{target_coll}' in PgVectorStore: {e}")
+            return False
+
+    def clear_collection(self, collection_name: Optional[str] = None) -> bool:
+        """Alias for delete_collection."""
+        return self.delete_collection(collection_name)
 
     def search(
         self,
@@ -285,8 +366,9 @@ class PgVectorStore(VectorStore):
             query_vec = get_dense_embedding(query_text.strip())
             query_vec_str = str(query_vec)
 
-            conditions = ["1=1"]
+            conditions = ["collection_name = :collection_name"]
             params: Dict[str, Any] = {
+                "collection_name": self.collection_name,
                 "query_vec": query_vec_str,
                 "limit": limit,
             }
@@ -356,7 +438,10 @@ class PgVectorStore(VectorStore):
         """Returns table statistics including row count and backend mode."""
         try:
             with self.engine.connect() as conn:
-                count = conn.execute(text(f"SELECT count(*) FROM {self.table_name}")).scalar() or 0
+                count = conn.execute(
+                    text(f"SELECT count(*) FROM {self.table_name} WHERE collection_name = :collection_name"),
+                    {"collection_name": self.collection_name},
+                ).scalar() or 0
             return {
                 "backend": "pgvector",
                 "mode": self.mode,
