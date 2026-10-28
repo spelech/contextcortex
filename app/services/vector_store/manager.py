@@ -146,9 +146,16 @@ class VectorStoreManager:
                 health_msg = "Error connecting to vector store."
                 stats = {"error": "Error retrieving vector store statistics."}
 
+            configured_mode = cfg["mode"]
+            effective_mode = stats.get("effective_mode", stats.get("mode", configured_mode))
+            fallback_active = stats.get("fallback_active", False)
+
             return {
                 "provider": cfg["provider"],
-                "mode": cfg["mode"],
+                "mode": configured_mode,
+                "configured_mode": configured_mode,
+                "effective_mode": effective_mode,
+                "fallback_active": fallback_active,
                 "storage_path": cfg["storage_path"],
                 "url": cfg["url"],
                 "collection": cfg["collection"],
@@ -306,6 +313,7 @@ class VectorStoreManager:
                 "storage_path": target_storage,
                 "url": target_url.strip(),
                 "collection": target_collection,
+                "allow_fallback": False,
             }
 
             # Check if this matches active store to prevent locked embedded directory collisions
@@ -327,7 +335,7 @@ class VectorStoreManager:
                 return is_healthy, health_msg
             except Exception as e:
                 logger.error(f"Connection test failed for {prov}: {e}")
-                return False, f"Connection test failed for {prov}."
+                return False, f"Connection test failed for {prov}: {e}"
             finally:
                 if test_store is not None:
                     try:

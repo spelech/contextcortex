@@ -39,6 +39,22 @@ class TestQdrantVectorStoreInit:
             assert store.location == "http://remote-qdrant:6333"
             mock_client.get_collections.assert_called()
 
+    def test_init_remote_unreachable_raises_error(self, tmp_path):
+        def side_effect(*args, **kwargs):
+            if "url" in kwargs or (args and isinstance(args[0], str) and args[0].startswith("http")):
+                raise ConnectionError("Cannot reach remote server")
+            return QdrantClient(location=":memory:")
+
+        with patch("app.services.vector_store.qdrant_store.QdrantClient", side_effect=side_effect):
+            with pytest.raises(ConnectionError, match="Failed to connect to remote Qdrant"):
+                QdrantVectorStore(
+                    url="http://broken-remote:6333",
+                    storage_path=str(tmp_path / "fallback_qdrant"),
+                    collection_name="test_fallback_coll",
+                    prefer_remote=True,
+                    allow_fallback=False
+                )
+
     def test_init_remote_fallback_to_embedded_on_connection_error(self, tmp_path):
         fallback_path = str(tmp_path / "fallback_qdrant")
 
@@ -52,11 +68,23 @@ class TestQdrantVectorStoreInit:
                 url="http://broken-remote:6333",
                 storage_path=fallback_path,
                 collection_name="test_fallback_coll",
-                prefer_remote=True
+                prefer_remote=True,
+                allow_fallback=True
             )
-            assert store.mode in ("embedded", "memory")
+            assert store.configured_mode == "remote"
+            assert store.effective_mode in ("embedded", "memory")
+            assert store.fallback_active is True
             assert store.location == fallback_path
             assert store.client is not None
+
+            stats = store.get_stats()
+            assert stats["configured_mode"] == "remote"
+            assert stats["effective_mode"] == store.effective_mode
+            assert stats["fallback_active"] is True
+
+            healthy, msg = store.health_check()
+            assert healthy is True
+            assert "[DEGRADED:" in msg
 
     def test_custom_injected_client(self):
         custom_client = QdrantClient(location=":memory:")

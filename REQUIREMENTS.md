@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1088 Automated Tests** (735 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1094 Automated Tests** (741 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -431,13 +431,15 @@ classDiagram
 - `test_api_embedding_settings`
 - `test_api_embedding_settings_errors`
 
-#### `tests/backend/test_api_vector_store.py` (14 tests)
+#### `tests/backend/test_api_vector_store.py` (16 tests)
 - `test_api_get_vector_store_success` - _Test retrieving active vector store configuration and stats._
 - `test_api_get_vector_store_error` - _Test GET /admin/api/vector-store error handling._
 - `test_api_test_vector_store_valid_embedded` - _Test dry-run validation with valid embedded Qdrant configuration._
 - `test_api_test_vector_store_valid_chroma` - _Test dry-run validation with valid embedded Chroma configuration._
 - `test_api_test_vector_store_invalid_provider` - _Test dry-run validation with unsupported provider._
 - `test_api_test_vector_store_remote_missing_url` - _Test dry-run validation with remote mode but missing URL._
+- `test_api_test_vector_store_unreachable_remote_qdrant` - _Test POST /admin/api/vector-store/test fails for unreachable remote Qdrant._
+- `test_api_test_vector_store_unreachable_remote_chroma` - _Test POST /admin/api/vector-store/test fails for unreachable remote Chroma._
 - `test_api_test_vector_store_exception` - _Test dry-run validation when unexpected exception occurs._
 - `test_api_switch_vector_store_success` - _Test switching vector store backend and triggering re-indexing._
 - `test_api_switch_vector_store_invalid_provider` - _Test switching to an unsupported provider returns 400._
@@ -748,10 +750,11 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_vector_document_validation` - _Verify required field validation in VectorDocument._
 - `test_vector_search_result_creation_and_payload` - _Verify VectorSearchResult creation and payload access._
 
-#### `tests/backend/test_vector_store_chroma.py` (34 tests)
+#### `tests/backend/test_vector_store_chroma.py` (36 tests)
 - `TestChromaVectorStoreInit::test_init_in_memory`
 - `TestChromaVectorStoreInit::test_init_persistent_disk`
 - `TestChromaVectorStoreInit::test_init_remote_success`
+- `TestChromaVectorStoreInit::test_init_remote_unreachable_raises_error`
 - `TestChromaVectorStoreInit::test_init_remote_fallback_to_persistent_on_error`
 - `TestChromaVectorStoreInit::test_custom_injected_client`
 - `TestChromaVectorStoreOperations::test_ensure_collection`
@@ -769,6 +772,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_init_in_memory`
 - `test_init_persistent_disk`
 - `test_init_remote_success`
+- `test_init_remote_unreachable_raises_error`
 - `test_init_remote_fallback_to_persistent_on_error`
 - `test_custom_injected_client`
 - `test_ensure_collection`
@@ -824,9 +828,10 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_test_connection_active_embedded` - _Verify test_connection succeeds on active embedded Qdrant store without file lock conflict._
 - `test_switch_same_embedded_directory` - _Verify switch_vector_store succeeds when switching collection on the same embedded Qdrant directory._
 
-#### `tests/backend/test_vector_store_qdrant.py` (40 tests)
+#### `tests/backend/test_vector_store_qdrant.py` (42 tests)
 - `TestQdrantVectorStoreInit::test_init_in_memory_or_embedded`
 - `TestQdrantVectorStoreInit::test_init_remote_success`
+- `TestQdrantVectorStoreInit::test_init_remote_unreachable_raises_error`
 - `TestQdrantVectorStoreInit::test_init_remote_fallback_to_embedded_on_connection_error`
 - `TestQdrantVectorStoreInit::test_custom_injected_client`
 - `TestQdrantVectorStoreOperations::test_ensure_collection_recreates_on_schema_mismatch`
@@ -847,6 +852,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `TestQdrantVectorStoreOperations::test_get_stats_and_health_check`
 - `test_init_in_memory_or_embedded`
 - `test_init_remote_success`
+- `test_init_remote_unreachable_raises_error`
 - `test_init_remote_fallback_to_embedded_on_connection_error`
 - `test_custom_injected_client`
 - `test_ensure_collection_recreates_on_schema_mismatch`
