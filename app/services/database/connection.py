@@ -225,6 +225,10 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
     vision_ocr_model = os.getenv("VISION_OCR_MODEL", "").strip()
     chat_model = os.getenv("CHAT_MODEL", "").strip()
 
+    allow_fallback_env = os.getenv("EMBEDDING_ALLOW_FALLBACK", "false").lower().strip()
+    allow_fallback = allow_fallback_env in ("1", "true", "yes")
+    fallback_dense_model = os.getenv("EMBEDDING_FALLBACK_DENSE_MODEL", "").strip()
+
     return {
         "provider": provider,
         "dense_model": dense_model,
@@ -235,6 +239,8 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
         "litellm_api_key": litellm_api_key,
         "vision_ocr_model": vision_ocr_model,
         "chat_model": chat_model,
+        "allow_fallback": allow_fallback,
+        "fallback_dense_model": fallback_dense_model,
         "system_cpus": sys_res["cpus"],
         "system_memory_gb": sys_res["memory_gb"],
     }
@@ -258,11 +264,18 @@ def get_embedding_db_config() -> Dict[str, Any]:
         or get_metadata("chat_model")
         or get_metadata("embedding_chat_model")
     )
+    allow_fallback_str = get_metadata("embedding_allow_fallback")
+    fallback_dense_model = get_metadata("embedding_fallback_dense_model")
 
     default_cfg = _resolve_default_embedding_config()
 
     threads = int(threads_str) if threads_str and threads_str.isdigit() else default_cfg["threads"]
     batch_size = int(batch_size_str) if batch_size_str and batch_size_str.isdigit() else default_cfg["batch_size"]
+
+    if allow_fallback_str is not None:
+        allow_fallback = allow_fallback_str == "1"
+    else:
+        allow_fallback = default_cfg["allow_fallback"]
 
     return {
         "provider": (provider or default_cfg["provider"]).lower().strip(),
@@ -274,6 +287,8 @@ def get_embedding_db_config() -> Dict[str, Any]:
         "litellm_api_key": litellm_api_key or default_cfg["litellm_api_key"],
         "vision_ocr_model": (vision_ocr_model or default_cfg["vision_ocr_model"]).strip(),
         "chat_model": (chat_model or default_cfg["chat_model"]).strip(),
+        "allow_fallback": allow_fallback,
+        "fallback_dense_model": (fallback_dense_model if fallback_dense_model is not None else default_cfg["fallback_dense_model"]).strip(),
         "system_cpus": default_cfg["system_cpus"],
         "system_memory_gb": default_cfg["system_memory_gb"],
     }
@@ -289,6 +304,8 @@ def set_embedding_db_config(
     litellm_api_key: Optional[str] = None,
     vision_ocr_model: Optional[str] = None,
     chat_model: Optional[str] = None,
+    allow_fallback: Optional[bool] = None,
+    fallback_dense_model: Optional[str] = None,
 ):
     if provider is not None:
         set_metadata("embedding_provider", provider.lower().strip())
@@ -312,6 +329,10 @@ def set_embedding_db_config(
         set_metadata("openai_chat_model", chat_model.strip())
         set_metadata("chat_model", chat_model.strip())
         set_metadata("embedding_chat_model", chat_model.strip())
+    if allow_fallback is not None:
+        set_metadata("embedding_allow_fallback", "1" if allow_fallback else "0")
+    if fallback_dense_model is not None:
+        set_metadata("embedding_fallback_dense_model", fallback_dense_model.strip())
 
 
 def get_vision_ocr_model() -> str:

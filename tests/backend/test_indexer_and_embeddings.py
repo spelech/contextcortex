@@ -91,28 +91,81 @@ def test_sparse_embeddings_failures():
         assert res == [None, None]
 
 def test_init_embeddings_fallbacks():
-    # Local fastembed failure falls back to API
-    with patch.object(emb_module, "EMBEDDING_PROVIDER", "local"), \
-         patch("fastembed.TextEmbedding", side_effect=Exception("Model weight missing")), \
-         patch("openai.OpenAI"):
-        init_embeddings()
-        assert emb_module.EMBEDDING_PROVIDER == "api"
+    # 1. Local mode without fallback opt-in fails visibly when FastEmbed init fails
+    with patch("fastembed.TextEmbedding", side_effect=Exception("Model weight missing")):
+        with pytest.raises(RuntimeError, match="Fallback to API is disabled"):
+            init_embeddings(provider="local", dense_model="BAAI/bge-small-en-v1.5", allow_fallback=False)
+        cfg = emb_module.get_embedding_config()
+        assert cfg["requested_provider"] == "local"
+        assert cfg["effective_provider"] == "local"
 
-    # API mode with fastembed sparse failure
-    with patch.object(emb_module, "EMBEDDING_PROVIDER", "api"), \
-         patch("openai.OpenAI"), \
+    # 2. Local mode with fallback opt-in but missing fallback_dense_model raises ValueError
+    with patch("fastembed.TextEmbedding", side_effect=Exception("Model weight missing")):
+        with pytest.raises(ValueError, match="no valid fallback_dense_model was configured"):
+            init_embeddings(
+                provider="local",
+                dense_model="BAAI/bge-small-en-v1.5",
+                allow_fallback=True,
+                fallback_dense_model=""
+            )
+
+    # 3. Local mode with fallback opt-in and valid fallback_dense_model switches to API with fallback model
+    with patch("fastembed.TextEmbedding", side_effect=Exception("Model weight missing")), \
+         patch("openai.OpenAI") as mock_openai:
+        init_embeddings(
+            provider="local",
+            dense_model="BAAI/bge-small-en-v1.5",
+            allow_fallback=True,
+            fallback_dense_model="text-embedding-3-small"
+        )
+        cfg = emb_module.get_embedding_config()
+        assert cfg["requested_provider"] == "local"
+        assert cfg["effective_provider"] == "api"
+        assert cfg["requested_dense_model"] == "BAAI/bge-small-en-v1.5"
+        assert cfg["effective_dense_model"] == "text-embedding-3-small"
+        mock_openai.assert_called_once()
+
+    # 4. API mode with fastembed sparse failure
+    with patch("openai.OpenAI"), \
          patch("fastembed.SparseTextEmbedding", side_effect=Exception("Sparse model missing")):
-        init_embeddings()
+        init_embeddings(provider="api", dense_model="text-embedding-3-small")
         assert emb_module._sparse_model is None
 
-    # API mode with OpenAI client init failure
-    with patch.object(emb_module, "EMBEDDING_PROVIDER", "api"), \
-         patch("openai.OpenAI", side_effect=Exception("OpenAI init failure")):
-        init_embeddings()
+    # 5. API mode with OpenAI client init failure
+    with patch("openai.OpenAI", side_effect=Exception("OpenAI init failure")):
+        init_embeddings(provider="api", dense_model="text-embedding-3-small")
 
-    # Restore local for other tests
-    emb_module.EMBEDDING_PROVIDER = "local"
-    init_embeddings()
+    # Restore local embeddings for subsequent tests
+    try:
+        init_embeddings(provider="local", dense_model="BAAI/bge-small-en-v1.5", allow_fallback=False)
+    except Exception:
+        pass
+
+
+def test_offline_missing_assets_no_unexpected_outbound_requests():
+    """Asserts that when local assets are missing and fallback is disabled, no outbound requests occur and RuntimeError is raised on embedding attempts."""
+    with patch("fastembed.TextEmbedding", side_effect=ValueError("injected missing approved local model asset")), \
+         patch("openai.OpenAI") as mock_openai:
+        with pytest.raises(RuntimeError, match="Fallback to API is disabled"):
+            init_embeddings(provider="local", dense_model="BAAI/bge-small-en-v1.5", allow_fallback=False)
+
+        cfg = emb_module.get_embedding_config()
+        assert cfg["requested_provider"] == "local"
+        assert cfg["effective_provider"] == "local"
+        assert cfg["dense_model"] == "BAAI/bge-small-en-v1.5"
+
+        # Ensure OpenAI client was never instantiated
+        mock_openai.assert_not_called()
+
+        # Attempting to generate dense embeddings must raise RuntimeError and NOT send API request
+        with pytest.raises(RuntimeError, match="Local dense embedding model is not initialized."):
+            get_dense_embeddings_batch(["test string"])
+
+    # Restore local embeddings
+    try:
+        init_embeddings(provider="local", dense_model="BAAI/bge-small-en-v1.5", allow_fallback=False)
+    except Exception:
+        pass
 
 def test_chunk_uuid_consistency():
     u1 = get_chunk_uuid("repo_a", "src/main.py", 0)

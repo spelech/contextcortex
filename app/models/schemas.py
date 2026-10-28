@@ -186,6 +186,8 @@ class EmbeddingSettingsRequest(BaseModel):
     litellm_api_key: Optional[str] = None
     vision_ocr_model: Optional[str] = None
     chat_model: Optional[str] = None
+    allow_fallback: Optional[bool] = None
+    fallback_dense_model: Optional[str] = None
 
 # Topology Graph Models
 class TopologyNode(BaseModel):
