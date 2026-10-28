@@ -49,38 +49,37 @@ class PgVectorStore(VectorStore):
     def ensure_collection(self) -> bool:
         """
         Initializes vector extension, documents table schema, and HNSW indexes idempotently.
+
+        Schema changes are atomic. Populated tables require an explicit rebuild before
+        changing dimensions, because all collections share the embedding column.
         """
         try:
-            with self.engine.connect() as conn:
-                # 1. Enable pgvector extension
-                try:
+            with self.engine.connect() as conn, conn.begin():
+                # An installed extension needs no CREATE privilege.
+                extension = conn.execute(text(
+                    "SELECT 1 FROM pg_extension WHERE extname = 'vector'"
+                )).scalar()
+                if not extension:
                     conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-                    conn.commit()
-                except Exception as ext_err:
-                    logger.warning(
-                        f"Could not automatically create 'vector' extension (may require superuser or already exist): {ext_err}"
-                    )
 
-                # Check existing table vector dimension
-                try:
-                    check_dim_sql = f"""
+                # to_regclass returns NULL for a fresh table instead of aborting the transaction.
+                check_dim_sql = text("""
                     SELECT atttypmod FROM pg_attribute
-                    WHERE attrelid = '{self.table_name}'::regclass AND attname = 'embedding';
-                    """
-                    row = conn.execute(text(check_dim_sql)).fetchone()
-                    if row and row[0] is not None and row[0] > 0 and row[0] != self.dimension:
-                        logger.warning(
-                            f"PgVectorStore table '{self.table_name}' dimension mismatch: expected {self.dimension}d, found {row[0]}d. Recreating..."
+                    WHERE attrelid = to_regclass(:table_name) AND attname = 'embedding';
+                """)
+                row = conn.execute(check_dim_sql, {"table_name": self.table_name}).fetchone()
+                if row and row[0] is not None and row[0] > 0 and row[0] != self.dimension:
+                    conn.execute(text(f"LOCK TABLE {self.table_name} IN ACCESS EXCLUSIVE MODE"))
+                    if conn.execute(text(f"SELECT EXISTS (SELECT 1 FROM {self.table_name})")).scalar():
+                        raise ValueError(
+                            f"Vector dimension mismatch for table '{self.table_name}': "
+                            f"existing {row[0]}d, configured {self.dimension}d. "
+                            "An explicit rebuild is required; all collections sharing this "
+                            "table must be cleared before changing dimensions."
                         )
-                        conn.execute(text(f"DROP TABLE IF EXISTS {self.table_name} CASCADE;"))
-                        conn.commit()
-                        try:
-                            from app.services.database import clear_indexing_metadata
-                            clear_indexing_metadata()
-                        except Exception as cm_err:
-                            logger.warning(f"Failed to clear indexing metadata during PgVector table recreation: {cm_err}")
-                except Exception:
-                    pass
+                    conn.execute(text(
+                        f"ALTER TABLE {self.table_name} ALTER COLUMN embedding TYPE vector({self.dimension})"
+                    ))
 
                 # 2. Create vector documents table
                 create_table_sql = f"""
@@ -111,63 +110,33 @@ class PgVectorStore(VectorStore):
                 """
                 conn.execute(text(create_table_sql))
 
-                # Migration for existing tables: add collection_name column if missing and adjust PK constraint
-                try:
-                    conn.execute(text(
-                        f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1';"
-                    ))
-                    conn.commit()
-                except Exception as alter_err:
-                    logger.debug(f"Migration add collection_name column info: {alter_err}")
+                # Migrate legacy rows before replacing the old id-only primary key.
+                conn.execute(text(
+                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1';"
+                ))
+                conn.execute(text(
+                    f"UPDATE {self.table_name} SET collection_name = 'knowledge_rag_v1' WHERE collection_name IS NULL;"
+                ))
 
-                # Ensure null collection_name values in legacy rows are updated
-                try:
-                    conn.execute(text(
-                        f"UPDATE {self.table_name} SET collection_name = 'knowledge_rag_v1' WHERE collection_name IS NULL;"
-                    ))
-                    conn.commit()
-                except Exception as update_err:
-                    logger.debug(f"Migration update null collection_name info: {update_err}")
-
-                # Check and update PK constraint if it was on id alone
-                try:
-                    pk_check_sql = text("""
-                        SELECT a.attname
-                        FROM pg_index i
-                        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                        WHERE i.indrelid = :table_name::regclass AND i.indisprimary;
-                    """)
-                    pk_cols = [row[0] for row in conn.execute(pk_check_sql, {"table_name": self.table_name}).fetchall()]
-                    if pk_cols and "collection_name" not in pk_cols:
-                        # Find constraint name
+                pk_check_sql = text("""
+                    SELECT a.attname
+                    FROM pg_index i
+                    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                    WHERE i.indrelid = CAST(:table_name AS regclass) AND i.indisprimary;
+                """)
+                pk_cols = [row[0] for row in conn.execute(pk_check_sql, {"table_name": self.table_name}).fetchall()]
+                if set(pk_cols) != {"collection_name", "id"}:
+                    if pk_cols:
                         conname_sql = text("""
                             SELECT conname
                             FROM pg_constraint
-                            WHERE conrelid = :table_name::regclass AND contype = 'p';
+                            WHERE conrelid = CAST(:table_name AS regclass) AND contype = 'p';
                         """)
                         conname_row = conn.execute(conname_sql, {"table_name": self.table_name}).fetchone()
                         if conname_row:
-                            conname = conname_row[0]
+                            conname = self.engine.dialect.identifier_preparer.quote(conname_row[0])
                             conn.execute(text(f"ALTER TABLE {self.table_name} DROP CONSTRAINT {conname};"))
-                            conn.execute(text(f"ALTER TABLE {self.table_name} ADD PRIMARY KEY (collection_name, id);"))
-                            conn.commit()
-                except Exception as pk_err:
-                    logger.debug(f"Migration update primary key info: {pk_err}")
-
-                # Validate embedding dimension compatibility if table exists
-                try:
-                    dim_check_sql = text("""
-                        SELECT atttypmod
-                        FROM pg_attribute
-                        WHERE attrelid = :table_name::regclass AND attname = 'embedding';
-                    """)
-                    dim_row = conn.execute(dim_check_sql, {"table_name": self.table_name}).fetchone()
-                    if dim_row and dim_row[0] > 0 and dim_row[0] != self.dimension:
-                        logger.warning(
-                            f"Table '{self.table_name}' embedding dimension ({dim_row[0]}) does not match configured dimension ({self.dimension})."
-                        )
-                except Exception as dim_err:
-                    logger.debug(f"Embedding dimension validation info: {dim_err}")
+                    conn.execute(text(f"ALTER TABLE {self.table_name} ADD PRIMARY KEY (collection_name, id);"))
 
                 # 3. Create HNSW cosine index
                 hnsw_index_sql = f"""
@@ -182,12 +151,13 @@ class PgVectorStore(VectorStore):
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_type ON {self.table_name}(doc_type);"))
                 conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_path ON {self.table_name}(path);"))
 
-                conn.commit()
             logger.info(f"PgVectorStore initialized table '{self.table_name}' with {self.dimension}d HNSW index.")
             return True
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Error initializing PgVectorStore table '{self.table_name}': {e}", exc_info=True)
-            return False
+            raise RuntimeError(f"Failed to initialize PgVectorStore table '{self.table_name}'.") from e
 
     def upsert_documents(
         self,
