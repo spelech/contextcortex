@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1127 Automated Tests** (769 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1129 Automated Tests** (771 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -873,6 +873,10 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_delete_by_path`
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
+
+#### `tests/test_approved_mirror.py` (2 tests)
+- `test_checked_in_mcp_pin_resolves_from_approved_mirror` - _Catch an unavailable exact MCP pin even when the declared range is satisfiable._
+- `test_direct_requirement_has_compatible_approved_wheel` - _Distinguish unavailable project artifacts from overly restrictive candidate pins._
 
 #### `tests/test_auth_endpoints.py` (9 tests)
 - `test_oauth_protected_resource_metadata` - _Verify GET /.well-known/oauth-protected-resource returns valid RFC 9728 JSON._

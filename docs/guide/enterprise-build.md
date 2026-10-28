@@ -106,13 +106,43 @@ frontend-only build currently reaches this blocker in a Git helper dependency.
 ### The 30-day quarantine and candidate validation (issue #43 remains open)
 
 **There is currently no verified approved Python baseline in this repository.**
-The checked-in `python-constraints.txt` retains the previous pins only to
-reproduce the failure; its former approval and cross-platform verification
-claims were unsupported. On Windows / Python 3.12.10 and Linux / Python 3.11,
-clean constrained resolution fails at `mcp==1.30.0`. The Windows retest's
-configured approved mirror advertises
-`1.28.1`, `1.27.2` and `1.23.3`, not that pin. Changing just MCP would not
-establish availability or compatibility of the remaining dependency graph.
+The former approval and cross-platform verification claims in
+`python-constraints.txt` were unsupported. Its MCP candidate now uses
+`mcp==1.28.1`, which the configured approved mirror provides and the declared
+`>=1.20.0,<2.0.0` requirement permits. Other pins remain unverified.
+
+The updated real-mirror checks pass for MCP on Windows / Python 3.12.10 and
+Linux / Python 3.11. Each target has 17 passing checks and four failures.
+Even without exact constraints, these direct project artifacts remain missing:
+
+- `qdrant-client>=1.9.0`
+- `fastembed>=0.3.0`
+- `tree-sitter-language-pack>=0.21.0`
+- `chromadb>=0.5.0`
+
+Independent index queries also find no distributions for those four projects.
+These failures do not justify requesting newer MCP versions or lowering floors.
+A complete fresh requirements resolution stops at `qdrant-client`.
+Direct wheel availability does not prove transitive dependency resolution.
+
+Installing MCP 1.28.1 into a disposable cached runtime passes `pip check`,
+12 focused MCP tests, and an actual initialize/list-tools/catalog-call roundtrip.
+This tests compatibility with existing runtime dependencies, not a clean backend
+installation. The running deployment remains unchanged.
+
+Run the opt-in availability checks only with pip configured for the approved
+mirror and no public extra index:
+
+```powershell
+$env:RUN_APPROVED_MIRROR_TESTS = "1"
+python -m pytest --confcutdir=tests tests\test_approved_mirror.py
+```
+
+The tests resolve each declared direct requirement independently, without
+installing it, and separately check the exact MCP pin. They ignore installed
+packages and caches, use bounded wheel-only lookups, and withhold private pip
+diagnostics. They skip unless explicitly enabled. They do not prove a complete
+baseline or replace the constrained full-graph probe below.
 
 Let the internal mirror enforce its package-age policy; public availability or
 successful resolution is not approval. The mirror owner must agree whether the
