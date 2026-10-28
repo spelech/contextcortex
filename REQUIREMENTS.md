@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1115 Automated Tests** (757 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1129 Automated Tests** (771 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -874,6 +874,10 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
 
+#### `tests/test_approved_mirror.py` (2 tests)
+- `test_checked_in_mcp_pin_resolves_from_approved_mirror` - _Catch an unavailable exact MCP pin even when the declared range is satisfiable._
+- `test_direct_requirement_has_compatible_approved_wheel` - _Distinguish unavailable project artifacts from overly restrictive candidate pins._
+
 #### `tests/test_auth_endpoints.py` (9 tests)
 - `test_oauth_protected_resource_metadata` - _Verify GET /.well-known/oauth-protected-resource returns valid RFC 9728 JSON._
 - `test_local_dev_bypass_allows_unauthenticated_requests` - _When AUTH_ENABLED=false, endpoints allow access without authorization header._
@@ -953,7 +957,7 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_runtime_ca_update_controls_application_start` - _Verifies that runtime CA bundle updates copy certificates and fail closed when update-ca-certificates errors._
 - `test_runtime_ca_empty_or_missing_dir_skips_update_and_starts` - _Verifies that an empty or missing EXTRA_CA_CERTS_DIR skips CA trust updates and launches the command cleanly._
 
-#### `tests/test_docker_orchestration.py` (42 tests)
+#### `tests/test_docker_orchestration.py` (36 tests)
 - `TestDockerComposeConfig::test_compose_version_and_services`
 - `TestDockerComposeConfig::test_postgres_service_config`
 - `TestDockerComposeConfig::test_contextcortex_service_config`
@@ -972,9 +976,6 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `TestStartupDatabaseInitialization::test_init_application_database_without_env`
 - `TestStartupDatabaseInitialization::test_init_application_database_with_admin_key_env`
 - `TestStartupDatabaseInitialization::test_wait_for_db_retry_success` - _Ensures wait_for_db returns True upon successful database connectivity._
-- `TestPythonConstraintsBaseline::test_constraints_file_exists_and_contains_metadata`
-- `TestPythonConstraintsBaseline::test_constraints_covers_all_requirements_with_exact_pins`
-- `TestPythonConstraintsBaseline::test_pip_check_clean_dependency_tree`
 - `test_compose_version_and_services`
 - `test_postgres_service_config`
 - `test_contextcortex_service_config`
@@ -993,9 +994,6 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_init_application_database_without_env`
 - `test_init_application_database_with_admin_key_env`
 - `test_wait_for_db_retry_success` - _Ensures wait_for_db returns True upon successful database connectivity._
-- `test_constraints_file_exists_and_contains_metadata`
-- `test_constraints_covers_all_requirements_with_exact_pins`
-- `test_pip_check_clean_dependency_tree`
 
 #### `tests/test_embedding_cache.py` (4 tests)
 - `test_embedding_cache_set_and_get`
@@ -1252,6 +1250,26 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_env`
 - `test_large_file_auto_summarization`
 - `test_large_file_disabled_summarization`
+
+#### `tests/test_python_baseline.py` (18 tests)
+- `TestPythonBaselineProbe::test_resolves_cleanly_with_constraints_and_emits_only_candidate_inventory`
+- `TestPythonBaselineProbe::test_failed_resolver_does_not_expose_private_output_or_retry`
+- `TestPythonBaselineProbe::test_rejects_unpinned_or_mismatched_transitive_artifacts`
+- `TestPythonBaselineProbe::test_rejects_missing_or_invalid_artifact_hash`
+- `TestPythonBaselineProbe::test_rejects_non_exact_constraints_before_contacting_pip`
+- `TestPythonBaselineProbe::test_rejects_invalid_or_empty_report`
+- `TestPythonBaselineProbe::test_timeout_does_not_expose_captured_private_output`
+- `TestPythonBaselineProbe::test_cli_writes_no_inventory_when_resolution_fails`
+- `TestPythonBaselineProbe::test_cli_emits_json_inventory_for_successful_probe`
+- `test_resolves_cleanly_with_constraints_and_emits_only_candidate_inventory`
+- `test_failed_resolver_does_not_expose_private_output_or_retry`
+- `test_rejects_unpinned_or_mismatched_transitive_artifacts`
+- `test_rejects_missing_or_invalid_artifact_hash`
+- `test_rejects_non_exact_constraints_before_contacting_pip`
+- `test_rejects_invalid_or_empty_report`
+- `test_timeout_does_not_expose_captured_private_output`
+- `test_cli_writes_no_inventory_when_resolution_fails`
+- `test_cli_emits_json_inventory_for_successful_probe`
 
 #### `tests/test_rest_role_permissions.py` (4 tests)
 - `test_anonymous_and_invalid_key_requests_denied` - _Anonymous or invalid/revoked requests receive 401 Unauthorized._

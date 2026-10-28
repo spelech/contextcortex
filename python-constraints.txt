@@ -1,8 +1,13 @@
-# ContextCortex Approved Python Mirror Constraints Baseline
-# Approval Timestamp: 2026-10-15T00:00:00Z
-# Target Environments: Linux / Python 3.11 (Docker Runtime), Windows / Python 3.12 (Host)
-# Quarantine Policy: 30-Day Quarantine satisfied; age measured from PyPI release publication date
-# Verification: Resolved against approved mirror baseline; verified via pip dry-run and pip check
+# ContextCortex UNVERIFIED Python constraints candidate - NOT an approved baseline
+# Intended targets: Linux / Python 3.11 and Windows / Python 3.12.
+# No approval, provenance, artifact hashes, quarantine-age evidence or clean
+# installation evidence accompanies the full graph. Previous verification claims
+# were unsupported. The MCP candidate now uses mirror-available 1.28.1; direct
+# wheel checks pass for that pin on Windows / Python 3.12 and Linux / Python 3.11.
+# Full resolution remains blocked by missing project artifacts (issue #43).
+# Do not bypass constraints.
+# Other pins remain unverified, NOT endorsed for use.
+# See docs/guide/enterprise-build.md for review and validation prerequisites.
 
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.5
@@ -51,7 +56,7 @@ jsonschema-specifications==2025.9.1
 kubernetes==37.0.1
 loguru==0.7.3
 markdown-it-py==4.2.0
-mcp==1.30.0
+mcp==1.28.1
 mdurl==0.1.2
 mmh3==5.3.1
 multidict==7.2.1
