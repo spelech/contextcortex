@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1115 Automated Tests** (757 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1120 Automated Tests** (762 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1155,12 +1155,19 @@ and leaves the prior indexed state intact without data loss._
 - `test_scanned_pdf_cache_invalidation_on_replace_and_delete`
 - `test_real_asd_ste100_pdf_preview_or_indexing`
 
+#### `tests/test_pgvector_native.py` (5 tests)
+- `test_native_initialization_and_collection_isolation`
+- `test_native_migrates_null_legacy_collection`
+- `test_native_initialization_error_is_explicit_and_atomic`
+- `test_native_dimension_mismatch_preserves_populated_table`
+- `test_native_dimension_change_after_explicit_clear`
+
 #### `tests/test_pgvector_store.py` (62 tests)
 - `TestPgVectorStoreImports::test_import_pgvector_store`
 - `TestPgVectorStoreImports::test_manager_supported_providers_includes_postgres_and_pgvector`
 - `TestPgVectorStoreLifecycle::test_initialization_defaults`
 - `TestPgVectorStoreLifecycle::test_ensure_collection_executes_ddl`
-- `TestPgVectorStoreLifecycle::test_ensure_collection_handles_extension_permission_warning`
+- `TestPgVectorStoreLifecycle::test_ensure_collection_extension_permissions`
 - `TestPgVectorStoreLifecycle::test_ensure_collection_failure`
 - `TestPgVectorStoreLifecycle::test_health_check_success`
 - `TestPgVectorStoreLifecycle::test_health_check_failure`
@@ -1186,12 +1193,12 @@ and leaves the prior indexed state intact without data loss._
 - `TestVectorStoreManagerPgVectorDispatch::test_test_connection_pgvector`
 - `TestPgVectorCollectionIsolation::test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
 - `TestPgVectorCollectionIsolation::test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
-- `TestPgVectorCollectionIsolation::test_dimension_mismatch_warning` - _Test logging warning when table dimension differs from store dimension._
+- `TestPgVectorCollectionIsolation::test_dimension_mismatch_requires_explicit_rebuild` - _A populated shared table cannot be silently recreated._
 - `test_import_pgvector_store`
 - `test_manager_supported_providers_includes_postgres_and_pgvector`
 - `test_initialization_defaults`
 - `test_ensure_collection_executes_ddl`
-- `test_ensure_collection_handles_extension_permission_warning`
+- `test_ensure_collection_extension_permissions`
 - `test_ensure_collection_failure`
 - `test_health_check_success`
 - `test_health_check_failure`
@@ -1217,7 +1224,7 @@ and leaves the prior indexed state intact without data loss._
 - `test_test_connection_pgvector`
 - `test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
 - `test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
-- `test_dimension_mismatch_warning` - _Test logging warning when table dimension differs from store dimension._
+- `test_dimension_mismatch_requires_explicit_rebuild` - _A populated shared table cannot be silently recreated._
 
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`
