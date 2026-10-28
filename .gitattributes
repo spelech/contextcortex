@@ -1,2 +1,6 @@
 *.sh text eol=lf
 docker-entrypoint.sh text eol=lf
+
+# Preserve the exact bytes covered by dashboard build manifests.
+frontend/dist/** -text
+www/** -text

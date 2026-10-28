@@ -2,6 +2,14 @@
 # check=skip=InvalidDefaultArgInFrom
 # Supply an approved ContextCortex release image, preferably pinned by digest.
 ARG RUNTIME_IMAGE
+FROM ${RUNTIME_IMAGE} AS dashboard-check
+WORKDIR /dashboard-check
+COPY scripts/frontend_artifact.py ./scripts/frontend_artifact.py
+COPY frontend/ ./frontend/
+COPY www/ ./www/
+# Never attest the checked-in assets here: only a successful fresh build may do so.
+RUN python scripts/frontend_artifact.py verify
+
 FROM ${RUNTIME_IMAGE}
 WORKDIR /app
 
@@ -14,9 +22,10 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
 
 COPY app/ ./app/
 COPY main.py ./main.py
-# The server prefers frontend/dist over www; keep both on this checkout's UI.
-COPY www/ ./www/
-COPY www/ ./frontend/dist/
+# Remove base-image leftovers; the server prefers frontend/dist over www.
+RUN rm -rf /app/www /app/frontend/dist
+COPY --from=dashboard-check /dashboard-check/www/ ./www/
+COPY --from=dashboard-check /dashboard-check/www/ ./frontend/dist/
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 
