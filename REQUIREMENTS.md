@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1115 Automated Tests** (757 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1127 Automated Tests** (769 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1246,6 +1246,26 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_env`
 - `test_large_file_auto_summarization`
 - `test_large_file_disabled_summarization`
+
+#### `tests/test_python_baseline.py` (18 tests)
+- `TestPythonBaselineProbe::test_resolves_cleanly_with_constraints_and_emits_only_candidate_inventory`
+- `TestPythonBaselineProbe::test_failed_resolver_does_not_expose_private_output_or_retry`
+- `TestPythonBaselineProbe::test_rejects_unpinned_or_mismatched_transitive_artifacts`
+- `TestPythonBaselineProbe::test_rejects_missing_or_invalid_artifact_hash`
+- `TestPythonBaselineProbe::test_rejects_non_exact_constraints_before_contacting_pip`
+- `TestPythonBaselineProbe::test_rejects_invalid_or_empty_report`
+- `TestPythonBaselineProbe::test_timeout_does_not_expose_captured_private_output`
+- `TestPythonBaselineProbe::test_cli_writes_no_inventory_when_resolution_fails`
+- `TestPythonBaselineProbe::test_cli_emits_json_inventory_for_successful_probe`
+- `test_resolves_cleanly_with_constraints_and_emits_only_candidate_inventory`
+- `test_failed_resolver_does_not_expose_private_output_or_retry`
+- `test_rejects_unpinned_or_mismatched_transitive_artifacts`
+- `test_rejects_missing_or_invalid_artifact_hash`
+- `test_rejects_non_exact_constraints_before_contacting_pip`
+- `test_rejects_invalid_or_empty_report`
+- `test_timeout_does_not_expose_captured_private_output`
+- `test_cli_writes_no_inventory_when_resolution_fails`
+- `test_cli_emits_json_inventory_for_successful_probe`
 
 #### `tests/test_rest_role_permissions.py` (4 tests)
 - `test_anonymous_and_invalid_key_requests_denied` - _Anonymous or invalid/revoked requests receive 401 Unauthorized._

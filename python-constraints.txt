@@ -1,4 +1,4 @@
-# ContextCortex UNVERIFIED Python constraints candidate — NOT an approved baseline
+# ContextCortex UNVERIFIED Python constraints candidate - NOT an approved baseline
 # Intended targets: Linux / Python 3.11 and Windows / Python 3.12.
 # No approval, provenance, artifact hashes, quarantine-age evidence or clean
 # installation evidence accompanies these pins. Previous verification claims
