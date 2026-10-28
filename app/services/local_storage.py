@@ -23,6 +23,21 @@ def get_default_storage_path() -> str:
 LOCAL_STORAGE_PATH = get_default_storage_path()
 DEFAULT_STORAGE_PATH = LOCAL_STORAGE_PATH
 
+_PDF_CACHE_UPSERT_SQL = """
+    INSERT INTO pdf_extracted_cache
+        (filepath, repo, extracted_text, pages_json, total_pages, ocr_pages_count, total_characters, mtime, hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (filepath) DO UPDATE SET
+        repo = excluded.repo,
+        extracted_text = excluded.extracted_text,
+        pages_json = excluded.pages_json,
+        total_pages = excluded.total_pages,
+        ocr_pages_count = excluded.ocr_pages_count,
+        total_characters = excluded.total_characters,
+        mtime = excluded.mtime,
+        hash = excluded.hash
+"""
+
 class LocalStorageService:
     def __init__(self, storage_root: Optional[str] = None):
         self.storage_root = os.path.abspath(storage_root or get_default_storage_path())
@@ -161,9 +176,7 @@ class LocalStorageService:
                 try:
                     pages_json = json.dumps([asdict(p) for p in pdf_res.pages])
                     conn.execute(
-                        """INSERT OR REPLACE INTO pdf_extracted_cache
-                           (filepath, repo, extracted_text, pages_json, total_pages, ocr_pages_count, total_characters, mtime, hash)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        _PDF_CACHE_UPSERT_SQL,
                         (
                             abs_path,
                             repo,
@@ -344,9 +357,7 @@ class LocalStorageService:
             try:
                 with db_service.get_db_connection() as conn:
                     conn.execute(
-                        """INSERT OR REPLACE INTO pdf_extracted_cache
-                           (filepath, repo, extracted_text, pages_json, total_pages, ocr_pages_count, total_characters, mtime, hash)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        _PDF_CACHE_UPSERT_SQL,
                         (
                             target_path,
                             "local_storage",
