@@ -113,6 +113,7 @@ class LocalStorageService:
             raise FileNotFoundError(f"File '{rel_path}' not found on disk for indexing.")
 
         cat = category or os.path.dirname(rel_path) or "root"
+        pdf_res = None
 
         if abs_path.lower().endswith(".pdf"):
             pdf_res = extract_pdf_pages(abs_path, filename=os.path.basename(rel_path), ocr_fallback=True)
@@ -154,7 +155,7 @@ class LocalStorageService:
                     conn.execute(f"DELETE FROM {table} WHERE filepath = ?", (abs_path,))
                 except Exception:
                     pass
-            if doc_type == "pdf" and "pdf_res" in locals():
+            if doc_type == "pdf" and pdf_res is not None:
                 try:
                     pages_json = json.dumps([asdict(p) for p in pdf_res.pages])
                     conn.execute(
