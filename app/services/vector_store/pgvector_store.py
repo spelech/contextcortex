@@ -325,6 +325,25 @@ class PgVectorStore(VectorStore):
             logger.error(f"Error deleting by repo '{repo_name}' in PgVectorStore: {e}")
             return False
 
+    def delete_collection(self, collection_name: Optional[str] = None) -> bool:
+        """Purges all vectors belonging to a specific collection (defaults to active collection)."""
+        target_coll = collection_name or self.collection_name
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(
+                    text(f"DELETE FROM {self.table_name} WHERE collection_name = :collection_name"),
+                    {"collection_name": target_coll},
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting collection '{target_coll}' in PgVectorStore: {e}")
+            return False
+
+    def clear_collection(self, collection_name: Optional[str] = None) -> bool:
+        """Alias for delete_collection."""
+        return self.delete_collection(collection_name)
+
     def search(
         self,
         query_text: str,

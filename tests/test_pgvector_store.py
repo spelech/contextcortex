@@ -485,6 +485,10 @@ class TestPgVectorCollectionIsolation:
         assert store_b.delete_by_repo("repo_a") is True
         assert store_a.get_stats()["points_count"] == 1
 
+        # Deleting collection B leaves collection A intact
+        assert store_b.delete_collection() is True
+        assert store_a.get_stats()["points_count"] == 1
+
         # Deletion in A purges A's document
         assert store_a.delete_by_repo("repo_a") is True
         assert store_a.get_stats()["points_count"] == 0
