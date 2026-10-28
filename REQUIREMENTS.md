@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1066 Automated Tests** (713 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1068 Automated Tests** (715 Pytest Backend + 303 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1109,7 +1109,7 @@ and leaves the prior indexed state intact without data loss._
 - `test_sanitize_ocr_error_credentials_and_urls`
 - `test_extract_oversized_pdf_raises_value_error`
 
-#### `tests/test_pdf_storage_api.py` (9 tests)
+#### `tests/test_pdf_storage_api.py` (11 tests)
 - `test_pdf_preview_endpoint`
 - `test_pdf_preview_endpoint_surfaces_ocr_failures`
 - `test_pdf_preview_validation_errors`
@@ -1118,6 +1118,8 @@ and leaves the prior indexed state intact without data loss._
 - `test_pdf_read_file_content`
 - `test_malformed_pdf_upload_rollback` - _Requirement STORAGE-01: Verify rollback and scratch cleanup on rejected malformed PDF upload._
 - `test_failed_pdf_replacement_preserves_original` - _Requirement STORAGE-01: Verify original file and DB index are preserved on failed replacement._
+- `test_scanned_pdf_ocr_reuse_and_persistence`
+- `test_scanned_pdf_cache_invalidation_on_replace_and_delete`
 - `test_real_asd_ste100_pdf_preview_or_indexing`
 
 #### `tests/test_pgvector_store.py` (60 tests)

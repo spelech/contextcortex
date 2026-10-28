@@ -1,7 +1,9 @@
 import os
 import shutil
+import json
 import hashlib
 import logging
+from dataclasses import asdict
 from typing import Optional, Dict, Any, List, Union
 
 import app.services.database as db_service
@@ -111,6 +113,7 @@ class LocalStorageService:
             raise FileNotFoundError(f"File '{rel_path}' not found on disk for indexing.")
 
         cat = category or os.path.dirname(rel_path) or "root"
+        pdf_res = None
 
         pdf_errors = []
         if abs_path.lower().endswith(".pdf"):
@@ -149,11 +152,32 @@ class LocalStorageService:
         text_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         with db_service.get_db_connection() as conn:
             # Delete old relational records
-            for table in ("indexed_files", "file_summaries", "ast_symbols"):
+            for table in ("indexed_files", "file_summaries", "ast_symbols", "pdf_extracted_cache"):
                 try:
                     conn.execute(f"DELETE FROM {table} WHERE filepath = ?", (abs_path,))
                 except Exception:
                     pass
+            if doc_type == "pdf" and pdf_res is not None:
+                try:
+                    pages_json = json.dumps([asdict(p) for p in pdf_res.pages])
+                    conn.execute(
+                        """INSERT OR REPLACE INTO pdf_extracted_cache
+                           (filepath, repo, extracted_text, pages_json, total_pages, ocr_pages_count, total_characters, mtime, hash)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            abs_path,
+                            repo,
+                            content,
+                            pages_json,
+                            pdf_res.total_pages,
+                            pdf_res.ocr_pages_count,
+                            pdf_res.total_characters,
+                            mtime,
+                            text_hash
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to cache PDF extraction for '{abs_path}': {e}")
             for table, col in (("ast_relationships", "source_filepath"), ("api_routes", "filepath"), ("api_client_calls", "filepath")):
                 try:
                     conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (abs_path,))
@@ -255,7 +279,7 @@ class LocalStorageService:
             logger.error(f"Error removing vector points for {abs_path}: {e}")
 
         with db_service.get_db_connection() as conn:
-            for table in ("indexed_files", "file_summaries", "ast_symbols"):
+            for table in ("indexed_files", "file_summaries", "ast_symbols", "pdf_extracted_cache"):
                 try:
                     conn.execute(f"DELETE FROM {table} WHERE filepath = ?", (abs_path,))
                 except Exception:
@@ -281,14 +305,73 @@ class LocalStorageService:
         mtime = os.path.getmtime(target_path)
 
         if target_path.lower().endswith(".pdf"):
-            pdf_res = extract_pdf_pages(target_path, filename=os.path.basename(rel_path), ocr_fallback=False)
+            cached_data = None
+            try:
+                with db_service.get_db_connection() as conn:
+                    row = conn.execute(
+                        "SELECT * FROM pdf_extracted_cache WHERE filepath = ?",
+                        (target_path,)
+                    ).fetchone()
+                    if row:
+                        cached_mtime = row["mtime"]
+                        if cached_mtime is not None and abs(cached_mtime - mtime) < 0.01:
+                            cached_data = row
+            except Exception as e:
+                logger.warning(f"Error querying pdf_extracted_cache for '{target_path}': {e}")
+
+            if cached_data is not None:
+                pages_list = json.loads(cached_data["pages_json"]) if cached_data["pages_json"] else []
+                return {
+                    "status": "success",
+                    "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
+                    "abs_path": target_path,
+                    "content": cached_data["extracted_text"],
+                    "total_pages": cached_data["total_pages"],
+                    "ocr_pages_count": cached_data["ocr_pages_count"],
+                    "total_characters": cached_data["total_characters"],
+                    "pages": pages_list,
+                    "is_pdf": True,
+                    "size_bytes": size_bytes,
+                    "mtime": mtime
+                }
+
+            # Cache miss or stale: extract with ocr_fallback=True and update cache
+            pdf_res = extract_pdf_pages(target_path, filename=os.path.basename(rel_path), ocr_fallback=True)
             formatted_text = "\n\n".join([f"# Page {p.page_number}\n{p.text}" for p in pdf_res.pages])
+            pages_list = [asdict(p) for p in pdf_res.pages]
+            text_hash = hashlib.sha256(formatted_text.encode("utf-8")).hexdigest()
+
+            try:
+                with db_service.get_db_connection() as conn:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO pdf_extracted_cache
+                           (filepath, repo, extracted_text, pages_json, total_pages, ocr_pages_count, total_characters, mtime, hash)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            target_path,
+                            "local_storage",
+                            formatted_text,
+                            json.dumps(pages_list),
+                            pdf_res.total_pages,
+                            pdf_res.ocr_pages_count,
+                            pdf_res.total_characters,
+                            mtime,
+                            text_hash
+                        )
+                    )
+                    conn.commit()
+            except Exception as e:
+                logger.warning(f"Error updating pdf_extracted_cache on read for '{target_path}': {e}")
+
             res = {
                 "status": "success" if not pdf_res.errors else "partial_success",
                 "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
                 "abs_path": target_path,
                 "content": formatted_text,
                 "total_pages": pdf_res.total_pages,
+                "ocr_pages_count": pdf_res.ocr_pages_count,
+                "total_characters": pdf_res.total_characters,
+                "pages": pages_list,
                 "is_pdf": True,
                 "size_bytes": size_bytes,
                 "mtime": mtime

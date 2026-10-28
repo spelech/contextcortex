@@ -260,6 +260,96 @@ def test_failed_pdf_replacement_preserves_original(client, setup_test_db_and_sto
         assert len(os.listdir(tmp_dir)) == 0
 
 
+def test_scanned_pdf_ocr_reuse_and_persistence(client, setup_test_db_and_storage):
+    storage = setup_test_db_and_storage
+    # Create a PDF page with no text (raster scanned page)
+    doc = pymupdf.open()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    sentinel_text = "Recognized OCR Text containing sentinel ORCHID 4729"
+
+    # Step 1: Ingest scanned PDF with OCR fallback mocked
+    with patch("app.services.pdf_extractor._call_vision_ocr", return_value=sentinel_text) as mock_ocr:
+        res = client.post(
+            "/admin/api/storage/upload",
+            files={"file": ("scans/synthetic-scan.pdf", pdf_bytes, "application/pdf")},
+            data={"path": "scans/synthetic-scan.pdf", "repo": "local_storage"}
+        )
+        assert res.status_code == 200
+        assert mock_ocr.call_count == 1
+
+    # Verify cached in database
+    abs_path = os.path.join(storage.get_storage_root(), "scans", "synthetic-scan.pdf")
+    with db_service.get_db_connection() as conn:
+        row = conn.execute("SELECT * FROM pdf_extracted_cache WHERE filepath = ?", (abs_path,)).fetchone()
+        assert row is not None
+        assert "ORCHID 4729" in row["extracted_text"]
+        assert row["ocr_pages_count"] == 1
+
+    # Step 2: Read PDF content via API and service directly - OCR should NOT be called again
+    with patch("app.services.pdf_extractor._call_vision_ocr", side_effect=AssertionError("OCR called unexpectedly")):
+        read_res = storage.read_file_content("scans/synthetic-scan.pdf")
+        assert read_res["status"] == "success"
+        assert read_res["is_pdf"] is True
+        assert "ORCHID 4729" in read_res["content"]
+        assert read_res["ocr_pages_count"] == 1
+
+        api_res = client.get("/admin/api/storage/file?path=scans/synthetic-scan.pdf")
+        assert api_res.status_code == 200
+        api_data = api_res.json()
+        assert api_data["is_pdf"] is True
+        assert "ORCHID 4729" in api_data["content"]
+
+    # Step 3: Simulate restart - new storage service instance reading from persisted DB
+    new_storage_svc = LocalStorageService(storage_root=storage.get_storage_root())
+    with patch("app.services.pdf_extractor._call_vision_ocr", side_effect=AssertionError("OCR called unexpectedly")):
+        restart_read = new_storage_svc.read_file_content("scans/synthetic-scan.pdf")
+        assert restart_read["status"] == "success"
+        assert "ORCHID 4729" in restart_read["content"]
+
+
+def test_scanned_pdf_cache_invalidation_on_replace_and_delete(client, setup_test_db_and_storage):
+    storage = setup_test_db_and_storage
+    doc = pymupdf.open()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    sentinel_v1 = "OCR Version 1 text"
+    sentinel_v2 = "OCR Version 2 updated text"
+
+    # Save initial version
+    with patch("app.services.pdf_extractor._call_vision_ocr", return_value=sentinel_v1):
+        storage.save_file("docs/scanned2.pdf", pdf_bytes)
+
+    read1 = storage.read_file_content("docs/scanned2.pdf")
+    assert sentinel_v1 in read1["content"]
+
+    # Replace file
+    with patch("app.services.pdf_extractor._call_vision_ocr", return_value=sentinel_v2):
+        storage.save_file("docs/scanned2.pdf", pdf_bytes)
+
+    # Read replaced file - should reflect updated text
+    with patch("app.services.pdf_extractor._call_vision_ocr", side_effect=AssertionError("OCR called unexpectedly")):
+        read2 = storage.read_file_content("docs/scanned2.pdf")
+        assert sentinel_v2 in read2["content"]
+
+    # Delete file
+    abs_path = os.path.join(storage.get_storage_root(), "docs", "scanned2.pdf")
+    storage.delete_file("docs/scanned2.pdf")
+
+    # Verify cache entry removed from DB
+    with db_service.get_db_connection() as conn:
+        row = conn.execute("SELECT * FROM pdf_extracted_cache WHERE filepath = ?", (abs_path,)).fetchone()
+        assert row is None
+
+    # Reading deleted file via API returns 404
+    del_res = client.get("/admin/api/storage/file?path=docs/scanned2.pdf")
+    assert del_res.status_code == 404
+
+
 def test_real_asd_ste100_pdf_preview_or_indexing(client):
     real_pdf = "/drives/nfs/ASD-STE100_ISSUE9.pdf"
     if not os.path.exists(real_pdf):

@@ -15,6 +15,7 @@ from app.services.database.schema import (
     architecture_decision_records,
     custom_prompts,
     api_keys,
+    pdf_extracted_cache,
 )
 from app.services.database.engine import (
     get_db_engine,
@@ -91,6 +92,7 @@ __all__ = [
     "architecture_decision_records",
     "custom_prompts",
     "api_keys",
+    "pdf_extracted_cache",
     "get_db_engine",
     "get_connection",
     "get_db_url",
