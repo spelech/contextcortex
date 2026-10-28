@@ -19,6 +19,7 @@ RUN set -eu; \
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
     GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
 COPY frontend/package*.json ./
+COPY frontend/packages* ./packages/
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 COPY frontend/ ./
 RUN npm run build

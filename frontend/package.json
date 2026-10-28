@@ -36,10 +36,10 @@
     "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.1.1",
     "oxlint": "^1.75.0",
-    "playwright-layout-inspector": "github:spelech/playwright-layout-inspector",
+    "playwright-layout-inspector": "file:packages/spelech-playwright-layout-inspector-1.0.0.tgz",
     "typescript": "~6.0.2",
     "vite": "^8.2.0",
-    "vite-plugin-theme-editor": "github:spelech/vite-plugin-theme-editor",
+    "vite-plugin-theme-editor": "file:packages/spelech-vite-plugin-theme-editor-1.0.0.tgz",
     "vitest": "^4.1.10"
   }
 }
