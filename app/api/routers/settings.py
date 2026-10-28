@@ -8,6 +8,7 @@ from typing import Optional
 from urllib.parse import urlsplit
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.models.schemas import (
     TokenRequest, HostCredentialRequest,
@@ -30,12 +31,32 @@ router = APIRouter()
 @router.get("/admin/api/stats")
 async def api_get_stats():
     try:
+        ALLOWED_STATS_TABLES = {
+            "indexed_files",
+            "git_repositories",
+            "indexed_paths",
+            "ast_symbols",
+            "ast_relationships",
+            "api_routes",
+            "api_client_calls",
+            "file_summaries",
+            "pdf_extracted_cache",
+        }
+
         with db_service.get_db_connection() as conn:
             def _count(table):
-                try:
-                    return conn.execute(f"SELECT COUNT(*) as c FROM {table}").fetchone()["c"]
-                except Exception:
-                    return 0
+                if table not in ALLOWED_STATS_TABLES:
+                    raise ValueError(f"Invalid table name for stats count: {table}")
+                if hasattr(conn, "scalar"):
+                    res = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+                    return int(res or 0)
+                else:
+                    row = conn.execute(f"SELECT COUNT(*) as c FROM {table}").fetchone()
+                    if row is None:
+                        return 0
+                    if hasattr(row, "keys") or isinstance(row, dict):
+                        return int(row["c"])
+                    return int(row[0])
 
             file_count = _count("indexed_files")
             repo_count = _count("git_repositories")
@@ -46,19 +67,23 @@ async def api_get_stats():
             last_indexed = db_service.get_metadata("last_indexed", "Never")
 
             top_keywords = []
-            try:
+            if hasattr(conn, "scalar"):
+                sum_rows = conn.execute(text("SELECT keywords FROM file_summaries WHERE keywords IS NOT NULL")).fetchall()
+                kw_list = [r[0] for r in sum_rows if r[0]]
+            else:
                 sum_rows = conn.execute("SELECT keywords FROM file_summaries WHERE keywords IS NOT NULL").fetchall()
-                kw_counts = {}
-                for sr in sum_rows:
-                    try:
-                        kws = json.loads(sr["keywords"])
+                kw_list = [r["keywords"] if hasattr(r, "keys") or isinstance(r, dict) else r[0] for r in sum_rows if r]
+
+            kw_counts = {}
+            for kw_str in kw_list:
+                try:
+                    kws = json.loads(kw_str)
+                    if isinstance(kws, list):
                         for k in kws:
                             kw_counts[k] = kw_counts.get(k, 0) + 1
-                    except Exception:
-                        pass
-                top_keywords = [k for k, _ in sorted(kw_counts.items(), key=lambda x: x[1], reverse=True)[:10]]
-            except Exception:
-                pass
+                except Exception:
+                    pass
+            top_keywords = [k for k, _ in sorted(kw_counts.items(), key=lambda x: x[1], reverse=True)[:10]]
 
             total_chunks = 0
             vector_db_healthy = False
