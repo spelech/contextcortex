@@ -214,10 +214,11 @@ class LocalStorageService:
             raise ValueError("Path traversal or invalid path detected")
 
         existed_before = os.path.exists(target_path) and os.path.isfile(target_path)
-        backup_rel = ".tmp_bak_" + hashlib.sha256(rel_path.encode("utf-8")).hexdigest()
+        backup_rel = os.path.join(".tmp", "bak_" + hashlib.sha256(rel_path.encode("utf-8")).hexdigest())
         backup_path = self.resolve_safe_path(backup_rel) if existed_before else None
 
         if existed_before and backup_path:
+            os.makedirs(os.path.dirname(backup_path), exist_ok=True)
             shutil.copy2(target_path, backup_path)
 
         try:

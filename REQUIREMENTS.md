@@ -1110,8 +1110,8 @@ and leaves the prior indexed state intact without data loss._
 - `test_pdf_preview_oversized`
 - `test_pdf_upload_and_indexing`
 - `test_pdf_read_file_content`
-- `test_malformed_pdf_upload_rollback`
-- `test_failed_pdf_replacement_preserves_original`
+- `test_malformed_pdf_upload_rollback` - _Requirement STORAGE-01: Verify rollback and scratch cleanup on rejected malformed PDF upload._
+- `test_failed_pdf_replacement_preserves_original` - _Requirement STORAGE-01: Verify original file and DB index are preserved on failed replacement._
 - `test_real_asd_ste100_pdf_preview_or_indexing`
 
 #### `tests/test_pgvector_store.py` (54 tests)

@@ -156,6 +156,7 @@ def test_pdf_read_file_content(client, setup_test_db_and_storage):
 
 
 def test_malformed_pdf_upload_rollback(client, setup_test_db_and_storage):
+    """Requirement STORAGE-01: Verify rollback and scratch cleanup on rejected malformed PDF upload."""
     storage = setup_test_db_and_storage
     corrupt_content = b"plain synthetic text, not PDF bytes"
     rel_path = "synthetic-corrupt.pdf"
@@ -177,8 +178,14 @@ def test_malformed_pdf_upload_rollback(client, setup_test_db_and_storage):
         row = conn.execute("SELECT * FROM indexed_files WHERE filepath = ?", (abs_path,)).fetchone()
         assert row is None
 
+    # Verify no scratch or temporary backup files remain
+    tmp_dir = os.path.join(storage.get_storage_root(), ".tmp")
+    if os.path.exists(tmp_dir):
+        assert len(os.listdir(tmp_dir)) == 0
+
 
 def test_failed_pdf_replacement_preserves_original(client, setup_test_db_and_storage):
+    """Requirement STORAGE-01: Verify original file and DB index are preserved on failed replacement."""
     storage = setup_test_db_and_storage
     rel_path = "docs/original.pdf"
 
@@ -218,6 +225,11 @@ def test_failed_pdf_replacement_preserves_original(client, setup_test_db_and_sto
         curr_row = conn.execute("SELECT * FROM indexed_files WHERE filepath = ?", (abs_path,)).fetchone()
         assert curr_row is not None
         assert curr_row["hash"] == orig_hash
+
+    # Verify no scratch or temporary backup files remain
+    tmp_dir = os.path.join(storage.get_storage_root(), ".tmp")
+    if os.path.exists(tmp_dir):
+        assert len(os.listdir(tmp_dir)) == 0
 
 
 def test_real_asd_ste100_pdf_preview_or_indexing(client):
