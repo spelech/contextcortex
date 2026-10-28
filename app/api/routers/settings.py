@@ -31,8 +31,22 @@ router = APIRouter()
 @router.get("/admin/api/stats")
 async def api_get_stats():
     try:
+        ALLOWED_STATS_TABLES = {
+            "indexed_files",
+            "git_repositories",
+            "indexed_paths",
+            "ast_symbols",
+            "ast_relationships",
+            "api_routes",
+            "api_client_calls",
+            "file_summaries",
+            "pdf_extracted_cache",
+        }
+
         with db_service.get_db_connection() as conn:
             def _count(table):
+                if table not in ALLOWED_STATS_TABLES:
+                    raise ValueError(f"Invalid table name for stats count: {table}")
                 if hasattr(conn, "scalar"):
                     res = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
                     return int(res or 0)
