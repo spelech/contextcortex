@@ -128,7 +128,11 @@ def storage(request, tmp_path, monkeypatch, gateway):
         VectorStoreManager.reset_instance()
         dispose_global_engine()
         try:
-            embeddings.init_embeddings(provider="local")
+            embeddings.init_embeddings(
+                provider="local",
+                dense_model="BAAI/bge-small-en-v1.5",
+                sparse_model="Qdrant/bm25",
+            )
         except Exception:
             pass
         if admin_engine is not None:
