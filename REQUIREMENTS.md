@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1115 Automated Tests** (757 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1116 Automated Tests** (758 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1101,10 +1101,11 @@ and leaves the prior indexed state intact without data loss._
 - `test_mcp_manage_local_file_preview_nonexistent`
 - `test_mcp_manage_local_file_preview_missing_path`
 
-#### `tests/test_mcp_ping.py` (4 tests)
+#### `tests/test_mcp_ping.py` (5 tests)
 - `test_mcp_post_ping_streamable_mcp` - _Verify POST /mcp with JSON-RPC ping returns immediate JSON without streaming._
 - `test_mcp_post_ping_sse_endpoint` - _Verify POST /sse with JSON-RPC ping returns immediate JSON._
 - `test_mcp_post_ping_messages_endpoint` - _Verify POST /messages with JSON-RPC ping returns immediate JSON._
+- `test_mcp_post_ping_with_session_id_bypasses_middleware` - _Verify POST /messages/?session_id=... is not intercepted by McpPingMiddleware, allowing SSE dispatch._
 - `test_health_endpoints_enhanced_metadata` - _Verify GET /health and /healthz return server metadata and protocol version._
 
 #### `tests/test_mcp_storage_tools.py` (7 tests)
