@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1128 Automated Tests** (770 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1130 Automated Tests** (772 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1130,6 +1130,10 @@ and leaves the prior indexed state intact without data loss._
 #### `tests/test_native_postgres_readiness.py` (2 tests)
 - `test_native_postgres_readiness_accepts_initialized_schema`
 - `test_native_postgres_missing_schema_is_sanitized`
+
+#### `tests/test_pdf_cache_backends.py` (2 tests)
+- `test_pdf_upload_replacement_persists_cache_and_index`
+- `test_pdf_read_populates_and_refreshes_existing_cache`
 
 #### `tests/test_pdf_extractor.py` (14 tests)
 - `test_extract_digital_pdf_text`
