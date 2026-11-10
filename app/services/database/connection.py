@@ -4,7 +4,7 @@ import sqlite3
 import logging
 from typing import Optional, Dict, Any, Tuple
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 
 from app.services.database.schema import TABLES
 from app.services.database.engine import (

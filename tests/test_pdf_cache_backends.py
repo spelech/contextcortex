@@ -85,6 +85,10 @@ def gateway():
 def storage(request, tmp_path, monkeypatch, gateway):
     admin_engine = None
     schema = None
+    database_path = str(tmp_path / "pdf_cache.db")
+    monkeypatch.setattr(db_service, "CACHE_DB_PATH", database_path)
+    monkeypatch.setattr("app.services.database.connection.CACHE_DB_PATH", database_path)
+
     if request.param == "postgresql":
         database_url = os.getenv("TEST_POSTGRES_URL")
         if not database_url:
@@ -97,10 +101,7 @@ def storage(request, tmp_path, monkeypatch, gateway):
             {"options": f"-csearch_path={schema},public"}
         ).render_as_string(hide_password=False)
     else:
-        database_path = str(tmp_path / "pdf_cache.db")
         database_url = f"sqlite:///{database_path}"
-        monkeypatch.setattr(db_service, "CACHE_DB_PATH", database_path)
-        monkeypatch.setattr("app.services.database.connection.CACHE_DB_PATH", database_path)
 
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("AUTH_ENABLED", "false")
@@ -126,6 +127,10 @@ def storage(request, tmp_path, monkeypatch, gateway):
     finally:
         VectorStoreManager.reset_instance()
         dispose_global_engine()
+        try:
+            embeddings.init_embeddings(provider="local")
+        except Exception:
+            pass
         if admin_engine is not None:
             with admin_engine.begin() as conn:
                 conn.execute(text(f"DROP SCHEMA {schema} CASCADE"))
