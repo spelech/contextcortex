@@ -29,7 +29,8 @@ FROM ${PYTHON_IMAGE}
 WORKDIR /app
 
 COPY certs/ /usr/local/share/ca-certificates/extra/
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+ENV MALLOC_ARENA_MAX=2 \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
     GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt

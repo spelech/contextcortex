@@ -7,6 +7,7 @@ import logging
 from collections import Counter
 from typing import Tuple, List, Dict, Any, Optional
 import frontmatter
+from app.services.memory_utils import trim_memory
 from app.services.database import *
 from app.services.chunking import *
 from app.services.embeddings import *
@@ -147,6 +148,7 @@ def _resolve_cached_or_compute_embeddings(
             
         if items_to_cache:
             set_cached_embeddings_batch(items_to_cache)
+            trim_memory()
             
     return [cached_map.get(h, {}) for h in chunk_hashes]
 

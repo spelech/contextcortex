@@ -2,6 +2,7 @@ import app.services.database as db_service
 import app.services.vector_store as vs_service
 import app.services.indexing.state as idx_state
 import app.services.indexing.processor as proc_service
+from app.services.memory_utils import trim_memory
 import os
 import json
 import logging
@@ -28,6 +29,13 @@ def _get_indexer_attr(name, default):
 
 def sync_local_paths():
     """Scans and indexes mounted local paths and notes vaults."""
+    try:
+        return _sync_local_paths_internal()
+    finally:
+        trim_memory()
+
+
+def _sync_local_paths_internal():
     logger.info("Scanning local paths...")
     active_paths = []
     with db_service.get_db_connection() as conn:

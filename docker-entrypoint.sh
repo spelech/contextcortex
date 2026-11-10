@@ -28,4 +28,6 @@ if [ -d "$CA_DIR" ]; then
     fi
 fi
 
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+
 exec "$@"
