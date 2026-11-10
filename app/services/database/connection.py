@@ -4,7 +4,7 @@ import sqlite3
 import logging
 from typing import Optional, Dict, Any, Tuple
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 
 from app.services.database.schema import TABLES
 from app.services.database.engine import (
@@ -223,8 +223,17 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
     provider = os.getenv("EMBEDDING_PROVIDER", "local").lower().strip()
     dense_model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5").strip()
     sparse_model = os.getenv("SPARSE_MODEL", "Qdrant/bm25").strip()
-    litellm_url = os.getenv("LITELLM_URL", "http://litellm:4000/v1").strip()
-    litellm_api_key = os.getenv("LITELLM_API_KEY", "dummy").strip()
+    litellm_url = (
+        os.getenv("OPENAI_API_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or os.getenv("LITELLM_URL")
+        or "http://litellm:4000/v1"
+    ).strip()
+    litellm_api_key = (
+        os.getenv("OPENAI_API_KEY")
+        or os.getenv("LITELLM_API_KEY")
+        or "dummy"
+    ).strip()
 
     vision_ocr_model = os.getenv("VISION_OCR_MODEL", "").strip()
     chat_model = os.getenv("CHAT_MODEL", "").strip()
@@ -239,6 +248,7 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
         "sparse_model": sparse_model,
         "threads": max(1, threads),
         "batch_size": max(1, batch_size),
+        "openai_api_url": litellm_url,
         "litellm_url": litellm_url,
         "litellm_api_key": litellm_api_key,
         "vision_ocr_model": vision_ocr_model,
@@ -251,12 +261,12 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
 
 def get_embedding_db_config() -> Dict[str, Any]:
     provider = get_metadata("embedding_provider")
-    dense_model = get_metadata("embedding_dense_model")
+    dense_model = get_metadata("embedding_dense_model") or get_metadata("openai_embedding_model")
     sparse_model = get_metadata("embedding_sparse_model")
     threads_str = get_metadata("embedding_num_threads")
     batch_size_str = get_metadata("embedding_batch_size")
-    litellm_url = get_metadata("embedding_litellm_url")
-    litellm_api_key = get_metadata("embedding_litellm_api_key")
+    litellm_url = get_metadata("openai_api_url") or get_metadata("embedding_litellm_url")
+    litellm_api_key = get_metadata("openai_api_key") or get_metadata("embedding_litellm_api_key")
     vision_ocr_model = (
         get_metadata("openai_vision_model")
         or get_metadata("vision_ocr_model")
@@ -280,13 +290,15 @@ def get_embedding_db_config() -> Dict[str, Any]:
     else:
         allow_fallback = default_cfg["allow_fallback"]
 
+    resolved_url = (litellm_url or default_cfg["litellm_url"]).strip()
     return {
         "provider": (provider or default_cfg["provider"]).lower().strip(),
         "dense_model": (dense_model or default_cfg["dense_model"]).strip(),
         "sparse_model": (sparse_model or default_cfg["sparse_model"]).strip(),
         "threads": max(1, threads),
         "batch_size": max(1, batch_size),
-        "litellm_url": (litellm_url or default_cfg["litellm_url"]).strip(),
+        "openai_api_url": resolved_url,
+        "litellm_url": resolved_url,
         "litellm_api_key": litellm_api_key or default_cfg["litellm_api_key"],
         "vision_ocr_model": (vision_ocr_model or default_cfg["vision_ocr_model"]).strip(),
         "chat_model": (chat_model or default_cfg["chat_model"]).strip(),
@@ -313,6 +325,7 @@ def set_embedding_db_config(
         set_metadata("embedding_provider", provider.lower().strip())
     if dense_model is not None:
         set_metadata("embedding_dense_model", dense_model.strip())
+        set_metadata("openai_embedding_model", dense_model.strip())
     if sparse_model is not None:
         set_metadata("embedding_sparse_model", sparse_model.strip())
     if threads is not None:
@@ -320,8 +333,10 @@ def set_embedding_db_config(
     if batch_size is not None:
         set_metadata("embedding_batch_size", str(max(1, batch_size)))
     if litellm_url is not None:
+        set_metadata("openai_api_url", litellm_url.strip())
         set_metadata("embedding_litellm_url", litellm_url.strip())
     if litellm_api_key is not None:
+        set_metadata("openai_api_key", litellm_api_key.strip())
         set_metadata("embedding_litellm_api_key", litellm_api_key.strip())
     if vision_ocr_model is not None:
         set_metadata("openai_vision_model", vision_ocr_model.strip())
@@ -363,9 +378,14 @@ def get_ai_gateway_config() -> Dict[str, Any]:
 
     # Env seed fallback
     if not url:
-        url = os.getenv("LITELLM_URL", "http://litellm:4000/v1").strip()
+        url = (
+            os.getenv("OPENAI_API_URL")
+            or os.getenv("OPENAI_BASE_URL")
+            or os.getenv("LITELLM_URL")
+            or "http://litellm:4000/v1"
+        ).strip()
     if not api_key:
-        api_key = os.getenv("LITELLM_API_KEY", "").strip()
+        api_key = (os.getenv("OPENAI_API_KEY") or os.getenv("LITELLM_API_KEY") or "").strip()
     if not chat_model:
         chat_model = os.getenv("CHAT_MODEL", "").strip()
     if not vision_model:
@@ -417,7 +437,11 @@ def set_ai_gateway_config(
         set_metadata("vision_ocr_model", vision_ocr_model.strip())
         set_metadata("embedding_vision_ocr_model", vision_ocr_model.strip())
     if embedding_model is not None:
-        set_metadata("openai_embedding_model", embedding_model.strip())
+        cleaned_emb = embedding_model.strip()
+        set_metadata("openai_embedding_model", cleaned_emb)
+        if cleaned_emb:
+            set_metadata("embedding_dense_model", cleaned_emb)
+            set_metadata("embedding_provider", "api")
 
     return get_ai_gateway_config()
 

@@ -7,8 +7,16 @@ from typing import Optional, Dict, Any, Tuple, Callable, List
 
 from app.services.database import get_vector_store_db_config, set_vector_store_db_config
 from app.services.vector_store.base import VectorStore
-from app.services.vector_store.qdrant_store import QdrantVectorStore
-from app.services.vector_store.chroma_store import ChromaVectorStore
+try:
+    from app.services.vector_store.qdrant_store import QdrantVectorStore
+except ImportError:
+    QdrantVectorStore = None  # type: ignore
+
+try:
+    from app.services.vector_store.chroma_store import ChromaVectorStore
+except ImportError:
+    ChromaVectorStore = None  # type: ignore
+
 from app.services.vector_store.pgvector_store import PgVectorStore
 
 logger = logging.getLogger("contextcortex.vector_store.manager")

@@ -58,12 +58,11 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - **Server-Sent Events (SSE)**: Full streaming events at `/sse` with POST message routing at `/messages/`.
   - **Streamable HTTP**: Bidirectional JSON-RPC transport endpoint at `/mcp`.
 - **Multi-Vector Database Backends**:
-  - **pgvector**: PostgreSQL 16 vector extension with HNSW cosine search.
+  - **pgvector**: PostgreSQL 16 vector extension with HNSW cosine search and GIN Full-Text Search (`tsvector`) lexical/hybrid fusion.
   - **Qdrant**: High-scale vector engine supporting dense + sparse BM25 multi-vectors with Reciprocal Rank Fusion (RRF) in both embedded disk and remote server modes.
-  - **ChromaDB**: Lightweight, zero-dependency embedded disk or remote vector store with automatic fallback.
   - **Dynamic Backend Switching**: Test and switch vector backends live from the Settings UI or REST API without server restarts.
 - **Universal Git Provider Support & Persistent Shallow Retention**:
-  - Ingest repositories from **any source where Git lives**: **GitHub**, **GitLab (Cloud, Enterprise & Self-Hosted)**, **Gitea & Forgejo**, **Bitbucket (Cloud & Server)**, and **Generic Git HTTP/HTTPS**.
+  - Ingest repositories from **any source where Git lives**: **GitHub**, **GitLab (Cloud, Enterprise & Self-Hosted)**, **Gitea & Forgejo**, **Bitbucket (Cloud & Server)**, **Generic Git HTTP/HTTPS**, and **Native SSH (`git@...` / `ssh://...`)**.
   - **Configurable Shallow Copy Retention (`keep_shallow`)**: Choose between **ephemeral shallow clones** (immediate deletion after indexing to save storage) or **persistent shallow clones** (`--depth 1` retained on disk under `/app/data/repos/{repo_name}` on the cache volume). Persistent copies power instant full source code inspection in Code Navigator and accelerated incremental delta syncing (`git fetch --depth 1` + `git reset --hard`).
   - **Full-Screen React Portals for Modals**: Add Repository modal, Webhook setup modal, and Sync Drawer render cleanly via React Portals (`createPortal(..., document.body)`), eliminating containment clipping from glassmorphism cards.
   - **Provider-Aware Permalinks**: Automatically generates exact deep-links for code results (`/blob/`, `/-/blob/`, `/src/branch/`, `/src/commit/`, `/src/#lines-`).
@@ -73,7 +72,7 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   1. Per-repository override token & optional username.
   2. Domain-level Custom Git Host Vault (`git_host_credentials`).
   3. Global provider tokens (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `GITEA_TOKEN` in DB or Settings UI).
-  4. Environment variable fallback.
+  4. Environment variable fallback, `gh auth token` / `glab config get token` CLI fallback, and native SSH key pass-through when no HTTP token is configured.
 - **Managed Local Storage Option & Real-Time Incremental Indexing**:
   - Direct file upload, replace, read, and delete operations within a managed directory (`LOCAL_STORAGE_PATH` / `/app/data/storage`).
   - Real-time incremental AST extraction, semantic chunking, embedding generation, and vector store upserts with zero delay.
@@ -105,7 +104,7 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - **Files & Storage**: Unified explorer managing monitored local directory vaults and managed local file storage with upload modal and file preview.
   - **Ingestion Catalog**: Unified multi-source explorer with source type filters, repository lookup, and file listings.
   - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews, target type toggle (Code vs Docs), and syntax highlighted results.
-  - **Settings**: Vector Database manager (pgvector, Qdrant, & ChromaDB switcher & connection tester), LiteLLM Model Discovery with dynamic categorized model dropdowns (Embeddings, Vision OCR, and Chat models), multi-provider token cards, GitHub rate limit monitor, and interactive Custom Git Host Credential Vault table/modal.
+  - **Settings**: Vector Database manager (`pgvector` & `Qdrant` switcher & connection tester), OpenAI-compatible Model Discovery with dynamic categorized model dropdowns (Embeddings, Vision OCR, and Chat models), multi-provider token cards, GitHub rate limit monitor, and interactive Custom Git Host Credential Vault table/modal.
   - **Diagnostics & Logs**: Real-time log viewer with level filtering (ALL, INFO, WARNING, ERROR, DEBUG), keyword search, traceback modal/drawer, and buffer clearing.
 
 ---
@@ -161,20 +160,14 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 | `AUTH_JWKS_URI` | Custom JWKS URI override for JWT verification | `None` |
 | `AUTH_RESOURCE_INDICATOR` | RFC 8707 / RFC 9728 Resource Indicator for ContextCortex | `https://contextcortex.local` |
 | `ADMIN_INITIAL_KEY` | Initial admin API key or secret token for container bootstrapping | `None` |
-| `VECTOR_STORE_PROVIDER` | Vector database backend (`pgvector`, `qdrant`, or `chroma`) | `qdrant` |
-| `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` |
+| `VECTOR_STORE_PROVIDER` | Vector database backend (`pgvector` or `qdrant`) | `pgvector` (PostgreSQL) / `qdrant` (SQLite) |
+| `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` (Qdrant) / `remote` (pgvector) |
 | `COLLECTION_NAME` | Vector collection name | `knowledge_rag_v1` |
 | `QDRANT_URL` | URL to remote Qdrant vector database (if mode is `remote`) | `http://localhost:6333` |
 | `QDRANT_STORAGE_PATH` | Embedded Qdrant disk directory | `/app/data/qdrant_storage` |
-| `CHROMA_STORAGE_PATH` | Embedded ChromaDB disk directory | `/app/data/chroma_db` |
-| `EMBEDDING_PROVIDER` | Embedding engine (`local` for in-process ONNX, `api` for LiteLLM/OpenAI) | `local` |
-| `EMBEDDING_MODEL` | FastEmbed dense model name | `BAAI/bge-small-en-v1.5` |
-| `SPARSE_MODEL` | FastEmbed sparse BM25 model name | `Qdrant/bm25` |
-| `LITELLM_URL` | OpenAI-compatible gateway base URL, passed to the OpenAI SDK as-is | `http://litellm:4000/v1` |
-| `LITELLM_API_KEY` | API key for the gateway | `dummy` |
+| `OPENAI_API_URL` | OpenAI-compatible gateway base URL (e.g. internal gateway, LiteLLM, vLLM, Ollama, OpenAI) | `http://litellm:4000/v1` |
+| `OPENAI_API_KEY` | API key / Bearer token for the OpenAI-compatible gateway | `dummy` |
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
-| `CHAT_MODEL` | Chat model for file summaries (configured via Settings UI model discovery or env) | `None` |
-| `VISION_OCR_MODEL` | Vision model for PDF OCR (configured via Settings UI model discovery or env) | `None` |
 | `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) trusted at container start (see [certs/README.md](certs/README.md)) | `/certs` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for higher rate limits & private repos | `None` |
 | `GITLAB_TOKEN` | Optional GitLab Personal Access Token for private repos | `None` |
@@ -201,7 +194,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Once the container is running, open the Web Admin Dashboard (`http://localhost:3000/admin/` → **Settings** → **AI Gateway & Models**), enter your OpenAI-compatible gateway URL (e.g., `http://litellm:4000/v1`), click **Discover Models**, and select your **Chat / Summarization Model** and **Vision OCR Model** from the discovered list to persist them in the database (or pre-seed `CHAT_MODEL` and `VISION_OCR_MODEL` in `.env`).
+Once the container is running, open the Web Admin Dashboard (`http://localhost:3000/admin/` → **Settings** → **AI & Model Gateway**), enter your OpenAI-compatible gateway URL (`OPENAI_API_URL`, e.g., `http://litellm:4000/v1`), click **Test Connection & Discover Models**, and select your **API Embedding Model**, **Chat Completion Model**, and **Vision OCR Model** from the discovered list to persist them in the database.
 
 For environments behind corporate TLS-inspecting proxies, private CA certificates (`certs/*.crt`), internal package mirrors (`APT_MIRROR`, `PIP_INDEX_URL`, `NPM_REGISTRY`), or verified local image overlays (`Dockerfile.overlay`), use the enterprise override file (see [Restricted-Network Builds & Local Deployment](docs/guide/enterprise-build.md)):
 

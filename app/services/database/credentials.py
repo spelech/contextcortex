@@ -1,10 +1,32 @@
 import os
 import re
+import shutil
+import subprocess
 import logging
 from typing import Optional, List, Dict, Any, Tuple
 from app.services.database.connection import get_db_connection, get_metadata
 
 logger = logging.getLogger("contextcortex.db")
+
+def _get_glab_cli_token(host: Optional[str] = None) -> Optional[str]:
+    """Attempts to retrieve a GitLab token from the `glab` CLI if installed and authenticated."""
+    glab_bin = shutil.which("glab")
+    if not glab_bin:
+        return None
+    commands = []
+    if host:
+        commands.append([glab_bin, "config", "get", "token", "--host", host])
+    commands.append([glab_bin, "config", "get", "token"])
+    for cmd in commands:
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if res.returncode == 0 and res.stdout.strip():
+                tok = res.stdout.strip().splitlines()[0].strip()
+                if tok and not tok.lower().startswith("no "):
+                    return tok
+        except Exception:
+            continue
+    return None
 
 def list_git_host_credentials() -> List[Dict[str, Any]]:
     try:
@@ -65,7 +87,7 @@ def delete_git_host_credential(id_or_host: Any) -> bool:
 def extract_host_from_url(url: str) -> str:
     if not url:
         return ""
-    clean = re.sub(r"^(git@|https?://)", "", url.strip())
+    clean = re.sub(r"^(git@|ssh://git@|ssh://|https?://)", "", url.strip())
     if ":" in clean and "/" not in clean.split(":")[0]:
         host_part = clean.split(":")[0]
     else:
@@ -115,5 +137,10 @@ def get_effective_git_token(
         val = os.getenv(k)
         if val and val.strip():
             return val.strip(), override_user, f"Environment Variable ({k})"
+
+    if prov == "gitlab":
+        glab_token = _get_glab_cli_token(host=host or None)
+        if glab_token:
+            return glab_token, override_user, f"GitLab CLI (glab{f' - {host}' if host else ''})"
 
     return None, override_user, "None"

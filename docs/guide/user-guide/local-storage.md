@@ -28,6 +28,22 @@ When uploading PDF files, ContextCortex provides an interactive inspection modal
 
 ---
 
+## Upload and Replacement Failures
+
+Vector store initialization, deletion, or upsert failures return an error rather
+than reporting the file as indexed. A failed new upload is removed from disk;
+a failed replacement restores the previous file contents.
+
+Once vector replacement starts, the previous index metadata is invalidated.
+If indexing fails, the restored file is **not considered indexed**: retry the
+upload or reindex the restored file after resolving the backend failure.
+Incomplete vectors are cleaned up where possible; if the backend is unavailable,
+the next successful retry deletes any remaining vectors before indexing.
+Replacing a file with empty content succeeds with zero chunks and removes its
+previous vectors.
+
+---
+
 ## Large File Auto-Summarization
 
 For large source code or documentation files exceeding the configured threshold (default: 500 KB):

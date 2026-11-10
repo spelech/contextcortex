@@ -9,22 +9,15 @@ Configure the application by setting these environment variables in your system 
 | Variable Name | Description | Default Value | Example |
 | :--- | :--- | :--- | :--- |
 | `DATABASE_URL` | SQLAlchemy connection string for relational data. | `sqlite:////app/data/index_cache.db` | `postgresql+psycopg://user:pass@postgres:5432/contextcortex` |
-| `VECTOR_STORE_PROVIDER` | Active vector search engine (`qdrant`, `pgvector`, or `chroma`). | `qdrant` | `qdrant` |
-| `QDRANT_HOST` | Hostname or IP address of remote Qdrant service. | `qdrant` | `10.0.0.10` |
-| `QDRANT_PORT` | HTTP API port for Qdrant service. | `6333` | `6333` |
-| `QDRANT_GRPC_PORT` | High-performance gRPC port for Qdrant service. | `6334` | `6334` |
+| `VECTOR_STORE_PROVIDER` | Active vector search engine (`pgvector` or `qdrant`). | `pgvector` (PostgreSQL) / `qdrant` (SQLite) | `pgvector` |
+| `QDRANT_URL` | URL of remote Qdrant service (when `VECTOR_STORE_PROVIDER=qdrant` in remote mode). | `http://localhost:6333` | `http://10.0.0.10:6333` |
 | `COLLECTION_NAME` | Name of the primary vector collection in vector store. | `knowledge_rag_v1` | `knowledge_rag_v1` |
-| `EMBEDDING_PROVIDER` | Embedding generation provider (`local` or `api`). | `local` | `local` |
-| `EMBEDDING_MODEL` | Hugging Face model identifier for dense embeddings. | `BAAI/bge-small-en-v1.5` | `BAAI/bge-small-en-v1.5` |
-| `SPARSE_MODEL` | Model used for lexical sparse keyword vector generation. | `Qdrant/bm25` | `Qdrant/bm25` |
-| `EMBEDDING_NUM_THREADS` | Maximum CPU worker threads allocated for ONNX runtime. | `min(2, system_cpus)` | `4` |
-| `EMBEDDING_BATCH_SIZE` | Maximum batch size processed during vector tokenization. | `32` | `64` |
-| `HYBRID_DENSE_WEIGHT` | Default dense semantic weight (`0.0` to `1.0`) for hybrid search fusion. | `0.5` | `0.7` |
-| `LITELLM_URL` | OpenAI-compatible gateway base URL. The OpenAI SDK adds `/embeddings` and `/chat/completions` to it. | `http://litellm:4000/v1` | `https://gateway.example.com/api/v3` |
-| `LITELLM_API_KEY` | API key for the gateway. | `dummy` | `sk-xxxxxxxxxxxx` |
+| `OPENAI_API_URL` | OpenAI-compatible gateway base URL. The OpenAI SDK appends `/embeddings`, `/chat/completions`, and `/models`. | `http://litellm:4000/v1` | `https://gateway.example.com/api/v3` |
+| `OPENAI_API_KEY` | API key / Bearer token for the OpenAI-compatible gateway. | `dummy` | `sk-xxxxxxxxxxxx` |
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request. | None | `{"X-User-Agent":"contextcortex","X-User-Name":"jdoe"}` |
-| `CHAT_MODEL` | Chat model for file summaries (configured via Settings UI model discovery or env). | None | `openai/gpt-4.1-mini` |
-| `VISION_OCR_MODEL` | Vision model for PDF OCR of scanned pages (configured via Settings UI model discovery or env). | None | `qwen3-vl` |
+| `EMBEDDING_NUM_THREADS` | Maximum CPU worker threads allocated for ingestion pipelines. | `min(2, system_cpus)` | `4` |
+| `EMBEDDING_BATCH_SIZE` | Maximum batch size processed during embedding generation. | `32` | `64` |
+| `HYBRID_DENSE_WEIGHT` | Default dense semantic weight (`0.0` to `1.0`) for hybrid search fusion. | `0.5` | `0.7` |
 | `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) added to the trust store at container start. | `/certs` | `/certs` |
 | `LOCAL_STORAGE_PATH` | Host path for managed file and document uploads. | `/app/data/storage` | `/drives/storage` |
 | `AUTH_ENABLED` | Enables MCP OAuth 2.1 authentication and API key validation. | `false` | `true` |
@@ -51,7 +44,7 @@ ContextCortex supports two primary database profiles:
 
 ### 2. PostgreSQL 16 + pgvector Profile (Production Mode)
 - **Enterprise Concurrency**: Full ACID transaction support across multiple worker threads.
-- **Native Vector Indexing**: Creates `vector(384)` columns with HNSW cosine distance indexing (`vector_cosine_ops`).
+- **Native Vector & Lexical Indexing**: Creates `vector` columns with HNSW cosine distance indexing (`vector_cosine_ops`) and GIN Full-Text Search (`tsvector`) indexes for hybrid retrieval.
 - **Connection Pooling**: Uses `psycopg3` pooled connections with automatic retry loops.
 - **Configuration**:
   ```bash
@@ -65,39 +58,56 @@ ContextCortex supports two primary database profiles:
 
 ### Qdrant Mode
 ContextCortex connects to Qdrant for dense and sparse BM25 hybrid search.
-- When `QDRANT_HOST` is specified, the system connects to the remote Qdrant service.
-- If no remote service is found, the system operates in local embedded disk mode at `/app/data/qdrant_storage`.
+- When `QDRANT_URL` is specified, the system connects to the remote Qdrant service.
+- If no remote service is specified, the system operates in local embedded disk mode at `/app/data/qdrant_storage`.
 
-### ChromaDB Mode
-ChromaDB provides lightweight embedded vector storage without external services:
-```bash
-export VECTOR_STORE_PROVIDER="chroma"
-```
+### PostgreSQL / pgvector Mode
+
+Initialization creates or migrates the vector table and its indexes in one transaction.
+Legacy rows without a collection are assigned to `knowledge_rag_v1`; the primary key
+becomes `(collection_name, id)`, allowing the same document ID in separate collections.
+Initialization failures raise an explicit error and roll back schema changes rather
+than leaving a partially migrated store. If `vector` is already installed, startup
+does not attempt extension creation; otherwise the database role needs permission
+to install it (or an administrator must install it first).
+
+All collections in a table share one embedding dimension. Initialization never drops
+a populated table to resolve a dimension mismatch. Coordinate an explicit rebuild
+with every affected collection owner, clear their vectors and indexing metadata,
+then initialize the empty table with the new dimension and reindex. Changing the
+dimension of an empty table preserves its schema and does not clear unrelated
+relational metadata.
+
+Native regression tests require `TEST_POSTGRES_URL` pointing to a **disposable**
+PostgreSQL database with pgvector available. They create a unique schema per test
+and remove only that schema; do not use the application database. Run
+`python -m pytest tests/test_pgvector_native.py`. Without that variable, the native
+tests skip. Search tests use a deterministic loopback HTTP embedding service; no
+embedding model downloads are required.
 
 ---
 
-## LiteLLM Proxy Integration
+## OpenAI-Compatible AI Gateway & Dynamic Model Discovery
 
-To use dynamic model discovery with a LiteLLM proxy:
+To connect any OpenAI-compatible gateway (internal gateway, LiteLLM, vLLM, Ollama, or OpenAI) and discover models in the UI:
 
-1. Configure these environment variables:
+1. Configure your gateway endpoint and API key:
    ```bash
-   export EMBEDDING_PROVIDER="api"
-   export LITELLM_URL="http://litellm:4000/v1"
-   export LITELLM_API_KEY="sk-your-litellm-key"
+   export OPENAI_API_URL="http://litellm:4000/v1"
+   export OPENAI_API_KEY="sk-your-gateway-key"
    ```
 
-2. Open the **Settings** tab in the Web Dashboard.
-3. The dashboard queries the LiteLLM proxy models endpoint.
-4. Select your preferred embedding model, vision OCR model, and chat model.
+2. Open the **Settings → AI & Model Gateway** tab in the Web Dashboard.
+3. Click **Test Connection & Discover Models** to query your gateway's `/models` endpoint.
+4. Select your preferred **API Embedding Model**, **Chat Completion Model**, and **Vision OCR Model** from the discovered dropdowns and click **Save AI Gateway Settings**.
 
-> **Database priority:** On first startup, ContextCortex copies the embedding settings (`EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `SPARSE_MODEL`, `EMBEDDING_NUM_THREADS`, `EMBEDDING_BATCH_SIZE`, `LITELLM_URL`) into the database. After that, the database values take priority, and changes to these environment variables have no effect. To change them later, use the **Settings** tab or `POST /admin/api/settings/embedding`.
+> **Database priority:** On first startup, ContextCortex seeds the initial gateway URL (`OPENAI_API_URL`) into `system_metadata`. Once saved in the **Settings** UI, database values take priority across restarts.
 
 ### Model discovery URL
 
-Model discovery calls `{LITELLM_URL}/models`. If the URL has no path (for example `http://litellm:4000`), discovery calls `/v1/models`.
+Model discovery calls `{OPENAI_API_URL}/models`. If the URL has no path (for example `http://litellm:4000`), discovery calls `/v1/models`.
 
-| `LITELLM_URL` | Discovery endpoint |
+| `OPENAI_API_URL` | Discovery endpoint |
 | :--- | :--- |
 | `http://litellm:4000` | `http://litellm:4000/v1/models` |
 | `http://litellm:4000/v1` | `http://litellm:4000/v1/models` |

@@ -1,8 +1,17 @@
 import os
 import logging
 import threading
+from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Tuple
-from qdrant_client.http import models as qmodels
+try:
+    from qdrant_client.http import models as qmodels
+except ImportError:
+    class _SparseVectorFallback:
+        def __init__(self, indices: List[int], values: List[float]):
+            self.indices = indices
+            self.values = values
+
+    qmodels = SimpleNamespace(SparseVector=_SparseVectorFallback)  # type: ignore
 
 logger = logging.getLogger("contextcortex.embeddings")
 
@@ -24,7 +33,10 @@ SPARSE_MODEL_NAME = _initial_cfg["sparse_model"]
 EMBEDDING_NUM_THREADS = _initial_cfg["threads"]
 EMBEDDING_BATCH_SIZE = _initial_cfg["batch_size"]
 LITELLM_URL = _initial_cfg["litellm_url"]
-LITELLM_API_KEY = _initial_cfg.get("litellm_api_key", os.getenv("LITELLM_API_KEY", "dummy"))
+LITELLM_API_KEY = _initial_cfg.get(
+    "litellm_api_key",
+    os.getenv("OPENAI_API_KEY") or os.getenv("LITELLM_API_KEY", "dummy"),
+)
 VISION_OCR_MODEL = _initial_cfg.get("vision_ocr_model", os.getenv("VISION_OCR_MODEL", ""))
 CHAT_MODEL = _initial_cfg.get("chat_model", os.getenv("CHAT_MODEL", ""))
 ALLOW_FALLBACK = _initial_cfg.get("allow_fallback", False)
@@ -61,7 +73,7 @@ def init_embeddings(
     EMBEDDING_PROVIDER = REQUESTED_PROVIDER
     REQUESTED_DENSE_MODEL = (dense_model or cfg.get("dense_model") or "BAAI/bge-small-en-v1.5").strip()
     DENSE_MODEL_NAME = REQUESTED_DENSE_MODEL
-    SPARSE_MODEL_NAME = (sparse_model or cfg.get("sparse_model") or "Qdrant/bm25").strip()
+    SPARSE_MODEL_NAME = (sparse_model if sparse_model is not None else (cfg.get("sparse_model") or "Qdrant/bm25")).strip()
     EMBEDDING_NUM_THREADS = int(threads if threads is not None else cfg.get("threads", 2))
     EMBEDDING_BATCH_SIZE = int(batch_size if batch_size is not None else cfg.get("batch_size", 32))
     LITELLM_URL = (litellm_url or cfg.get("litellm_url") or "http://litellm:4000/v1").strip()
@@ -80,15 +92,18 @@ def init_embeddings(
         _sparse_model = None
     _openai_client = None
 
+    sparse_disabled = SPARSE_MODEL_NAME.lower() in ("", "none", "off", "disabled", "false")
+
     if REQUESTED_PROVIDER == "local":
         try:
             from fastembed import TextEmbedding, SparseTextEmbedding
             logger.info(f"Initializing FastEmbed dense model: {DENSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
             with _dense_lock:
                 _dense_model = TextEmbedding(model_name=DENSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
-            logger.info(f"Initializing FastEmbed sparse model: {SPARSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
-            with _sparse_lock:
-                _sparse_model = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
+            if not sparse_disabled:
+                logger.info(f"Initializing FastEmbed sparse model: {SPARSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
+                with _sparse_lock:
+                    _sparse_model = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
             logger.info("FastEmbed dense & sparse models initialized successfully with resource limits.")
         except Exception as e:
             logger.error(f"Failed to initialize local FastEmbed models: {e}")
@@ -124,13 +139,14 @@ def init_embeddings(
                 api_key=LITELLM_API_KEY,
                 default_headers=get_llm_extra_headers(),
             )
-            # Try initializing sparse model locally even if dense uses API
-            try:
-                from fastembed import SparseTextEmbedding
-                with _sparse_lock:
-                    _sparse_model = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
-            except Exception:
-                _sparse_model = None
+            # Try initializing sparse model locally only if not explicitly disabled
+            if not sparse_disabled:
+                try:
+                    from fastembed import SparseTextEmbedding
+                    with _sparse_lock:
+                        _sparse_model = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
+                except Exception:
+                    _sparse_model = None
         except Exception as oe:
             logger.error(f"Failed to initialize API client: {oe}")
             if REQUESTED_PROVIDER == "local" and ALLOW_FALLBACK:
