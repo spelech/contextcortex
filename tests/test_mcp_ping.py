@@ -60,6 +60,17 @@ async def test_mcp_post_ping_messages_endpoint():
 
 
 @pytest.mark.asyncio
+async def test_mcp_post_ping_with_session_id_bypasses_middleware():
+    """Verify POST /messages/?session_id=... is not intercepted by McpPingMiddleware, allowing SSE dispatch."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = {"jsonrpc": "2.0", "id": "sse-ping", "method": "ping"}
+        response = await client.post("/messages/?session_id=nonexistent-session", json=payload)
+        # FastMCP's SseServerTransport handles this and returns 400/404, NOT the middleware's intercepted 200
+        assert response.status_code in (400, 404)
+
+
+@pytest.mark.asyncio
 async def test_health_endpoints_enhanced_metadata():
     """Verify GET /health and /healthz return server metadata and protocol version."""
     transport = ASGITransport(app=app)
