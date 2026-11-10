@@ -65,11 +65,18 @@ export function AIGatewaySettings({
     if (!res || res.status !== 'success') return;
     const discoveredChat = normalizeModelList(res.chat_models);
     const discoveredVision = normalizeModelList(res.vision_models);
+    const discoveredEmb = normalizeModelList(res.embedding_models);
     if (!chatModel && discoveredChat.length > 0) {
       setChatModel(discoveredChat[0]);
     }
     if (!visionModel && discoveredVision.length > 0) {
       setVisionModel(discoveredVision[0]);
+    }
+    if (
+      discoveredEmb.length > 0 &&
+      (!embeddingModel || (embeddingModel === 'BAAI/bge-small-en-v1.5' && !discoveredEmb.includes(embeddingModel)))
+    ) {
+      setEmbeddingModel(discoveredEmb[0]);
     }
   };
 

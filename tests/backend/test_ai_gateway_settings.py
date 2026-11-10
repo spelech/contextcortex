@@ -21,7 +21,7 @@ def mock_db(tmp_path):
     conn.commit()
     conn.close()
 
-    with patch("app.services.database.get_db_connection") as mock_conn:
+    with patch.object(db_service, "CACHE_DB_PATH", db_file), patch("app.services.database.get_db_connection") as mock_conn:
         def get_conn():
             c = sqlite3.connect(db_file)
             c.row_factory = sqlite3.Row
@@ -89,3 +89,19 @@ def test_ai_gateway_settings_lifecycle(mock_db):
     assert read_again["url"] == "http://litellm-cluster:4000/v1"
     assert read_again["has_api_key"] is True
     assert read_again["chat_model"] == "gpt-4o"
+
+
+def test_openai_api_env_var_defaults(mock_db, monkeypatch):
+    """Verify OPENAI_API_URL and OPENAI_API_KEY take precedence as initial defaults."""
+    monkeypatch.setenv("OPENAI_API_URL", "https://gateway.internal.example/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-env-key-9999")
+    monkeypatch.delenv("LITELLM_URL", raising=False)
+    monkeypatch.delenv("LITELLM_API_KEY", raising=False)
+
+    resp = client.get("/admin/api/settings/ai-gateway")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["url"] == "https://gateway.internal.example/v1"
+    assert data["has_api_key"] is True
+    assert data["masked_api_key"].endswith("9999")
+

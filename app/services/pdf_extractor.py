@@ -95,12 +95,16 @@ def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
         pass
 
     litellm_url = (
-        (db_cfg.get("litellm_url") if db_cfg else None)
+        (db_cfg.get("openai_api_url") if db_cfg else None)
+        or (db_cfg.get("litellm_url") if db_cfg else None)
+        or os.getenv("OPENAI_API_URL")
+        or os.getenv("OPENAI_BASE_URL")
         or os.getenv("LITELLM_URL")
         or "http://litellm:4000/v1"
     ).strip()
     litellm_key = (
         (db_cfg.get("litellm_api_key") if db_cfg else None)
+        or os.getenv("OPENAI_API_KEY")
         or os.getenv("LITELLM_API_KEY")
         or "sk-default"
     ).strip()

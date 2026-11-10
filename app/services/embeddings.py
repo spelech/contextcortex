@@ -33,7 +33,10 @@ SPARSE_MODEL_NAME = _initial_cfg["sparse_model"]
 EMBEDDING_NUM_THREADS = _initial_cfg["threads"]
 EMBEDDING_BATCH_SIZE = _initial_cfg["batch_size"]
 LITELLM_URL = _initial_cfg["litellm_url"]
-LITELLM_API_KEY = _initial_cfg.get("litellm_api_key", os.getenv("LITELLM_API_KEY", "dummy"))
+LITELLM_API_KEY = _initial_cfg.get(
+    "litellm_api_key",
+    os.getenv("OPENAI_API_KEY") or os.getenv("LITELLM_API_KEY", "dummy"),
+)
 VISION_OCR_MODEL = _initial_cfg.get("vision_ocr_model", os.getenv("VISION_OCR_MODEL", ""))
 CHAT_MODEL = _initial_cfg.get("chat_model", os.getenv("CHAT_MODEL", ""))
 ALLOW_FALLBACK = _initial_cfg.get("allow_fallback", False)
