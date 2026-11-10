@@ -477,6 +477,10 @@ async def api_save_ai_gateway_settings(payload: AIGatewaySettingsRequest):
             vision_ocr_model=payload.vision_ocr_model,
             embedding_model=payload.embedding_model,
         )
+        try:
+            emb_service.init_embeddings()
+        except Exception as init_err:
+            logger.debug(f"Embedding hot-reload after AI gateway update skipped: {init_err}")
         return {
             "status": "success",
             "message": "AI & Model Gateway settings saved successfully.",

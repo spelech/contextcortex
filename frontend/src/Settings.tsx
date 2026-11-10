@@ -74,11 +74,11 @@ export default function Settings({
   const [testFeedback, setTestFeedback] = useState<{ success: boolean; message: string } | null>(null);
   const [isSwitchingVs, setIsSwitchingVs] = useState(false);
 
-  // Embedding & Resource Limits State (FastEmbed ONNX)
+  // Embedding & Resource Limits State (OpenAI-Compatible API)
   const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfig | null>(null);
   const [isLoadingEmb, setIsLoadingEmb] = useState(false);
   const [isSavingEmb, setIsSavingEmb] = useState(false);
-  const [embProvider, setEmbProvider] = useState<'local' | 'api'>('local');
+  const [embProvider, setEmbProvider] = useState<'local' | 'api'>('api');
   const [embThreads, setEmbThreads] = useState<number>(2);
   const [embBatchSize, setEmbBatchSize] = useState<number>(32);
   const [embDenseModel, setEmbDenseModel] = useState('BAAI/bge-small-en-v1.5');
@@ -193,7 +193,7 @@ export default function Settings({
       if (res.ok) {
         const data: EmbeddingConfig = await res.json();
         setEmbeddingConfig(data);
-        if (data.provider) setEmbProvider(data.provider);
+        setEmbProvider('api');
         if (typeof data.threads === 'number') setEmbThreads(data.threads);
         if (typeof data.batch_size === 'number') setEmbBatchSize(data.batch_size);
         if (data.dense_model) setEmbDenseModel(data.dense_model);
@@ -282,7 +282,7 @@ export default function Settings({
     setIsSavingEmb(true);
     try {
       const payload = {
-        provider: embProvider,
+        provider: 'api' as const,
         threads: Number(embThreads),
         batch_size: Number(embBatchSize),
         dense_model: embDenseModel.trim() || undefined,

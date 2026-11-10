@@ -1400,8 +1400,8 @@ over the PostgresConnectionAdapter using an initialized test engine._
 
 #### `EmbeddingSettings.test.tsx` (9 tests)
 - renders loading state when embedding configuration is not yet loaded
-- renders active status with hardware metrics and local model parameters
-- handles provider switch to API and updates form fields
+- renders active status with hardware metrics and API model parameters
+- handles API endpoint URL updates in form fields
 - handles changes to CPU threads and batch size
 - renders model discovery controls and triggers onDiscoverModels when button clicked
 - renders discovered model dropdowns and allows selecting models
