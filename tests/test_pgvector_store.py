@@ -131,17 +131,12 @@ class TestPgVectorStoreLifecycle:
         store = PgVectorStore(engine=mock_engine, auto_init=False)
 
         caps = store.get_capabilities()
-        assert caps == {"search_modes": ["semantic"], "supports_weighting": False}
+        assert caps == {"search_modes": ["hybrid", "semantic", "lexical"], "supports_weighting": True}
 
-        # Lexical mode raises ValueError
+        # Invalid mode raises ValueError
         with pytest.raises(ValueError) as exc_info:
-            store.search("capabilities test", search_mode="lexical")
-        assert "Search mode 'lexical' is not supported by PgVector vector store" in str(exc_info.value)
-
-        # Hybrid mode raises ValueError
-        with pytest.raises(ValueError) as exc_info:
-            store.search("capabilities test", search_mode="hybrid")
-        assert "Search mode 'hybrid' is not supported by PgVector vector store" in str(exc_info.value)
+            store.search("capabilities test", search_mode="invalid_mode")
+        assert "Search mode 'invalid_mode' is not supported by PgVector vector store" in str(exc_info.value)
 
     def test_get_stats_success(self):
         from app.services.vector_store.pgvector_store import PgVectorStore
@@ -318,6 +313,7 @@ class TestPgVectorStoreUpsertAndSearch:
                 category="backend",
                 tag="core",
                 limit=5,
+                search_mode="semantic",
             )
 
         assert len(results) == 2
@@ -340,6 +336,75 @@ class TestPgVectorStoreUpsertAndSearch:
         assert params["language"] == "python"
         assert params["category"] == "backend"
         assert params["limit"] == 5
+
+    def test_search_lexical_executes_fts_without_dense_embedding(self):
+        from app.services.vector_store.pgvector_store import PgVectorStore
+        mock_engine = MagicMock()
+        mock_conn = MagicMock()
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+
+        mock_conn.execute.return_value.mappings.return_value.fetchall.return_value = [
+            {"id": "doc-lex-1", "sparse_score": 0.75, "payload": {"content": "exact_identifier_match", "repo": "contextcortex"}},
+            {"id": "doc-lex-2", "sparse_score": 0.375, "payload": {"content": "partial_match", "repo": "contextcortex"}},
+        ]
+
+        store = PgVectorStore(engine=mock_engine, auto_init=False)
+        with patch("app.services.vector_store.pgvector_store.get_dense_embedding") as mock_emb:
+            results = store.search(
+                query_text="exact_identifier_match",
+                search_mode="lexical",
+                limit=5,
+            )
+            mock_emb.assert_not_called()
+
+        assert len(results) == 2
+        assert results[0].id == "doc-lex-1"
+        assert results[0].score == 1.0
+        assert results[0].sparse_score == 1.0
+        assert results[1].id == "doc-lex-2"
+        assert results[1].score == 0.5
+
+        executed_call = mock_conn.execute.call_args
+        sql_stmt = str(executed_call[0][0])
+        params = executed_call[0][1]
+        assert "to_tsvector('simple'" in sql_stmt
+        assert "websearch_to_tsquery('simple', :query_text)" in sql_stmt
+        assert "ts_rank_cd" in sql_stmt
+        assert params["query_text"] == "exact_identifier_match"
+
+    def test_search_hybrid_executes_weighted_fusion(self):
+        from app.services.vector_store.pgvector_store import PgVectorStore
+        mock_engine = MagicMock()
+        mock_conn = MagicMock()
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+
+        dense_result = MagicMock()
+        dense_result.mappings.return_value.fetchall.return_value = [
+            {"id": "doc-hyb-1", "score": 0.80, "payload": {"content": "hybrid match", "repo": "contextcortex"}},
+        ]
+        lexical_result = MagicMock()
+        lexical_result.mappings.return_value.fetchall.return_value = [
+            {"id": "doc-hyb-1", "sparse_score": 0.50, "payload": {"content": "hybrid match", "repo": "contextcortex"}},
+        ]
+        mock_conn.execute.side_effect = [dense_result, lexical_result]
+
+        store = PgVectorStore(engine=mock_engine, auto_init=False)
+        with patch("app.services.vector_store.pgvector_store.get_dense_embedding", return_value=[0.1] * 384) as mock_emb:
+            results = store.search(
+                query_text="hybrid match",
+                search_mode="hybrid",
+                dense_weight=0.7,
+                limit=5,
+            )
+            mock_emb.assert_called_once_with("hybrid match")
+
+        assert len(results) == 1
+        assert results[0].id == "doc-hyb-1"
+        # combined = 0.7 * 0.80 + 0.3 * 1.0 (normalized max sparse_score) = 0.86
+        assert results[0].score == pytest.approx(0.86)
+        assert results[0].dense_score == pytest.approx(0.80)
+        assert results[0].sparse_score == pytest.approx(1.0)
+        assert mock_conn.execute.call_count == 2
 
     def test_search_empty_query_returns_empty(self):
         from app.services.vector_store.pgvector_store import PgVectorStore
@@ -572,3 +637,55 @@ class TestPgVectorCollectionIsolation:
         store = PgVectorStore(engine=mock_engine, dimension=384, auto_init=False)
         with pytest.raises(ValueError, match="dimension mismatch.*explicit rebuild"):
             store.ensure_collection()
+
+
+class TestGitSshAndGlabSupport:
+    """Tests for native SSH git URL preservation and GitLab `glab` CLI token fallback."""
+
+    def test_is_ssh_git_url_and_build_authenticated_url_preserves_ssh(self):
+        from app.services.git_manager import is_ssh_git_url, build_authenticated_url
+
+        ssh_url = "git@gitlab.corp.example.com:platform/service.git"
+        ssh_scheme_url = "ssh://git@gitlab.corp.example.com/platform/service.git"
+        https_url = "https://gitlab.corp.example.com/platform/service.git"
+
+        assert is_ssh_git_url(ssh_url) is True
+        assert is_ssh_git_url(ssh_scheme_url) is True
+        assert is_ssh_git_url(https_url) is False
+
+        # Without HTTP token/username, SSH URL is preserved so user's SSH keys are used
+        assert build_authenticated_url(ssh_url, token=None) == ssh_url
+        assert build_authenticated_url(ssh_scheme_url, token=None) == ssh_scheme_url
+
+        # When an explicit HTTP token IS provided, it converts to authenticated HTTPS
+        auth_https = build_authenticated_url(ssh_url, token="glpat-12345", provider="gitlab")
+        assert auth_https == "https://oauth2:glpat-12345@gitlab.corp.example.com/platform/service.git"
+
+    def test_get_remote_head_sha_uses_ssh_url_when_no_token(self):
+        from app.services.git_manager import get_remote_head_sha
+
+        ssh_url = "git@gitlab.corp.example.com:platform/service.git"
+        mock_res = MagicMock(returncode=0, stdout="deadbeef1234567890\trefs/heads/main\n")
+
+        with patch("subprocess.run", return_value=mock_res) as mock_run:
+            sha = get_remote_head_sha(ssh_url, branch="main")
+            assert sha == "deadbeef1234567890"
+            called_cmd = mock_run.call_args[0][0]
+            assert called_cmd[:3] == ["git", "ls-remote", ssh_url]
+
+    def test_glab_cli_token_fallback_for_gitlab(self):
+        from app.services.database.credentials import get_effective_git_token
+
+        mock_proc = MagicMock(returncode=0, stdout="glpat-from-glab-cli\n")
+        with patch("app.services.database.credentials.get_git_host_credential", return_value=None), \
+             patch("app.services.database.credentials.get_metadata", return_value=None), \
+             patch.dict(os.environ, {}, clear=False), \
+             patch("shutil.which", return_value="/usr/bin/glab"), \
+             patch("subprocess.run", return_value=mock_proc) as mock_run:
+            os.environ.pop("GITLAB_TOKEN", None)
+            os.environ.pop("GL_TOKEN", None)
+            tok, user, source = get_effective_git_token("https://gitlab.corp.example.com/group/repo.git")
+            assert tok == "glpat-from-glab-cli"
+            assert "glab" in source
+            assert mock_run.called
+

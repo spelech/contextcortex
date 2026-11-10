@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1140 Automated Tests** (782 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1150 Automated Tests** (792 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1178,7 +1178,7 @@ and leaves the prior indexed state intact without data loss._
 - `test_native_dimension_mismatch_preserves_populated_table`
 - `test_native_dimension_change_after_explicit_clear`
 
-#### `tests/test_pgvector_store.py` (62 tests)
+#### `tests/test_pgvector_store.py` (72 tests)
 - `TestPgVectorStoreImports::test_import_pgvector_store`
 - `TestPgVectorStoreImports::test_manager_supported_providers_includes_postgres_and_pgvector`
 - `TestPgVectorStoreLifecycle::test_initialization_defaults`
@@ -1197,6 +1197,8 @@ and leaves the prior indexed state intact without data loss._
 - `TestPgVectorStoreUpsertAndSearch::test_upsert_empty_list_noop`
 - `TestPgVectorStoreUpsertAndSearch::test_upsert_failure_returns_false`
 - `TestPgVectorStoreUpsertAndSearch::test_search_executes_cosine_distance_query`
+- `TestPgVectorStoreUpsertAndSearch::test_search_lexical_executes_fts_without_dense_embedding`
+- `TestPgVectorStoreUpsertAndSearch::test_search_hybrid_executes_weighted_fusion`
 - `TestPgVectorStoreUpsertAndSearch::test_search_empty_query_returns_empty`
 - `TestPgVectorStoreUpsertAndSearch::test_search_error_returns_empty_list`
 - `TestPgVectorStoreUpsertAndSearch::test_delete_by_path`
@@ -1210,6 +1212,9 @@ and leaves the prior indexed state intact without data loss._
 - `TestPgVectorCollectionIsolation::test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
 - `TestPgVectorCollectionIsolation::test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
 - `TestPgVectorCollectionIsolation::test_dimension_mismatch_requires_explicit_rebuild` - _A populated shared table cannot be silently recreated._
+- `TestGitSshAndGlabSupport::test_is_ssh_git_url_and_build_authenticated_url_preserves_ssh`
+- `TestGitSshAndGlabSupport::test_get_remote_head_sha_uses_ssh_url_when_no_token`
+- `TestGitSshAndGlabSupport::test_glab_cli_token_fallback_for_gitlab`
 - `test_import_pgvector_store`
 - `test_manager_supported_providers_includes_postgres_and_pgvector`
 - `test_initialization_defaults`
@@ -1228,6 +1233,8 @@ and leaves the prior indexed state intact without data loss._
 - `test_upsert_empty_list_noop`
 - `test_upsert_failure_returns_false`
 - `test_search_executes_cosine_distance_query`
+- `test_search_lexical_executes_fts_without_dense_embedding`
+- `test_search_hybrid_executes_weighted_fusion`
 - `test_search_empty_query_returns_empty`
 - `test_search_error_returns_empty_list`
 - `test_delete_by_path`
@@ -1241,6 +1248,9 @@ and leaves the prior indexed state intact without data loss._
 - `test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
 - `test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
 - `test_dimension_mismatch_requires_explicit_rebuild` - _A populated shared table cannot be silently recreated._
+- `test_is_ssh_git_url_and_build_authenticated_url_preserves_ssh`
+- `test_get_remote_head_sha_uses_ssh_url_when_no_token`
+- `test_glab_cli_token_fallback_for_gitlab`
 
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`
