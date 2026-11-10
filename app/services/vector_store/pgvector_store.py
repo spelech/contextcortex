@@ -55,31 +55,34 @@ class PgVectorStore(VectorStore):
         """
         try:
             with self.engine.connect() as conn, conn.begin():
-                # An installed extension needs no CREATE privilege.
-                extension = conn.execute(text(
-                    "SELECT 1 FROM pg_extension WHERE extname = 'vector'"
-                )).scalar()
-                if not extension:
-                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                is_sqlite = getattr(self.engine.dialect, "name", "") == "sqlite"
 
-                # to_regclass returns NULL for a fresh table instead of aborting the transaction.
-                check_dim_sql = text("""
-                    SELECT atttypmod FROM pg_attribute
-                    WHERE attrelid = to_regclass(:table_name) AND attname = 'embedding';
-                """)
-                row = conn.execute(check_dim_sql, {"table_name": self.table_name}).fetchone()
-                if row and row[0] is not None and row[0] > 0 and row[0] != self.dimension:
-                    conn.execute(text(f"LOCK TABLE {self.table_name} IN ACCESS EXCLUSIVE MODE"))
-                    if conn.execute(text(f"SELECT EXISTS (SELECT 1 FROM {self.table_name})")).scalar():
-                        raise ValueError(
-                            f"Vector dimension mismatch for table '{self.table_name}': "
-                            f"existing {row[0]}d, configured {self.dimension}d. "
-                            "An explicit rebuild is required; all collections sharing this "
-                            "table must be cleared before changing dimensions."
-                        )
-                    conn.execute(text(
-                        f"ALTER TABLE {self.table_name} ALTER COLUMN embedding TYPE vector({self.dimension})"
-                    ))
+                if not is_sqlite:
+                    # An installed extension needs no CREATE privilege.
+                    extension = conn.execute(text(
+                        "SELECT 1 FROM pg_extension WHERE extname = 'vector'"
+                    )).scalar()
+                    if not extension:
+                        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+
+                    # to_regclass returns NULL for a fresh table instead of aborting the transaction.
+                    check_dim_sql = text("""
+                        SELECT atttypmod FROM pg_attribute
+                        WHERE attrelid = to_regclass(:table_name) AND attname = 'embedding';
+                    """)
+                    row = conn.execute(check_dim_sql, {"table_name": self.table_name}).fetchone()
+                    if row and row[0] is not None and row[0] > 0 and row[0] != self.dimension:
+                        conn.execute(text(f"LOCK TABLE {self.table_name} IN ACCESS EXCLUSIVE MODE"))
+                        if conn.execute(text(f"SELECT EXISTS (SELECT 1 FROM {self.table_name})")).scalar():
+                            raise ValueError(
+                                f"Vector dimension mismatch for table '{self.table_name}': "
+                                f"existing {row[0]}d, configured {self.dimension}d. "
+                                "An explicit rebuild is required; all collections sharing this "
+                                "table must be cleared before changing dimensions."
+                            )
+                        conn.execute(text(
+                            f"ALTER TABLE {self.table_name} ALTER COLUMN embedding TYPE vector({self.dimension})"
+                        ))
 
                 # 2. Create vector documents table
                 create_table_sql = f"""
@@ -102,7 +105,7 @@ class PgVectorStore(VectorStore):
                     github_url TEXT,
                     permalink_url TEXT,
                     content TEXT,
-                    embedding vector({self.dimension}),
+                    embedding {"TEXT" if is_sqlite else "vector(" + str(self.dimension) + ")"},
                     payload JSONB,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (collection_name, id)
@@ -110,46 +113,47 @@ class PgVectorStore(VectorStore):
                 """
                 conn.execute(text(create_table_sql))
 
-                # Migrate legacy rows before replacing the old id-only primary key.
-                conn.execute(text(
-                    f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1';"
-                ))
-                conn.execute(text(
-                    f"UPDATE {self.table_name} SET collection_name = 'knowledge_rag_v1' WHERE collection_name IS NULL;"
-                ))
+                if not is_sqlite:
+                    # Migrate legacy rows before replacing the old id-only primary key.
+                    conn.execute(text(
+                        f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1';"
+                    ))
+                    conn.execute(text(
+                        f"UPDATE {self.table_name} SET collection_name = 'knowledge_rag_v1' WHERE collection_name IS NULL;"
+                    ))
 
-                pk_check_sql = text("""
-                    SELECT a.attname
-                    FROM pg_index i
-                    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                    WHERE i.indrelid = CAST(:table_name AS regclass) AND i.indisprimary;
-                """)
-                pk_cols = [row[0] for row in conn.execute(pk_check_sql, {"table_name": self.table_name}).fetchall()]
-                if set(pk_cols) != {"collection_name", "id"}:
-                    if pk_cols:
-                        conname_sql = text("""
-                            SELECT conname
-                            FROM pg_constraint
-                            WHERE conrelid = CAST(:table_name AS regclass) AND contype = 'p';
-                        """)
-                        conname_row = conn.execute(conname_sql, {"table_name": self.table_name}).fetchone()
-                        if conname_row:
-                            conname = self.engine.dialect.identifier_preparer.quote(conname_row[0])
-                            conn.execute(text(f"ALTER TABLE {self.table_name} DROP CONSTRAINT {conname};"))
-                    conn.execute(text(f"ALTER TABLE {self.table_name} ADD PRIMARY KEY (collection_name, id);"))
+                    pk_check_sql = text("""
+                        SELECT a.attname
+                        FROM pg_index i
+                        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                        WHERE i.indrelid = CAST(:table_name AS regclass) AND i.indisprimary;
+                    """)
+                    pk_cols = [row[0] for row in conn.execute(pk_check_sql, {"table_name": self.table_name}).fetchall()]
+                    if set(pk_cols) != {"collection_name", "id"}:
+                        if pk_cols:
+                            conname_sql = text("""
+                                SELECT conname
+                                FROM pg_constraint
+                                WHERE conrelid = CAST(:table_name AS regclass) AND contype = 'p';
+                            """)
+                            conname_row = conn.execute(conname_sql, {"table_name": self.table_name}).fetchone()
+                            if conname_row:
+                                conname = self.engine.dialect.identifier_preparer.quote(conname_row[0])
+                                conn.execute(text(f"ALTER TABLE {self.table_name} DROP CONSTRAINT {conname};"))
+                        conn.execute(text(f"ALTER TABLE {self.table_name} ADD PRIMARY KEY (collection_name, id);"))
 
-                # 3. Create HNSW cosine index
-                hnsw_index_sql = f"""
-                CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding
-                ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
-                """
-                conn.execute(text(hnsw_index_sql))
+                    # 3. Create HNSW cosine index
+                    hnsw_index_sql = f"""
+                    CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding
+                    ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
+                    """
+                    conn.execute(text(hnsw_index_sql))
 
-                # 4. Create metadata indexes
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_collection ON {self.table_name}(collection_name);"))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_repo ON {self.table_name}(repo);"))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_type ON {self.table_name}(doc_type);"))
-                conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_path ON {self.table_name}(path);"))
+                    # 4. Create metadata indexes
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_collection ON {self.table_name}(collection_name);"))
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_repo ON {self.table_name}(repo);"))
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_type ON {self.table_name}(doc_type);"))
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_path ON {self.table_name}(path);"))
 
             logger.info(f"PgVectorStore initialized table '{self.table_name}' with {self.dimension}d HNSW index.")
             return True
