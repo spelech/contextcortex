@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1130 Automated Tests** (772 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1135 Automated Tests** (777 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1116,6 +1116,13 @@ and leaves the prior indexed state intact without data loss._
 - `test_what_is_ingested_summary_and_filters`
 - `test_what_is_ingested_detailed_with_data`
 - `test_tool_registration`
+
+#### `tests/test_memory_trim.py` (5 tests)
+- `test_trim_memory_runs_safely` - _Verifies that trim_memory executes without exceptions on the host system._
+- `test_trim_memory_non_linux_noop` - _Verifies that trim_memory gracefully no-ops on non-Linux platforms._
+- `test_trim_memory_handles_libc_exception` - _Verifies that trim_memory catches and logs any C library or ctypes exceptions._
+- `test_docker_entrypoint_sets_malloc_arena_max_default` - _Verifies that docker-entrypoint.sh sets MALLOC_ARENA_MAX=2 by default._
+- `test_docker_entrypoint_preserves_custom_malloc_arena_max` - _Verifies that docker-entrypoint.sh preserves user-configured MALLOC_ARENA_MAX._
 
 #### `tests/test_model_discovery_api.py` (2 tests)
 - `test_api_discover_models_endpoint`
