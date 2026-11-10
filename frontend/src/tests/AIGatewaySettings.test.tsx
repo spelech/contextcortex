@@ -88,6 +88,7 @@ describe('AIGatewaySettings Component', () => {
       expect(mockDiscover).toHaveBeenCalled();
       expect(screen.getByText(/connected successfully/i)).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'claude-3-5-sonnet' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'text-embedding-3-small' })).toBeInTheDocument();
     });
   });
 });

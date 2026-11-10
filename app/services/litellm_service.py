@@ -27,7 +27,10 @@ async def discover_models(
     # Resolve URL: explicitly passed -> SQLite db config -> environment -> fallback
     raw_url = (
         (url.strip() if url and url.strip() else None)
+        or (db_cfg.get("openai_api_url") if db_cfg and db_cfg.get("openai_api_url") else None)
         or (db_cfg.get("litellm_url") if db_cfg and db_cfg.get("litellm_url") else None)
+        or os.getenv("OPENAI_API_URL")
+        or os.getenv("OPENAI_BASE_URL")
         or os.getenv("LITELLM_URL")
         or "http://litellm:4000/v1"
     )
@@ -36,6 +39,7 @@ async def discover_models(
     resolved_api_key = (
         (api_key.strip() if api_key and api_key.strip() else None)
         or (db_cfg.get("litellm_api_key") if db_cfg and db_cfg.get("litellm_api_key") else None)
+        or os.getenv("OPENAI_API_KEY")
         or os.getenv("LITELLM_API_KEY")
         or "dummy"
     )

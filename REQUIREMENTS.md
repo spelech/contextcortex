@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1150 Automated Tests** (792 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1151 Automated Tests** (793 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -400,8 +400,9 @@ classDiagram
 
 ### 6.1 Backend Python Tests
 
-#### `tests/backend/test_ai_gateway_settings.py` (1 tests)
+#### `tests/backend/test_ai_gateway_settings.py` (2 tests)
 - `test_ai_gateway_settings_lifecycle` - _Verify OpenAI-compatible AI Gateway configuration lifecycle and masking._
+- `test_openai_api_env_var_defaults` - _Verify OPENAI_API_URL and OPENAI_API_KEY take precedence as initial defaults._
 
 #### `tests/backend/test_api_route_discovery.py` (6 tests)
 - `test_path_normalization_and_matching`
