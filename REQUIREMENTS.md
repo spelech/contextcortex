@@ -1369,7 +1369,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - renders Syncing... engine state badge when is_indexing is true
 - toggles mobile navigation drawer and closes upon tab selection
 - renders vector database health badge in header when vector_db_status is present
-- renders ChromaDB provider and unhealthy status badge in header
+- renders PostgreSQL (pgvector) provider and unhealthy status badge in header
 
 #### `AuthModal.test.tsx` (5 tests)
 - manages localStorage token read/write/clear correctly
@@ -1532,7 +1532,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 #### `Overview.test.tsx` (8 tests)
 - renders loading state when stats is null
 - renders metrics, specs, and top keywords accurately
-- renders ChromaDB vector store specs correctly
+- renders PostgreSQL (pgvector) vector store specs correctly
 - renders repository count correctly using legacy git_repos fallback when repos_count is undefined
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
@@ -1599,7 +1599,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 #### `Settings.test.tsx` (29 tests)
 - renders vector database panel, auto-sync panel, multi-provider token boxes, rate limits, and host vault list
 - handles empty stats or fallback provider auth structure and vector store load error
-- switches vector store form fields between embedded and remote modes and changes default paths/urls
+- switches vector store form fields between Qdrant and pgvector and changes default paths/urls
 - tests vector store connection successfully and displays success feedback banner
 - handles vector store connection test failure and network error
 - executes vector store backend switch with user confirmation and refreshes stats
@@ -1720,7 +1720,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - renders loading placeholder when isLoadingVs is true and vectorStore is null
 - renders fallback when not loading and vectorStore is null
 - renders active vector backend specifications correctly for Qdrant Embedded
-- renders active vector backend specifications correctly for Chroma Remote with Unhealthy status
+- renders active vector backend specifications correctly for PostgreSQL (pgvector) with Unhealthy status
 - handles provider and mode changes
 - handles storage path and collection input updates in embedded mode
 - handles remote url input update in remote mode

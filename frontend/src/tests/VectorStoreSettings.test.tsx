@@ -67,40 +67,40 @@ describe('VectorStoreSettings Component', () => {
     expect(screen.getByText('Healthy')).toBeInTheDocument();
   });
 
-  it('renders active vector backend specifications correctly for Chroma Remote with Unhealthy status', () => {
-    const chromaConfig: VectorStoreConfig = {
-      provider: 'chroma',
+  it('renders active vector backend specifications correctly for PostgreSQL (pgvector) with Unhealthy status', () => {
+    const pgvectorConfig: VectorStoreConfig = {
+      provider: 'pgvector',
       mode: 'remote',
       storage_path: null,
-      url: 'http://chroma:8000',
+      url: 'postgresql+psycopg://postgres:5432/contextcortex',
       collection: 'custom_collection',
       healthy: false,
-      health_message: 'Connection refused on port 8000',
+      health_message: 'Connection refused on port 5432',
       points_count: 0,
     };
 
     render(
       <VectorStoreSettings
         {...defaultProps}
-        vectorStore={chromaConfig}
-        vsProvider="chroma"
+        vectorStore={pgvectorConfig}
+        vsProvider="pgvector"
         vsMode="remote"
       />
     );
 
-    expect(screen.getByText('ChromaDB')).toBeInTheDocument();
-    expect(screen.getByText('Remote Server')).toBeInTheDocument();
-    expect(screen.getByText('http://chroma:8000')).toBeInTheDocument();
+    expect(screen.getByText('PostgreSQL (pgvector)')).toBeInTheDocument();
+    expect(screen.getByText('PostgreSQL Native')).toBeInTheDocument();
+    expect(screen.getByText('postgresql+psycopg://postgres:5432/contextcortex')).toBeInTheDocument();
     expect(screen.getByText('custom_collection')).toBeInTheDocument();
-    expect(screen.getByText(/Connection refused on port 8000/)).toBeInTheDocument();
+    expect(screen.getByText(/Connection refused on port 5432/)).toBeInTheDocument();
   });
 
   it('handles provider and mode changes', () => {
     render(<VectorStoreSettings {...defaultProps} />);
 
     const providerSelect = screen.getByLabelText('Vector Store Provider');
-    fireEvent.change(providerSelect, { target: { value: 'chroma' } });
-    expect(defaultProps.onProviderChange).toHaveBeenCalledWith('chroma');
+    fireEvent.change(providerSelect, { target: { value: 'pgvector' } });
+    expect(defaultProps.onProviderChange).toHaveBeenCalledWith('pgvector');
 
     const modeSelect = screen.getByLabelText('Operating Mode');
     fireEvent.change(modeSelect, { target: { value: 'remote' } });

@@ -4,7 +4,7 @@ interface VectorStoreSettingsProps {
   vectorStore: VectorStoreConfig | null;
   isLoadingVs: boolean;
   testFeedback: { success: boolean; message: string } | null;
-  vsProvider: 'qdrant' | 'chroma';
+  vsProvider: 'qdrant' | 'pgvector';
   vsMode: 'embedded' | 'remote';
   vsStoragePath: string;
   setVsStoragePath: (val: string) => void;
@@ -14,11 +14,14 @@ interface VectorStoreSettingsProps {
   setVsCollection: (val: string) => void;
   isTestingVs: boolean;
   isSwitchingVs: boolean;
-  onProviderChange: (provider: 'qdrant' | 'chroma') => void;
+  onProviderChange: (provider: 'qdrant' | 'pgvector') => void;
   onModeChange: (mode: 'embedded' | 'remote') => void;
   onTestConnection: () => void;
   onSwitchBackend: () => void;
 }
+
+const isPgVectorProvider = (provider?: string) =>
+  provider === 'pgvector' || provider === 'postgres' || provider === 'postgresql';
 
 export function VectorStoreSettings({
   vectorStore,
@@ -39,11 +42,13 @@ export function VectorStoreSettings({
   onTestConnection,
   onSwitchBackend,
 }: VectorStoreSettingsProps) {
+  const activeIsPgVector = isPgVectorProvider(vectorStore?.provider);
+
   return (
     <div className="glass-card">
       <h2><i className="fa-solid fa-database"></i> Vector Database Engine</h2>
       <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>
-        Configure and switch between vector database backends (Qdrant &amp; ChromaDB). Switching backends updates system metadata and triggers full re-indexing.
+        Configure and switch between vector database backends (Qdrant &amp; PostgreSQL pgvector). Switching backends updates system metadata and triggers full re-indexing.
       </p>
 
       <div className="vs-config-layout">
@@ -57,18 +62,34 @@ export function VectorStoreSettings({
               <div className="spec-row">
                 <span>Provider:</span>
                 <span className="badge badge-accent">
-                  {vectorStore.provider === 'chroma' ? 'ChromaDB' : 'Qdrant'}
+                  {activeIsPgVector ? 'PostgreSQL (pgvector)' : 'Qdrant'}
                 </span>
               </div>
               <div className="spec-row">
                 <span>Operating Mode:</span>
                 <span className="badge badge-primary">
-                  {vectorStore.mode === 'embedded' ? 'Embedded Disk' : 'Remote Server'}
+                  {activeIsPgVector
+                    ? 'PostgreSQL Native'
+                    : vectorStore.mode === 'embedded'
+                      ? 'Embedded Disk'
+                      : 'Remote Server'}
                 </span>
               </div>
               <div className="spec-row">
-                <span>{vectorStore.mode === 'embedded' ? 'Storage Path:' : 'Server URL:'}</span>
-                <code>{vectorStore.mode === 'embedded' ? (vectorStore.storage_path || 'data/qdrant_db') : (vectorStore.url || 'http://localhost:6333')}</code>
+                <span>
+                  {activeIsPgVector
+                    ? 'Database URL:'
+                    : vectorStore.mode === 'embedded'
+                      ? 'Storage Path:'
+                      : 'Server URL:'}
+                </span>
+                <code>
+                  {activeIsPgVector
+                    ? (vectorStore.url || 'Default (DATABASE_URL)')
+                    : vectorStore.mode === 'embedded'
+                      ? (vectorStore.storage_path || 'data/qdrant_db')
+                      : (vectorStore.url || 'http://localhost:6333')}
+                </code>
               </div>
               <div className="spec-row">
                 <span>Collection Name:</span>
@@ -119,24 +140,45 @@ export function VectorStoreSettings({
                   onChange={e => onProviderChange(e.target.value as any)}
                 >
                   <option value="qdrant">Qdrant (Hybrid Dense + BM25)</option>
-                  <option value="chroma">ChromaDB (Dense Vectors)</option>
+                  <option value="pgvector">PostgreSQL (pgvector — Hybrid HNSW + FTS)</option>
                 </select>
               </div>
 
               <div className="form-group">
                 <label htmlFor="vs-mode">Operating Mode</label>
-                <select
-                  id="vs-mode"
-                  value={vsMode}
-                  onChange={e => onModeChange(e.target.value as any)}
-                >
-                  <option value="embedded">Embedded Disk Storage</option>
-                  <option value="remote">Remote Server URL</option>
-                </select>
+                {vsProvider === 'pgvector' ? (
+                  <select
+                    id="vs-mode"
+                    value="remote"
+                    onChange={e => onModeChange(e.target.value as any)}
+                  >
+                    <option value="remote">PostgreSQL Server (DATABASE_URL / Custom DSN)</option>
+                  </select>
+                ) : (
+                  <select
+                    id="vs-mode"
+                    value={vsMode}
+                    onChange={e => onModeChange(e.target.value as any)}
+                  >
+                    <option value="embedded">Embedded Disk Storage</option>
+                    <option value="remote">Remote Server URL</option>
+                  </select>
+                )}
               </div>
             </div>
 
-            {vsMode === 'embedded' ? (
+            {vsProvider === 'pgvector' ? (
+              <div className="form-group">
+                <label htmlFor="vs-url">PostgreSQL Connection URL (Optional)</label>
+                <input
+                  id="vs-url"
+                  type="text"
+                  value={vsUrl}
+                  onChange={e => setVsUrl(e.target.value)}
+                  placeholder="postgresql+psycopg://localhost:5432/contextcortex (blank = DATABASE_URL)"
+                />
+              </div>
+            ) : vsMode === 'embedded' ? (
               <div className="form-group">
                 <label htmlFor="vs-storage-path">Storage Directory Path</label>
                 <input
@@ -144,7 +186,7 @@ export function VectorStoreSettings({
                   type="text"
                   value={vsStoragePath}
                   onChange={e => setVsStoragePath(e.target.value)}
-                  placeholder={vsProvider === 'chroma' ? 'data/chroma_db' : 'data/qdrant_db'}
+                  placeholder="data/qdrant_db"
                 />
               </div>
             ) : (
@@ -155,7 +197,7 @@ export function VectorStoreSettings({
                   type="text"
                   value={vsUrl}
                   onChange={e => setVsUrl(e.target.value)}
-                  placeholder={vsProvider === 'chroma' ? 'http://localhost:8000' : 'http://localhost:6333'}
+                  placeholder="http://localhost:6333"
                 />
               </div>
             )}
