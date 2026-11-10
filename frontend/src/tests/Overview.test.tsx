@@ -58,22 +58,22 @@ describe('Overview Component', () => {
     expect(screen.getByText('qdrant')).toBeInTheDocument();
   });
 
-  it('renders ChromaDB vector store specs correctly', () => {
-    const chromaStats: Stats = {
+  it('renders PostgreSQL (pgvector) vector store specs correctly', () => {
+    const pgvectorStats: Stats = {
       ...sampleStats,
-      vector_store_provider: 'chroma',
+      vector_store_provider: 'pgvector',
       vector_store_mode: 'remote'
     };
 
     render(
       <ToastProvider>
-        <Overview stats={chromaStats} refreshStats={vi.fn()} />
+        <Overview stats={pgvectorStats} refreshStats={vi.fn()} />
       </ToastProvider>
     );
 
-    expect(screen.getByText(/CHROMA \(Remote\) Vectors/i)).toBeInTheDocument();
-    expect(screen.getByText(/ChromaDB \(Remote Server\)/i)).toBeInTheDocument();
-    expect(screen.getByText('Dense Vector Cosine Similarity')).toBeInTheDocument();
+    expect(screen.getByText(/PGVECTOR \(PostgreSQL\) Vectors/i)).toBeInTheDocument();
+    expect(screen.getByText(/PostgreSQL \(pgvector\)/i)).toBeInTheDocument();
+    expect(screen.getByText('Dense HNSW + Full-Text Weighted Fusion')).toBeInTheDocument();
   });
 
   it('renders repository count correctly using legacy git_repos fallback when repos_count is undefined', () => {

@@ -49,7 +49,9 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
           <div className="metric-info">
             <span className="stat-number">{(stats.points_count || 0).toLocaleString()}</span>
             <span className="stat-label">
-              {(stats.vector_store_provider || 'Qdrant').toUpperCase()} ({(stats.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded' : 'Remote'}) Vectors
+              {stats.vector_store_provider === 'pgvector' || stats.vector_store_provider === 'postgres' || stats.vector_store_provider === 'postgresql'
+                ? 'PGVECTOR (PostgreSQL)'
+                : `${(stats.vector_store_provider || 'Qdrant').toUpperCase()} (${(stats.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded' : 'Remote'})`} Vectors
             </span>
           </div>
         </div>
@@ -63,7 +65,9 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
               <span>Vector Database:</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span className="badge badge-accent">
-                  {stats.vector_store_provider === 'chroma' ? 'ChromaDB' : 'Qdrant'} ({(stats.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded Disk' : 'Remote Server'})
+                  {stats.vector_store_provider === 'pgvector' || stats.vector_store_provider === 'postgres' || stats.vector_store_provider === 'postgresql'
+                    ? 'PostgreSQL (pgvector)'
+                    : `Qdrant (${(stats.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded Disk' : 'Remote Server'})`}
                 </span>
                 {stats.vector_db_status && (
                   <span
@@ -86,8 +90,8 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
             <div className="spec-row">
               <span>Retrieval Strategy:</span>
               <span className="badge badge-accent">
-                {stats.vector_store_provider === 'chroma'
-                  ? 'Dense Vector Cosine Similarity'
+                {stats.vector_store_provider === 'pgvector' || stats.vector_store_provider === 'postgres' || stats.vector_store_provider === 'postgresql'
+                  ? 'Dense HNSW + Full-Text Weighted Fusion'
                   : 'Dense + BM25 Normalized Weighted Fusion'}
               </span>
             </div>

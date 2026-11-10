@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1124 Automated Tests** (766 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1160 Automated Tests** (802 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -400,8 +400,9 @@ classDiagram
 
 ### 6.1 Backend Python Tests
 
-#### `tests/backend/test_ai_gateway_settings.py` (1 tests)
+#### `tests/backend/test_ai_gateway_settings.py` (2 tests)
 - `test_ai_gateway_settings_lifecycle` - _Verify OpenAI-compatible AI Gateway configuration lifecycle and masking._
+- `test_openai_api_env_var_defaults` - _Verify OPENAI_API_URL and OPENAI_API_KEY take precedence as initial defaults._
 
 #### `tests/backend/test_api_route_discovery.py` (6 tests)
 - `test_path_normalization_and_matching`
@@ -1112,10 +1113,11 @@ and leaves the prior indexed state intact without data loss._
 - `test_mcp_manage_local_file_preview_nonexistent`
 - `test_mcp_manage_local_file_preview_missing_path`
 
-#### `tests/test_mcp_ping.py` (4 tests)
+#### `tests/test_mcp_ping.py` (5 tests)
 - `test_mcp_post_ping_streamable_mcp` - _Verify POST /mcp with JSON-RPC ping returns immediate JSON without streaming._
 - `test_mcp_post_ping_sse_endpoint` - _Verify POST /sse with JSON-RPC ping returns immediate JSON._
 - `test_mcp_post_ping_messages_endpoint` - _Verify POST /messages with JSON-RPC ping returns immediate JSON._
+- `test_mcp_post_ping_with_session_id_bypasses_middleware` - _Verify POST /messages/?session_id=... is not intercepted by McpPingMiddleware, allowing SSE dispatch._
 - `test_health_endpoints_enhanced_metadata` - _Verify GET /health and /healthz return server metadata and protocol version._
 
 #### `tests/test_mcp_storage_tools.py` (7 tests)
@@ -1127,6 +1129,13 @@ and leaves the prior indexed state intact without data loss._
 - `test_what_is_ingested_detailed_with_data`
 - `test_tool_registration`
 
+#### `tests/test_memory_trim.py` (5 tests)
+- `test_trim_memory_runs_safely` - _Verifies that trim_memory executes without exceptions on the host system._
+- `test_trim_memory_non_linux_noop` - _Verifies that trim_memory gracefully no-ops on non-Linux platforms._
+- `test_trim_memory_handles_libc_exception` - _Verifies that trim_memory catches and logs any C library or ctypes exceptions._
+- `test_docker_entrypoint_sets_malloc_arena_max_default` - _Verifies that docker-entrypoint.sh sets MALLOC_ARENA_MAX=2 by default._
+- `test_docker_entrypoint_preserves_custom_malloc_arena_max` - _Verifies that docker-entrypoint.sh preserves user-configured MALLOC_ARENA_MAX._
+
 #### `tests/test_model_discovery_api.py` (2 tests)
 - `test_api_discover_models_endpoint`
 - `test_api_embedding_settings_get_and_post_with_models`
@@ -1136,6 +1145,14 @@ and leaves the prior indexed state intact without data loss._
 - `test_env_variable_fallbacks`
 - `test_set_embedding_db_config_persists_to_system_metadata`
 - `test_update_embedding_config_service`
+
+#### `tests/test_native_postgres_readiness.py` (2 tests)
+- `test_native_postgres_readiness_accepts_initialized_schema`
+- `test_native_postgres_missing_schema_is_sanitized`
+
+#### `tests/test_pdf_cache_backends.py` (2 tests)
+- `test_pdf_upload_replacement_persists_cache_and_index`
+- `test_pdf_read_populates_and_refreshes_existing_cache`
 
 #### `tests/test_pdf_extractor.py` (14 tests)
 - `test_extract_digital_pdf_text`
@@ -1166,12 +1183,19 @@ and leaves the prior indexed state intact without data loss._
 - `test_scanned_pdf_cache_invalidation_on_replace_and_delete`
 - `test_real_asd_ste100_pdf_preview_or_indexing`
 
-#### `tests/test_pgvector_store.py` (62 tests)
+#### `tests/test_pgvector_native.py` (5 tests)
+- `test_native_initialization_and_collection_isolation`
+- `test_native_migrates_null_legacy_collection`
+- `test_native_initialization_error_is_explicit_and_atomic`
+- `test_native_dimension_mismatch_preserves_populated_table`
+- `test_native_dimension_change_after_explicit_clear`
+
+#### `tests/test_pgvector_store.py` (72 tests)
 - `TestPgVectorStoreImports::test_import_pgvector_store`
 - `TestPgVectorStoreImports::test_manager_supported_providers_includes_postgres_and_pgvector`
 - `TestPgVectorStoreLifecycle::test_initialization_defaults`
 - `TestPgVectorStoreLifecycle::test_ensure_collection_executes_ddl`
-- `TestPgVectorStoreLifecycle::test_ensure_collection_handles_extension_permission_warning`
+- `TestPgVectorStoreLifecycle::test_ensure_collection_extension_permissions`
 - `TestPgVectorStoreLifecycle::test_ensure_collection_failure`
 - `TestPgVectorStoreLifecycle::test_health_check_success`
 - `TestPgVectorStoreLifecycle::test_health_check_failure`
@@ -1185,6 +1209,8 @@ and leaves the prior indexed state intact without data loss._
 - `TestPgVectorStoreUpsertAndSearch::test_upsert_empty_list_noop`
 - `TestPgVectorStoreUpsertAndSearch::test_upsert_failure_returns_false`
 - `TestPgVectorStoreUpsertAndSearch::test_search_executes_cosine_distance_query`
+- `TestPgVectorStoreUpsertAndSearch::test_search_lexical_executes_fts_without_dense_embedding`
+- `TestPgVectorStoreUpsertAndSearch::test_search_hybrid_executes_weighted_fusion`
 - `TestPgVectorStoreUpsertAndSearch::test_search_empty_query_returns_empty`
 - `TestPgVectorStoreUpsertAndSearch::test_search_error_returns_empty_list`
 - `TestPgVectorStoreUpsertAndSearch::test_delete_by_path`
@@ -1197,12 +1223,15 @@ and leaves the prior indexed state intact without data loss._
 - `TestVectorStoreManagerPgVectorDispatch::test_test_connection_pgvector`
 - `TestPgVectorCollectionIsolation::test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
 - `TestPgVectorCollectionIsolation::test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
-- `TestPgVectorCollectionIsolation::test_dimension_mismatch_warning` - _Test logging warning when table dimension differs from store dimension._
+- `TestPgVectorCollectionIsolation::test_dimension_mismatch_requires_explicit_rebuild` - _A populated shared table cannot be silently recreated._
+- `TestGitSshAndGlabSupport::test_is_ssh_git_url_and_build_authenticated_url_preserves_ssh`
+- `TestGitSshAndGlabSupport::test_get_remote_head_sha_uses_ssh_url_when_no_token`
+- `TestGitSshAndGlabSupport::test_glab_cli_token_fallback_for_gitlab`
 - `test_import_pgvector_store`
 - `test_manager_supported_providers_includes_postgres_and_pgvector`
 - `test_initialization_defaults`
 - `test_ensure_collection_executes_ddl`
-- `test_ensure_collection_handles_extension_permission_warning`
+- `test_ensure_collection_extension_permissions`
 - `test_ensure_collection_failure`
 - `test_health_check_success`
 - `test_health_check_failure`
@@ -1216,6 +1245,8 @@ and leaves the prior indexed state intact without data loss._
 - `test_upsert_empty_list_noop`
 - `test_upsert_failure_returns_false`
 - `test_search_executes_cosine_distance_query`
+- `test_search_lexical_executes_fts_without_dense_embedding`
+- `test_search_hybrid_executes_weighted_fusion`
 - `test_search_empty_query_returns_empty`
 - `test_search_error_returns_empty_list`
 - `test_delete_by_path`
@@ -1228,7 +1259,10 @@ and leaves the prior indexed state intact without data loss._
 - `test_test_connection_pgvector`
 - `test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
 - `test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
-- `test_dimension_mismatch_warning` - _Test logging warning when table dimension differs from store dimension._
+- `test_dimension_mismatch_requires_explicit_rebuild` - _A populated shared table cannot be silently recreated._
+- `test_is_ssh_git_url_and_build_authenticated_url_preserves_ssh`
+- `test_get_remote_head_sha_uses_ssh_url_when_no_token`
+- `test_glab_cli_token_fallback_for_gitlab`
 
 #### `tests/test_poller.py` (9 tests)
 - `test_check_all_auto_sync_repos_triggers_sync`
@@ -1240,6 +1274,13 @@ and leaves the prior indexed state intact without data loss._
 - `test_poller_daemon_lifecycle`
 - `test_poller_worker_cycle`
 - `test_poller_worker_disabled_interval`
+
+#### `tests/test_portable_postgres.py` (5 tests)
+- `test_find_free_port_returns_valid_port` - _Verifies that find_free_port returns an available TCP port on localhost._
+- `test_portable_postgres_availability_detection` - _Verifies that PortablePostgresManager accurately detects when PostgreSQL binaries exist._
+- `test_portable_postgres_initialize_cluster_writes_config` - _Verifies that initialize_cluster runs initdb and appends user-space tuning to postgresql.conf._
+- `test_portable_postgres_start_and_stop_lifecycle` - _Verifies that start() launches pg_ctl, provisions database + vector extension, sets env vars, and stop() halts the cluster._
+- `test_bootstrap_skips_when_database_url_already_set` - _Verifies that bootstrap_portable_postgres_if_needed respects an existing DATABASE_URL._
 
 #### `tests/test_postgres_unified_connection.py` (5 tests)
 - `test_dict_row_compatibility` - _Verify DictRow supports dict lookup, index lookup, attribute access, and dict conversion._
@@ -1275,6 +1316,13 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_storage_upload_multipart_and_put`
 - `test_storage_validation_and_errors`
 - `test_ingestion_catalog_endpoint`
+
+#### `tests/test_storage_vector_failures.py` (5 tests)
+- `test_upsert_false_returns_500_rolls_back_disk_and_allows_retry`
+- `test_delete_false_is_not_reported_as_success`
+- `test_store_initialization_exception_rolls_back_upload`
+- `test_failed_multichunk_upsert_removes_partial_vectors`
+- `test_empty_replacement_succeeds_without_leaving_old_vectors`
 
 #### `tests/test_summarizer.py` (12 tests)
 - `test_db` - _Sets up an isolated SQLite database for summarizer testing._
@@ -1333,7 +1381,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - renders Syncing... engine state badge when is_indexing is true
 - toggles mobile navigation drawer and closes upon tab selection
 - renders vector database health badge in header when vector_db_status is present
-- renders ChromaDB provider and unhealthy status badge in header
+- renders PostgreSQL (pgvector) provider and unhealthy status badge in header
 
 #### `AuthModal.test.tsx` (5 tests)
 - manages localStorage token read/write/clear correctly
@@ -1364,8 +1412,8 @@ over the PostgresConnectionAdapter using an initialized test engine._
 
 #### `EmbeddingSettings.test.tsx` (9 tests)
 - renders loading state when embedding configuration is not yet loaded
-- renders active status with hardware metrics and local model parameters
-- handles provider switch to API and updates form fields
+- renders active status with hardware metrics and API model parameters
+- handles API endpoint URL updates in form fields
 - handles changes to CPU threads and batch size
 - renders model discovery controls and triggers onDiscoverModels when button clicked
 - renders discovered model dropdowns and allows selecting models
@@ -1496,7 +1544,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 #### `Overview.test.tsx` (8 tests)
 - renders loading state when stats is null
 - renders metrics, specs, and top keywords accurately
-- renders ChromaDB vector store specs correctly
+- renders PostgreSQL (pgvector) vector store specs correctly
 - renders repository count correctly using legacy git_repos fallback when repos_count is undefined
 - triggers reindex and calls refreshStats on success
 - handles reindex API error gracefully
@@ -1563,7 +1611,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 #### `Settings.test.tsx` (29 tests)
 - renders vector database panel, auto-sync panel, multi-provider token boxes, rate limits, and host vault list
 - handles empty stats or fallback provider auth structure and vector store load error
-- switches vector store form fields between embedded and remote modes and changes default paths/urls
+- switches vector store form fields between Qdrant and pgvector and changes default paths/urls
 - tests vector store connection successfully and displays success feedback banner
 - handles vector store connection test failure and network error
 - executes vector store backend switch with user confirmation and refreshes stats
@@ -1684,7 +1732,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - renders loading placeholder when isLoadingVs is true and vectorStore is null
 - renders fallback when not loading and vectorStore is null
 - renders active vector backend specifications correctly for Qdrant Embedded
-- renders active vector backend specifications correctly for Chroma Remote with Unhealthy status
+- renders active vector backend specifications correctly for PostgreSQL (pgvector) with Unhealthy status
 - handles provider and mode changes
 - handles storage path and collection input updates in embedded mode
 - handles remote url input update in remote mode

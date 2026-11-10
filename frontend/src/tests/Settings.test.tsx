@@ -149,7 +149,7 @@ describe('Settings Component', () => {
     consoleSpy.mockRestore();
   });
 
-  it('switches vector store form fields between embedded and remote modes and changes default paths/urls', async () => {
+  it('switches vector store form fields between Qdrant and pgvector and changes default paths/urls', async () => {
     setupDefaultMocks();
 
     render(
@@ -165,17 +165,12 @@ describe('Settings Component', () => {
     const providerSelect = screen.getByLabelText(/Vector Store Provider/i) as HTMLSelectElement;
     const modeSelect = screen.getByLabelText(/Operating Mode/i) as HTMLSelectElement;
 
-    // Switch to ChromaDB
-    fireEvent.change(providerSelect, { target: { value: 'chroma' } });
-    expect(providerSelect.value).toBe('chroma');
-    expect(screen.getByLabelText(/Storage Directory Path/i)).toHaveValue('data/chroma_db');
+    // Switch to PostgreSQL (pgvector)
+    fireEvent.change(providerSelect, { target: { value: 'pgvector' } });
+    expect(providerSelect.value).toBe('pgvector');
+    expect(screen.getByLabelText(/PostgreSQL Connection URL/i)).toHaveValue('postgresql+psycopg://localhost:5432/contextcortex');
 
-    // Switch mode to Remote
-    fireEvent.change(modeSelect, { target: { value: 'remote' } });
-    expect(modeSelect.value).toBe('remote');
-    expect(screen.getByLabelText(/Remote Server URL/i)).toHaveValue('http://localhost:8000');
-
-    // Switch provider back to Qdrant
+    // Switch provider back to Qdrant (now in remote mode)
     fireEvent.change(providerSelect, { target: { value: 'qdrant' } });
     expect(screen.getByLabelText(/Remote Server URL/i)).toHaveValue('http://localhost:6333');
 
@@ -267,13 +262,13 @@ describe('Settings Component', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const updatedConfig: VectorStoreConfig = {
-      provider: 'chroma',
-      mode: 'embedded',
-      storage_path: 'data/chroma_db',
-      url: null,
+      provider: 'pgvector',
+      mode: 'remote',
+      storage_path: null,
+      url: 'postgresql+psycopg://localhost:5432/contextcortex',
       collection: 'knowledge_rag_v1',
       healthy: true,
-      health_message: 'ChromaDB persistent store active',
+      health_message: 'PostgreSQL pgvector store active',
       points_count: 0
     };
 
@@ -291,7 +286,7 @@ describe('Settings Component', () => {
           ok: true,
           json: async () => ({
             status: 'success',
-            message: 'Switched vector database to CHROMADB and started re-indexing.',
+            message: 'Switched vector database to PGVECTOR and started re-indexing.',
             config: updatedConfig
           })
         });
@@ -310,7 +305,7 @@ describe('Settings Component', () => {
     });
 
     const providerSelect = screen.getByLabelText(/Vector Store Provider/i);
-    fireEvent.change(providerSelect, { target: { value: 'chroma' } });
+    fireEvent.change(providerSelect, { target: { value: 'pgvector' } });
 
     const switchBtn = screen.getByRole('button', { name: /Save & Switch Backend/i });
     fireEvent.click(switchBtn);
@@ -322,15 +317,15 @@ describe('Settings Component', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({
-            provider: 'chroma',
-            mode: 'embedded',
-            storage_path: 'data/chroma_db',
-            url: null,
+            provider: 'pgvector',
+            mode: 'remote',
+            storage_path: null,
+            url: 'postgresql+psycopg://localhost:5432/contextcortex',
             collection: 'knowledge_rag_v1'
           })
         })
       );
-      expect(screen.getAllByText('Switched vector database to CHROMADB and started re-indexing.').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Switched vector database to PGVECTOR and started re-indexing.').length).toBeGreaterThan(0);
       expect(refreshStats).toHaveBeenCalled();
     });
   });
@@ -1060,7 +1055,7 @@ describe('Settings Component', () => {
     expect(screen.getByText('Active Embedding Engine')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Local FastEmbed (ONNX)')).toBeInTheDocument();
+      expect(screen.getByText('Remote API (LiteLLM)')).toBeInTheDocument();
       expect(screen.getByText(/2 Cores \(of 8 detected\)/i)).toBeInTheDocument();
       expect(screen.getByText('32 chunks/batch')).toBeInTheDocument();
       expect(screen.getByText('16 GB')).toBeInTheDocument();
@@ -1081,7 +1076,7 @@ describe('Settings Component', () => {
           ok: true,
           json: async () => ({
             status: 'success',
-            config: { ...mockEmbeddingConfig, threads: body.threads, batch_size: body.batch_size }
+            config: { ...mockEmbeddingConfig, provider: 'api', threads: body.threads, batch_size: body.batch_size }
           })
         });
       }
@@ -1116,7 +1111,7 @@ describe('Settings Component', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({
-            provider: 'local',
+            provider: 'api',
             threads: 4,
             batch_size: 64,
             dense_model: 'BAAI/bge-small-en-v1.5',
@@ -1187,10 +1182,10 @@ describe('Settings Component', () => {
     const updatedStats: Stats = {
       ...mockStats,
       vector_store: {
-        provider: 'chroma',
+        provider: 'pgvector',
         mode: 'remote',
         storage_path: null,
-        url: 'http://chroma-live:8000',
+        url: 'postgresql+psycopg://pg-live:5432/contextcortex',
         collection: 'live_vectors',
         healthy: true,
         points_count: 5000,
@@ -1204,7 +1199,7 @@ describe('Settings Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('ChromaDB')).toBeInTheDocument();
+      expect(screen.getByText('PostgreSQL (pgvector)')).toBeInTheDocument();
       expect(screen.getByText('5,000')).toBeInTheDocument();
       expect(screen.getByText('live_vectors')).toBeInTheDocument();
     });

@@ -23,6 +23,21 @@ def get_default_storage_path() -> str:
 LOCAL_STORAGE_PATH = get_default_storage_path()
 DEFAULT_STORAGE_PATH = LOCAL_STORAGE_PATH
 
+_PDF_CACHE_UPSERT_SQL = """
+    INSERT INTO pdf_extracted_cache
+        (filepath, repo, extracted_text, pages_json, total_pages, ocr_pages_count, total_characters, mtime, hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (filepath) DO UPDATE SET
+        repo = excluded.repo,
+        extracted_text = excluded.extracted_text,
+        pages_json = excluded.pages_json,
+        total_pages = excluded.total_pages,
+        ocr_pages_count = excluded.ocr_pages_count,
+        total_characters = excluded.total_characters,
+        mtime = excluded.mtime,
+        hash = excluded.hash
+"""
+
 class LocalStorageService:
     def __init__(self, storage_root: Optional[str] = None):
         self.storage_root = os.path.abspath(storage_root or get_default_storage_path())
@@ -135,35 +150,53 @@ class LocalStorageService:
             category_override=cat
         )
 
-        # Upsert vector points
-        if points:
-            try:
-                store = vs_service.get_vector_store()
-                store.delete_by_path(abs_path)
-                if hasattr(store, "upsert_documents"):
-                    store.upsert_documents(points)
-                elif hasattr(store, "upsert_points"):
-                    store.upsert_points(points)
-            except Exception as e:
-                logger.error(f"Failed to upsert vector points for {abs_path}: {e}")
+        try:
+            store = vs_service.get_vector_store()
+            # Deletion/upsert may partially succeed. Invalidate the old index first
+            # so a failed replacement remains retryable even after disk rollback.
+            with db_service.get_db_connection() as conn:
+                for table, col in (
+                    ("indexed_files", "filepath"), ("file_summaries", "filepath"),
+                    ("ast_symbols", "filepath"), ("pdf_extracted_cache", "filepath"),
+                    ("ast_relationships", "source_filepath"), ("api_routes", "filepath"),
+                    ("api_client_calls", "filepath"),
+                ):
+                    conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (abs_path,))
+                conn.commit()
+            if store.delete_by_path(abs_path) is False:
+                raise RuntimeError("Vector store failed to delete existing file vectors")
+            if points:
+                try:
+                    if hasattr(store, "upsert_documents"):
+                        result = store.upsert_documents(points)
+                    elif hasattr(store, "upsert_points"):
+                        result = store.upsert_points(points)
+                    else:
+                        raise RuntimeError("Vector store does not support upserts")
+                    if result is False:
+                        raise RuntimeError("Vector store failed to upsert file vectors")
+                except Exception:
+                    # A batch failure can leave some new vectors behind.
+                    try:
+                        if store.delete_by_path(abs_path) is False:
+                            logger.error(f"Failed to clean up incomplete vectors for {abs_path}")
+                    except Exception:
+                        logger.exception(f"Failed to clean up incomplete vectors for {abs_path}")
+                    raise
+        except Exception as e:
+            logger.error(f"Failed to index vector points for {abs_path}: {e}")
+            trigger_list_changed_notification()
+            raise RuntimeError(f"Failed to index vector points for {abs_path}") from e
 
         # Update relational DB
         mtime = os.path.getmtime(abs_path)
         text_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         with db_service.get_db_connection() as conn:
-            # Delete old relational records
-            for table in ("indexed_files", "file_summaries", "ast_symbols", "pdf_extracted_cache"):
-                try:
-                    conn.execute(f"DELETE FROM {table} WHERE filepath = ?", (abs_path,))
-                except Exception:
-                    pass
             if doc_type == "pdf" and pdf_res is not None:
                 try:
                     pages_json = json.dumps([asdict(p) for p in pdf_res.pages])
                     conn.execute(
-                        """INSERT OR REPLACE INTO pdf_extracted_cache
-                           (filepath, repo, extracted_text, pages_json, total_pages, ocr_pages_count, total_characters, mtime, hash)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        _PDF_CACHE_UPSERT_SQL,
                         (
                             abs_path,
                             repo,
@@ -178,12 +211,6 @@ class LocalStorageService:
                     )
                 except Exception as e:
                     logger.warning(f"Failed to cache PDF extraction for '{abs_path}': {e}")
-            for table, col in (("ast_relationships", "source_filepath"), ("api_routes", "filepath"), ("api_client_calls", "filepath")):
-                try:
-                    conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (abs_path,))
-                except Exception:
-                    pass
-
             # Insert indexed_file
             conn.execute(
                 "INSERT INTO indexed_files (filepath, repo, doc_type, language, mtime, hash) VALUES (?, ?, ?, ?, ?, ?)",
@@ -344,9 +371,7 @@ class LocalStorageService:
             try:
                 with db_service.get_db_connection() as conn:
                     conn.execute(
-                        """INSERT OR REPLACE INTO pdf_extracted_cache
-                           (filepath, repo, extracted_text, pages_json, total_pages, ocr_pages_count, total_characters, mtime, hash)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        _PDF_CACHE_UPSERT_SQL,
                         (
                             target_path,
                             "local_storage",

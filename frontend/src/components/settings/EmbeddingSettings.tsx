@@ -33,16 +33,16 @@ export function EmbeddingSettings({
   embeddingConfig,
   isLoadingEmb,
   isSavingEmb,
-  embProvider,
-  setEmbProvider,
+  embProvider: _embProvider,
+  setEmbProvider: _setEmbProvider,
   embThreads,
   setEmbThreads,
   embBatchSize,
   setEmbBatchSize,
   embDenseModel,
   setEmbDenseModel,
-  embSparseModel,
-  setEmbSparseModel,
+  embSparseModel: _embSparseModel,
+  setEmbSparseModel: _setEmbSparseModel,
   embLitellmUrl,
   setEmbLitellmUrl,
   embLitellmApiKey = '',
@@ -72,7 +72,7 @@ export function EmbeddingSettings({
     <div className="glass-card">
       <h2><i className="fa-solid fa-microchip"></i> Embedding Engine &amp; Resource Limits</h2>
       <p className="text-muted" style={{ marginTop: '4px', fontSize: '0.85rem' }}>
-        Configure local FastEmbed (ONNX) resource limits, CPU thread concurrency, or remote LiteLLM endpoints with dynamic model discovery for embeddings, Vision AI OCR, and chat synthesis.
+        Configure OpenAI-compatible API embedding endpoints, batch throughput, CPU thread concurrency, and dynamic model discovery for embeddings, Vision AI OCR, and chat synthesis.
       </p>
 
       <div className="vs-config-layout">
@@ -86,7 +86,7 @@ export function EmbeddingSettings({
               <div className="spec-row">
                 <span>Execution Provider:</span>
                 <span className="badge badge-accent">
-                  {embeddingConfig.provider === 'api' ? 'Remote API (LiteLLM)' : 'Local FastEmbed (ONNX)'}
+                  Remote API (LiteLLM)
                 </span>
               </div>
               <div className="spec-row">
@@ -109,11 +109,7 @@ export function EmbeddingSettings({
               </div>
               <div className="spec-row">
                 <span>Dense Model:</span>
-                <code>{embeddingConfig.dense_model || 'BAAI/bge-small-en-v1.5'}</code>
-              </div>
-              <div className="spec-row">
-                <span>Sparse Model (BM25):</span>
-                <code>{embeddingConfig.sparse_model || 'Qdrant/bm25'}</code>
+                <code>{embeddingConfig.dense_model || 'text-embedding-3-small'}</code>
               </div>
               <div className="spec-row">
                 <span>Vision AI OCR Model:</span>
@@ -123,12 +119,10 @@ export function EmbeddingSettings({
                 <span>Chat Completion Model:</span>
                 <code>{embeddingConfig.chat_model || 'Not configured'}</code>
               </div>
-              {embeddingConfig.provider === 'api' && (
-                <div className="spec-row">
-                  <span>API Endpoint URL:</span>
-                  <code>{embeddingConfig.litellm_url || 'http://litellm:4000/v1'}</code>
-                </div>
-              )}
+              <div className="spec-row">
+                <span>API Endpoint URL:</span>
+                <code>{embeddingConfig.litellm_url || 'http://litellm:4000/v1'}</code>
+              </div>
             </div>
           ) : (
             <p className="text-muted">No embedding configuration found.</p>
@@ -142,14 +136,17 @@ export function EmbeddingSettings({
           <form onSubmit={onSaveEmbeddingSettings}>
             <div className="form-row">
               <div className="form-group">
-                <label htmlFor="emb-provider">Embedding Provider</label>
+                <label htmlFor="emb-batch-size">Embedding Batch Size</label>
                 <select
-                  id="emb-provider"
-                  value={embProvider}
-                  onChange={e => setEmbProvider(e.target.value as 'local' | 'api')}
+                  id="emb-batch-size"
+                  value={embBatchSize}
+                  onChange={e => setEmbBatchSize(parseInt(e.target.value) || 32)}
                 >
-                  <option value="local">Local Model (FastEmbed / ONNX Runtime)</option>
-                  <option value="api">API Endpoint (LiteLLM / OpenAI Compatible)</option>
+                  <option value="16">16 chunks (Lowest RAM footprint)</option>
+                  <option value="32">32 chunks (Balanced Default)</option>
+                  <option value="64">64 chunks (High throughput)</option>
+                  <option value="128">128 chunks (Large RAM environments)</option>
+                  <option value="256">256 chunks (Maximum batch throughput)</option>
                 </select>
               </div>
 
@@ -172,157 +169,108 @@ export function EmbeddingSettings({
 
             <div className="form-row">
               <div className="form-group">
-                <label htmlFor="emb-batch-size">Embedding Batch Size</label>
-                <select
-                  id="emb-batch-size"
-                  value={embBatchSize}
-                  onChange={e => setEmbBatchSize(parseInt(e.target.value) || 32)}
-                >
-                  <option value="16">16 chunks (Lowest RAM footprint)</option>
-                  <option value="32">32 chunks (Balanced Default)</option>
-                  <option value="64">64 chunks (High throughput)</option>
-                  <option value="128">128 chunks (Large RAM environments)</option>
-                  <option value="256">256 chunks (FastEmbed default)</option>
-                </select>
-              </div>
-
-              {embProvider === 'api' ? (
-                <div className="form-group">
-                  <label htmlFor="emb-litellm-url">API Endpoint URL (LiteLLM)</label>
-                  <input
-                    id="emb-litellm-url"
-                    type="text"
-                    value={embLitellmUrl}
-                    onChange={e => setEmbLitellmUrl(e.target.value)}
-                    placeholder="http://litellm:4000/v1"
-                  />
-                </div>
-              ) : (
-                <div className="form-group">
-                  <label htmlFor="emb-dense-model">Dense Model Name</label>
-                  <input
-                    id="emb-dense-model"
-                    type="text"
-                    value={embDenseModel}
-                    onChange={e => setEmbDenseModel(e.target.value)}
-                    placeholder="BAAI/bge-small-en-v1.5"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* LiteLLM Specific Connection & Discovery Controls */}
-            {embProvider === 'api' && (
-              <>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="emb-litellm-api-key">LiteLLM API Key (Optional / Bearer)</label>
-                    <input
-                      id="emb-litellm-api-key"
-                      type="password"
-                      value={embLitellmApiKey}
-                      onChange={e => setEmbLitellmApiKey?.(e.target.value)}
-                      placeholder="sk-..."
-                      autoComplete="off"
-                    />
-                  </div>
-
-                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      id="btn-discover-models"
-                      className="btn btn-secondary"
-                      onClick={onDiscoverModels}
-                      disabled={isDiscovering}
-                      style={{ height: '38px', whiteSpace: 'nowrap' }}
-                    >
-                      {isDiscovering ? (
-                        <><i className="fa-solid fa-spinner fa-spin"></i> Discovering...</>
-                      ) : (
-                        <><i className="fa-solid fa-bolt"></i> Discover Models</>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Discovery Feedback Banner / Status */}
-                {discoveryResult && (
-                  <div style={{ marginBottom: '16px' }}>
-                    {discoveryResult.status === 'success' ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', fontSize: '0.85rem' }}>
-                        <i className="fa-solid fa-circle-check" style={{ color: '#10b981' }}></i>
-                        <span>
-                          Connected to LiteLLM &mdash; <strong>{discoveryResult.total_models} models available</strong> ({embeddingModels.length} embedding, {visionModels.length} vision, {chatModels.length} chat)
-                        </span>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', fontSize: '0.85rem' }}>
-                        <i className="fa-solid fa-triangle-exclamation" style={{ color: '#ef4444' }}></i>
-                        <span>{discoveryResult.message || 'Could not connect to LiteLLM endpoint'}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Dense Model Selection with Discovery Dropdown */}
-                <div className="form-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <label htmlFor="emb-dense-model" style={{ marginBottom: 0 }}>Dense Embedding Model</label>
-                    {embeddingModels.length > 0 && (
-                      <button
-                        type="button"
-                        className="btn-link"
-                        onClick={() => setCustomDense(!customDense)}
-                        style={{ fontSize: '0.75rem', background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
-                      >
-                        {customDense ? '← Select from discovered' : 'Enter custom model →'}
-                      </button>
-                    )}
-                  </div>
-
-                  {!customDense && embeddingModels.length > 0 ? (
-                    <select
-                      id="emb-dense-model"
-                      value={embDenseModel}
-                      onChange={e => {
-                        if (e.target.value === '__custom__') {
-                          setCustomDense(true);
-                        } else {
-                          setEmbDenseModel(e.target.value);
-                        }
-                      }}
-                    >
-                      {embeddingModels.map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                      <option value="__custom__">Custom / Enter manually...</option>
-                    </select>
-                  ) : (
-                    <input
-                      id="emb-dense-model"
-                      type="text"
-                      value={embDenseModel}
-                      onChange={e => setEmbDenseModel(e.target.value)}
-                      placeholder="gemini-embedding-2"
-                    />
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Local Sparse BM25 Model */}
-            {embProvider === 'local' && (
-              <div className="form-group">
-                <label htmlFor="emb-sparse-model">Sparse BM25 Model</label>
+                <label htmlFor="emb-litellm-url">API Endpoint URL (LiteLLM)</label>
                 <input
-                  id="emb-sparse-model"
+                  id="emb-litellm-url"
                   type="text"
-                  value={embSparseModel}
-                  onChange={e => setEmbSparseModel(e.target.value)}
-                  placeholder="Qdrant/bm25"
+                  value={embLitellmUrl}
+                  onChange={e => setEmbLitellmUrl(e.target.value)}
+                  placeholder="http://litellm:4000/v1"
                 />
               </div>
+
+              <div className="form-group">
+                <label htmlFor="emb-litellm-api-key">LiteLLM API Key (Optional / Bearer)</label>
+                <input
+                  id="emb-litellm-api-key"
+                  type="password"
+                  value={embLitellmApiKey}
+                  onChange={e => setEmbLitellmApiKey?.(e.target.value)}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <div className="form-group" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+              <button
+                type="button"
+                id="btn-discover-models"
+                className="btn btn-secondary"
+                onClick={onDiscoverModels}
+                disabled={isDiscovering}
+                style={{ height: '38px', whiteSpace: 'nowrap' }}
+              >
+                {isDiscovering ? (
+                  <><i className="fa-solid fa-spinner fa-spin"></i> Discovering...</>
+                ) : (
+                  <><i className="fa-solid fa-bolt"></i> Discover Models</>
+                )}
+              </button>
+            </div>
+
+            {/* Discovery Feedback Banner / Status */}
+            {discoveryResult && (
+              <div style={{ marginBottom: '16px' }}>
+                {discoveryResult.status === 'success' ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', fontSize: '0.85rem' }}>
+                    <i className="fa-solid fa-circle-check" style={{ color: '#10b981' }}></i>
+                    <span>
+                      Connected to LiteLLM &mdash; <strong>{discoveryResult.total_models} models available</strong> ({embeddingModels.length} embedding, {visionModels.length} vision, {chatModels.length} chat)
+                    </span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', fontSize: '0.85rem' }}>
+                    <i className="fa-solid fa-triangle-exclamation" style={{ color: '#ef4444' }}></i>
+                    <span>{discoveryResult.message || 'Could not connect to LiteLLM endpoint'}</span>
+                  </div>
+                )}
+              </div>
             )}
+
+            {/* Dense Model Selection with Discovery Dropdown */}
+            <div className="form-group">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label htmlFor="emb-dense-model" style={{ marginBottom: 0 }}>Dense Embedding Model</label>
+                {embeddingModels.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn-link"
+                    onClick={() => setCustomDense(!customDense)}
+                    style={{ fontSize: '0.75rem', background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
+                  >
+                    {customDense ? '\u2190 Select from discovered' : 'Enter custom model \u2192'}
+                  </button>
+                )}
+              </div>
+
+              {!customDense && embeddingModels.length > 0 ? (
+                <select
+                  id="emb-dense-model"
+                  value={embDenseModel}
+                  onChange={e => {
+                    if (e.target.value === '__custom__') {
+                      setCustomDense(true);
+                    } else {
+                      setEmbDenseModel(e.target.value);
+                    }
+                  }}
+                >
+                  {embeddingModels.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                  <option value="__custom__">Custom / Enter manually...</option>
+                </select>
+              ) : (
+                <input
+                  id="emb-dense-model"
+                  type="text"
+                  value={embDenseModel}
+                  onChange={e => setEmbDenseModel(e.target.value)}
+                  placeholder="gemini-embedding-2"
+                />
+              )}
+            </div>
 
             {/* Vision AI OCR Model Selection */}
             <div className="form-group">

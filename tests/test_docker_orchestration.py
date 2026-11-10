@@ -128,7 +128,8 @@ class TestEnvExampleDocumentation:
 
     def test_contains_vector_store_vars(self, env_content):
         assert "VECTOR_STORE_PROVIDER=" in env_content
-        assert "EMBEDDING_PROVIDER=" in env_content
+        assert "OPENAI_API_URL=" in env_content
+        assert "OPENAI_API_KEY=" in env_content
         assert "LLM_EXTRA_HEADERS=" in env_content
         assert "EXTRA_CA_CERTS_DIR=" in env_content
 

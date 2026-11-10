@@ -5,12 +5,20 @@ from app.services.vector_store.base import (
     VectorDocument,
     VectorSearchResult,
 )
-from app.services.vector_store.qdrant_store import (
-    QdrantVectorStore,
-)
-from app.services.vector_store.chroma_store import (
-    ChromaVectorStore,
-)
+try:
+    from app.services.vector_store.qdrant_store import (
+        QdrantVectorStore,
+    )
+except ImportError:
+    QdrantVectorStore = None  # type: ignore
+
+try:
+    from app.services.vector_store.chroma_store import (
+        ChromaVectorStore,
+    )
+except ImportError:
+    ChromaVectorStore = None  # type: ignore
+
 from app.services.vector_store.pgvector_store import (
     PgVectorStore,
 )

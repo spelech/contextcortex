@@ -92,7 +92,9 @@ function App() {
               <span className="value">
                 <i className="fa-solid fa-database" style={{ marginRight: '5px' }}></i>
                 <span>
-                  {stats?.vector_store_provider === 'chroma' ? 'ChromaDB' : 'Qdrant'} ({(stats?.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded' : 'Remote'})
+                  {stats?.vector_store_provider === 'pgvector' || stats?.vector_store_provider === 'postgres' || stats?.vector_store_provider === 'postgresql'
+                    ? 'PostgreSQL (pgvector)'
+                    : `Qdrant (${(stats?.vector_store_mode || 'embedded') === 'embedded' ? 'Embedded' : 'Remote'})`}
                 </span>
                 {stats?.vector_db_status && (
                   <span

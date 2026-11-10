@@ -33,8 +33,8 @@ If you need to roll back or switch storage engines between PostgreSQL and SQLite
 - **Python 3.11+**
 - **Node.js 20+** & **npm** (for the React 19 frontend)
 - **Git** (for shallow repository cloning)
-- **Vector Database**: Qdrant (local/Docker or embedded) or ChromaDB (embedded/disk or remote)
-- **FastEmbed** (included in `requirements.txt` for in-process ONNX CPU embeddings)
+- **Vector Database**: PostgreSQL 16 (`pgvector`) or Qdrant (embedded disk or remote server)
+- **OpenAI-Compatible Gateway**: Internal LLM gateway, LiteLLM, vLLM, Ollama, or OpenAI endpoint
 
 ---
 
@@ -83,7 +83,7 @@ cd contextcortex
    cd ..
    ```
 
-5. **Start Vector Database (Optional - defaults to embedded Qdrant/Chroma):**
+5. **Start Vector Database (Optional - defaults to `pgvector` when `DATABASE_URL` is PostgreSQL, or embedded Qdrant otherwise):**
    ```bash
    docker run -d --name qdrant -p 6333:6333 -p 6334:6334 \
        -v $(pwd)/data/qdrant_storage:/qdrant/storage \
@@ -92,13 +92,12 @@ cd contextcortex
 
 6. **Set Environment Variables (Optional):**
    ```bash
-   export VECTOR_STORE_PROVIDER="qdrant" # "qdrant" or "chroma"
+   export VECTOR_STORE_PROVIDER="pgvector" # "pgvector" or "qdrant"
    export COLLECTION_NAME="knowledge_rag_v1"
-   export EMBEDDING_PROVIDER="local" # "local" (FastEmbed) or "api" (LiteLLM)
-   export EMBEDDING_MODEL="BAAI/bge-small-en-v1.5"
-   export SPARSE_MODEL="Qdrant/bm25"
-   export EMBEDDING_NUM_THREADS=2 # CPU thread cap for ONNX (defaults to min(2, system_cpus))
-   export EMBEDDING_BATCH_SIZE=32 # Batch size for tokenization (defaults to 32)
+   export OPENAI_API_URL="http://litellm:4000/v1" # OpenAI-compatible gateway endpoint
+   export OPENAI_API_KEY="sk-your-key" # Gateway API key / Bearer token
+   export EMBEDDING_NUM_THREADS=2 # CPU thread cap (defaults to min(2, system_cpus))
+   export EMBEDDING_BATCH_SIZE=32 # Batch size for embedding requests (defaults to 32)
    export LLM_EXTRA_HEADERS='{"X-User-Agent":"contextcortex"}' # Optional JSON extra headers for LLM gateway requests
    export EXTRA_CA_CERTS_DIR="/certs" # Optional directory of private CA certificates (*.crt)
    export GITHUB_TOKEN="ghp_your_token" # Optional: For higher rate limits & private repos
@@ -108,7 +107,7 @@ cd contextcortex
    ```bash
    python main.py
    ```
-   The server starts on port `3000`, initializes SQLite tables (`index_cache.db`), configures vector storage (Qdrant/ChromaDB), mounts `/admin/` static files, and binds both `/sse` and `/mcp` FastMCP transport endpoints.
+   The server starts on port `3000`, initializes database tables (`PostgreSQL` or `index_cache.db`), configures vector storage (`pgvector` or `Qdrant`), mounts `/admin/` static files, and binds both `/sse` and `/mcp` FastMCP transport endpoints. Models (Embedding, Chat, Vision OCR) can then be discovered and selected directly in **Settings → AI & Model Gateway**.
 
 ---
 

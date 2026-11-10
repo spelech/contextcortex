@@ -7,6 +7,7 @@ import hashlib
 import time
 from typing import List, Dict, Any, Tuple, Optional
 
+from app.services.memory_utils import trim_memory
 import app.services.indexing.local_syncer as local_syncer
 import app.services.indexing.state as idx_state
 import app.services.indexing.processor as proc_service
@@ -410,7 +411,7 @@ def sync_single_git_repo(repo_id: int):
                     batch_symbols.clear()
                     conn.commit()
 
-                gc.collect()
+                trim_memory()
 
         # Stage 5: Vector Indexing & Cleanup
         progress_tracker.update_step(repo_id, 5, "Upserting Embeddings & Finalizing", pct=90)
@@ -443,6 +444,7 @@ def sync_single_git_repo(repo_id: int):
             gm_service.cleanup_repo_dir(temp_dir)
         elif keep_shallow and temp_dir:
             logger.info(f"Retained persistent shallow copy for repo '{repo_name}' at {temp_dir}")
+        trim_memory()
 
 
 def run_full_indexing():
@@ -471,6 +473,7 @@ def run_full_indexing():
     finally:
         is_indexing = False
         indexing_lock.release()
+        trim_memory()
 
 
 # Register re-index callback with VectorStoreManager

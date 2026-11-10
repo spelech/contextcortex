@@ -43,6 +43,13 @@ def get_env_token() -> Optional[str]:
 
 import urllib.parse
 
+def is_ssh_git_url(url: str) -> bool:
+    """Returns True if the git URL is an SSH URL (git@host:path or ssh://...)."""
+    if not url:
+        return False
+    u = url.strip()
+    return bool(re.match(r"^git@[^:]+:.+$", u) or u.startswith("ssh://"))
+
 def normalize_git_url(url: str) -> str:
     """Normalizes SSH git URLs (e.g. git@github.com:owner/repo.git) to standard HTTPS URLs."""
     if not url:
@@ -52,6 +59,12 @@ def normalize_git_url(url: str) -> str:
     if ssh_match:
         host, path = ssh_match.groups()
         return f"https://{host}/{path}"
+    if url.startswith("ssh://"):
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname or ""
+        path = parsed.path.lstrip("/")
+        if host and path:
+            return f"https://{host}/{path}"
     return url
 
 def detect_git_provider(url: str, explicit_provider: Optional[str] = None) -> str:
@@ -87,7 +100,9 @@ def build_authenticated_url(
     username: Optional[str] = None, 
     provider: Optional[str] = None
 ) -> str:
-    """Injects token/credentials into HTTP(S) git URL based on provider type."""
+    """Injects token/credentials into HTTP(S) git URL based on provider type, or preserves SSH URL if no HTTP credentials are provided."""
+    if is_ssh_git_url(git_url) and not token and not username:
+        return git_url.strip()
     clean_url = normalize_git_url(git_url)
     if not token and not username:
         return clean_url
@@ -150,16 +165,19 @@ def get_remote_head_sha(
 ) -> Optional[str]:
     """
     Checks remote repository commit SHA for a branch without cloning using git ls-remote.
+    Preserves native SSH URLs when no HTTP token is configured so user SSH keys work seamlessly.
     """
     from app.services.database import get_effective_git_token
     norm_url = normalize_git_url(git_url)
-    
-    if not token and not username:
+    use_ssh_native = is_ssh_git_url(git_url) and not token and not username
+
+    if not use_ssh_native and not token and not username:
         eff_token, eff_user, _ = get_effective_git_token(norm_url, provider=provider)
         token = token or eff_token
         username = username or eff_user
 
-    auth_url = build_authenticated_url(norm_url, token, username=username, provider=provider)
+    target_url = git_url.strip() if (is_ssh_git_url(git_url) and not token and not username) else norm_url
+    auth_url = build_authenticated_url(target_url, token, username=username, provider=provider)
     try:
         cmd = ["git", "ls-remote", auth_url, f"refs/heads/{branch}", f"refs/tags/{branch}", branch]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=GIT_ENV)
@@ -173,7 +191,7 @@ def get_remote_head_sha(
         if res_head.returncode == 0 and res_head.stdout.strip():
             return res_head.stdout.strip().splitlines()[0].split()[0]
     except Exception as e:
-        logger.error(f"Error checking remote SHA for {sanitize_url_for_logging(norm_url)}: {e}")
+        logger.error(f"Error checking remote SHA for {sanitize_url_for_logging(auth_url)}: {e}")
     return None
 
 def shallow_clone_repo(
@@ -187,10 +205,12 @@ def shallow_clone_repo(
 ) -> CloneResult:
     """
     Shallow clones a git repository to a temporary or persistent directory.
+    Preserves native SSH URLs when no HTTP token is configured so user SSH keys work seamlessly.
     Returns: CloneResult
     """
     from app.services.database import get_effective_git_token
     norm_url = normalize_git_url(git_url)
+    use_ssh_native = is_ssh_git_url(git_url) and not token and not username
 
     if target_dir:
         os.makedirs(os.path.dirname(os.path.abspath(target_dir)), exist_ok=True)
@@ -199,12 +219,13 @@ def shallow_clone_repo(
         os.makedirs(TMP_BASE_DIR, exist_ok=True)
         repo_dir = tempfile.mkdtemp(prefix=f"repo_{repo_id or 'temp'}_", dir=TMP_BASE_DIR)
 
-    if not token and not username:
+    if not use_ssh_native and not token and not username:
         eff_token, eff_user, _ = get_effective_git_token(norm_url, provider=provider)
         token = token or eff_token
         username = username or eff_user
 
-    auth_url = build_authenticated_url(norm_url, token, username=username, provider=provider)
+    target_url = git_url.strip() if (is_ssh_git_url(git_url) and not token and not username) else norm_url
+    auth_url = build_authenticated_url(target_url, token, username=username, provider=provider)
     safe_url = sanitize_url_for_logging(auth_url)
 
     logger.info(f"Cloning {safe_url} (branch: {branch}) shallowly to {repo_dir}...")
@@ -222,6 +243,9 @@ def shallow_clone_repo(
             else:
                 logger.warning(f"Incremental fetch failed in {repo_dir}; falling back to fresh clone: {f_res.stderr.strip()}")
                 cleanup_repo_dir(repo_dir)
+        elif target_dir and os.path.exists(repo_dir):
+            logger.warning(f"Target directory {repo_dir} exists but is not a valid git repository; cleaning up for fresh clone...")
+            cleanup_repo_dir(repo_dir)
 
         # Shallow clone single branch
         cmd = [

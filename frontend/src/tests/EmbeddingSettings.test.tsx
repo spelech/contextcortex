@@ -40,13 +40,13 @@ describe('EmbeddingSettings Component', () => {
     expect(screen.getByText('Loading embedding configuration...')).toBeInTheDocument();
   });
 
-  it('renders active status with hardware metrics and local model parameters', () => {
+  it('renders active status with hardware metrics and API model parameters', () => {
     render(
       <EmbeddingSettings
         embeddingConfig={mockEmbeddingConfig}
         isLoadingEmb={false}
         isSavingEmb={false}
-        embProvider="local"
+        embProvider="api"
         setEmbProvider={vi.fn()}
         embThreads={2}
         setEmbThreads={vi.fn()}
@@ -62,16 +62,16 @@ describe('EmbeddingSettings Component', () => {
       />
     );
 
-    expect(screen.getByText('Local FastEmbed (ONNX)')).toBeInTheDocument();
+    expect(screen.getByText('Remote API (LiteLLM)')).toBeInTheDocument();
     expect(screen.getByText(/2 Cores \(of 12 detected\)/i)).toBeInTheDocument();
     expect(screen.getByText('32 chunks/batch')).toBeInTheDocument();
     expect(screen.getByText('32 GB')).toBeInTheDocument();
     expect(screen.getByText('BAAI/bge-small-en-v1.5')).toBeInTheDocument();
-    expect(screen.getByText('Qdrant/bm25')).toBeInTheDocument();
+    expect(screen.getByText('http://litellm:4000/v1')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Embedding Provider/i)).not.toBeInTheDocument();
   });
 
-  it('handles provider switch to API and updates form fields', () => {
-    const setEmbProvider = vi.fn();
+  it('handles API endpoint URL updates in form fields', () => {
     const setEmbLitellmUrl = vi.fn();
 
     render(
@@ -80,7 +80,7 @@ describe('EmbeddingSettings Component', () => {
         isLoadingEmb={false}
         isSavingEmb={false}
         embProvider="api"
-        setEmbProvider={setEmbProvider}
+        setEmbProvider={vi.fn()}
         embThreads={2}
         setEmbThreads={vi.fn()}
         embBatchSize={32}
@@ -96,11 +96,10 @@ describe('EmbeddingSettings Component', () => {
     );
 
     expect(screen.getByText('Remote API (LiteLLM)')).toBeInTheDocument();
-    expect(screen.getByLabelText(/API Endpoint URL/i)).toBeInTheDocument();
-
-    const providerSelect = screen.getByLabelText(/Embedding Provider/i);
-    fireEvent.change(providerSelect, { target: { value: 'local' } });
-    expect(setEmbProvider).toHaveBeenCalledWith('local');
+    const urlInput = screen.getByLabelText(/API Endpoint URL/i);
+    expect(urlInput).toBeInTheDocument();
+    fireEvent.change(urlInput, { target: { value: 'http://gateway:4000/v1' } });
+    expect(setEmbLitellmUrl).toHaveBeenCalledWith('http://gateway:4000/v1');
   });
 
   it('handles changes to CPU threads and batch size', () => {
