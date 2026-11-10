@@ -55,6 +55,12 @@ def init_application_database() -> None:
     and bootstraps initial admin API credentials if configured.
     """
     try:
+        from app.services.database.portable_postgres import bootstrap_portable_postgres_if_needed
+        bootstrap_portable_postgres_if_needed()
+    except Exception as pg_err:
+        logger.warning(f"Portable PostgreSQL bootstrap skipped or failed: {pg_err}")
+
+    try:
         init_db(VAULT_PATH)
         admin_initial_key = os.getenv("ADMIN_INITIAL_KEY")
         if admin_initial_key:
@@ -106,6 +112,12 @@ async def lifespan(app: FastAPI):
 
     try:
         VectorStoreManager.reset_instance()
+    except Exception:
+        pass
+
+    try:
+        from app.services.database.portable_postgres import PortablePostgresManager
+        PortablePostgresManager.get_instance().stop()
     except Exception:
         pass
 
@@ -283,19 +295,39 @@ async def root_redirect():
     return RedirectResponse(url="/admin/")
 
 
-if os.path.exists("frontend/dist/index.html") and os.path.exists("frontend/dist/assets"):
-    www_dir = "frontend/dist"
-elif os.path.exists("www/index.html") and os.path.exists("www/assets"):
-    www_dir = "www"
-elif os.path.exists("frontend/dist/index.html"):
-    www_dir = "frontend/dist"
-else:
-    www_dir = "www"
+def _resolve_static_www_dir() -> str:
+    import sys
+    candidates = []
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            meipass = getattr(sys, "_MEIPASS")
+            candidates.extend([
+                os.path.join(meipass, "frontend", "dist"),
+                os.path.join(meipass, "www"),
+            ])
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        candidates.extend([
+            os.path.join(exe_dir, "frontend", "dist"),
+            os.path.join(exe_dir, "www"),
+        ])
+    candidates.extend(["frontend/dist", "www"])
 
+    for cand in candidates:
+        if os.path.exists(os.path.join(cand, "index.html")) and os.path.exists(os.path.join(cand, "assets")):
+            return cand
+    for cand in candidates:
+        if os.path.exists(os.path.join(cand, "index.html")):
+            return cand
+    return "www"
+
+
+www_dir = _resolve_static_www_dir()
 assets_dir = os.path.join(www_dir, "assets")
 
-app.mount("/admin", StaticFiles(directory=www_dir, html=True), name="admin")
-app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+if os.path.exists(www_dir):
+    app.mount("/admin", StaticFiles(directory=www_dir, html=True), name="admin")
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 
 @app.get("/favicon.svg")
@@ -376,4 +408,7 @@ async def readiness():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=3000)
+    host = os.getenv("HOST", "0.0.0.0")
+    port_str = os.getenv("PORT", "3000")
+    port = int(port_str) if port_str.isdigit() else 3000
+    uvicorn.run(app, host=host, port=port)

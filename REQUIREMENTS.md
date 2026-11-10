@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1135 Automated Tests** (777 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1140 Automated Tests** (782 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1252,6 +1252,13 @@ and leaves the prior indexed state intact without data loss._
 - `test_poller_daemon_lifecycle`
 - `test_poller_worker_cycle`
 - `test_poller_worker_disabled_interval`
+
+#### `tests/test_portable_postgres.py` (5 tests)
+- `test_find_free_port_returns_valid_port` - _Verifies that find_free_port returns an available TCP port on localhost._
+- `test_portable_postgres_availability_detection` - _Verifies that PortablePostgresManager accurately detects when PostgreSQL binaries exist._
+- `test_portable_postgres_initialize_cluster_writes_config` - _Verifies that initialize_cluster runs initdb and appends user-space tuning to postgresql.conf._
+- `test_portable_postgres_start_and_stop_lifecycle` - _Verifies that start() launches pg_ctl, provisions database + vector extension, sets env vars, and stop() halts the cluster._
+- `test_bootstrap_skips_when_database_url_already_set` - _Verifies that bootstrap_portable_postgres_if_needed respects an existing DATABASE_URL._
 
 #### `tests/test_postgres_unified_connection.py` (5 tests)
 - `test_dict_row_compatibility` - _Verify DictRow supports dict lookup, index lookup, attribute access, and dict conversion._

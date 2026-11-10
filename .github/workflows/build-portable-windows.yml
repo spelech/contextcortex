@@ -1,0 +1,90 @@
+name: Build Portable Windows x64 Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      postgres_version:
+        description: 'PostgreSQL Windows x64 Binary Version'
+        required: false
+        default: '16.6-1'
+      pgvector_version:
+        description: 'pgvector Extension Version'
+        required: false
+        default: '0.8.0'
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-windows-portable:
+    name: Build Portable Windows x64 (PostgreSQL + pgvector + Tree-sitter)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Frontend Production Bundle
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Python Runtime & Packaging Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Assemble Portable Windows x64 Bundle (PyInstaller + PostgreSQL + pgvector)
+        shell: pwsh
+        run: |
+          ./scripts/build_portable_windows.ps1 `
+            -PostgresVersion "${{ github.event.inputs.postgres_version || '16.6-1' }}" `
+            -PgVectorVersion "${{ github.event.inputs.pgvector_version || '0.8.0' }}" `
+            -OutputDir "dist/contextcortex-windows-x64"
+
+      - name: Smoke Test Portable Bundle Structure
+        shell: pwsh
+        run: |
+          $bundle = "dist/contextcortex-windows-x64"
+          if (-not (Test-Path "$bundle/contextcortex.exe")) { throw "Missing contextcortex.exe" }
+          if (-not (Test-Path "$bundle/pgsql/bin/postgres.exe")) { throw "Missing portable postgres.exe" }
+          if (-not (Test-Path "$bundle/pgsql/bin/initdb.exe")) { throw "Missing portable initdb.exe" }
+          if (-not (Test-Path "$bundle/pgsql/bin/pg_ctl.exe")) { throw "Missing portable pg_ctl.exe" }
+          if (-not (Test-Path "$bundle/pgsql/lib/vector.dll")) { throw "Missing compiled pgvector vector.dll" }
+          if (-not (Test-Path "$bundle/pgsql/share/extension/vector.control")) { throw "Missing pgvector extension control file" }
+          if (-not (Test-Path "$bundle/start-contextcortex.bat")) { throw "Missing start-contextcortex.bat" }
+          Write-Host "All portable bundle artifacts verified!" -ForegroundColor Green
+
+      - name: Create Portable Zip Archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/contextcortex-windows-x64/*" -DestinationPath "dist/contextcortex-windows-x64-portable.zip" -Force
+
+      - name: Upload Portable Windows x64 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contextcortex-windows-x64-portable
+          path: dist/contextcortex-windows-x64-portable.zip
+          retention-days: 30
+
+      - name: Attach Portable Bundle to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/contextcortex-windows-x64-portable.zip
