@@ -1060,7 +1060,7 @@ describe('Settings Component', () => {
     expect(screen.getByText('Active Embedding Engine')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Local FastEmbed (ONNX)')).toBeInTheDocument();
+      expect(screen.getByText('Remote API (LiteLLM)')).toBeInTheDocument();
       expect(screen.getByText(/2 Cores \(of 8 detected\)/i)).toBeInTheDocument();
       expect(screen.getByText('32 chunks/batch')).toBeInTheDocument();
       expect(screen.getByText('16 GB')).toBeInTheDocument();
@@ -1081,7 +1081,7 @@ describe('Settings Component', () => {
           ok: true,
           json: async () => ({
             status: 'success',
-            config: { ...mockEmbeddingConfig, threads: body.threads, batch_size: body.batch_size }
+            config: { ...mockEmbeddingConfig, provider: 'api', threads: body.threads, batch_size: body.batch_size }
           })
         });
       }
@@ -1116,7 +1116,7 @@ describe('Settings Component', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({
-            provider: 'local',
+            provider: 'api',
             threads: 4,
             batch_size: 64,
             dense_model: 'BAAI/bge-small-en-v1.5',

@@ -417,7 +417,11 @@ def set_ai_gateway_config(
         set_metadata("vision_ocr_model", vision_ocr_model.strip())
         set_metadata("embedding_vision_ocr_model", vision_ocr_model.strip())
     if embedding_model is not None:
-        set_metadata("openai_embedding_model", embedding_model.strip())
+        cleaned_emb = embedding_model.strip()
+        set_metadata("openai_embedding_model", cleaned_emb)
+        if cleaned_emb:
+            set_metadata("embedding_dense_model", cleaned_emb)
+            set_metadata("embedding_provider", "api")
 
     return get_ai_gateway_config()
 
