@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1121 Automated Tests** (763 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1123 Automated Tests** (765 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1126,6 +1126,10 @@ and leaves the prior indexed state intact without data loss._
 - `test_env_variable_fallbacks`
 - `test_set_embedding_db_config_persists_to_system_metadata`
 - `test_update_embedding_config_service`
+
+#### `tests/test_native_postgres_readiness.py` (2 tests)
+- `test_native_postgres_readiness_accepts_initialized_schema`
+- `test_native_postgres_missing_schema_is_sanitized`
 
 #### `tests/test_pdf_extractor.py` (14 tests)
 - `test_extract_digital_pdf_text`
