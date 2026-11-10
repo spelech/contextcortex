@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1120 Automated Tests** (762 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1128 Automated Tests** (770 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1101,10 +1101,11 @@ and leaves the prior indexed state intact without data loss._
 - `test_mcp_manage_local_file_preview_nonexistent`
 - `test_mcp_manage_local_file_preview_missing_path`
 
-#### `tests/test_mcp_ping.py` (4 tests)
+#### `tests/test_mcp_ping.py` (5 tests)
 - `test_mcp_post_ping_streamable_mcp` - _Verify POST /mcp with JSON-RPC ping returns immediate JSON without streaming._
 - `test_mcp_post_ping_sse_endpoint` - _Verify POST /sse with JSON-RPC ping returns immediate JSON._
 - `test_mcp_post_ping_messages_endpoint` - _Verify POST /messages with JSON-RPC ping returns immediate JSON._
+- `test_mcp_post_ping_with_session_id_bypasses_middleware` - _Verify POST /messages/?session_id=... is not intercepted by McpPingMiddleware, allowing SSE dispatch._
 - `test_health_endpoints_enhanced_metadata` - _Verify GET /health and /healthz return server metadata and protocol version._
 
 #### `tests/test_mcp_storage_tools.py` (7 tests)
@@ -1125,6 +1126,10 @@ and leaves the prior indexed state intact without data loss._
 - `test_env_variable_fallbacks`
 - `test_set_embedding_db_config_persists_to_system_metadata`
 - `test_update_embedding_config_service`
+
+#### `tests/test_native_postgres_readiness.py` (2 tests)
+- `test_native_postgres_readiness_accepts_initialized_schema`
+- `test_native_postgres_missing_schema_is_sanitized`
 
 #### `tests/test_pdf_extractor.py` (14 tests)
 - `test_extract_digital_pdf_text`
@@ -1271,6 +1276,13 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_storage_upload_multipart_and_put`
 - `test_storage_validation_and_errors`
 - `test_ingestion_catalog_endpoint`
+
+#### `tests/test_storage_vector_failures.py` (5 tests)
+- `test_upsert_false_returns_500_rolls_back_disk_and_allows_retry`
+- `test_delete_false_is_not_reported_as_success`
+- `test_store_initialization_exception_rolls_back_upload`
+- `test_failed_multichunk_upsert_removes_partial_vectors`
+- `test_empty_replacement_succeeds_without_leaving_old_vectors`
 
 #### `tests/test_summarizer.py` (12 tests)
 - `test_db` - _Sets up an isolated SQLite database for summarizer testing._

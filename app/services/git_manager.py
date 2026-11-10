@@ -222,6 +222,9 @@ def shallow_clone_repo(
             else:
                 logger.warning(f"Incremental fetch failed in {repo_dir}; falling back to fresh clone: {f_res.stderr.strip()}")
                 cleanup_repo_dir(repo_dir)
+        elif target_dir and os.path.exists(repo_dir):
+            logger.warning(f"Target directory {repo_dir} exists but is not a valid git repository; cleaning up for fresh clone...")
+            cleanup_repo_dir(repo_dir)
 
         # Shallow clone single branch
         cmd = [

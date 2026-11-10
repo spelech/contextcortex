@@ -127,9 +127,10 @@ class McpPingMiddleware:
 
         method = scope.get("method", "").upper()
         path = scope.get("path", "").rstrip("/") or "/"
+        has_session_id = b"session_id=" in scope.get("query_string", b"")
 
-        # Check if request targets an MCP endpoint with POST
-        if method == "POST" and path in ("/mcp", "/sse", "/messages", ""):
+        # Check if request targets an MCP endpoint with POST (standalone probe without active SSE session)
+        if method == "POST" and not has_session_id and path in ("/mcp", "/sse", "/messages", ""):
             body = b""
             more_body = True
             while more_body:
