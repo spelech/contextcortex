@@ -65,7 +65,7 @@ export default function Settings({
   // Vector Store Configuration State
   const [vectorStore, setVectorStore] = useState<VectorStoreConfig | null>(null);
   const [isLoadingVs, setIsLoadingVs] = useState(false);
-  const [vsProvider, setVsProvider] = useState<'qdrant' | 'chroma'>('qdrant');
+  const [vsProvider, setVsProvider] = useState<'qdrant' | 'pgvector'>('qdrant');
   const [vsMode, setVsMode] = useState<'embedded' | 'remote'>('embedded');
   const [vsStoragePath, setVsStoragePath] = useState('data/qdrant_db');
   const [vsUrl, setVsUrl] = useState('http://localhost:6333');
@@ -92,6 +92,13 @@ export default function Settings({
 
   const toast = useToast();
 
+  const normalizeVsProvider = (prov?: string): 'qdrant' | 'pgvector' => {
+    if (prov === 'pgvector' || prov === 'postgres' || prov === 'postgresql') {
+      return 'pgvector';
+    }
+    return 'qdrant';
+  };
+
   const loadAiGateway = useCallback(async () => {
     setIsLoadingAiGateway(true);
     try {
@@ -106,35 +113,6 @@ export default function Settings({
       setIsLoadingAiGateway(false);
     }
   }, []);
-
-  const handleSaveAiGateway = async (payload: {
-    url?: string;
-    api_key?: string;
-    chat_model?: string;
-    vision_ocr_model?: string;
-    embedding_model?: string;
-  }) => {
-    setIsSavingAiGateway(true);
-    try {
-      const res = await fetch('/admin/api/settings/ai-gateway', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save AI gateway settings');
-      if (data.config) {
-        setAiGatewayConfig(data.config);
-      }
-      toast.success('AI & Model Gateway settings saved successfully.');
-      refreshStats();
-    } catch (e: any) {
-      toast.error('Error saving AI gateway settings: ' + e.message);
-      throw e;
-    } finally {
-      setIsSavingAiGateway(false);
-    }
-  };
 
   const loadHostCredentials = useCallback(async () => {
     try {
@@ -156,10 +134,10 @@ export default function Settings({
       if (res.ok) {
         const data: VectorStoreConfig = await res.json();
         setVectorStore(data);
-        if (data.provider) setVsProvider(data.provider);
-        if (data.mode) setVsMode(data.mode);
+        if (data.provider) setVsProvider(normalizeVsProvider(data.provider));
+        if (data.mode) setVsMode(data.mode === 'embedded' ? 'embedded' : 'remote');
         if (data.storage_path) setVsStoragePath(data.storage_path);
-        if (data.url) setVsUrl(data.url);
+        if (data.url !== undefined && data.url !== null) setVsUrl(data.url);
         if (data.collection) setVsCollection(data.collection);
       }
     } catch (e: any) {
@@ -210,6 +188,35 @@ export default function Settings({
     }
   }, []);
 
+  const handleSaveAiGateway = async (payload: {
+    url?: string;
+    api_key?: string;
+    chat_model?: string;
+    vision_ocr_model?: string;
+    embedding_model?: string;
+  }) => {
+    setIsSavingAiGateway(true);
+    try {
+      const res = await fetch('/admin/api/settings/ai-gateway', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save AI gateway settings');
+      if (data.config) {
+        setAiGatewayConfig(data.config);
+      }
+      toast.success('AI & Model Gateway settings saved successfully.');
+      refreshStats();
+    } catch (e: any) {
+      toast.error('Error saving AI gateway settings: ' + e.message);
+      throw e;
+    } finally {
+      setIsSavingAiGateway(false);
+    }
+  };
+
   useEffect(() => {
     loadAiGateway();
     loadHostCredentials();
@@ -221,10 +228,10 @@ export default function Settings({
   useEffect(() => {
     if (stats?.vector_store) {
       setVectorStore(stats.vector_store);
-      if (stats.vector_store.provider) setVsProvider(stats.vector_store.provider);
-      if (stats.vector_store.mode) setVsMode(stats.vector_store.mode);
+      if (stats.vector_store.provider) setVsProvider(normalizeVsProvider(stats.vector_store.provider));
+      if (stats.vector_store.mode) setVsMode(stats.vector_store.mode === 'embedded' ? 'embedded' : 'remote');
       if (stats.vector_store.storage_path) setVsStoragePath(stats.vector_store.storage_path);
-      if (stats.vector_store.url) setVsUrl(stats.vector_store.url);
+      if (stats.vector_store.url !== undefined && stats.vector_store.url !== null) setVsUrl(stats.vector_store.url);
       if (stats.vector_store.collection) setVsCollection(stats.vector_store.collection);
     } else if (stats?.vector_store_provider) {
       setVectorStore((prev) => prev ? {
@@ -233,8 +240,8 @@ export default function Settings({
         mode: (stats.vector_store_mode as any) || prev.mode,
         collection: stats.vector_store_collection || prev.collection
       } : null);
-      if (stats.vector_store_provider) setVsProvider(stats.vector_store_provider as any);
-      if (stats.vector_store_mode) setVsMode(stats.vector_store_mode as any);
+      if (stats.vector_store_provider) setVsProvider(normalizeVsProvider(stats.vector_store_provider));
+      if (stats.vector_store_mode) setVsMode(stats.vector_store_mode === 'embedded' ? 'embedded' : 'remote');
       if (stats.vector_store_collection) setVsCollection(stats.vector_store_collection);
     }
   }, [stats]);
@@ -392,36 +399,39 @@ export default function Settings({
     }
   };
 
-  const handleProviderChange = (newProvider: 'qdrant' | 'chroma') => {
+  const handleProviderChange = (newProvider: 'qdrant' | 'pgvector') => {
     setVsProvider(newProvider);
     if (newProvider === 'qdrant') {
-      if (!vsStoragePath || vsStoragePath === 'data/chroma_db') setVsStoragePath('data/qdrant_db');
-      if (!vsUrl || vsUrl === 'http://localhost:8000') setVsUrl('http://localhost:6333');
+      if (!vsStoragePath) setVsStoragePath('data/qdrant_db');
+      if (!vsUrl || vsUrl.startsWith('postgresql')) setVsUrl('http://localhost:6333');
     } else {
-      if (!vsStoragePath || vsStoragePath === 'data/qdrant_db') setVsStoragePath('data/chroma_db');
-      if (!vsUrl || vsUrl === 'http://localhost:6333') setVsUrl('http://localhost:8000');
+      setVsMode('remote');
+      if (!vsUrl || vsUrl === 'http://localhost:6333') {
+        setVsUrl('postgresql+psycopg://localhost:5432/contextcortex');
+      }
     }
   };
 
   const handleModeChange = (newMode: 'embedded' | 'remote') => {
     setVsMode(newMode);
     if (newMode === 'embedded' && !vsStoragePath) {
-      setVsStoragePath(vsProvider === 'chroma' ? 'data/chroma_db' : 'data/qdrant_db');
+      setVsStoragePath('data/qdrant_db');
     }
     if (newMode === 'remote' && !vsUrl) {
-      setVsUrl(vsProvider === 'chroma' ? 'http://localhost:8000' : 'http://localhost:6333');
+      setVsUrl(vsProvider === 'pgvector' ? 'postgresql+psycopg://localhost:5432/contextcortex' : 'http://localhost:6333');
     }
   };
 
   const handleTestConnection = async () => {
     setIsTestingVs(true);
     setTestFeedback(null);
+    const effectiveMode = vsProvider === 'pgvector' ? 'remote' : vsMode;
     try {
       const payload = {
         provider: vsProvider,
-        mode: vsMode,
-        storage_path: vsMode === 'embedded' ? vsStoragePath.trim() : null,
-        url: vsMode === 'remote' ? vsUrl.trim() : null,
+        mode: effectiveMode,
+        storage_path: effectiveMode === 'embedded' ? vsStoragePath.trim() : null,
+        url: effectiveMode === 'remote' ? (vsUrl.trim() || null) : null,
         collection: vsCollection.trim() || 'knowledge_rag_v1'
       };
       const res = await fetch('/admin/api/vector-store/test', {
@@ -453,8 +463,9 @@ export default function Settings({
 
 
   const handleSwitchBackend = async () => {
-    const providerName = vsProvider === 'qdrant' ? 'Qdrant' : 'ChromaDB';
-    if (!window.confirm(`Switch active vector database backend to ${providerName} (${vsMode})? Existing embeddings in the old database will remain intact.`)) {
+    const providerName = vsProvider === 'qdrant' ? 'Qdrant' : 'PostgreSQL (pgvector)';
+    const effectiveMode = vsProvider === 'pgvector' ? 'remote' : vsMode;
+    if (!window.confirm(`Switch active vector database backend to ${providerName} (${effectiveMode})? Existing embeddings in the old database will remain intact.`)) {
       return;
     }
     setIsSwitchingVs(true);
@@ -462,9 +473,9 @@ export default function Settings({
     try {
       const payload = {
         provider: vsProvider,
-        mode: vsMode,
-        storage_path: vsMode === 'embedded' ? vsStoragePath.trim() : null,
-        url: vsMode === 'remote' ? vsUrl.trim() : null,
+        mode: effectiveMode,
+        storage_path: effectiveMode === 'embedded' ? vsStoragePath.trim() : null,
+        url: effectiveMode === 'remote' ? (vsUrl.trim() || null) : null,
         collection: vsCollection.trim() || 'knowledge_rag_v1'
       };
       const res = await fetch('/admin/api/vector-store/switch', {

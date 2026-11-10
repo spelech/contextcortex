@@ -24,8 +24,8 @@ export interface Stats {
     gitlab?: { token_source: string; masked_token: string };
     gitea?: { token_source: string; masked_token: string };
   };
-  vector_store_provider?: 'qdrant' | 'chroma' | string;
-  vector_store_mode?: 'embedded' | 'remote' | string;
+  vector_store_provider?: 'qdrant' | 'pgvector' | 'postgres' | 'postgresql' | string;
+  vector_store_mode?: 'embedded' | 'remote' | 'postgres' | string;
   vector_store_collection?: string;
   vector_db_status?: string;
   vector_store?: VectorStoreConfig;
@@ -72,8 +72,8 @@ export interface AutoSyncSettings {
 }
 
 export interface VectorStoreConfig {
-  provider: 'qdrant' | 'chroma';
-  mode: 'embedded' | 'remote';
+  provider: 'qdrant' | 'pgvector' | 'postgres' | 'postgresql';
+  mode: 'embedded' | 'remote' | 'postgres';
   storage_path?: string | null;
   url?: string | null;
   collection: string;

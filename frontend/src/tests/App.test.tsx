@@ -233,15 +233,15 @@ describe('App Component', () => {
     });
   });
 
-  it('renders ChromaDB provider and unhealthy status badge in header', async () => {
+  it('renders PostgreSQL (pgvector) provider and unhealthy status badge in header', async () => {
     (globalThis as any).fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/admin/api/stats')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
             ...mockStats,
-            vector_store_provider: 'chroma',
-            vector_store_mode: 'embedded',
+            vector_store_provider: 'pgvector',
+            vector_store_mode: 'remote',
             vector_db_status: 'Unhealthy'
           })
         } as Response);
@@ -256,7 +256,7 @@ describe('App Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/ChromaDB \(Embedded\)/)).toBeInTheDocument();
+      expect(screen.getAllByText(/PostgreSQL \(pgvector\)/).length).toBeGreaterThan(0);
       const badge = screen.getByTestId('vector-db-status-badge');
       expect(badge).toHaveTextContent('Unhealthy');
       expect(badge).toHaveClass('badge-danger');
