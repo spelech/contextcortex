@@ -149,13 +149,25 @@ class PgVectorStore(VectorStore):
                     """
                     conn.execute(text(hnsw_index_sql))
 
-                    # 4. Create metadata indexes
+                    # 4. Create GIN Full-Text Search index for native lexical & hybrid search
+                    fts_index_sql = f"""
+                    CREATE INDEX IF NOT EXISTS idx_{self.table_name}_fts
+                    ON {self.table_name} USING gin (
+                        to_tsvector(
+                            'simple',
+                            COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, '')
+                        )
+                    );
+                    """
+                    conn.execute(text(fts_index_sql))
+
+                    # 5. Create metadata indexes
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_collection ON {self.table_name}(collection_name);"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_repo ON {self.table_name}(repo);"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_type ON {self.table_name}(doc_type);"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_path ON {self.table_name}(path);"))
 
-            logger.info(f"PgVectorStore initialized table '{self.table_name}' with {self.dimension}d HNSW index.")
+            logger.info(f"PgVectorStore initialized table '{self.table_name}' with {self.dimension}d HNSW and GIN FTS indexes.")
             return True
         except ValueError:
             raise
@@ -352,33 +364,43 @@ class PgVectorStore(VectorStore):
         search_mode: str = "semantic",
     ) -> List[VectorSearchResult]:
         """
-        Performs cosine distance vector search returning ranked results.
+        Performs semantic (cosine distance), lexical (PostgreSQL tsvector/ts_rank_cd),
+        or weighted hybrid search returning ranked results without ONNX/FastEmbed.
         """
         if not query_text or not query_text.strip():
             return []
 
         mode = (search_mode or "semantic").lower().strip()
         caps = self.get_capabilities()
-        supported = caps.get("search_modes", ["semantic"])
+        supported = caps.get("search_modes", ["hybrid", "semantic", "lexical"])
         if mode not in supported:
             raise ValueError(
                 f"Search mode '{search_mode}' is not supported by PgVector vector store. "
                 f"Supported modes: {supported}"
             )
 
+        if mode == "semantic":
+            alpha = 1.0
+        elif mode == "lexical":
+            alpha = 0.0
+        elif dense_weight is not None:
+            try:
+                alpha = float(dense_weight)
+            except (ValueError, TypeError):
+                alpha = 0.5
+            alpha = max(0.0, min(1.0, alpha))
+        else:
+            try:
+                env_alpha = os.getenv("HYBRID_DENSE_WEIGHT")
+                alpha = float(env_alpha) if env_alpha is not None else 0.5
+            except (ValueError, TypeError):
+                alpha = 0.5
+            alpha = max(0.0, min(1.0, alpha))
+
         try:
-            query_vec = get_dense_embedding(query_text.strip())
-            if len(query_vec) != self.dimension:
-                msg = f"Vector dimension mismatch: query vector ({len(query_vec)}d) does not match PgVectorStore table '{self.table_name}' ({self.dimension}d). An index rebuild is required."
-                logger.error(msg)
-                raise ValueError(msg)
-
-            query_vec_str = str(query_vec)
-
             conditions = ["collection_name = :collection_name"]
             params: Dict[str, Any] = {
                 "collection_name": self.collection_name,
-                "query_vec": query_vec_str,
                 "limit": limit,
             }
 
@@ -403,42 +425,165 @@ class PgVectorStore(VectorStore):
                 params["tag_like"] = f'%"{tag}"%'
 
             where_clause = " AND ".join(conditions)
-            search_sql = text(f"""
+            fts_expr = (
+                "to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, ''))"
+            )
+            tsq_expr = "websearch_to_tsquery('simple', :query_text)"
+
+            # 1. Pure Semantic Search
+            if mode == "semantic" or (mode == "hybrid" and alpha >= 1.0):
+                query_vec = get_dense_embedding(query_text.strip())
+                if len(query_vec) != self.dimension:
+                    msg = f"Vector dimension mismatch: query vector ({len(query_vec)}d) does not match PgVectorStore table '{self.table_name}' ({self.dimension}d). An index rebuild is required."
+                    logger.error(msg)
+                    raise ValueError(msg)
+
+                params["query_vec"] = str(query_vec)
+                search_sql = text(f"""
+                SELECT id, (1 - (embedding <=> CAST(:query_vec AS vector))) AS score, payload
+                FROM {self.table_name}
+                WHERE {where_clause}
+                ORDER BY embedding <=> CAST(:query_vec AS vector)
+                LIMIT :limit;
+                """)
+
+                with self.engine.connect() as conn:
+                    rows = conn.execute(search_sql, params).mappings().fetchall()
+
+                results: List[VectorSearchResult] = []
+                for rank_idx, row in enumerate(rows, start=1):
+                    payload = self._parse_payload(row["payload"])
+                    score = float(row["score"]) if row["score"] is not None else 0.0
+                    clamped_score = max(0.0, min(1.0, score))
+                    results.append(
+                        VectorSearchResult(
+                            id=str(row["id"]),
+                            score=round(clamped_score, 4),
+                            dense_score=round(clamped_score, 4),
+                            sparse_score=0.0,
+                            dense_rank=rank_idx,
+                            sparse_rank=None,
+                            payload=payload,
+                        )
+                    )
+                return results
+
+            # 2. Pure Lexical Search (PostgreSQL Full-Text Search)
+            if mode == "lexical" or (mode == "hybrid" and alpha <= 0.0):
+                params["query_text"] = query_text.strip()
+                lexical_sql = text(f"""
+                SELECT id, ts_rank_cd({fts_expr}, {tsq_expr}) AS sparse_score, payload
+                FROM {self.table_name}
+                WHERE {where_clause} AND {fts_expr} @@ {tsq_expr}
+                ORDER BY sparse_score DESC
+                LIMIT :limit;
+                """)
+                with self.engine.connect() as conn:
+                    rows = conn.execute(lexical_sql, params).mappings().fetchall()
+
+                max_sparse = max((float(r["sparse_score"] or 0.0) for r in rows), default=1.0)
+                if max_sparse <= 0.0:
+                    max_sparse = 1.0
+
+                results = []
+                for rank_idx, row in enumerate(rows, start=1):
+                    payload = self._parse_payload(row["payload"])
+                    raw_s = float(row["sparse_score"] or 0.0)
+                    norm_s = max(0.0, min(1.0, raw_s / max_sparse))
+                    results.append(
+                        VectorSearchResult(
+                            id=str(row["id"]),
+                            score=round(norm_s, 4),
+                            dense_score=0.0,
+                            sparse_score=round(norm_s, 4),
+                            dense_rank=None,
+                            sparse_rank=rank_idx,
+                            payload=payload,
+                        )
+                    )
+                return results
+
+            # 3. Hybrid Search (Dense Cosine + Native PostgreSQL FTS Fusion)
+            query_vec = get_dense_embedding(query_text.strip())
+            if len(query_vec) != self.dimension:
+                msg = f"Vector dimension mismatch: query vector ({len(query_vec)}d) does not match PgVectorStore table '{self.table_name}' ({self.dimension}d). An index rebuild is required."
+                logger.error(msg)
+                raise ValueError(msg)
+
+            candidate_limit = max(limit * 5, 50)
+            params["query_vec"] = str(query_vec)
+            params["query_text"] = query_text.strip()
+            params["candidate_limit"] = candidate_limit
+
+            dense_sql = text(f"""
             SELECT id, (1 - (embedding <=> CAST(:query_vec AS vector))) AS score, payload
             FROM {self.table_name}
             WHERE {where_clause}
             ORDER BY embedding <=> CAST(:query_vec AS vector)
-            LIMIT :limit;
+            LIMIT :candidate_limit;
+            """)
+            lexical_sql = text(f"""
+            SELECT id, ts_rank_cd({fts_expr}, {tsq_expr}) AS sparse_score, payload
+            FROM {self.table_name}
+            WHERE {where_clause} AND {fts_expr} @@ {tsq_expr}
+            ORDER BY sparse_score DESC
+            LIMIT :candidate_limit;
             """)
 
             with self.engine.connect() as conn:
-                rows = conn.execute(search_sql, params).mappings().fetchall()
+                dense_rows = conn.execute(dense_sql, params).mappings().fetchall()
+                lexical_rows = conn.execute(lexical_sql, params).mappings().fetchall()
 
-            results: List[VectorSearchResult] = []
-            for rank_idx, row in enumerate(rows, start=1):
-                payload = row["payload"]
-                if isinstance(payload, str):
-                    try:
-                        payload = json.loads(payload)
-                    except Exception:
-                        payload = {}
-                elif not isinstance(payload, dict):
-                    payload = {}
+            merged: Dict[str, Dict[str, Any]] = {}
+            for d_rank, row in enumerate(dense_rows, start=1):
+                doc_id = str(row["id"])
+                d_score = max(0.0, min(1.0, float(row["score"] or 0.0)))
+                merged[doc_id] = {
+                    "id": doc_id,
+                    "dense_score": d_score,
+                    "sparse_score": 0.0,
+                    "dense_rank": d_rank,
+                    "sparse_rank": None,
+                    "payload": self._parse_payload(row["payload"]),
+                }
 
-                score = float(row["score"]) if row["score"] is not None else 0.0
-                clamped_score = max(0.0, min(1.0, score))
-                results.append(
+            max_sparse = max((float(r["sparse_score"] or 0.0) for r in lexical_rows), default=1.0)
+            if max_sparse <= 0.0:
+                max_sparse = 1.0
+
+            for s_rank, row in enumerate(lexical_rows, start=1):
+                doc_id = str(row["id"])
+                norm_s = max(0.0, min(1.0, float(row["sparse_score"] or 0.0) / max_sparse))
+                if doc_id in merged:
+                    merged[doc_id]["sparse_score"] = norm_s
+                    merged[doc_id]["sparse_rank"] = s_rank
+                else:
+                    merged[doc_id] = {
+                        "id": doc_id,
+                        "dense_score": 0.0,
+                        "sparse_score": norm_s,
+                        "dense_rank": None,
+                        "sparse_rank": s_rank,
+                        "payload": self._parse_payload(row["payload"]),
+                    }
+
+            fused: List[VectorSearchResult] = []
+            for item in merged.values():
+                combined = (alpha * item["dense_score"]) + ((1.0 - alpha) * item["sparse_score"])
+                fused.append(
                     VectorSearchResult(
-                        id=str(row["id"]),
-                        score=round(clamped_score, 4),
-                        dense_score=round(clamped_score, 4),
-                        sparse_score=0.0,
-                        dense_rank=rank_idx,
-                        sparse_rank=None,
-                        payload=payload,
+                        id=item["id"],
+                        score=round(combined, 4),
+                        dense_score=round(item["dense_score"], 4),
+                        sparse_score=round(item["sparse_score"], 4),
+                        dense_rank=item["dense_rank"],
+                        sparse_rank=item["sparse_rank"],
+                        payload=item["payload"],
                     )
                 )
-            return results
+
+            fused.sort(key=lambda r: r.score, reverse=True)
+            return fused[:limit]
         except ValueError:
             raise
         except Exception as e:
@@ -450,11 +595,22 @@ class PgVectorStore(VectorStore):
             logger.error(f"Error searching PgVectorStore table '{self.table_name}': {e}", exc_info=True)
             return []
 
+    @staticmethod
+    def _parse_payload(raw_payload: Any) -> Dict[str, Any]:
+        if isinstance(raw_payload, str):
+            try:
+                return json.loads(raw_payload)
+            except Exception:
+                return {}
+        elif isinstance(raw_payload, dict):
+            return raw_payload
+        return {}
+
     def get_capabilities(self) -> Dict[str, Any]:
         """Returns capabilities supported by PgVector vector store backend."""
         return {
-            "search_modes": ["semantic"],
-            "supports_weighting": False,
+            "search_modes": ["hybrid", "semantic", "lexical"],
+            "supports_weighting": True,
         }
 
     def get_stats(self) -> Dict[str, Any]:
