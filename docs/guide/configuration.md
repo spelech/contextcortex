@@ -74,6 +74,30 @@ ChromaDB provides lightweight embedded vector storage without external services:
 export VECTOR_STORE_PROVIDER="chroma"
 ```
 
+### PostgreSQL / pgvector Mode
+
+Initialization creates or migrates the vector table and its indexes in one transaction.
+Legacy rows without a collection are assigned to `knowledge_rag_v1`; the primary key
+becomes `(collection_name, id)`, allowing the same document ID in separate collections.
+Initialization failures raise an explicit error and roll back schema changes rather
+than leaving a partially migrated store. If `vector` is already installed, startup
+does not attempt extension creation; otherwise the database role needs permission
+to install it (or an administrator must install it first).
+
+All collections in a table share one embedding dimension. Initialization never drops
+a populated table to resolve a dimension mismatch. Coordinate an explicit rebuild
+with every affected collection owner, clear their vectors and indexing metadata,
+then initialize the empty table with the new dimension and reindex. Changing the
+dimension of an empty table preserves its schema and does not clear unrelated
+relational metadata.
+
+Native regression tests require `TEST_POSTGRES_URL` pointing to a **disposable**
+PostgreSQL database with pgvector available. They create a unique schema per test
+and remove only that schema; do not use the application database. Run
+`python -m pytest tests/test_pgvector_native.py`. Without that variable, the native
+tests skip. Search tests use a deterministic loopback HTTP embedding service; no
+embedding model downloads are required.
+
 ---
 
 ## LiteLLM Proxy Integration
