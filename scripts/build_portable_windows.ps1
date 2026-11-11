@@ -122,14 +122,10 @@ PORTABLE_PG_PORT=54329
 VECTOR_STORE=pgvector
 VECTOR_STORE_PROVIDER=pgvector
 
-# Corporate LiteLLM / OpenAI-Compatible Endpoint (Required for API Embeddings)
-EMBEDDING_PROVIDER=api
-SPARSE_MODEL=none
-LITELLM_URL=https://litellm.corp.example.com/v1
-LITELLM_API_KEY=your-corporate-api-key
-EMBEDDING_MODEL=text-embedding-3-small
-CHAT_MODEL=gpt-4o-mini
-VISION_OCR_MODEL=gpt-4o
+# OpenAI-Compatible AI Gateway (LiteLLM, vLLM, Ollama, OpenAI, or internal proxy)
+# Models (Embedding, Chat, Vision OCR) are discovered & selected in the Admin UI via /v1/models
+OPENAI_API_URL=https://litellm.corp.example.com/v1
+OPENAI_API_KEY=your-corporate-api-key
 
 # Optional custom corporate headers (JSON format)
 # LLM_EXTRA_HEADERS={"X-User-Agent":"contextcortex"}
@@ -149,7 +145,7 @@ Set-Location `$ScriptDir
 `$EnvFile = Join-Path `$ScriptDir ".env"
 if (-not (Test-Path `$EnvFile)) {
     Copy-Item (Join-Path `$ScriptDir ".env.example") `$EnvFile
-    Write-Host "Created default .env from .env.example. Edit .env to set your corporate LITELLM_URL and LITELLM_API_KEY." -ForegroundColor Yellow
+    Write-Host "Created default .env from .env.example. Edit .env to set your OPENAI_API_URL and OPENAI_API_KEY." -ForegroundColor Yellow
 }
 
 Get-Content `$EnvFile | ForEach-Object {

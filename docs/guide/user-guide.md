@@ -16,7 +16,7 @@ Select a guide module below to explore detailed instructions and workflows:
 | **4. Git Repositories** | Shallow clone ingestion, persistent shallow retention, branch tracking, auto-sync polling, and webhooks. | [Explore Guide →](/guide/user-guide/git-repositories) |
 | **5. Local Paths & Vaults** | Zero-clone monitoring for Obsidian vaults, Architecture Decision Records (ADRs), and monorepos. | [Explore Guide →](/guide/user-guide/local-paths) |
 | **6. Local Storage & PDF Ingestion** | Managed uploads, PDF preview modal, AI vision OCR fallback, and large file summarization. | [Explore Guide →](/guide/user-guide/local-storage) |
-| **7. Settings & Model Discovery** | Dynamic vector store switching (Qdrant, pgvector, ChromaDB), AI Gateway & LiteLLM discovery, and Git host credentials. | [Explore Guide →](/guide/user-guide/settings) |
+| **7. Settings & Model Discovery** | Dynamic vector store switching (`Qdrant` and `pgvector`), OpenAI-compatible `/v1/models` discovery, and Git host credentials. | [Explore Guide →](/guide/user-guide/settings) |
 | **8. Diagnostics & System Logs** | Real-time 500-event in-memory ring buffer, level filtering, search, and stack trace drawers. | [Explore Guide →](/guide/user-guide/diagnostics) |
 | **9. Appearance & Themes** | 4 curated dark and light palettes (Deep Ocean, Midnight Blue, Lavender Haze, Amber Warmth). | [Explore Guide →](/guide/user-guide/themes) |
 

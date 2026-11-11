@@ -170,7 +170,7 @@ erDiagram
 
 ## Vector Store Payload Schema
 
-Each point in the active vector database (`Qdrant`, `pgvector`, or `ChromaDB`) is keyed by a deterministic UUID5 (`{repo}:{filepath}#{chunk_index}`) and stores a 384-dimensional dense vector, sparse BM25 token weights, and the following metadata payload:
+Each point in the active vector database (`Qdrant` or `pgvector`) is keyed by a deterministic UUID5 (`{repo}:{filepath}#{chunk_index}`) and stores a dense semantic vector, sparse BM25 token weights, and the following metadata payload:
 
 ```json
 {
@@ -183,7 +183,7 @@ Each point in the active vector database (`Qdrant`, `pgvector`, or `ChromaDB`) i
     "rel_path": "app/services/embeddings.py",
     "start_line": 45,
     "end_line": 85,
-    "symbol": "FastEmbedEngine.embed_documents",
+    "symbol": "generate_dense_embeddings",
     "kind": "method_declaration",
     "language": "python",
     "commit_sha": "c29d3ee"

@@ -161,14 +161,14 @@ All administrative routes are prefixed with `/admin/api` unless otherwise noted.
 ### 1. System Statistics & Vector Store Switching
 - **Methods**:
   - `GET /admin/api/stats`: Global vector count, AST symbol count, repository totals, and active model specs.
-  - `GET /admin/api/vector-store`: Returns active vector store provider (`qdrant`, `pgvector`, `chroma`) and connection settings.
+  - `GET /admin/api/vector-store`: Returns active vector store provider (`qdrant` or `pgvector`) and connection settings.
   - `POST /admin/api/vector-store/test`: Tests connectivity and collection readiness for a target vector backend.
   - `POST /admin/api/vector-store/switch`: Dynamically switches the active vector store backend without restarting the server.
 
-### 2. AI Gateway, Embeddings & LiteLLM Model Discovery
+### 2. AI Gateway, Embeddings & Model Discovery
 - **Methods**:
-  - `GET /admin/api/models/discover`: Queries the upstream LiteLLM proxy and returns categorized `embedding_models`, `vision_models`, and `chat_models`.
-  - `GET /admin/api/settings/ai-gateway` & `POST /admin/api/settings/ai-gateway`: Reads or updates AI Gateway URL, API key, and model selections.
+  - `GET /admin/api/models/discover`: Queries the upstream OpenAI-compatible AI Gateway (`/v1/models`) and returns categorized `embedding_models`, `vision_models`, and `chat_models`.
+  - `GET /admin/api/settings/ai-gateway` & `POST /admin/api/settings/ai-gateway`: Reads or updates AI Gateway URL (`OPENAI_API_URL`), API key (`OPENAI_API_KEY`), and model selections.
   - `GET /admin/api/settings/embedding` & `POST /admin/api/settings/embedding`: Reads or updates embedding provider (`local` vs `api`) and model parameters.
   - `GET /admin/api/settings/files` & `POST /admin/api/settings/files`: Reads or updates large-file auto-summarization thresholds and line-read limits.
 

@@ -15,7 +15,7 @@ The Overview dashboard displays the following primary operational metrics:
 | **Total Vectors** | The total number of dense and sparse vector embeddings stored across active collections in the vector database. |
 | **AST Symbols** | The count of indexed functions, classes, methods, and interfaces parsed via Tree-sitter. |
 | **Tracked Repositories** | The count of registered Git repositories and monitored host filesystem paths. |
-| **Active Vector Engine** | Current vector backend provider (`Qdrant`, `pgvector`, or `ChromaDB`) and operating mode (Embedded or Remote). |
+| **Active Vector Engine** | Current vector backend provider (`Qdrant` or `pgvector`) and operating mode (Embedded or Remote). |
 | **Active Embedding Model** | The configured model name (e.g. `BAAI/bge-small-en-v1.5`), dimension size (384), and hardware acceleration target. |
 
 ---
