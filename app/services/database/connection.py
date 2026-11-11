@@ -206,9 +206,36 @@ def detect_system_resources() -> Dict[str, Any]:
         if hasattr(os, "sysconf") and "SC_PAGE_SIZE" in os.sysconf_names and "SC_PHYS_PAGES" in os.sysconf_names:
             mem_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
             mem_gb = round(mem_bytes / (1024 ** 3), 1)
+        elif os.name == "nt":
+            import ctypes
+
+            class _MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            stat = _MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                mem_gb = round(stat.ullTotalPhys / (1024 ** 3), 1)
     except Exception:
         pass
     return {"cpus": cpus, "memory_gb": mem_gb}
+
+_PLACEHOLDER_API_KEYS = {"dummy", "your-corporate-api-key", "your-api-key", "none", "null"}
+
+def _is_placeholder_api_key(val: Optional[str]) -> bool:
+    if not val:
+        return True
+    return val.strip().lower() in _PLACEHOLDER_API_KEYS
 
 def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, Any]:
     sys_res = detect_system_resources()
@@ -229,11 +256,12 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
         or os.getenv("LITELLM_URL")
         or "http://litellm:4000/v1"
     ).strip()
-    litellm_api_key = (
+    raw_api_key = (
         os.getenv("OPENAI_API_KEY")
         or os.getenv("LITELLM_API_KEY")
-        or "dummy"
+        or ""
     ).strip()
+    litellm_api_key = "" if _is_placeholder_api_key(raw_api_key) else raw_api_key
 
     vision_ocr_model = os.getenv("VISION_OCR_MODEL", "").strip()
     chat_model = os.getenv("CHAT_MODEL", "").strip()
@@ -291,6 +319,8 @@ def get_embedding_db_config() -> Dict[str, Any]:
         allow_fallback = default_cfg["allow_fallback"]
 
     resolved_url = (litellm_url or default_cfg["litellm_url"]).strip()
+    raw_db_key = (litellm_api_key or "").strip()
+    effective_key = ("" if _is_placeholder_api_key(raw_db_key) else raw_db_key) or default_cfg["litellm_api_key"]
     return {
         "provider": (provider or default_cfg["provider"]).lower().strip(),
         "dense_model": (dense_model or default_cfg["dense_model"]).strip(),
@@ -299,7 +329,7 @@ def get_embedding_db_config() -> Dict[str, Any]:
         "batch_size": max(1, batch_size),
         "openai_api_url": resolved_url,
         "litellm_url": resolved_url,
-        "litellm_api_key": litellm_api_key or default_cfg["litellm_api_key"],
+        "litellm_api_key": effective_key,
         "vision_ocr_model": (vision_ocr_model or default_cfg["vision_ocr_model"]).strip(),
         "chat_model": (chat_model or default_cfg["chat_model"]).strip(),
         "allow_fallback": allow_fallback,
@@ -384,8 +414,11 @@ def get_ai_gateway_config() -> Dict[str, Any]:
             or os.getenv("LITELLM_URL")
             or "http://litellm:4000/v1"
         ).strip()
-    if not api_key:
-        api_key = (os.getenv("OPENAI_API_KEY") or os.getenv("LITELLM_API_KEY") or "").strip()
+    if not api_key or _is_placeholder_api_key(api_key):
+        env_key = (os.getenv("OPENAI_API_KEY") or os.getenv("LITELLM_API_KEY") or "").strip()
+        api_key = "" if _is_placeholder_api_key(env_key) else env_key
+    else:
+        api_key = api_key.strip()
     if not chat_model:
         chat_model = os.getenv("CHAT_MODEL", "").strip()
     if not vision_model:
