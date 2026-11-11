@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1151 Automated Tests** (793 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1163 Automated Tests** (805 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -514,6 +514,20 @@ classDiagram
 - `test_ring_buffer_exception_traceback`
 - `test_ring_buffer_emit_exception_handling`
 - `test_logs_api_routes`
+
+#### `tests/backend/test_diagnostics.py` (12 tests)
+- `test_parse_stack_frames_python`
+- `test_parse_stack_frames_typescript_node`
+- `test_parse_stack_frames_csharp`
+- `test_parse_stack_frames_java`
+- `test_parse_stack_frames_go_rust`
+- `test_extract_diagnostic_signals`
+- `test_resolve_stack_frames_with_db`
+- `test_match_routes_and_callers`
+- `test_match_symbols_and_exceptions`
+- `test_diagnose_issue_natural_language` - _Verifies diagnose_issue functions on natural-language user reports without stack frames._
+- `test_handle_diagnose_issue_mcp`
+- `test_diagnose_issue_registered_on_mcp_server`
 
 #### `tests/backend/test_git_manager.py` (34 tests)
 - `TestGitManager::test_get_env_token`
