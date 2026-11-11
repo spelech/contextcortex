@@ -31,6 +31,9 @@ from app.mcp.handlers.file_handlers import (
     handle_read_file,
     handle_summarize_file,
 )
+from app.mcp.handlers.diagnostic_handlers import (
+    handle_diagnose_issue,
+)
 
 __all__ = [
     "handle_search_code",
@@ -52,4 +55,5 @@ __all__ = [
     "handle_what_is_ingested",
     "handle_read_file",
     "handle_summarize_file",
+    "handle_diagnose_issue",
 ]

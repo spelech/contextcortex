@@ -30,6 +30,7 @@ from app.mcp.handlers import (
     handle_what_is_ingested,
     handle_read_file,
     handle_summarize_file,
+    handle_diagnose_issue,
 )
 
 logger = logging.getLogger("contextcortex.mcp")
@@ -137,6 +138,12 @@ def register_mcp_tools_and_resources(server=None):
             name="summarize_file",
             description="Retrieve an existing summary or generate a structured LLM executive summary for a large file."
         )(handle_summarize_file)
+
+    if "diagnose_issue" not in existing_tools:
+        server.tool(
+            name="diagnose_issue",
+            description="Forensic triage MCP tool that resolves stack traces, matches error literals and API routes, and retrieves semantic code candidates."
+        )(handle_diagnose_issue)
 
 
     existing_resources = {str(r.uri) for r in server._resource_manager.list_resources()}
