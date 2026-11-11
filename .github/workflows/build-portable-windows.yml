@@ -18,6 +18,8 @@ on:
     paths:
       - 'contextcortex.spec'
       - 'scripts/build_portable_windows.ps1'
+      - 'scripts/portable/**'
+      - 'main.py'
       - 'app/services/database/portable_postgres.py'
       - '.github/workflows/build-portable-windows.yml'
 
@@ -76,6 +78,36 @@ jobs:
           if (-not (Test-Path "$bundle/pgsql/share/extension/vector.control")) { throw "Missing pgvector extension control file" }
           if (-not (Test-Path "$bundle/start-contextcortex.bat")) { throw "Missing start-contextcortex.bat" }
           Write-Host "All portable bundle artifacts verified!" -ForegroundColor Green
+
+      - name: Runtime Smoke Test (start exe, bootstrap portable PostgreSQL, check /ready)
+        shell: pwsh
+        run: |
+          $bundle = Resolve-Path "dist/contextcortex-windows-x64"
+          # Keep test data out of the bundle so it is not zipped
+          $env:DATA_DIR = Join-Path $env:RUNNER_TEMP "cc-smoke-data"
+          $env:HOST = "127.0.0.1"
+          $env:PORT = "3999"
+          $env:PORTABLE_POSTGRES_ENABLED = "true"
+          $env:PORTABLE_PG_PORT = "54399"
+          $env:VECTOR_STORE_PROVIDER = "pgvector"
+          $env:EMBEDDING_PROVIDER = "api"
+          $env:EMBEDDING_MODEL = "text-embedding-3-small"
+          $log = Join-Path $env:RUNNER_TEMP "cc-smoke.log"
+          $proc = Start-Process -FilePath "$bundle/contextcortex.exe" -WorkingDirectory $bundle -PassThru -NoNewWindow -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+          $ready = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            Start-Sleep -Seconds 2
+            if ($proc.HasExited) { break }
+            try {
+              $r = Invoke-RestMethod -Uri "http://127.0.0.1:3999/ready" -TimeoutSec 3
+              if ($r.status -eq "ready" -and $r.database.type -eq "postgresql") { $ready = $true; break }
+            } catch { }
+          }
+          if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+          Get-Process postgres -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-Content $log, "$log.err" -ErrorAction SilentlyContinue | Select-Object -Last 60
+          if (-not $ready) { throw "Portable bundle did not become ready with portable PostgreSQL" }
+          Write-Host "Portable bundle started and reported ready on PostgreSQL + pgvector." -ForegroundColor Green
 
       - name: Create Portable Zip Archive
         shell: pwsh

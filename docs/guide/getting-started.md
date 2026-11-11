@@ -55,12 +55,28 @@ For Windows environments without Docker or administrator privileges, ContextCort
    .\scripts\build_portable_windows.ps1
    ```
 
-2. Copy `dist\contextcortex-windows-x64` to your target Windows workstation, set `OPENAI_API_URL` and `OPENAI_API_KEY` in `.env`, and run:
+   You can also download the `contextcortex-windows-x64-portable` artifact from the **Build Portable Windows x64 Bundle** GitHub Actions workflow.
+
+2. Copy `dist\contextcortex-windows-x64` to your target Windows workstation.
+
+3. Copy `.env.example` to `.env`. Set these values **before the first start**:
+   - `OPENAI_API_URL` and `OPENAI_API_KEY`.
+   - `EMBEDDING_MODEL`: an embedding model that your gateway supplies. The bundle has no local embedding engine. The first start sets the vector table dimension from this model.
+   - `LLM_EXTRA_HEADERS` (optional): a JSON object of headers that your gateway requires. Do not put quotes around the JSON.
+
+4. If your network uses private CAs or a TLS inspection proxy, put the CA files (`.crt` or `.pem`) in `.\certs\`.
+
+5. Run:
    ```powershell
    .\start-contextcortex.bat
    ```
 
-On first launch, the portable bundle automatically initializes a local PostgreSQL 16 + `pgvector` cluster under `.\data\pgdata`, loads any corporate CA certificates placed in `.\certs\*.crt`, and starts the web dashboard and MCP endpoints on `http://127.0.0.1:3000`.
+On first start, the bundle does these steps:
+- It makes a local PostgreSQL 16 + `pgvector` cluster in `.\data\pgdata`.
+- It adds the CA files in `.\certs\` to the public root CAs and uses this bundle for HTTPS and Git.
+- It starts the web dashboard and the MCP endpoints on `http://127.0.0.1:3000`.
+
+All data stays in `.\data\`. To use a different folder, set `DATA_DIR` in `.env`. The launcher works with Windows PowerShell 5.1 and with PowerShell 7.
 
 ### Windows Portable Database & Vector Store Sub-Configurations
 
