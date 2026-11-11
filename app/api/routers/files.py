@@ -20,7 +20,7 @@ class FileSummarizePayload(BaseModel):
 
 
 class GrepSearchPayload(BaseModel):
-    pattern: str = Field(..., description="Substring or regex pattern to search for")
+    pattern: str = Field(..., max_length=500, description="Substring pattern to search for")
     repo: Optional[str] = Field(None, description="Optional repository identifier or storage namespace")
     path_glob: Optional[str] = Field(None, description="Optional fnmatch file glob")
     is_regex: bool = Field(False, description="Whether pattern is a regex")
@@ -135,7 +135,7 @@ async def api_grep_code(payload: GrepSearchPayload):
             pattern=raw_pattern,
             repo=raw_repo,
             path_glob=payload.path_glob,
-            is_regex=payload.is_regex,
+            is_regex=False,
             case_sensitive=payload.case_sensitive,
             context_lines=payload.context_lines,
             limit=payload.limit,
@@ -146,7 +146,7 @@ async def api_grep_code(payload: GrepSearchPayload):
         return JSONResponse(status_code=403, content={"error": "Access denied."})
     except ValueError as ve:
         logger.warning(f"Validation error during grep_code: {ve}")
-        return JSONResponse(status_code=400, content={"error": str(ve)})
+        return JSONResponse(status_code=400, content={"error": "Invalid search parameters."})
     except Exception as e:
         logger.error(f"Error in api_grep_code: {e}")
         return JSONResponse(status_code=500, content={"error": "Internal server error during grep search."})
