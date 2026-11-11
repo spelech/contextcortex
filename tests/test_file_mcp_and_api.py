@@ -50,22 +50,25 @@ def test_env(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_mcp_handle_read_file(test_env):
+    import json
     watched_dir = test_env["watched_dir"]
     sample_file = watched_dir / "example.py"
     sample_file.write_text("line 1\nline 2\nline 3\nline 4\nline 5\n", encoding="utf-8")
 
     # Read slice lines 2 to 4
-    output = await handle_read_file("example.py", repo="watched_repo", start_line=2, end_line=4)
-    assert "lines 2-4 of 5" in output
-    assert "line 2\nline 3\nline 4" in output
+    output = json.loads(await handle_read_file("example.py", repo="watched_repo", start_line=2, end_line=4))
+    assert output["lines"] == [2, 4]
+    assert output["total_lines"] == 5
+    assert output["content"] == "line 2\nline 3\nline 4"
 
     # Path traversal rejected
-    err_output = await handle_read_file("../../../etc/passwd")
-    assert "Forbidden" in err_output or "Error" in err_output
+    err_output = json.loads(await handle_read_file("../../../etc/passwd"))
+    assert "error" in err_output
 
 
 @pytest.mark.asyncio
 async def test_mcp_handle_summarize_file(test_env):
+    import json
     watched_dir = test_env["watched_dir"]
     sample_file = watched_dir / "large.py"
     sample_file.write_text("def hello():\n    return 'world'\n", encoding="utf-8")
@@ -79,9 +82,9 @@ async def test_mcp_handle_summarize_file(test_env):
         mock_openai_cls.return_value = mock_client
         reset_summarizer_service()
 
-        output = await handle_summarize_file(str(sample_file))
-        assert "## Executive Overview" in output
-        assert "A test module." in output
+        output = json.loads(await handle_summarize_file(str(sample_file)))
+        assert "## Executive Overview" in output["summary"]
+        assert "A test module." in output["summary"]
 
 
 def test_api_read_file(test_env):

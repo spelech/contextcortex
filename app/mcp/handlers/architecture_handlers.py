@@ -24,13 +24,21 @@ async def handle_get_architecture(
 ) -> str:
     """Synthesizes language distributions, key entry points, primary framework modules, route counts, and active ADRs into a concise summary."""
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         from app.services.architecture import synthesize_architecture
-        return synthesize_architecture(repo=repo)
+        res = synthesize_architecture(repo=repo)
+        if isinstance(res, dict):
+            return json.dumps(res)
+        if isinstance(res, str) and (res.strip().startswith("{") or res.strip().startswith("[")):
+            return res
+        return json.dumps({"repo": repo, "overview": res})
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_get_architecture: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"get_architecture error: {e}")
-        return f"Error synthesizing architecture overview: {str(e)}"
+        return json.dumps({"error": f"Error synthesizing architecture overview: {str(e)}"})
 
 
 async def handle_manage_adr(
@@ -47,46 +55,57 @@ async def handle_manage_adr(
     """Manage Architecture Decision Records (ADRs): read, create, update, supersede, or search records across repositories."""
     action_clean = action.lower().strip() if action else ""
     if not repo or not repo.strip():
-        return "Error: repo parameter is required."
+        return json.dumps({"error": "repo parameter is required."})
 
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         required_role = Role.EDITOR if action_clean in ("create", "update", "supersede") else Role.VIEWER
         enforce_tool_permission(required_role)
         from app.services.database import list_adrs, get_adr, create_adr, update_adr, supersede_adr
 
         if action_clean == "list":
             records = _get_tools_attr("list_adrs", list_adrs)(repo=repo, status=status)
-            if not records:
-                return f"No ADRs found for repository '{repo}'."
-            out = [f"# ADRs for Repository '{repo}'\n"]
-            for r in records:
-                sup = f" (superseded by `{r['superseded_by']}`)" if r.get('superseded_by') else ""
-                out.append(f"- **{r['id']}**: {r['title']} | Status: `{r['status']}`{sup}")
-            return "\n".join(out)
+            adrs = []
+            for r in (records or []):
+                adrs.append({
+                    "id": r.get("id"),
+                    "repo": r.get("repo", repo),
+                    "title": r.get("title"),
+                    "status": r.get("status"),
+                    "superseded_by": r.get("superseded_by"),
+                })
+            return json.dumps({
+                "action": "list",
+                "repo": repo,
+                "adrs": adrs,
+            })
 
         elif action_clean == "get":
             if not id:
-                return "Error: 'id' parameter is required for action 'get'."
+                return json.dumps({"error": "'id' parameter is required for action 'get'."})
             r = _get_tools_attr("get_adr", get_adr)(adr_id=id, repo=repo)
             if not r:
-                return f"ADR '{id}' not found in repo '{repo}'."
-            out = [
-                f"# [{r['repo']}] {r['id']}: {r['title']}",
-                f"**Status:** `{r['status']}`" + (f" (Superseded by `{r['superseded_by']}`)" if r.get('superseded_by') else ""),
-                f"**Created:** {r['created_at']} | **Updated:** {r['updated_at']}\n",
-                "## Context",
-                r['context'],
-                "\n## Decision",
-                r['decision']
-            ]
-            if r.get('consequences'):
-                out.extend(["\n## Consequences", r['consequences']])
-            return "\n".join(out)
+                return json.dumps({"error": f"ADR '{id}' not found in repo '{repo}'.", "found": False})
+            return json.dumps({
+                "action": "get",
+                "found": True,
+                "adr": {
+                    "id": r.get("id"),
+                    "repo": r.get("repo", repo),
+                    "title": r.get("title"),
+                    "status": r.get("status"),
+                    "superseded_by": r.get("superseded_by"),
+                    "created_at": r.get("created_at"),
+                    "updated_at": r.get("updated_at"),
+                    "context": r.get("context"),
+                    "decision": r.get("decision"),
+                    "consequences": r.get("consequences"),
+                }
+            })
 
         elif action_clean == "create":
             if not title:
-                return "Error: 'title' parameter is required for action 'create'."
+                return json.dumps({"error": "'title' parameter is required for action 'create'."})
             res = _get_tools_attr("create_adr", create_adr)(
                 repo=repo,
                 title=title,
@@ -97,11 +116,18 @@ async def handle_manage_adr(
                 superseded_by=superseded_by,
                 adr_id=id
             )
-            return f"Successfully created ADR '{res['id']}' for repo '{repo}' with status `{res['status']}`."
+            return json.dumps({
+                "action": "create",
+                "status": "success",
+                "repo": repo,
+                "id": res.get("id"),
+                "adr_status": res.get("status"),
+                "adr": res,
+            })
 
         elif action_clean == "update":
             if not id:
-                return "Error: 'id' parameter is required for action 'update'."
+                return json.dumps({"error": "'id' parameter is required for action 'update'."})
             res = _get_tools_attr("update_adr", update_adr)(
                 adr_id=id,
                 repo=repo,
@@ -112,21 +138,35 @@ async def handle_manage_adr(
                 consequences=consequences,
                 superseded_by=superseded_by
             )
-            return f"Successfully updated ADR '{res['id']}' for repo '{repo}'."
+            return json.dumps({
+                "action": "update",
+                "status": "success",
+                "repo": repo,
+                "id": res.get("id"),
+                "adr": res,
+            })
 
         elif action_clean == "supersede":
             if not id:
-                return "Error: 'id' parameter is required for action 'supersede' (ID of old ADR to be superseded)."
+                return json.dumps({"error": "'id' parameter is required for action 'supersede' (ID of old ADR to be superseded)."})
             if not superseded_by:
-                return "Error: 'superseded_by' parameter is required for action 'supersede' (ID of newer ADR)."
+                return json.dumps({"error": "'superseded_by' parameter is required for action 'supersede' (ID of newer ADR)."})
             res = _get_tools_attr("supersede_adr", supersede_adr)(old_id=id, new_id=superseded_by, repo=repo)
-            return f"Successfully superseded ADR '{id}' with '{superseded_by}' in repo '{repo}'."
+            return json.dumps({
+                "action": "supersede",
+                "status": "success",
+                "repo": repo,
+                "id": id,
+                "superseded_by": superseded_by,
+                "adr": res,
+            })
 
         else:
-            return f"Error: Invalid action '{action}'. Supported actions: list, get, create, update, supersede."
+            return json.dumps({"error": f"Invalid action '{action}'. Supported actions: list, get, create, update, supersede."})
 
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_manage_adr ({action_clean}): {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"manage_adr error ({action_clean}): {e}")
-        return f"Error executing manage_adr action '{action}': {str(e)}"
-
-
+        return json.dumps({"error": f"Error executing manage_adr action '{action}': {str(e)}"})
