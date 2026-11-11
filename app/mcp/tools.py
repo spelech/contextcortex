@@ -30,6 +30,7 @@ from app.mcp.handlers import (
     handle_what_is_ingested,
     handle_read_file,
     handle_summarize_file,
+    handle_grep_code,
 )
 
 logger = logging.getLogger("contextcortex.mcp")
@@ -137,6 +138,12 @@ def register_mcp_tools_and_resources(server=None):
             name="summarize_file",
             description="Retrieve an existing summary or generate a structured LLM executive summary for a large file."
         )(handle_summarize_file)
+
+    if "grep_code" not in existing_tools:
+        server.tool(
+            name="grep_code",
+            description="Deterministic literal and regex pattern matching across one or all indexed repositories with surrounding context lines and AST symbol coordinates."
+        )(handle_grep_code)
 
 
     existing_resources = {str(r.uri) for r in server._resource_manager.list_resources()}

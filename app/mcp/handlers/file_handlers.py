@@ -86,3 +86,40 @@ async def handle_summarize_file(
     except Exception as e:
         logger.error(f"Error summarizing file '{path}': {e}")
         return f"Error summarizing file: {str(e)}"
+
+
+async def handle_grep_code(
+    pattern: Annotated[str, Field(description="Exact substring or regex pattern to search for across repositories.")],
+    repo: Annotated[Optional[str], Field(description="Optional repository identifier or storage namespace filter.")] = None,
+    path_glob: Annotated[Optional[str], Field(description="Optional fnmatch file path glob (e.g., '*.py' or 'app/services/*').")] = None,
+    is_regex: Annotated[bool, Field(description="If True, treats pattern as a regular expression. Defaults to False (literal string).")] = False,
+    case_sensitive: Annotated[bool, Field(description="If True, performs case-sensitive matching. Defaults to False.")] = False,
+    context_lines: Annotated[int, Field(description="Number of context lines surrounding each match (0-10). Defaults to 2.")] = 2,
+    limit: Annotated[int, Field(description="Maximum number of matched lines to return (1-100). Defaults to 30.")] = 30
+) -> str:
+    """Exact literal and regex pattern matching across one or all indexed repositories returning compact JSON."""
+    import json
+    try:
+        enforce_tool_permission(Role.VIEWER)
+        reader_fn = _get_tools_attr("get_file_reader_service", get_file_reader_service)
+        reader = reader_fn()
+
+        result = reader.grep_code(
+            pattern=pattern,
+            repo=repo,
+            path_glob=path_glob,
+            is_regex=is_regex,
+            case_sensitive=case_sensitive,
+            context_lines=context_lines,
+            limit=limit,
+        )
+        return json.dumps(result, separators=(",", ":"))
+
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_grep_code: {fe}")
+        return json.dumps({"error": "forbidden", "message": str(fe)}, separators=(",", ":"))
+    except ValueError as ve:
+        return json.dumps({"error": "invalid_argument", "message": str(ve)}, separators=(",", ":"))
+    except Exception as e:
+        logger.error(f"Error searching code with grep: {e}")
+        return json.dumps({"error": str(e)}, separators=(",", ":"))

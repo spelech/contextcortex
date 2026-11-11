@@ -19,6 +19,16 @@ class FileSummarizePayload(BaseModel):
     force_refresh: bool = Field(False, description="Whether to bypass cache and regenerate summary")
 
 
+class GrepSearchPayload(BaseModel):
+    pattern: str = Field(..., description="Substring or regex pattern to search for")
+    repo: Optional[str] = Field(None, description="Optional repository identifier or storage namespace")
+    path_glob: Optional[str] = Field(None, description="Optional fnmatch file glob")
+    is_regex: bool = Field(False, description="Whether pattern is a regex")
+    case_sensitive: bool = Field(False, description="Whether matching is case-sensitive")
+    context_lines: int = Field(2, ge=0, le=10, description="Surrounding context lines")
+    limit: int = Field(30, ge=1, le=100, description="Maximum matches to return")
+
+
 @router.get(
     "/admin/api/files/read",
     dependencies=[Depends(require_role(Role.VIEWER))],
@@ -100,3 +110,43 @@ async def api_summarize_file(payload: FileSummarizePayload):
     except Exception as e:
         logger.error(f"Error summarizing file '{payload.path}': {e}")
         return JSONResponse(status_code=500, content={"error": "Internal server error summarizing file."})
+
+
+@router.post(
+    "/api/search/grep",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
+@router.post(
+    "/admin/api/search/grep",
+    dependencies=[Depends(require_role(Role.VIEWER))],
+)
+async def api_grep_code(payload: GrepSearchPayload):
+    try:
+        raw_pattern = payload.pattern.strip() if payload.pattern else ""
+        if not raw_pattern:
+            return JSONResponse(status_code=400, content={"error": "pattern must be a non-empty string."})
+
+        raw_repo = payload.repo.strip() if payload.repo else None
+        if raw_repo and ("\x00" in raw_repo or any(part == ".." for part in raw_repo.replace("\\", "/").split("/"))):
+            return JSONResponse(status_code=400, content={"error": "Path traversal or invalid repo detected."})
+
+        reader = get_file_reader_service()
+        result = reader.grep_code(
+            pattern=raw_pattern,
+            repo=raw_repo,
+            path_glob=payload.path_glob,
+            is_regex=payload.is_regex,
+            case_sensitive=payload.case_sensitive,
+            context_lines=payload.context_lines,
+            limit=payload.limit,
+        )
+        return result
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden access during grep_code: {fe}")
+        return JSONResponse(status_code=403, content={"error": "Access denied."})
+    except ValueError as ve:
+        logger.warning(f"Validation error during grep_code: {ve}")
+        return JSONResponse(status_code=400, content={"error": str(ve)})
+    except Exception as e:
+        logger.error(f"Error in api_grep_code: {e}")
+        return JSONResponse(status_code=500, content={"error": "Internal server error during grep search."})
