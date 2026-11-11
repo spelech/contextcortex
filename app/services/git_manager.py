@@ -235,18 +235,27 @@ def shallow_clone_repo(
         # Check if already a git repo in target_dir (incremental shallow update)
         if target_dir and os.path.exists(os.path.join(repo_dir, ".git")):
             logger.info(f"Existing shallow clone found in {repo_dir}; fetching latest refs (depth: {depth_str})...")
+            subprocess.run(["git", "remote", "set-url", "origin", auth_url], cwd=repo_dir, capture_output=True, text=True, timeout=15, env=GIT_ENV)
             fetch_cmd = ["git", "fetch", "--depth", depth_str, "origin", branch]
             f_res = subprocess.run(fetch_cmd, cwd=repo_dir, capture_output=True, text=True, timeout=60, env=GIT_ENV)
             if f_res.returncode == 0:
-                subprocess.run(["git", "reset", "--hard", f"origin/{branch}"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
-                sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10, env=GIT_ENV)
-                commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else "unknown"
-                return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)
+                r_res = subprocess.run(["git", "reset", "--hard", f"origin/{branch}"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
+                if r_res.returncode != 0:
+                    r_res = subprocess.run(["git", "reset", "--hard", "FETCH_HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
+                if r_res.returncode == 0:
+                    sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10, env=GIT_ENV)
+                    commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else "unknown"
+                    return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)
+                logger.warning(f"Git reset failed in {repo_dir}; falling back to fresh clone: {r_res.stderr.strip()}")
+                cleanup_repo_dir(repo_dir)
             else:
                 logger.warning(f"Incremental fetch failed in {repo_dir}; falling back to fresh clone: {f_res.stderr.strip()}")
                 cleanup_repo_dir(repo_dir)
         elif target_dir and os.path.exists(repo_dir):
             logger.warning(f"Target directory {repo_dir} exists but is not a valid git repository; cleaning up for fresh clone...")
+            cleanup_repo_dir(repo_dir)
+
+        if os.path.exists(repo_dir) and os.listdir(repo_dir):
             cleanup_repo_dir(repo_dir)
 
         # Shallow clone single branch
@@ -260,13 +269,14 @@ def shallow_clone_repo(
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=GIT_ENV)
         if res.returncode != 0:
+            if os.path.exists(repo_dir):
+                cleanup_repo_dir(repo_dir)
             # Fallback to default clone if branch failed (e.g. branch is default)
             cmd_fallback = ["git", "clone", "--depth", depth_str, auth_url, repo_dir]
             res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120, env=GIT_ENV)
             if res.returncode != 0:
                 err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
-                if not target_dir:
-                    cleanup_repo_dir(repo_dir)
+                cleanup_repo_dir(repo_dir)
                 return CloneResult(temp_dir=None, commit_sha=None, error=f"Clone failed: {err_msg}")
 
         # Get Commit SHA
@@ -275,7 +285,7 @@ def shallow_clone_repo(
 
         return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)
     except Exception as e:
-        if not target_dir:
+        if not target_dir or not os.path.exists(os.path.join(repo_dir, ".git")):
             cleanup_repo_dir(repo_dir)
         return CloneResult(temp_dir=None, commit_sha=None, error=f"Exception during git clone: {str(e)}")
 
@@ -350,11 +360,29 @@ def extract_recent_commits(repo_dir: str, limit: int = 20) -> list[Dict[str, Any
         logger.error(f"Error extracting recent commits from {repo_dir}: {e}")
         return []
 
+def _handle_remove_readonly(func, path, exc_info):
+    """Clears the read-only bit (e.g. on .git/objects/pack/* on Windows) and retries deletion."""
+    import stat
+    try:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        func(path)
+    except Exception as e:
+        logger.debug(f"Could not force-remove {path}: {e}")
+
 def cleanup_repo_dir(repo_dir: Optional[str]):
-    """Safely removes cloned temporary directory from disk."""
+    """Safely removes cloned directory from disk, handling read-only .git packfiles on Windows."""
     if repo_dir and os.path.exists(repo_dir):
         try:
-            shutil.rmtree(repo_dir, ignore_errors=True)
+            shutil.rmtree(repo_dir, onerror=_handle_remove_readonly)
+            if os.path.exists(repo_dir):
+                # If a file handle is still briefly held on Windows, move the directory aside so a fresh clone can proceed
+                import time
+                stale_path = f"{repo_dir}.stale.{int(time.time() * 1000)}"
+                try:
+                    os.replace(repo_dir, stale_path)
+                    shutil.rmtree(stale_path, onerror=_handle_remove_readonly)
+                except Exception as move_err:
+                    logger.warning(f"Failed to move locked repo directory {repo_dir}: {move_err}")
             logger.info(f"Cleaned up temporary repo directory: {repo_dir}")
         except Exception as e:
             logger.warning(f"Failed to cleanup temp directory {repo_dir}: {e}")

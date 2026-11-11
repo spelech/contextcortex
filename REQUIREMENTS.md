@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1180 Automated Tests** (820 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1184 Automated Tests** (824 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -536,7 +536,7 @@ classDiagram
 - `test_get_recent_changes_mcp_tool`
 - `test_rest_api_patch_retain_commits`
 
-#### `tests/backend/test_git_manager.py` (34 tests)
+#### `tests/backend/test_git_manager.py` (38 tests)
 - `TestGitManager::test_get_env_token`
 - `TestGitManager::test_normalize_git_url`
 - `TestGitManager::test_build_authenticated_url`
@@ -551,6 +551,8 @@ classDiagram
 - `TestGitManager::test_shallow_clone_repo_failure`
 - `TestGitManager::test_shallow_clone_repo_exception`
 - `TestGitManager::test_cleanup_repo_dir_exception`
+- `TestGitManager::test_cleanup_repo_dir_removes_readonly_files`
+- `TestGitManager::test_shallow_clone_incremental_fetch_failure_recovers_with_fresh_clone`
 - `TestGitManager::test_check_github_rate_limit_success`
 - `TestGitManager::test_check_github_rate_limit_non_200`
 - `TestGitManager::test_check_github_rate_limit_exception`
@@ -568,6 +570,8 @@ classDiagram
 - `test_shallow_clone_repo_failure`
 - `test_shallow_clone_repo_exception`
 - `test_cleanup_repo_dir_exception`
+- `test_cleanup_repo_dir_removes_readonly_files`
+- `test_shallow_clone_incremental_fetch_failure_recovers_with_fresh_clone`
 - `test_check_github_rate_limit_success`
 - `test_check_github_rate_limit_non_200`
 - `test_check_github_rate_limit_exception`
