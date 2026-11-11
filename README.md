@@ -178,7 +178,19 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 
 ---
 
-## 🚀 Running via Docker Compose (Recommended)
+## 🚀 Three Ways to Deploy ContextCortex
+
+ContextCortex supports three first-class deployment modes depending on your environment:
+
+| Deployment Mode | Relational Metadata DB | Vector Store | AI / Embeddings | Best For |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Docker / Compose** *(Recommended)* | **PostgreSQL 16** (or SQLite) | **PostgreSQL (`pgvector`)** or **Qdrant** (Remote or Embedded) | `OPENAI_API_URL` + `OPENAI_API_KEY` (with `/v1/models` discovery in UI) | Production, homelab, and multi-container setups (`docker-compose.yml` / `docker-compose.enterprise.yml`) |
+| **2. Windows Standalone Portable Bundle** | **Embedded User-Space PostgreSQL 16** (`pgvector` pre-bundled) | **Embedded `pgvector`** or **Embedded Qdrant** on local disk | `OPENAI_API_URL` + `OPENAI_API_KEY` (discovered in UI) | Zero-dependency Windows workstations or enterprise deployments without Docker (`scripts/build_portable_windows.ps1`) |
+| **3. Local Python (`venv`)** | **SQLite** (`data/index_cache.db`, zero-setup default) or external Postgres | **Embedded Qdrant** (`data/vector_storage`, zero-setup default) | `OPENAI_API_URL` + `OPENAI_API_KEY` configured in `.env` or Settings UI | Local development, rapid testing, or lightweight single-user CLI/MCP usage |
+
+---
+
+### Mode 1: Running via Docker Compose (Recommended)
 
 ContextCortex provides a production-ready multi-container configuration with **PostgreSQL 16 + pgvector**:
 
@@ -187,7 +199,7 @@ ContextCortex provides a production-ready multi-container configuration with **P
 git clone git@github.com:spelech/contextcortex.git
 cd contextcortex
 
-# 2. Copy and customize environment variables (optional)
+# 2. Copy and customize environment variables (set OPENAI_API_URL & OPENAI_API_KEY)
 cp .env.example .env
 
 # 3. Launch PostgreSQL 16 + pgvector and ContextCortex
@@ -203,7 +215,7 @@ For environments behind corporate TLS-inspecting proxies, private CA certificate
 docker compose -f docker-compose.yml -f docker-compose.enterprise.yml up -d --build
 ```
 
-### `docker-compose.yml` Architecture:
+#### `docker-compose.yml` Architecture:
 ```yaml
 version: '3.8'
 
@@ -258,16 +270,34 @@ volumes:
 
 ---
 
-## 💻 Running Locally (Bare-Metal)
+### Mode 2: Windows Standalone Portable Deployment (Embedded Everything)
 
-ContextCortex can be run directly on Linux, macOS, or Windows without Docker dependencies. By default, it operates with **zero external services required** by leveraging embedded Qdrant/ChromaDB, local SQLite (`index_cache.db`), and in-process CPU embeddings via FastEmbed/ONNX.
+For Windows environments without Docker or administrator privileges, ContextCortex can be packaged into a self-contained portable folder (`dist\contextcortex-windows-x64`) bundling:
+- Frozen `contextcortex.exe` executable (FastAPI + FastMCP + Tree-sitter AST + built React Dashboard)
+- User-space **Portable PostgreSQL 16** binaries (`initdb`, `pg_ctl`, `postgres`)
+- Pre-compiled **`pgvector`** extension (`vector.dll`) automatically initialized in `.\data\pgdata`
+- Private CA certificate auto-loader (`.\certs\*.crt`) and launcher scripts (`start-contextcortex.ps1` / `start-contextcortex.bat`)
 
-### 1. Prerequisites
+```powershell
+# Assemble the self-contained Windows x64 portable bundle
+.\scripts\build_portable_windows.ps1
+
+# Launch from the portable bundle directory
+.\dist\contextcortex-windows-x64\start-contextcortex.bat
+```
+
+---
+
+### Mode 3: Running Locally via Python (`venv`)
+
+ContextCortex can also be run directly from source on Linux, macOS, or Windows without Docker. By default, local Python mode operates with **zero external database containers required** by using embedded Qdrant (`data/vector_storage`), local SQLite (`data/index_cache.db`), and your configured OpenAI-compatible AI gateway (`OPENAI_API_URL` / `OPENAI_API_KEY`).
+
+#### 1. Prerequisites
 - **Python 3.11+**
 - **Node.js 20+** & **npm**
 - **Git** (available on system `PATH`)
 
-### 2. Automated Setup (Recommended)
+#### 2. Automated Setup (Recommended)
 
 Clone the repository and run the automated setup script for your platform:
 
@@ -304,12 +334,12 @@ cd ..
 ```
 </details>
 
-### 3. Start the Server
+#### 3. Start the Server
 ```bash
 # Activate virtual environment (if not already active)
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Run ContextCortex with embedded vector store and local SQLite database
+# Run ContextCortex with embedded Qdrant vector store and local SQLite database
 python3 main.py
 ```
 

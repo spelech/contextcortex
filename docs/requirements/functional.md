@@ -14,7 +14,7 @@ This section specifies the functional requirements for ContextCortex (`v2.20.0`)
 
 ### FR-02: Calibrated Hybrid Dense and Sparse Vector Retrieval
 - **Description**: The system must support hybrid vector search combining semantic similarity and lexical keyword matching.
-- **Embedding Generation**: The system must generate 384-dimensional dense vectors (`FastEmbed BAAI/bge-small-en-v1.5` or upstream LiteLLM/OpenAI API embeddings) and lexical sparse vectors (`BM25`).
+- **Embedding Generation**: The system must generate dense semantic vectors via the configured OpenAI-compatible AI Gateway (`OPENAI_API_URL` / `OPENAI_API_KEY`) and lexical sparse vectors (`BM25`).
 - **Calibrated Scoring & Modes**: Search queries must support `hybrid`, `semantic`, and `lexical` modes with a configurable `dense_weight` (`0.0` to `1.0`, default `0.5`), expose decomposed `dense_score` and `sparse_score` metrics, and enrich code hits with AST signatures from `ast_symbols`.
 
 ---
@@ -28,7 +28,7 @@ This section specifies the functional requirements for ContextCortex (`v2.20.0`)
 
 ### FR-04: Pluggable Vector Store Backends
 - **Description**: The system must support dynamic vector database adapters without server restarts.
-- **Engines Supported**: Qdrant (remote server and embedded disk), PostgreSQL `pgvector`, and ChromaDB.
+- **Engines Supported**: Qdrant (remote server and embedded disk) and PostgreSQL `pgvector`.
 - **Runtime Switching**: Administrators must be able to test connection health and switch active vector backends via the Settings interface or REST API (`/admin/api/vector-store/switch`).
 
 ---
@@ -50,7 +50,7 @@ This section specifies the functional requirements for ContextCortex (`v2.20.0`)
 ### FR-07: PDF Document Ingestion with Vision OCR Fallback
 - **Description**: The system must process PDF documents up to 50 megabytes in size.
 - **Text Extraction**: The system must extract digital text layers using `pypdf`.
-- **Vision OCR Fallback**: When pages contain minimal digital text or complex technical diagrams, the system must trigger optical character recognition using the configured LiteLLM vision model.
+- **Vision OCR Fallback**: When pages contain minimal digital text or complex technical diagrams, the system must trigger optical character recognition using the configured AI Gateway vision model.
 - **Preview Modal**: The system must present an interactive preview showing extracted text, sample chunks, and OCR flags before committing to vector storage.
 
 ---

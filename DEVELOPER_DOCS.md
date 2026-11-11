@@ -165,20 +165,14 @@ npm run docs:preview
 | `LOCAL_STORAGE_PATH` | Storage directory for managed local storage file uploads | `/app/data/storage` |
 | `PERSISTENT_REPOS_DIR` | Storage directory for retained shallow git clones (`keep_shallow`) | `/app/data/repos` |
 | `AUTH_ENABLED` | Enable MCP 2026-07-28 OAuth 2.1 & API Key RBAC | `false` |
-| `VECTOR_STORE_PROVIDER` | Vector database backend (`pgvector`, `qdrant`, or `chroma`) | `qdrant` |
+| `VECTOR_STORE_PROVIDER` | Vector database backend (`pgvector` or `qdrant`) | `pgvector` (Postgres) / `qdrant` (SQLite) |
 | `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` |
 | `COLLECTION_NAME` | Vector collection name | `knowledge_rag_v1` |
 | `QDRANT_URL` | URL to the remote Qdrant vector database | `http://localhost:6333` |
 | `QDRANT_STORAGE_PATH` | Storage directory for embedded Qdrant | `/app/data/qdrant_storage` |
-| `CHROMA_STORAGE_PATH` | Storage directory for embedded ChromaDB | `/app/data/chroma_db` |
-| `EMBEDDING_PROVIDER` | Embedding engine (`local` for in-process ONNX, `api` for LiteLLM/OpenAI) | `local` |
-| `EMBEDDING_MODEL` | FastEmbed dense model name | `BAAI/bge-small-en-v1.5` |
-| `SPARSE_MODEL` | FastEmbed sparse BM25 model name | `Qdrant/bm25` |
-| `LITELLM_URL` | OpenAI-compatible gateway base URL passed to the OpenAI SDK | `http://litellm:4000/v1` |
-| `LITELLM_API_KEY` | API key for the OpenAI-compatible gateway | `dummy` |
+| `OPENAI_API_URL` | OpenAI-compatible gateway base URL passed to the OpenAI SDK | `http://litellm:4000/v1` |
+| `OPENAI_API_KEY` | API key for the OpenAI-compatible gateway | `dummy` |
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
-| `CHAT_MODEL` | Chat model used for executive file summaries (configured via UI model discovery or env) | `None` |
-| `VISION_OCR_MODEL` | Vision model used for scanned PDF OCR fallback (configured via UI model discovery or env) | `None` |
 | `EXTRA_CA_CERTS_DIR` | Directory of private CA certificates (`*.crt`) trusted at container start | `/certs` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for rate limits & private repos | `None` |
 | `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |
@@ -210,13 +204,13 @@ contextcortex/
 │       ├── database/      # Relational schema, engine pool, credential vault, ADRs, sync configs
 │       ├── indexing/      # Git/local syncers, file processor, state notifications
 │       ├── topology/      # Graph topology builder, node details, BFS helpers
-│       ├── vector_store/  # pgvector, Qdrant, and ChromaDB pluggable vector store implementations
+│       ├── vector_store/  # pgvector and Qdrant pluggable vector store implementations
 │       ├── navigator.py   # High-performance codebase tree, outline & impact intelligence
 │       ├── omni_search.py # Unified fuzzy command palette search for files, repos, and symbols
 │       ├── file_reader.py # Safe full-file source and markdown content resolution from disk
 │       ├── local_storage.py# Safe path resolution, disk file persistence, and tree inspection
 │       ├── git_manager.py # Shallow git clone (ephemeral & persistent), token masking, permalinks
-│       ├── embeddings.py  # FastEmbed dense (384d) & sparse BM25 multi-vector engine
+│       ├── embeddings.py  # OpenAI-compatible dense & sparse BM25 multi-vector engine
 │       ├── llm_client.py  # Shared OpenAI-compatible gateway config, URL builder & header validator
 │       ├── litellm_service.py # Model discovery, API embeddings & gateway health checks
 │       ├── summarizer.py  # Large-file executive LLM summarization service

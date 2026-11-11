@@ -39,7 +39,7 @@ flowchart TD
 
     subgraph StorageLayer["Pluggable Storage Layer"]
         RelationalDB[("SQLAlchemy 2.0 Unified DB<br/>(PostgreSQL 16 / SQLite WAL)")]
-        VectorDB[("Vector Storage Engines<br/>(Qdrant / pgvector / ChromaDB)")]
+        VectorDB[("Vector Storage Engines<br/>(Qdrant / pgvector)")]
         ManagedDisk[("Managed Disk & Repo Cache<br/>(/app/data/storage & /app/data/repos)")]
     end
 
@@ -94,7 +94,7 @@ flowchart TD
 ### 3. Core Processing Services
 - **Universal Git Manager (`app/services/git_manager.py`)**: Handles authenticated shallow repository clones (`--depth 1`) across GitHub, GitLab, Gitea, Forgejo, Bitbucket, and generic Git hosts, supporting both ephemeral deletion and persistent shallow retention (`keep_shallow`).
 - **Tree-sitter Chunking Package (`app/services/chunking/`)**: Parses 10 programming languages to extract AST declarations, parameter signatures, REST API routes, HTTP client calls, and caller/callee relationships.
-- **Embedding & Gateway Engine (`app/services/embeddings.py`, `llm_client.py`, `litellm_service.py`)**: Generates 384-dimensional dense vectors (`FastEmbed BAAI/bge-small-en-v1.5` or upstream LiteLLM/OpenAI API embeddings) and sparse BM25 lexical vectors, while enforcing versioned gateway URL resolution, CR/LF-validated extra request headers (`LLM_EXTRA_HEADERS`), and database-backed settings fallback.
+- **Embedding & Gateway Engine (`app/services/embeddings.py`, `llm_client.py`, `litellm_service.py`)**: Generates dense semantic vectors via the configured OpenAI-compatible AI Gateway (`OPENAI_API_URL` / `OPENAI_API_KEY`) and sparse BM25 lexical vectors, while enforcing versioned gateway URL resolution, CR/LF-validated extra request headers (`LLM_EXTRA_HEADERS`), and database-backed settings fallback.
 - **Calibrated Hybrid Search Engine (`app/services/search.py`)**: Fuses dense cosine similarity and sparse BM25 lexical scores using configurable hybrid weights (`dense_weight`, `mode`), decomposes component scores (`dense_score`, `sparse_score`), and enriches code matches with AST signatures from `ast_symbols`.
 - **Codebase Navigator, File Reader & Summarizer (`navigator.py`, `omni_search.py`, `file_reader.py`, `summarizer.py`)**: Powers directory trees, symbol outlines, `Ctrl+K` Omni-Search, full syntax-highlighted file reading, and LLM executive summaries for large files with automatic client refresh when gateway settings change.
 - **PDF Extraction Service (`app/services/pdf_extractor.py`)**: Extracts digital text from PDF files with automated AI vision OCR fallback for scanned pages and embedded architectural diagrams.
@@ -102,7 +102,7 @@ flowchart TD
 
 ### 4. Pluggable Storage Layer
 - **Unified Relational Database**: SQLAlchemy 2.0 Core schema operating identically over PostgreSQL 16 (`psycopg3` connection pool) and SQLite (WAL mode).
-- **Pluggable Vector Store**: Runtime-switchable vector adapters for Qdrant (embedded or remote), PostgreSQL `pgvector` (HNSW cosine index), and ChromaDB.
+- **Pluggable Vector Store**: Runtime-switchable vector adapters for Qdrant (embedded or remote) and PostgreSQL `pgvector` (HNSW cosine index).
 
 ---
 

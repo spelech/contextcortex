@@ -1,6 +1,6 @@
 # Architecture: ContextCortex (v2.20.0)
 
-ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, architecture documents, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, pluggable relational and vector store backends (PostgreSQL 16 with pgvector, Qdrant, ChromaDB, and SQLite), automatic polling daemons, multi-provider webhooks, interactive dependency topology graph explorer, RFC 9728 OAuth 2.1 Protected Resource Server, 3-tier API key RBAC, and a React 19 administrative dashboard.
+ContextCortex provides fast, local, syntax-aware semantic and hybrid search over codebases, git repositories, markdown notes, architecture documents, and system documentation. It is built natively on the **Model Context Protocol (MCP) SDK 2.0.0+** using `FastMCP`, with an integrated FastAPI web engine, real-time diagnostic logging, pluggable relational and vector store backends (PostgreSQL 16 with `pgvector`, Qdrant, and SQLite), automatic polling daemons, multi-provider webhooks, interactive dependency topology graph explorer, RFC 9728 OAuth 2.1 Protected Resource Server, 3-tier API key RBAC, and a React 19 administrative dashboard.
 
 All backend services and frontend components are modularized into cohesive packages with a strict **sub-500 LOC per file** maintainability floor.
 
@@ -50,7 +50,6 @@ flowchart TD
             VSManager["manager.py"]
             PgVectorStore["pgvector_store.py (HNSW Cosine)"]
             QdrantStore["qdrant_store.py (Dense + BM25)"]
-            ChromaStore["chroma_store.py"]
         end
 
         subgraph ChunkingPkg["app/services/chunking/"]
@@ -79,7 +78,7 @@ flowchart TD
         FileReaderSrv["Source & Doc Reader (file_reader.py)<br/>Full Code & Markdown Content Delivery"]
         LocalStorageSrv["Local Storage Service (local_storage.py)<br/>Path Traversal Defense & File Trees"]
         GitMgr["Universal Shallow Git Ingestion (git_manager.py)<br/>Ephemeral & Persistent Clones"]
-        Embeddings["FastEmbed & Gateway Engine (embeddings.py, llm_client.py)<br/>Dense (384d) + Sparse BM25 + Extra Headers"]
+        Embeddings["AI Gateway & Embedding Engine (embeddings.py, llm_client.py)<br/>OpenAI-Compatible Dense + Sparse BM25 + Extra Headers"]
         Search["Calibrated Hybrid Search (search.py)"]
         Poller["Auto-Sync Poller Daemon (poller.py)"]
         ADRService["ADR Parser & Lifecycle (adr.py)"]
@@ -93,7 +92,6 @@ flowchart TD
         subgraph VectorEngines["Vector Search Backends"]
         PgV["pgvector (HNSW Cosine)"]
         Qdrant["Qdrant (Hybrid Dense+BM25)"]
-        Chroma["ChromaDB (Embedded/Remote)"]
         end
         LocalStorageDir[("Managed Local Storage<br/>(DATA_DIR/storage)")]
         PersistentRepoDir[("Persistent Shallow Clones<br/>(DATA_DIR/repos/{repo_name})")]
@@ -207,10 +205,8 @@ flowchart TD
   - Parameterized chunked batch upserts with `ON CONFLICT (id) DO UPDATE`.
 - **Qdrant Backend (`qdrant_store.py`)**:
   - Embedded disk and remote server support with dense + sparse BM25 multi-vectors and Reciprocal Rank Fusion (RRF).
-- **ChromaDB Backend (`chroma_store.py`)**:
-  - Lightweight persistent disk or remote vector store.
 - **Vector Store Manager (`manager.py`)**:
-  - Singleton provider supporting dynamic runtime backend switching across `pgvector`, `qdrant`, and `chroma`.
+  - Singleton provider supporting dynamic runtime backend switching across `pgvector` and `qdrant`.
 
 ---
 

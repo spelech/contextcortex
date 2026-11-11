@@ -65,7 +65,7 @@ Performs deterministic sub-50ms symbol lookup from the relational `ast_symbols` 
 
 - **Minimum Role**: `viewer`
 - **Parameters**:
-  - `name` (*string, required*): Symbol identifier to find (e.g. `FastEmbedEngine` or `execute_hybrid_search`).
+  - `name` (*string, required*): Symbol identifier to find (e.g. `QdrantVectorStore` or `execute_hybrid_search`).
   - `repo` (*string, optional*): Repository alias filter.
   - `exact` (*boolean, default: true*): Perform exact matching when `true`, prefix/fuzzy matching when `false`.
   - `limit` (*integer, default: 10*): Maximum matches to return.
@@ -141,7 +141,7 @@ Returns global index health, vector collection statistics, active embedding mode
 
 - **Minimum Role**: `viewer`
 - **Parameters**: None.
-- **Returns**: Active vector store provider (`qdrant`, `pgvector`, `chroma`), total vector count, dense/sparse model names, and rate limit counters.
+- **Returns**: Active vector store provider (`qdrant` or `pgvector`), total vector count, dense/sparse model names, and rate limit counters.
 
 ### 11. `get_architecture`
 Synthesizes a high-level architectural overview of a repository or the entire indexed workspace.

@@ -37,26 +37,15 @@ build time and from the read-only `/certs` mount at runtime. Registry trust used
 by Docker to pull images must also be configured in Docker Desktop/the daemon;
 certificates copied into an image cannot fix the daemon's registry trust.
 
-Create your runtime `.env` from `.env.example` and configure the approved gateway:
+Create your runtime `.env` from `.env.example` and configure the approved OpenAI-compatible gateway:
 
 ```dotenv
-EMBEDDING_PROVIDER=api
-LITELLM_URL=https://gateway.example.com/api/v3
-LITELLM_API_KEY=replace-with-your-issued-key
+OPENAI_API_URL=https://gateway.example.com/api/v3
+OPENAI_API_KEY=replace-with-your-issued-key
 LLM_EXTRA_HEADERS={"X-User-Agent":"contextcortex","X-User-Name":"your-service-identity"}
-EMBEDDING_MODEL=your-approved-embedding-model
-CHAT_MODEL=your-approved-chat-model
-VISION_OCR_MODEL=your-approved-vision-model
 ```
 
-Use the headers and models actually required by your gateway. These are examples,
-not organization-specific defaults. Database-persisted settings take priority
-after initial seeding; update existing settings in the UI when changing gateway
-configuration. Even API embedding mode attempts a local sparse model. Provision
-its assets or allow its approved download source; do not assume gateway mode
-eliminates all model downloads. The selected parser-package version may also
-need grammar assets. Verify actual AST extraction and hybrid search, not just
-the health endpoint.
+Use the headers actually required by your gateway. After starting the container, open **Settings** → **AI & Model Gateway** in the Web Admin Dashboard, click **Test Connection & Discover Models** (`/admin/api/models/discover`), and select your approved **Embedding**, **Chat Completion**, and **Vision OCR** models from the discovered `/models` list. Database-persisted settings take priority after initial seeding; update existing settings in the UI when changing gateway configuration. Verify actual AST extraction and hybrid search, not just the health endpoint.
 
 Keep package-registry credentials in a local `.secrets` directory (ignored by Git
 and excluded from the Docker context), or outside the checkout. Pass them using

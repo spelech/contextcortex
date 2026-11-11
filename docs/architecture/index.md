@@ -17,7 +17,7 @@ ContextCortex adheres to these core design principles:
    The relational layer supports both SQLite in Write-Ahead Logging (WAL) mode and PostgreSQL 16 with native pgvector indexing.
 
 3. **Pluggable Vector Store Backends**:
-   Vector storage adapters isolate search engines from application logic. Administrators can switch between Qdrant, pgvector, and ChromaDB without application restarts.
+   Vector storage adapters isolate search engines from application logic. Administrators can switch between Qdrant and `pgvector` without application restarts.
 
 4. **Configurable Shallow Repository Ingestion**:
    The system clones remote repositories using shallow clones (`--depth 1`). Administrators can choose between ephemeral clones (purged immediately after AST and vector extraction to conserve disk storage) and persistent shallow clones (`keep_shallow=1` in `/app/data/repos/{repo_name}`) for instant source inspection and fast delta updates.

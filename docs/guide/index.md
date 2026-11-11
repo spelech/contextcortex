@@ -26,7 +26,7 @@ The system chunks source code along function, class, and method boundaries. Each
 The persistence layer supports PostgreSQL 16 with `pgvector` for production deployments and SQLite with Write-Ahead Logging (WAL) for zero-dependency local operation.
 
 ### Calibrated Hybrid Vector Retrieval
-ContextCortex connects to Qdrant, ChromaDB, and PostgreSQL `pgvector`. Queries support `hybrid`, `semantic`, and `lexical` modes with a configurable `dense_weight` (`0.0` to `1.0`, default `0.5`) and transparent score decomposition (`dense_score` and `sparse_score`).
+ContextCortex connects to Qdrant and PostgreSQL `pgvector`. Queries support `hybrid`, `semantic`, and `lexical` modes with a configurable `dense_weight` (`0.0` to `1.0`, default `0.5`) and transparent score decomposition (`dense_score` and `sparse_score`).
 
 ### Universal Git Ingestion & Shallow Retention
 The system indexes repositories from GitHub, GitLab, Gitea, Forgejo, Bitbucket, and generic Git hosts. Administrators can choose between ephemeral shallow clones (`--depth 1`, deleted after indexing) and persistent shallow clones (`keep_shallow`) for instant full-file inspection and fast delta fetches.
@@ -50,8 +50,8 @@ ContextCortex natively supports corporate and restricted-network environments:
 
 ## Documentation Roadmap
 
-- **[Getting Started](/guide/getting-started)**: Install ContextCortex via automated setup scripts, manual virtual environments, or Docker Compose.
-- **[Configuration](/guide/configuration)**: Configure environment variables, database profiles, vector stores, and LiteLLM model discovery.
+- **[Getting Started](/guide/getting-started)**: Deploy ContextCortex via Docker Compose, Windows Standalone Portable Bundle, or Local Python (`venv`).
+- **[Configuration](/guide/configuration)**: Configure `OPENAI_API_URL` / `OPENAI_API_KEY`, database profiles, vector stores (`Qdrant` & `pgvector`), and in-app `/v1/models` discovery.
 - **[Restricted-Network Builds](/guide/enterprise-build)**: Configure private CA certificates, internal package mirrors (`APT_MIRROR`, `PIP_INDEX_URL`, `NPM_REGISTRY`), and verified local image overlays.
 - **[User Guide](/guide/user-guide)**: Explore all 9 Web Admin Dashboard modules with step-by-step instructions and screenshots.
 - **[System Architecture](/architecture/)**: Review component diagrams, AST ingestion pipelines, MCP protocol flows, and database ERDs.

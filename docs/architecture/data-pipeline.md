@@ -70,7 +70,7 @@ ContextCortex combines dense semantic embeddings and sparse lexical BM25 embeddi
 
 ```mermaid
 flowchart LR
-    Query["Search Query<br/>(query, mode, dense_weight)"] --> DenseEng["Dense Embedding Engine<br/>(FastEmbed 384d / LiteLLM)"]
+    Query["Search Query<br/>(query, mode, dense_weight)"] --> DenseEng["Dense Embedding Engine<br/>(OpenAI-Compatible Gateway)"]
     Query --> SparseEng["Sparse Lexical Engine<br/>(BM25 Token Weights)"]
     DenseEng --> DenseSearch["Normalized Cosine Score<br/>(dense_score in 0.0..1.0)"]
     SparseEng --> SparseSearch["Normalized BM25 Score<br/>(sparse_score in 0.0..1.0)"]

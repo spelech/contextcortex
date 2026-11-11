@@ -13,7 +13,7 @@ The system connects AI coding agents (such as Cursor, Claude Desktop, Antigravit
 ContextCortex provides:
 - Abstract Syntax Tree (AST) code chunking across 10 programming languages.
 - Dual relational storage engines (PostgreSQL 16 and SQLite WAL).
-- Pluggable vector database backends (Qdrant, `pgvector`, and ChromaDB).
+- Pluggable vector database backends (`Qdrant` and `pgvector`).
 - Calibrated hybrid semantic and lexical retrieval (`dense_weight`, `mode`) with score decomposition and AST signature enrichment.
 - Universal Git repository synchronization with configurable ephemeral or persistent shallow clones (`keep_shallow`).
 - Managed local storage with automated PDF text extraction, AI vision OCR fallback, and large-file executive summarization.

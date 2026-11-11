@@ -35,9 +35,9 @@ This section specifies the non-functional requirements and quality attributes fo
 
 ---
 
-### NFR-06: Resource Boundaries and Thread Capping
-- **Requirement**: On-device FastEmbed ONNX embedding generation must not starve host CPU resources.
-- **Thread Cap**: The ONNX runtime worker thread count must default to `min(2, N_cpu)`, with user overrides available via `EMBEDDING_NUM_THREADS`.
+### NFR-06: Resource Boundaries and Batch Capping
+- **Requirement**: Embedding generation and background indexing must not starve host CPU or memory resources.
+- **Batch & Thread Cap**: Embedding requests must be batched according to `EMBEDDING_BATCH_SIZE` (default `32`), and any local worker thread count must default to `min(2, N_cpu)`.
 
 ---
 
