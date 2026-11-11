@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1171 Automated Tests** (813 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1172 Automated Tests** (814 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -749,11 +749,14 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_node_details_not_found` - _Test 404 response for invalid node id._
 - `test_topology_performance_benchmark` - _Test performance benchmark ensuring graph construction of 500+ items executes quickly._
 
-#### `tests/backend/test_trace_path.py` (5 tests)
+#### `tests/backend/test_trace_path.py` (6 tests)
 - `test_direct_and_mutual_recursion_termination`
 - `test_depth_clamping_and_limit_truncation`
 - `test_database_query_performance`
 - `test_trace_path_mcp_tool_execution`
+- `test_cross_repo_boundary_resolution` - _Unit tests verifying cross-repo boundary resolution:
+- Tracing a backend handler symbol in repo_b includes external_callers from repo_a via api_routes <-> api_client_calls matching.
+- Tracing a client symbol in repo_a includes external_handlers in repo_b, while keeping AST BFS expansion scoped to repo_a._
 - `test_trace_path_over_http_transport`
 
 #### `tests/backend/test_vector_store_base.py` (7 tests)
