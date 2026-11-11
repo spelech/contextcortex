@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.1](https://github.com/spelech/contextcortex/compare/v2.21.0...v2.21.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **portable:** make the Windows x64 portable bundle start on Windows ([#108](https://github.com/spelech/contextcortex/issues/108)) ([38d2abe](https://github.com/spelech/contextcortex/commit/38d2abeaed68991a2c85d712b975cd0266ea0e69))
+
 ## [2.21.0](https://github.com/spelech/contextcortex/compare/v2.20.0...v2.21.0) (2026-11-11)
 
 
