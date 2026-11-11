@@ -5,6 +5,7 @@ from collections import deque
 from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
 from app.services.topology.helpers import _clean_filepath, _get_permalink
+from app.services.chunking import match_route_and_call
 
 logger = logging.getLogger("contextcortex.topology")
 import sys
@@ -203,15 +204,32 @@ def get_topology_graph(
                 add_edge(rt_id, s_id, "HANDLES", r["start_line"])
 
     # ROUTES_TO Edges: Client Call -> Route
+    def _methods_match(m1: Optional[str], m2: Optional[str]) -> bool:
+        if not m1 or not m2:
+            return True
+        u1, u2 = m1.upper(), m2.upper()
+        return u1 == "ALL" or u2 == "ALL" or u1 == u2
+
     for c in call_rows:
         c_pattern = c["url_pattern"]
-        matched_route_ids = routes_by_pattern.get((c["repo"], c_pattern), [])
-        if not matched_route_ids:
-            for (rt_repo, rt_pat), rt_ids in routes_by_pattern.items():
-                if rt_pat == c_pattern or c_pattern.rstrip("/") == rt_pat.rstrip("/"):
-                    matched_route_ids = rt_ids
-                    break
-        
+        matched_route_ids = []
+
+        # First try exact match in the same repo
+        matched_route_ids.extend(routes_by_pattern.get((c["repo"], c_pattern), []))
+
+        # Cross-repo or pattern matching via match_route_and_call
+        c_method = c["http_method"] if "http_method" in c.keys() else None
+        for r in route_rows:
+            rt_id = route_id_by_db_id.get(r["id"])
+            if not rt_id or rt_id in matched_route_ids:
+                continue
+            # When repo is scoped to single repo, only link within repo unless __all__
+            if repo != "__all__" and r["repo"] != c["repo"]:
+                continue
+            r_method = r["http_method"] if "http_method" in r.keys() else None
+            if _methods_match(r_method, c_method) and match_route_and_call(r["path_pattern"], c_pattern):
+                matched_route_ids.append(rt_id)
+
         # Source of client call (caller symbol or file)
         clean_c_fp = _clean_filepath(c["filepath"])
         caller_node_id = None

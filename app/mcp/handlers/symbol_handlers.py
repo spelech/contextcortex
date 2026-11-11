@@ -85,7 +85,7 @@ async def handle_trace_path(
         )
     except Exception as e:
         logger.error(f"trace_path tool execution failed: {e}")
-        return f"Error executing trace_path: {str(e)}"
+        return json.dumps({"error": f"Error executing trace_path: {str(e)}"})
 
 
 
