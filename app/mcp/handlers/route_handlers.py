@@ -27,7 +27,7 @@ async def handle_find_routes(
 ) -> str:
     """List or search API endpoints and HTTP route handlers across registered repositories."""
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             sql = "SELECT r.id, r.repo, r.filepath, r.framework, r.http_method, r.path_pattern, r.handler_symbol, r.start_line, r.end_line, g.url as git_url, g.commit_sha, g.provider FROM api_routes r LEFT JOIN git_repositories g ON r.repo = g.name WHERE 1=1"
@@ -49,23 +49,33 @@ async def handle_find_routes(
             sql += f" ORDER BY r.repo ASC, r.path_pattern ASC LIMIT {limit}"
             rows = conn.execute(sql, params).fetchall()
 
-        if not rows:
-            return f"No API routes found matching query: '{query or ''}'."
-
-        lines = [f"Found {len(rows)} matching API endpoints:\n"]
+        routes = []
         for r in rows:
             rel_path = r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]
             permalink = format_git_permalink(r["git_url"], r["commit_sha"], rel_path, r["start_line"], r["end_line"], provider=r["provider"])
-            handler_str = f" Handler: `{r['handler_symbol']}`" if r["handler_symbol"] else ""
-            lines.append(
-                f"- **[{r['http_method']}] `{r['path_pattern']}`** ({r['framework']}) in `[{r['repo']}] {rel_path}` (Lines {r['start_line']}-{r['end_line']}){handler_str}\n"
-                f"  Permalink: {permalink}"
-            )
+            routes.append({
+                "repo": r["repo"],
+                "method": r["http_method"],
+                "path": r["path_pattern"],
+                "framework": r["framework"],
+                "handler": r["handler_symbol"],
+                "file": rel_path,
+                "lines": [r["start_line"], r["end_line"]],
+                "permalink": permalink,
+            })
 
-        return "\n".join(lines)
+        return json.dumps({
+            "query": (query or "").strip() or None,
+            "method": method.strip().upper() if method and method.strip() else None,
+            "repo": repo.strip() if repo and repo.strip() else None,
+            "routes": routes,
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_find_routes: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"find_routes failed: {e}")
-        return f"Error searching API routes: {str(e)}"
+        return json.dumps({"error": f"Error searching API routes: {str(e)}"})
 
 
 async def handle_find_api_callers(
@@ -76,10 +86,10 @@ async def handle_find_api_callers(
     """Find client call sites and services that invoke a specific API endpoint or URL pattern."""
     target_path = path.strip() if path else ""
     if not target_path:
-        return "Error: endpoint path cannot be empty."
+        return json.dumps({"error": "endpoint path cannot be empty."})
 
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             sql = "SELECT c.id, c.repo, c.filepath, c.http_method, c.url_pattern, c.caller_symbol, c.line_number, g.url as git_url, g.commit_sha, g.provider FROM api_client_calls c LEFT JOIN git_repositories g ON c.repo = g.name WHERE 1=1"
@@ -102,23 +112,28 @@ async def handle_find_api_callers(
             if match_route_and_call(target_path, r["url_pattern"]):
                 matching_calls.append(r)
 
-        if not matching_calls:
-            return f"No client call sites found invoking endpoint pattern: '{target_path}'."
-
-        lines = [f"Found {len(matching_calls)} call sites invoking endpoint `{target_path}`:\n"]
+        callers = []
         for c in matching_calls:
             rel_path = c["filepath"].split("://", 1)[1] if "://" in c["filepath"] else c["filepath"]
             permalink = format_git_permalink(c["git_url"], c["commit_sha"], rel_path, c["line_number"], c["line_number"], provider=c["provider"])
-            caller_str = f" Caller: `{c['caller_symbol']}`" if c["caller_symbol"] else ""
-            method_str = f"[{c['http_method']}] " if c["http_method"] else ""
-            lines.append(
-                f"- **{method_str}`{c['url_pattern']}`** in `[{c['repo']}] {rel_path}` (Line {c['line_number']}){caller_str}\n"
-                f"  Permalink: {permalink}"
-            )
+            callers.append({
+                "repo": c["repo"],
+                "method": c["http_method"],
+                "url": c["url_pattern"],
+                "caller": c["caller_symbol"],
+                "file": rel_path,
+                "line": c["line_number"],
+                "permalink": permalink,
+            })
 
-        return "\n".join(lines)
+        return json.dumps({
+            "path": target_path,
+            "method": target_method_clean,
+            "callers": callers,
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_find_api_callers: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"find_api_callers failed: {e}")
-        return f"Error searching API callers: {str(e)}"
-
-
+        return json.dumps({"error": f"Error searching API callers: {str(e)}"})

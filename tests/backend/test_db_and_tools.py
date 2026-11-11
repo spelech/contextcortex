@@ -108,8 +108,11 @@ def test_token_sources(temp_db):
 
 @pytest.mark.asyncio
 async def test_handle_search_code():
+    import json
     mock_hit = MagicMock()
     mock_hit.score = 0.05
+    mock_hit.dense_score = None
+    mock_hit.sparse_score = None
     mock_hit.payload = {
         "repo": "test-repo",
         "rel_path": "server.py",
@@ -122,29 +125,32 @@ async def test_handle_search_code():
     }
 
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]):
-        res = await handle_search_code(query="run server", repo="test-repo", language="python")
-        assert "server.py" in res
-        assert "run_server" in res
-        assert "Relevance Score: 0.0500 (5.0%)" in res
+        res = json.loads(await handle_search_code(query="run server", repo="test-repo", language="python"))
+        assert res["results"][0]["file"] == "server.py"
+        assert res["results"][0]["symbol"] == "run_server"
+        assert res["results"][0]["score"] == 0.05
 
     # No results
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[]):
-        res = await handle_search_code(query="nonexistent")
-        assert "No matching code snippets found" in res
+        res = json.loads(await handle_search_code(query="nonexistent"))
+        assert res["results"] == []
 
     # Empty query
-    res_empty = await handle_search_code(query="")
-    assert "Error: search query cannot be empty" in res_empty
+    res_empty = json.loads(await handle_search_code(query=""))
+    assert "search query cannot be empty" in res_empty["error"]
 
     # Error during search
     with patch("app.mcp.tools.execute_hybrid_search", side_effect=Exception("Hybrid search crash")):
-        res_err = await handle_search_code(query="crash test")
-        assert "Error executing code search" in res_err
+        res_err = json.loads(await handle_search_code(query="crash test"))
+        assert "Error executing code search" in res_err["error"]
 
 @pytest.mark.asyncio
 async def test_handle_search_docs():
+    import json
     mock_hit = MagicMock()
     mock_hit.score = 0.04
+    mock_hit.dense_score = None
+    mock_hit.sparse_score = None
     mock_hit.payload = {
         "repo": "docs",
         "rel_path": "arch.md",
@@ -155,29 +161,30 @@ async def test_handle_search_docs():
     }
 
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]):
-        res = await handle_search_docs(query="architecture", category="arch", tag="design")
-        assert "arch.md" in res
-        assert "Overview of architecture" in res
-        assert "Source Link" in res
-        assert "Relevance Score: 0.0400 (4.0%)" in res
+        res = json.loads(await handle_search_docs(query="architecture", category="arch", tag="design"))
+        assert res["results"][0]["file"] == "arch.md"
+        assert "Overview of architecture" in res["results"][0]["content"]
+        assert res["results"][0]["permalink"] == "https://github.com/docs/arch.md"
+        assert res["results"][0]["score"] == 0.04
 
     # Empty query
-    res_empty = await handle_search_docs(query="")
-    assert "Error: search query cannot be empty" in res_empty
+    res_empty = json.loads(await handle_search_docs(query=""))
+    assert "search query cannot be empty" in res_empty["error"]
 
     # No hits
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[]):
-        res_nohit = await handle_search_docs(query="not_found")
-        assert "No matching documentation found" in res_nohit
+        res_nohit = json.loads(await handle_search_docs(query="not_found"))
+        assert res_nohit["results"] == []
 
     # Search error
     with patch("app.mcp.tools.execute_hybrid_search", side_effect=Exception("Doc search crash")):
-        res_err = await handle_search_docs(query="crash")
-        assert "Error executing doc search" in res_err
+        res_err = json.loads(await handle_search_docs(query="crash"))
+        assert "Error executing doc search" in res_err["error"]
 
 @pytest.mark.asyncio
 async def test_handle_search_code_and_docs_real_integration(tmp_path):
     """Real un-mocked verification of handle_search_code and handle_search_docs MCP tools."""
+    import json
     storage_path = str(tmp_path / "qdrant_tools_test")
     collection_name = "test_tools_rag"
 
@@ -222,20 +229,21 @@ async def test_handle_search_code_and_docs_real_integration(tmp_path):
     assert store.upsert_documents([doc1, doc2]) is True
 
     # Real un-mocked code search via MCP tool
-    res_code = await handle_search_code(query="authenticate JWT user", repo="gateway-core")
-    assert "app/auth.py" in res_code
-    assert "authenticate_jwt_user" in res_code
-    assert "Validates bearer JWT token" in res_code
-    assert "Relevance Score" in res_code
+    res_code = json.loads(await handle_search_code(query="authenticate JWT user", repo="gateway-core"))
+    assert res_code["results"][0]["file"] == "app/auth.py"
+    assert res_code["results"][0]["symbol"] == "authenticate_jwt_user"
+    assert "Validates bearer JWT token" in res_code["results"][0]["content"]
+    assert "score" in res_code["results"][0]
 
     # Real un-mocked doc search via MCP tool
-    res_doc = await handle_search_docs(query="hybrid BM25 retrieval", repo="docs-vault")
-    assert "docs/architecture.md" in res_doc
-    assert "System Architecture" in res_doc
-    assert "Relevance Score" in res_doc
+    res_doc = json.loads(await handle_search_docs(query="hybrid BM25 retrieval", repo="docs-vault"))
+    assert res_doc["results"][0]["file"] == "docs/architecture.md"
+    assert res_doc["results"][0]["heading"] == "System Architecture"
+    assert "score" in res_doc["results"][0]
 
 @pytest.mark.asyncio
 async def test_handle_find_symbol(temp_db):
+    import json
     with get_db_connection() as conn:
         conn.execute(
             "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -244,29 +252,30 @@ async def test_handle_find_symbol(temp_db):
         conn.commit()
 
     # Exact match
-    res = await handle_find_symbol(name="authenticate", exact=True, repo="my-repo")
-    assert "AuthService.authenticate" in res or "authenticate" in res
-    assert "src/auth.py" in res
+    res = json.loads(await handle_find_symbol(name="authenticate", exact=True, repo="my-repo"))
+    assert res["symbols"][0]["symbol"] == "AuthService.authenticate"
+    assert res["symbols"][0]["file"] == "src/auth.py"
 
     # Fuzzy match
-    res_fuzzy = await handle_find_symbol(name="auth", exact=False, repo="my-repo")
-    assert "Found 1 matching symbols" in res_fuzzy
+    res_fuzzy = json.loads(await handle_find_symbol(name="auth", exact=False, repo="my-repo"))
+    assert len(res_fuzzy["symbols"]) == 1
 
     # Empty name
-    res_empty = await handle_find_symbol(name="")
-    assert "Error: symbol name cannot be empty" in res_empty
+    res_empty = json.loads(await handle_find_symbol(name=""))
+    assert "symbol name cannot be empty" in res_empty["error"]
 
     # Not found
-    res_nf = await handle_find_symbol(name="not_found", exact=True)
-    assert "No symbols found matching" in res_nf
+    res_nf = json.loads(await handle_find_symbol(name="not_found", exact=True))
+    assert res_nf["symbols"] == []
 
     # DB exception
     with patch("app.mcp.tools.get_db_connection", side_effect=Exception("AST DB error")):
-        res_err = await handle_find_symbol(name="anything")
-        assert "Error finding symbol" in res_err
+        res_err = json.loads(await handle_find_symbol(name="anything"))
+        assert "Error finding symbol" in res_err["error"]
 
 @pytest.mark.asyncio
 async def test_handle_get_file_outline(temp_db):
+    import json
     with get_db_connection() as conn:
         conn.execute(
             "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -274,55 +283,60 @@ async def test_handle_get_file_outline(temp_db):
         )
         conn.commit()
 
-    res = await handle_get_file_outline(filepath="src/auth.py", repo="my-repo")
-    assert "File Outline: src/auth.py" in res
-    assert "authenticate" in res
+    res = json.loads(await handle_get_file_outline(filepath="src/auth.py", repo="my-repo"))
+    assert res["file"] == "src/auth.py"
+    assert res["symbols"][0]["name"] == "authenticate"
 
-    res_empty = await handle_get_file_outline(filepath="nonexistent.py")
-    assert "No outline available" in res_empty
+    res_empty = json.loads(await handle_get_file_outline(filepath="nonexistent.py"))
+    assert res_empty["symbols"] == []
 
     with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Outline query error")):
-        res_err = await handle_get_file_outline(filepath="src/auth.py")
-        assert "Failed to get outline" in res_err
+        res_err = json.loads(await handle_get_file_outline(filepath="src/auth.py"))
+        assert "Failed to get outline" in res_err["error"]
 
 @pytest.mark.asyncio
 async def test_handle_list_repositories(temp_db):
+    import json
     with get_db_connection() as conn:
         conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status, last_synced) VALUES ('repo-a', 'http://url', 'main', 'abcdef1234', 'synced', '2026-08-17')")
         conn.execute("INSERT INTO indexed_paths (path, repo, category, enabled) VALUES ('/local/path', 'local-repo', 'notes', 1)")
         conn.execute("INSERT INTO indexed_files (filepath, repo, doc_type, language) VALUES ('/local/path/f.md', 'local-repo', 'doc', 'markdown')")
         conn.commit()
 
-    res = await handle_list_repositories()
-    assert "repo-a" in res
-    assert "local-repo" in res
+    res = json.loads(await handle_list_repositories())
+    assert any(r["name"] == "repo-a" for r in res["git_repositories"])
+    assert any(lp["repo"] == "local-repo" for lp in res["local_paths"])
 
     with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Repo list error")):
-        res_err = await handle_list_repositories()
-        assert "Error listing repositories" in res_err
+        res_err = json.loads(await handle_list_repositories())
+        assert "Error listing repositories" in res_err["error"]
 
 @pytest.mark.asyncio
 async def test_handle_sync_repository(temp_db):
+    import json
     with patch("app.services.indexing.run_full_indexing"), \
          patch("app.services.indexing.sync_single_git_repo"):
         # Sync all
-        res_all = await handle_sync_repository()
-        assert "Triggered full background re-indexing" in res_all
+        res_all = json.loads(await handle_sync_repository())
+        assert res_all["status"] == "triggered"
+        assert res_all["scope"] == "full"
 
         # Sync specific repo
         with get_db_connection() as conn:
             conn.execute("INSERT INTO git_repositories (name, url, branch, status) VALUES ('repo-b', 'http://url', 'main', 'synced')")
             conn.commit()
 
-        res_repo = await handle_sync_repository(repo="repo-b")
-        assert "Triggered background sync for repo: 'repo-b'" in res_repo
+        res_repo = json.loads(await handle_sync_repository(repo="repo-b"))
+        assert res_repo["status"] == "triggered"
+        assert res_repo["repo"] == "repo-b"
 
     with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Sync crash")):
-        res_err = await handle_sync_repository(repo="repo-b")
-        assert "Failed to trigger sync" in res_err
+        res_err = json.loads(await handle_sync_repository(repo="repo-b"))
+        assert "Failed to trigger sync" in res_err["error"]
 
 @pytest.mark.asyncio
 async def test_handle_index_status(temp_db):
+    import json
     mock_vs_cfg = {
         "provider": "qdrant",
         "mode": "embedded",
@@ -334,36 +348,37 @@ async def test_handle_index_status(temp_db):
     with patch("app.mcp.tools.get_vector_store_config", return_value=mock_vs_cfg), \
          patch("app.services.database.get_effective_git_token", return_value=("ghp_token123", None, "Database (Github)")), \
          patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
-        res = await handle_index_status()
-        assert "Total Vectors: 500" in res
-        assert "Vector Store Provider: QDRANT" in res
-        assert "5000 / 5000" in res
+        res = json.loads(await handle_index_status())
+        assert res["vector_store"]["total_vectors"] == 500
+        assert res["vector_store"]["provider"] == "QDRANT"
+        assert res["github_rate_limit"]["remaining"] == 5000
 
     with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Status DB fail")):
-        res_err = await handle_index_status()
-        assert "Failed to get status" in res_err
+        res_err = json.loads(await handle_index_status())
+        assert "Failed to get status" in res_err["error"]
 
 @pytest.mark.asyncio
 async def test_catalog_summary(temp_db):
+    import json
     with get_db_connection() as conn:
         conn.execute("INSERT INTO git_repositories (name, url, branch, commit_sha, status, last_synced) VALUES ('repo-c', 'http://url', 'main', '12345678', 'synced', '2026-08-17')")
         conn.commit()
 
-    res = await handle_catalog_summary()
-    assert "repo-c" in res
-    assert "Registered Git Repositories" in res
+    res = json.loads(await handle_catalog_summary())
+    assert any(r["name"] == "repo-c" for r in res["git_repositories"])
 
     with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Catalog DB fail")):
-        res_err = await handle_catalog_summary()
-        assert "Error generating catalog resource" in res_err
+        res_err = json.loads(await handle_catalog_summary())
+        assert "Error generating catalog resource" in res_err["error"]
 
 def test_custom_prompt_handlers():
-    res1 = handle_search_infrastructure_docs(topic="docker swarm")
-    assert "docker swarm" in res1
+    import json
+    res1 = json.loads(handle_search_infrastructure_docs(topic="docker swarm"))
+    assert res1["topic"] == "docker swarm"
 
-    res2 = handle_find_implementation_symbol(symbol="handle_search_code", repo="mcp-server")
-    assert "handle_search_code" in res2
-    assert "mcp-server" in res2
+    res2 = json.loads(handle_find_implementation_symbol(symbol="handle_search_code", repo="mcp-server"))
+    assert res2["symbol"] == "handle_search_code"
+    assert res2["repo"] == "mcp-server"
 
 def test_register_mcp_tools():
     # Register with mock server

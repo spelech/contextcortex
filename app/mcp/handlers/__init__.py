@@ -32,6 +32,9 @@ from app.mcp.handlers.file_handlers import (
     handle_summarize_file,
     handle_grep_code,
 )
+from app.mcp.handlers.diagnostic_handlers import (
+    handle_diagnose_issue,
+)
 
 __all__ = [
     "handle_search_code",
@@ -54,4 +57,5 @@ __all__ = [
     "handle_read_file",
     "handle_summarize_file",
     "handle_grep_code",
+    "handle_diagnose_issue",
 ]

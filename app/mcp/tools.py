@@ -31,6 +31,7 @@ from app.mcp.handlers import (
     handle_read_file,
     handle_summarize_file,
     handle_grep_code,
+    handle_diagnose_issue,
 )
 
 logger = logging.getLogger("contextcortex.mcp")
@@ -144,6 +145,12 @@ def register_mcp_tools_and_resources(server=None):
             name="grep_code",
             description="Deterministic literal and regex pattern matching across one or all indexed repositories with surrounding context lines and AST symbol coordinates."
         )(handle_grep_code)
+
+    if "diagnose_issue" not in existing_tools:
+        server.tool(
+            name="diagnose_issue",
+            description="Forensic triage MCP tool that resolves stack traces, matches error literals and API routes, and retrieves semantic code candidates."
+        )(handle_diagnose_issue)
 
 
     existing_resources = {str(r.uri) for r in server._resource_manager.list_resources()}
