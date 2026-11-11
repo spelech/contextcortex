@@ -24,6 +24,7 @@ from app.mcp.handlers import (
     handle_index_status,
     handle_catalog_summary,
     handle_search_infrastructure_docs,
+    handle_get_recent_changes,
     handle_get_architecture,
     handle_manage_adr,
     handle_manage_local_file,
@@ -89,6 +90,12 @@ def register_mcp_tools_and_resources(server=None):
             name="list_repositories",
             description="Lists all indexed local paths and remote Git repositories, including active branches, commit SHAs, and file counts."
         )(handle_list_repositories)
+
+    if "get_recent_changes" not in existing_tools:
+        server.tool(
+            name="get_recent_changes",
+            description="Inspect recent commits for a Git repository, optionally filtered by file path or symbol name."
+        )(handle_get_recent_changes)
 
     if "sync_repository" not in existing_tools:
         server.tool(

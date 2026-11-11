@@ -446,7 +446,7 @@ def set_ai_gateway_config(
     return get_ai_gateway_config()
 
 def ensure_git_repositories_columns(conn=None):
-    """Ensures keep_shallow column exists on git_repositories table."""
+    """Ensures keep_shallow and retain_commits_count columns exist on git_repositories table."""
     try:
         if is_postgres():
             from sqlalchemy import text
@@ -458,6 +458,14 @@ def ensure_git_repositories_columns(conn=None):
                     sa_conn.execute(text("ALTER TABLE git_repositories ADD COLUMN keep_shallow INTEGER DEFAULT 0"))
                     sa_conn.commit()
                     logger.info("Migrated git_repositories: added keep_shallow column")
+
+                res_retain = sa_conn.execute(
+                    text("SELECT column_name FROM information_schema.columns WHERE table_name='git_repositories' AND column_name='retain_commits_count'")
+                ).fetchone()
+                if not res_retain:
+                    sa_conn.execute(text("ALTER TABLE git_repositories ADD COLUMN retain_commits_count INTEGER DEFAULT 20"))
+                    sa_conn.commit()
+                    logger.info("Migrated git_repositories: added retain_commits_count column")
         else:
             raw_conn = get_db_connection()
             try:
@@ -466,13 +474,17 @@ def ensure_git_repositories_columns(conn=None):
                     raw_conn.execute("ALTER TABLE git_repositories ADD COLUMN keep_shallow INTEGER DEFAULT 0")
                     raw_conn.commit()
                     logger.info("Migrated git_repositories: added keep_shallow column")
+                if cols and "retain_commits_count" not in cols:
+                    raw_conn.execute("ALTER TABLE git_repositories ADD COLUMN retain_commits_count INTEGER DEFAULT 20")
+                    raw_conn.commit()
+                    logger.info("Migrated git_repositories: added retain_commits_count column")
             finally:
                 raw_conn.close()
     except Exception as e:
         logger.debug(f"Migration error for git_repositories: {e}")
 
 def ensure_file_summaries_columns(conn=None):
-    """Ensures summary_text column exists on file_summaries table and git_repositories has keep_shallow."""
+    """Ensures summary_text column exists on file_summaries table and git_repositories has keep_shallow and retain_commits_count."""
     try:
         ensure_git_repositories_columns(conn)
         if is_postgres():
@@ -568,12 +580,12 @@ def set_file_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
 def clear_indexing_metadata():
     """
     Clears all relational index tables (indexed_files, file_summaries, ast_symbols,
-    ast_relationships, api_routes, api_client_calls, embedding_cache) and resets
+    ast_relationships, api_routes, api_client_calls, embedding_cache, git_commits) and resets
     git repository sync markers so that subsequent reindexing passes fully re-process
     and re-embed all sources.
     """
     with get_db_connection() as conn:
-        for table in ("indexed_files", "file_summaries", "ast_symbols", "ast_relationships", "api_routes", "api_client_calls", "embedding_cache"):
+        for table in ("indexed_files", "file_summaries", "ast_symbols", "ast_relationships", "api_routes", "api_client_calls", "embedding_cache", "git_commits"):
             try:
                 conn.execute(f"DELETE FROM {table}")
             except Exception as e:

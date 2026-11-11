@@ -18,6 +18,7 @@ from app.mcp.handlers.repo_handlers import (
     handle_index_status,
     handle_catalog_summary,
     handle_search_infrastructure_docs,
+    handle_get_recent_changes,
 )
 from app.mcp.handlers.architecture_handlers import (
     handle_get_architecture,
@@ -46,6 +47,7 @@ __all__ = [
     "handle_index_status",
     "handle_catalog_summary",
     "handle_search_infrastructure_docs",
+    "handle_get_recent_changes",
     "handle_get_architecture",
     "handle_manage_adr",
     "handle_manage_local_file",

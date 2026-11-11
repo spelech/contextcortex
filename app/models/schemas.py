@@ -17,6 +17,7 @@ class RepoConfig(BaseModel):
     enabled: bool = True
     auto_sync: bool = True
     keep_shallow: bool = False
+    retain_commits_count: int = 20
     webhook_secret: Optional[str] = None
 
 class LocalPathConfig(BaseModel):
@@ -171,6 +172,9 @@ class AutoSyncToggleRequest(BaseModel):
 
 class KeepShallowToggleRequest(BaseModel):
     keep_shallow: bool
+
+class RetainCommitsRequest(BaseModel):
+    retain_commits_count: int = Field(default=20, ge=0, le=1000)
 
 class AutoSyncSettingsRequest(BaseModel):
     interval_mins: int
