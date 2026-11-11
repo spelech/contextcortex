@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.2](https://github.com/spelech/contextcortex/compare/v2.21.1...v2.21.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **portable:** bundle tree-sitter grammars next to the exe and load them from there ([#110](https://github.com/spelech/contextcortex/issues/110)) ([a352cde](https://github.com/spelech/contextcortex/commit/a352cde302e7a4e1377c3559b06f89b3645deb0a))
+
 ## [2.21.1](https://github.com/spelech/contextcortex/compare/v2.21.0...v2.21.1) (2026-11-11)
 
 
