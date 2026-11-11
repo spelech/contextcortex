@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1163 Automated Tests** (805 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1171 Automated Tests** (813 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1056,6 +1056,16 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_sync_single_git_repo_incremental_delta`
 - `test_sync_single_git_repo_batching_over_25`
 - `test_sync_single_git_repo_clone_error`
+
+#### `tests/test_grep_code.py` (8 tests)
+- `test_file_reader_reconstruction_overlapping_chunks_qdrant` - _Verifies FileReaderService._read_from_vector_store reconstructs overlapping chunks with exact line numbers on QdrantStore._
+- `test_file_reader_reconstruction_overlapping_chunks_pgvector` - _Verifies FileReaderService._read_from_vector_store reconstructs overlapping chunks with exact line numbers on PgVectorStore._
+- `test_grep_code_literal_and_case_sensitivity`
+- `test_grep_code_regex_and_syntax_error`
+- `test_grep_code_repo_and_glob_filters`
+- `test_grep_code_vector_store_fallback_and_deduplication` - _Verifies grep_code works for ephemeral/vector-backed files and deduplicates overlapping chunks._
+- `test_mcp_grep_code_registration_and_execution`
+- `test_api_search_grep_endpoint`
 
 #### `tests/test_incremental_pipeline.py` (3 tests)
 - `test_full_incremental_sync_pipeline` - _End-to-End integration test for the full ingestion & incremental sync pipeline:

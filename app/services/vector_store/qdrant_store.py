@@ -603,6 +603,133 @@ class QdrantVectorStore(VectorStore):
             logger.warning(f"Qdrant ({self.mode}) health check failed: {e}")
             return False, f"Qdrant ({self.mode}) health check failed."
 
+    def get_file_chunks(self, path: str, repo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Returns all chunk payloads for the specified path / rel_path (and optional repo), sorted by (start_line, end_line)."""
+        if not hasattr(self, "client") or not self.client:
+            return []
+        try:
+            if not self.client.collection_exists(self.collection_name):
+                return []
+
+            clean_path = path.replace("\\", "/").strip("/")
+            rel_path = clean_path.split("://", 1)[1] if "://" in clean_path else clean_path
+            if repo and rel_path.startswith(f"{repo}/"):
+                rel_path = rel_path[len(repo) + 1:]
+
+            must_conditions = []
+            if repo and repo not in ("__all__", "all"):
+                must_conditions.append(qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo)))
+
+            should_conditions = [
+                qmodels.FieldCondition(key="rel_path", match=qmodels.MatchValue(value=rel_path)),
+                qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=path)),
+                qmodels.FieldCondition(key="rel_path", match=qmodels.MatchValue(value=path)),
+                qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=rel_path)),
+            ]
+            if repo and repo not in ("__all__", "all"):
+                should_conditions.append(
+                    qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=f"git://{repo}/{rel_path}"))
+                )
+                should_conditions.append(
+                    qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=f"{repo}/{rel_path}"))
+                )
+            filter_obj = qmodels.Filter(
+                must=must_conditions if must_conditions else None,
+                should=should_conditions
+            )
+
+            all_records = []
+            next_page_offset = None
+            while True:
+                records, next_page_offset = self.client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=filter_obj,
+                    limit=250,
+                    offset=next_page_offset,
+                    with_payload=True,
+                    with_vectors=False
+                )
+                if records:
+                    all_records.extend(records)
+                if not next_page_offset:
+                    break
+
+            payloads = []
+            for r in all_records:
+                payload = dict(r.payload or {})
+                payloads.append(payload)
+
+            payloads.sort(key=lambda p: (p.get("start_line") or 0, p.get("end_line") or 0))
+            return payloads
+        except Exception as e:
+            logger.error(f"Error fetching file chunks from Qdrant: {e}")
+            return []
+
+    def grep_chunks(
+        self,
+        pattern: str,
+        repo: Optional[str] = None,
+        path_glob: Optional[str] = None,
+        is_regex: bool = False,
+        case_sensitive: bool = False,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Queries chunks matching pattern using bounded scroll paging and python line matching."""
+        if not hasattr(self, "client") or not self.client:
+            return []
+        try:
+            import re
+            import fnmatch
+
+            if not self.client.collection_exists(self.collection_name):
+                return []
+
+            flags = 0 if case_sensitive else re.IGNORECASE
+            regex_pat = pattern if is_regex else re.escape(pattern)
+            compiled = re.compile(regex_pat, flags)
+
+            must_conditions = []
+            if repo and repo not in ("__all__", "all"):
+                must_conditions.append(qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo)))
+
+            scroll_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
+
+            matched_chunks: List[Dict[str, Any]] = []
+            next_offset = None
+
+            while True:
+                records, next_offset = self.client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=scroll_filter,
+                    limit=250,
+                    offset=next_offset,
+                    with_payload=True,
+                    with_vectors=False
+                )
+
+                for r in (records or []):
+                    payload = dict(r.payload or {})
+                    chunk_path = payload.get("rel_path") or payload.get("path") or ""
+                    if path_glob:
+                        norm_p = chunk_path.replace("\\", "/")
+                        norm_glob = path_glob.replace("\\", "/")
+                        if not (fnmatch.fnmatch(norm_p, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_p), norm_glob)):
+                            continue
+
+                    text_content = payload.get("content") or payload.get("text") or ""
+                    if compiled.search(text_content):
+                        matched_chunks.append(payload)
+                        if len(matched_chunks) >= limit:
+                            break
+
+                if len(matched_chunks) >= limit or not next_offset:
+                    break
+
+            return matched_chunks[:limit]
+        except Exception as e:
+            logger.error(f"Error running grep_chunks on Qdrant: {e}")
+            raise
+
     def close(self):
         """Cleanly close Qdrant client connection and release local storage lock."""
         try:
