@@ -108,91 +108,11 @@ Pop-Location
 Copy-Item -Path (Join-Path $ExtractedPg "lib\vector.dll") -Destination (Join-Path $TargetPg "lib\vector.dll") -Force
 Copy-Item -Path (Join-Path $ExtractedPg "share\extension\vector*") -Destination (Join-Path $TargetPg "share\extension\") -Force
 
-# 6. Create Default Corporate .env.example and Launcher Scripts
-$EnvTemplate = @"
-# ==============================================================================
-# ContextCortex Portable Edition (Windows x64 + User-Space PostgreSQL/pgvector)
-# ==============================================================================
-HOST=127.0.0.1
-PORT=3000
-
-# Portable PostgreSQL + pgvector (automatically initialized in .\data\pgdata)
-PORTABLE_POSTGRES_ENABLED=true
-PORTABLE_PG_PORT=54329
-VECTOR_STORE=pgvector
-VECTOR_STORE_PROVIDER=pgvector
-
-# OpenAI-Compatible AI Gateway (LiteLLM, vLLM, Ollama, OpenAI, or internal proxy)
-# Models (Embedding, Chat, Vision OCR) are discovered & selected in the Admin UI via /v1/models
-OPENAI_API_URL=https://litellm.corp.example.com/v1
-OPENAI_API_KEY=your-corporate-api-key
-
-# Optional custom corporate headers (JSON format)
-# LLM_EXTRA_HEADERS={"X-User-Agent":"contextcortex"}
-
-# Optional Private Corporate CA Bundle path (.pem or .crt)
-# SSL_CERT_FILE=.\certs\corporate-ca-bundle.crt
-# REQUESTS_CA_BUNDLE=.\certs\corporate-ca-bundle.crt
-"@
-Set-Content -Path (Join-Path $BundleDir ".env.example") -Value $EnvTemplate -Encoding UTF8
-
-$LauncherPs1 = @"
-`$ErrorActionPreference = "Stop"
-`$ScriptDir = Split-Path -Parent `$MyInvocation.MyCommand.Path
-Set-Location `$ScriptDir
-
-# Load .env file if present
-`$EnvFile = Join-Path `$ScriptDir ".env"
-if (-not (Test-Path `$EnvFile)) {
-    Copy-Item (Join-Path `$ScriptDir ".env.example") `$EnvFile
-    Write-Host "Created default .env from .env.example. Edit .env to set your OPENAI_API_URL and OPENAI_API_KEY." -ForegroundColor Yellow
+# 6. Copy the .env template and launcher scripts (kept as real files in scripts\portable\)
+$PortableSrc = Join-Path $RootDir "scripts\portable"
+foreach ($f in @(".env.example", "start-contextcortex.ps1", "start-contextcortex.bat")) {
+    Copy-Item -Path (Join-Path $PortableSrc $f) -Destination (Join-Path $BundleDir $f) -Force
 }
-
-Get-Content `$EnvFile | ForEach-Object {
-    `$line = `$_.Trim()
-    if (`$line -and -not `$line.StartsWith("#") -and `$line.Contains("=")) {
-        `$parts = `$line.Split("=", 2)
-        `$key = `$parts[0].Trim()
-        `$val = `$parts[1].Trim()
-        [System.Environment]::SetEnvironmentVariable(`$key, `$val, "Process")
-    }
-}
-
-# Configure custom CA certificate bundle if placed in .\certs\
-`$CertsDir = Join-Path `$ScriptDir "certs"
-if (Test-Path `$CertsDir) {
-    `$CertFiles = Get-ChildItem -Path `$CertsDir -Filter "*.crt"
-    if (`$CertFiles.Count -gt 0 -and -not `$env:SSL_CERT_FILE) {
-        `$CombinedBundle = Join-Path `$ScriptDir "data\ca-bundle.crt"
-        New-Item -ItemType Directory -Path (Join-Path `$ScriptDir "data") -Force | Out-Null
-        `$Content = ""
-        foreach (`$c in `$CertFiles) {
-            `$Content += (Get-Content `$c.FullName -Raw) + "`n"
-        }
-        Set-Content -Path `$CombinedBundle -Value `$Content -Encoding ASCII
-        `$env:SSL_CERT_FILE = `$CombinedBundle
-        `$env:REQUESTS_CA_BUNDLE = `$CombinedBundle
-        `$env:GIT_SSL_CAINFO = `$CombinedBundle
-        Write-Host "Loaded corporate CA certificates from .\certs\" -ForegroundColor Green
-    }
-}
-
-Write-Host "======================================================================" -ForegroundColor Cyan
-Write-Host "Starting ContextCortex Portable (PostgreSQL + pgvector + Tree-sitter)" -ForegroundColor Cyan
-Write-Host "Admin UI:      http://127.0.0.1:`$(`$env:PORT ?? 3000)/admin/" -ForegroundColor Green
-Write-Host "MCP SSE URL:   http://127.0.0.1:`$(`$env:PORT ?? 3000)/sse" -ForegroundColor Green
-Write-Host "MCP HTTP URL:  http://127.0.0.1:`$(`$env:PORT ?? 3000)/mcp" -ForegroundColor Green
-Write-Host "======================================================================" -ForegroundColor Cyan
-
-& (Join-Path `$ScriptDir "contextcortex.exe")
-"@
-Set-Content -Path (Join-Path $BundleDir "start-contextcortex.ps1") -Value $LauncherPs1 -Encoding UTF8
-
-$LauncherBat = @"
-@echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-contextcortex.ps1"
-"@
-Set-Content -Path (Join-Path $BundleDir "start-contextcortex.bat") -Value $LauncherBat -Encoding ASCII
 
 New-Item -ItemType Directory -Path (Join-Path $BundleDir "certs") -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $BundleDir "data") -Force | Out-Null

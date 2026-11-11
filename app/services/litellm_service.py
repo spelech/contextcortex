@@ -89,7 +89,7 @@ async def discover_models(
     headers = {**get_llm_extra_headers(), "Authorization": f"Bearer {resolved_api_key}"}
 
     try:
-        async with httpx.AsyncClient(timeout=6.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(endpoint, headers=headers)
 
         if response.status_code != 200:

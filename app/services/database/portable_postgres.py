@@ -203,8 +203,29 @@ class PortablePostgresManager:
                 "-w",
                 "start",
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            if res.returncode != 0:
+            # pg_ctl starts postgres through a child shell that inherits pg_ctl's
+            # stdout/stderr handles. On Windows, capture_output=True then blocks
+            # forever: the pipes stay open for as long as the server runs. Send
+            # pg_ctl's output to a file so that no pipe is inherited.
+            out_file = self.log_file.parent / "pg_ctl.out"
+            try:
+                with open(out_file, "w", encoding="utf-8", errors="ignore") as out:
+                    rc = subprocess.run(
+                        cmd,
+                        stdin=subprocess.DEVNULL,
+                        stdout=out,
+                        stderr=subprocess.STDOUT,
+                        check=False,
+                        timeout=120,
+                    ).returncode
+            except subprocess.TimeoutExpired:
+                rc = -1
+            if rc != 0:
+                pg_ctl_out = ""
+                try:
+                    pg_ctl_out = out_file.read_text(encoding="utf-8", errors="ignore")[-1500:]
+                except Exception:
+                    pass
                 log_tail = ""
                 if self.log_file.exists():
                     try:
@@ -212,8 +233,8 @@ class PortablePostgresManager:
                     except Exception:
                         pass
                 raise RuntimeError(
-                    f"Portable PostgreSQL failed to start (exit {res.returncode}): "
-                    f"{res.stderr or res.stdout}\nLog tail:\n{log_tail}"
+                    f"Portable PostgreSQL failed to start (exit {rc}): "
+                    f"{pg_ctl_out}\nLog tail:\n{log_tail}"
                 )
             self._started_by_us = True
             atexit.register(self.stop)

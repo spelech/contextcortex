@@ -9,9 +9,36 @@ from contextlib import asynccontextmanager
 import json
 import logging
 import os
+import sys
 import threading
 
-from fastapi import FastAPI
+
+def _apply_frozen_bundle_defaults() -> None:
+    """
+    Sets data path defaults for the frozen (PyInstaller) Windows portable bundle.
+    Without them, module defaults resolve inside the read-only _internal folder
+    or to container paths such as /app/data and /docs (C:\\app\\data, C:\\docs).
+    Must run before any app.* module is imported, because those modules read
+    the paths at import time. Explicit environment values always win.
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    data_dir = os.path.abspath(os.getenv("DATA_DIR") or os.path.join(exe_dir, "data"))
+    os.environ["DATA_DIR"] = data_dir
+    os.environ.setdefault("VAULT_PATH", os.path.join(data_dir, "docs"))
+    os.environ.setdefault("CACHE_DB_PATH", os.path.join(data_dir, "index_cache.db"))
+    os.environ.setdefault("VECTOR_STORE_STORAGE_PATH", os.path.join(data_dir, "vector_storage"))
+    os.environ.setdefault("TMP_REPOS_DIR", os.path.join(data_dir, "tmp_repos"))
+    # The portable bundle does not include FastEmbed/ONNX, so embeddings must use the API gateway.
+    os.environ.setdefault("EMBEDDING_PROVIDER", "api")
+    os.environ.setdefault("HOST", "127.0.0.1")
+    os.makedirs(os.environ["VAULT_PATH"], exist_ok=True)
+
+
+_apply_frozen_bundle_defaults()
+
+from fastapi import FastAPI  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn

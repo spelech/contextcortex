@@ -149,6 +149,45 @@ def test_portable_postgres_start_and_stop_lifecycle(tmp_path, monkeypatch):
     os.environ.pop("VECTOR_STORE_PROVIDER", None)
 
 
+def test_pg_ctl_start_does_not_capture_output_pipes(tmp_path, monkeypatch):
+    """Verifies that pg_ctl start writes to a file instead of a pipe (an inherited pipe blocks start() forever on Windows)."""
+    valid_bin = tmp_path / "pgsql" / "bin"
+    _create_fake_pg_bins(valid_bin)
+    data_dir = tmp_path / "data" / "pgdata"
+    data_dir.mkdir(parents=True)
+    (data_dir / "PG_VERSION").write_text("16\n", encoding="utf-8")
+
+    start_kwargs = {}
+
+    def fake_run(cmd, **kwargs):
+        res = MagicMock()
+        if "status" in cmd:
+            res.returncode = 3
+        elif "start" in cmd:
+            start_kwargs.update(kwargs)
+            res.returncode = 0
+        else:
+            res.returncode = 0
+        return res
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    mgr = PortablePostgresManager(pg_bin_dir=valid_bin, data_dir=data_dir, port=54332)
+    monkeypatch.setattr(mgr, "_ensure_database_and_extension", lambda: None)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    mgr.start()
+
+    assert not start_kwargs.get("capture_output")
+    assert start_kwargs.get("stdout") not in (None, subprocess.PIPE)
+    assert start_kwargs.get("stderr") not in (None, subprocess.PIPE)
+    assert start_kwargs.get("stdin") == subprocess.DEVNULL
+    assert start_kwargs.get("timeout")
+    mgr._started_by_us = False
+    os.environ.pop("DATABASE_URL", None)
+    os.environ.pop("VECTOR_STORE", None)
+    os.environ.pop("VECTOR_STORE_PROVIDER", None)
+
+
 def test_bootstrap_skips_when_database_url_already_set(monkeypatch):
     """Verifies that bootstrap_portable_postgres_if_needed respects an existing DATABASE_URL."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://custom:5432/db")
