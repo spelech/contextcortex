@@ -69,11 +69,13 @@ def test_language_distribution_and_token_limit():
         )
 
     summary = synthesize_architecture("repo_a")
-    assert "Python: 71 files" in summary or "Python:" in summary
-    assert "70.3%" in summary or "69." in summary or "70." in summary
-    assert "TypeScript:" in summary
-    assert "pyproject.toml" in summary
-    assert "main.py" in summary
+    import json
+    data = json.loads(summary)
+    langs = {l["language"]: l for l in data["languages"]}
+    assert "Python" in langs and langs["Python"]["files"] == 71
+    assert "TypeScript" in langs
+    assert any("pyproject.toml" in m for m in data["manifests"])
+    assert "main.py" in data["entry_points"]
 
     # Token check: standard prompt token estimate (~4 chars per token)
     # < 1,000 tokens => < 4,000 chars
@@ -159,26 +161,28 @@ def test_adr_state_transitions():
 
 @pytest.mark.asyncio
 async def test_mcp_get_architecture_tool():
+    import json
     # Without repo argument
-    res_all = await handle_get_architecture(repo=None)
-    assert "No indexed architecture data available" in res_all or "Architecture Overview" in res_all
+    res_all = json.loads(await handle_get_architecture(repo=None))
+    assert "total_files" in res_all
 
     # Seed data
     with get_db_connection() as conn:
         conn.execute("INSERT INTO indexed_files (filepath, repo, doc_type, language) VALUES (?, ?, ?, ?)",
                      ("my_app://main.py", "my_app", "code", "python"))
 
-    res_repo = await handle_get_architecture(repo="my_app")
-    assert "# Architecture Overview: my_app" in res_repo
-    assert "main.py" in res_repo
+    res_repo = json.loads(await handle_get_architecture(repo="my_app"))
+    assert res_repo["repo"] == "my_app"
+    assert "main.py" in res_repo["entry_points"]
 
 
 @pytest.mark.asyncio
 async def test_mcp_manage_adr_tool_actions():
+    import json
     repo = "mcp_test_repo"
 
     # Action: create
-    create_res = await handle_manage_adr(
+    create_res = json.loads(await handle_manage_adr(
         action="create",
         repo=repo,
         id="ADR-100",
@@ -186,17 +190,21 @@ async def test_mcp_manage_adr_tool_actions():
         status="PROPOSED",
         context="We need a robust MCP server framework",
         decision="Adopt FastMCP"
-    )
-    assert "Successfully created ADR 'ADR-100'" in create_res
+    ))
+    assert create_res["status"] == "success"
+    assert create_res["id"] == "ADR-100"
 
     # Action: get
-    get_res = await handle_manage_adr(action="get", repo=repo, id="ADR-100")
-    assert "ADR-100: Use FastMCP Framework" in get_res
-    assert "PROPOSED" in get_res
+    get_res = json.loads(await handle_manage_adr(action="get", repo=repo, id="ADR-100"))
+    assert get_res["found"] is True
+    assert get_res["adr"]["id"] == "ADR-100"
+    assert get_res["adr"]["title"] == "Use FastMCP Framework"
+    assert get_res["adr"]["status"] == "PROPOSED"
 
     # Action: update
-    update_res = await handle_manage_adr(action="update", repo=repo, id="ADR-100", status="ACCEPTED")
-    assert "Successfully updated ADR 'ADR-100'" in update_res
+    update_res = json.loads(await handle_manage_adr(action="update", repo=repo, id="ADR-100", status="ACCEPTED"))
+    assert update_res["status"] == "success"
+    assert update_res["id"] == "ADR-100"
 
     # Action: create second ADR
     await handle_manage_adr(
@@ -210,14 +218,17 @@ async def test_mcp_manage_adr_tool_actions():
     )
 
     # Action: supersede
-    sup_res = await handle_manage_adr(action="supersede", repo=repo, id="ADR-100", superseded_by="ADR-101")
-    assert "Successfully superseded ADR 'ADR-100' with 'ADR-101'" in sup_res
+    sup_res = json.loads(await handle_manage_adr(action="supersede", repo=repo, id="ADR-100", superseded_by="ADR-101"))
+    assert sup_res["status"] == "success"
+    assert sup_res["id"] == "ADR-100"
+    assert sup_res["superseded_by"] == "ADR-101"
 
     # Action: list
-    list_res = await handle_manage_adr(action="list", repo=repo)
-    assert "ADR-100" in list_res
-    assert "ADR-101" in list_res
-    assert "superseded by `ADR-101`" in list_res
+    list_res = json.loads(await handle_manage_adr(action="list", repo=repo))
+    adr_map = {a["id"]: a for a in list_res["adrs"]}
+    assert "ADR-100" in adr_map
+    assert "ADR-101" in adr_map
+    assert adr_map["ADR-100"]["superseded_by"] == "ADR-101"
 
 
 @pytest.mark.asyncio

@@ -271,18 +271,20 @@ def test_api_delete_repo_uses_vector_store(setup_test_environment):
 @pytest.mark.asyncio
 async def test_mcp_handle_index_status_details(setup_test_environment):
     """Test that handle_index_status includes provider, mode, location, collection, and counts."""
+    import json
     with patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
-        res = await handle_index_status()
-        assert "Vector Store Provider: QDRANT" in res
-        assert "Storage Mode:" in res
-        assert "Collection:" in res
-        assert "Total Vectors:" in res
-        assert "Embedding Provider:" in res
+        res = json.loads(await handle_index_status())
+        assert res["vector_store"]["provider"] == "QDRANT"
+        assert "mode" in res["vector_store"]
+        assert "collection" in res["vector_store"]
+        assert "total_vectors" in res["vector_store"]
+        assert "embeddings" in res
 
 
 @pytest.mark.asyncio
 async def test_mcp_handle_index_status_chroma(setup_test_environment, tmp_path):
     """Test handle_index_status after switching to Chroma."""
+    import json
     chroma_dir = str(tmp_path / "chroma_status_dir")
     set_vector_store_db_config(
         provider="chroma",
@@ -293,6 +295,6 @@ async def test_mcp_handle_index_status_chroma(setup_test_environment, tmp_path):
     VectorStoreManager.reset_instance()
 
     with patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
-        res = await handle_index_status()
-        assert "Vector Store Provider: CHROMA" in res
-        assert "Collection: chroma_notes" in res
+        res = json.loads(await handle_index_status())
+        assert res["vector_store"]["provider"] == "CHROMA"
+        assert res["vector_store"]["collection"] == "chroma_notes"

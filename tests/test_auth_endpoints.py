@@ -284,20 +284,20 @@ async def test_mcp_tools_rbac_viewer_vs_editor_vs_admin(isolated_db_and_auth, mo
     set_current_auth_context(viewer_ctx)
 
     # Viewer can list repositories
-    repo_list = await handle_list_repositories()
-    assert "Registered Sources" in repo_list or "Error" not in repo_list
+    repo_list = json.loads(await handle_list_repositories())
+    assert "git_repositories" in repo_list and "error" not in repo_list
 
     # Viewer can list ADRs
-    adr_list = await handle_manage_adr(action="list", repo="test-repo")
-    assert "Insufficient permissions" not in adr_list
+    adr_list = json.loads(await handle_manage_adr(action="list", repo="test-repo"))
+    assert "adrs" in adr_list and "error" not in adr_list
 
     # Viewer attempting mutation (sync_repository) -> Denied
-    sync_res = await handle_sync_repository(repo="test-repo")
-    assert "Insufficient permissions" in sync_res or "Forbidden" in sync_res
+    sync_res = json.loads(await handle_sync_repository(repo="test-repo"))
+    assert sync_res.get("forbidden") is True or "Forbidden" in sync_res.get("error", "")
 
     # Viewer attempting mutation (create ADR) -> Denied
-    create_adr_res = await handle_manage_adr(action="create", repo="test-repo", title="ADR 1")
-    assert "Insufficient permissions" in create_adr_res or "Forbidden" in create_adr_res
+    create_adr_res = json.loads(await handle_manage_adr(action="create", repo="test-repo", title="ADR 1"))
+    assert create_adr_res.get("forbidden") is True or "Forbidden" in create_adr_res.get("error", "")
 
     # 2. Test with EDITOR context
     editor_ctx = AuthContext(
@@ -312,14 +312,15 @@ async def test_mcp_tools_rbac_viewer_vs_editor_vs_admin(isolated_db_and_auth, mo
 
     # Editor can execute sync_repository
     with patch("threading.Thread") as mock_thread:
-        sync_res = await handle_sync_repository(repo="test-repo")
-        assert "Triggered" in sync_res
-        assert "Insufficient permissions" not in sync_res
+        sync_res = json.loads(await handle_sync_repository(repo="test-repo"))
+        assert sync_res["status"] == "triggered"
+        assert "error" not in sync_res
 
     # Editor can execute manage_adr create
     with patch("app.services.database.create_adr", return_value={"id": "ADR-001", "status": "PROPOSED"}):
-        create_res = await handle_manage_adr(action="create", repo="test-repo", title="ADR 1")
-        assert "Successfully created ADR" in create_res
+        create_res = json.loads(await handle_manage_adr(action="create", repo="test-repo", title="ADR 1"))
+        assert create_res["status"] == "success"
+        assert create_res["id"] == "ADR-001"
 
     # 3. Clean up context
     set_current_auth_context(None)

@@ -149,6 +149,22 @@ class VectorStore(ABC):
         """Validates connection and readiness of the backend."""
         pass
 
+    def get_file_chunks(self, path: str, repo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Returns all chunk payloads for the specified path / rel_path (and optional repo), sorted by (start_line, end_line)."""
+        return []
+
+    def grep_chunks(
+        self,
+        pattern: str,
+        repo: Optional[str] = None,
+        path_glob: Optional[str] = None,
+        is_regex: bool = False,
+        case_sensitive: bool = False,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Queries chunks matching pattern."""
+        return []
+
     def close(self):
         """Optional hook to cleanly close underlying client/storage handles."""
         pass

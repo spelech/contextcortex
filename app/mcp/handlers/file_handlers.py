@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 from typing import Optional, Annotated
@@ -13,6 +14,12 @@ logger = logging.getLogger("contextcortex.mcp.files")
 def _get_tools_attr(name, default):
     t_mod = sys.modules.get("app.mcp.tools")
     return getattr(t_mod, name, default) if t_mod else default
+
+
+def _strip_repo_prefix(filepath: Optional[str]) -> str:
+    if not filepath:
+        return ""
+    return filepath.split("://", 1)[1] if "://" in filepath else filepath
 
 
 async def handle_read_file(
@@ -34,24 +41,27 @@ async def handle_read_file(
             end_line=end_line
         )
 
-        trunc_msg = f" (truncated at line limit)" if result.get("truncated") else ""
-        header = (
-            f"### File: `{result['filepath']}` ({result['size_bytes']} bytes, "
-            f"lines {result['start_line']}-{result['end_line']} of {result['total_lines']}{trunc_msg})\n"
-            f"- **Source:** `{result['source']}`\n\n"
-        )
-        return f"{header}```\n{result['content']}\n```"
+        return json.dumps({
+            "file": _strip_repo_prefix(result.get("filepath") or path),
+            "repo": repo,
+            "source": result.get("source"),
+            "lines": [result.get("start_line"), result.get("end_line")],
+            "total_lines": result.get("total_lines"),
+            "size_bytes": result.get("size_bytes"),
+            "truncated": bool(result.get("truncated", False)),
+            "content": result.get("content", ""),
+        })
 
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_read_file ({path}): {fe}")
-        return f"Forbidden: {str(fe)}"
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except FileNotFoundError as fne:
-        return f"Error: File not found: {str(fne)}"
+        return json.dumps({"error": f"File not found: {str(fne)}"})
     except ValueError as ve:
-        return f"Error: {str(ve)}"
+        return json.dumps({"error": str(ve)})
     except Exception as e:
         logger.error(f"Error reading file '{path}': {e}")
-        return f"Error reading file: {str(e)}"
+        return json.dumps({"error": f"Error reading file: {str(e)}"})
 
 
 async def handle_summarize_file(
@@ -72,17 +82,62 @@ async def handle_summarize_file(
         )
 
         if not summary_text or not summary_text.strip():
-            return f"Notice: Could not generate summary for `{path}` (file may be empty or summarization failed)."
+            return json.dumps({
+                "file": _strip_repo_prefix(path),
+                "repo": repo,
+                "summary": None,
+                "error": f"Could not generate summary for '{path}' (file may be empty or summarization failed).",
+            })
 
-        return f"### Summary: `{path}`\n\n{summary_text.strip()}"
+        return json.dumps({
+            "file": _strip_repo_prefix(path),
+            "repo": repo,
+            "summary": summary_text.strip(),
+        })
 
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_summarize_file ({path}): {fe}")
-        return f"Forbidden: {str(fe)}"
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except FileNotFoundError as fne:
-        return f"Error: File not found: {str(fne)}"
+        return json.dumps({"error": f"File not found: {str(fne)}"})
     except ValueError as ve:
-        return f"Error: {str(ve)}"
+        return json.dumps({"error": str(ve)})
     except Exception as e:
         logger.error(f"Error summarizing file '{path}': {e}")
-        return f"Error summarizing file: {str(e)}"
+        return json.dumps({"error": f"Error summarizing file: {str(e)}"})
+
+
+async def handle_grep_code(
+    pattern: Annotated[str, Field(description="Exact substring or regex pattern to search for across repositories.")],
+    repo: Annotated[Optional[str], Field(description="Optional repository identifier or storage namespace filter.")] = None,
+    path_glob: Annotated[Optional[str], Field(description="Optional fnmatch file path glob (e.g., '*.py' or 'app/services/*').")] = None,
+    is_regex: Annotated[bool, Field(description="If True, treats pattern as a regular expression. Defaults to False (literal string).")] = False,
+    case_sensitive: Annotated[bool, Field(description="If True, performs case-sensitive matching. Defaults to False.")] = False,
+    context_lines: Annotated[int, Field(description="Number of context lines surrounding each match (0-10). Defaults to 2.")] = 2,
+    limit: Annotated[int, Field(description="Maximum number of matched lines to return (1-100). Defaults to 30.")] = 30
+) -> str:
+    """Exact literal and regex pattern matching across one or all indexed repositories returning compact JSON."""
+    try:
+        enforce_tool_permission(Role.VIEWER)
+        reader_fn = _get_tools_attr("get_file_reader_service", get_file_reader_service)
+        reader = reader_fn()
+
+        result = reader.grep_code(
+            pattern=pattern,
+            repo=repo,
+            path_glob=path_glob,
+            is_regex=is_regex,
+            case_sensitive=case_sensitive,
+            context_lines=context_lines,
+            limit=limit,
+        )
+        return json.dumps(result, separators=(",", ":"))
+
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_grep_code: {fe}")
+        return json.dumps({"error": "forbidden", "message": str(fe)}, separators=(",", ":"))
+    except ValueError as ve:
+        return json.dumps({"error": "invalid_argument", "message": str(ve)}, separators=(",", ":"))
+    except Exception as e:
+        logger.error(f"Error searching code with grep: {e}")
+        return json.dumps({"error": str(e)}, separators=(",", ":"))

@@ -184,26 +184,24 @@ async function placeOrder(cart) {
             )
         conn.commit()
 
+    import json
     # Test find_routes tool
-    routes_output = await handle_find_routes(query="users")
-    assert "/api/v1/users/{user_id}" in routes_output
-    assert "backend_service" in routes_output
+    routes_output = json.loads(await handle_find_routes(query="users"))
+    assert any(r["path"] == "/api/v1/users/{user_id}" and r["repo"] == "backend_service" for r in routes_output["routes"])
 
-    routes_post = await handle_find_routes(method="POST")
-    assert "/api/v1/orders" in routes_post
+    routes_post = json.loads(await handle_find_routes(method="POST"))
+    assert any(r["path"] == "/api/v1/orders" for r in routes_post["routes"])
 
     # Test find_api_callers tool
-    callers_output = await handle_find_api_callers(path="/api/v1/users/{user_id}")
-    assert "frontend_app" in callers_output
-    assert "/api/v1/users/{userId}" in callers_output
-    assert "getUserProfile" in callers_output
+    callers_output = json.loads(await handle_find_api_callers(path="/api/v1/users/{user_id}"))
+    assert any(c["repo"] == "frontend_app" and c["url"] == "/api/v1/users/{userId}" and c["caller"] == "getUserProfile" for c in callers_output["callers"])
 
-    callers_orders = await handle_find_api_callers(path="/api/v1/orders", method="POST")
-    assert "placeOrder" in callers_orders
+    callers_orders = json.loads(await handle_find_api_callers(path="/api/v1/orders", method="POST"))
+    assert any(c["caller"] == "placeOrder" for c in callers_orders["callers"])
 
     # Test unindexed path or empty queries
-    empty_callers = await handle_find_api_callers(path="/api/v1/nonexistent")
-    assert "No client call sites found" in empty_callers
+    empty_callers = json.loads(await handle_find_api_callers(path="/api/v1/nonexistent"))
+    assert empty_callers["callers"] == []
 
-    err_callers = await handle_find_api_callers(path="")
-    assert "Error: endpoint path cannot be empty" in err_callers
+    err_callers = json.loads(await handle_find_api_callers(path=""))
+    assert "endpoint path cannot be empty" in err_callers["error"]

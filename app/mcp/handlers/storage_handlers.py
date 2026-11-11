@@ -18,6 +18,12 @@ def _get_tools_attr(name, default):
     return getattr(t_mod, name, default) if t_mod else default
 
 
+def _strip_repo_prefix(filepath: Optional[str]) -> str:
+    if not filepath:
+        return ""
+    return filepath.split("://", 1)[1] if "://" in filepath else filepath
+
+
 async def handle_manage_local_file(
     action: Annotated[str, Field(description="Action to perform: 'upload', 'replace', 'delete', 'read', or 'preview'")],
     file_path: Annotated[str, Field(description="Relative path of file in local storage (e.g. 'docs/spec.md')")],
@@ -37,27 +43,55 @@ async def handle_manage_local_file(
 
         if act in ("upload", "replace"):
             if content is None:
-                return f"Error: 'content' parameter is required for action '{action}'."
+                return json.dumps({"error": f"'content' parameter is required for action '{action}'."})
             res = storage.save_file(file_path, content, repo=repo, category=category)
-            past_act = "uploaded" if act == "upload" else "replaced"
-            return (
-                f"Successfully {past_act} and indexed file: `{res['rel_path']}`\n"
-                f"- Repository: `{res['repo']}`\n"
-                f"- Category: `{res['category']}`\n"
-                f"- Size: {res['size_bytes']} bytes\n"
-                f"- Chunks Indexed: {res.get('chunks_indexed', 0)}"
-            )
+            return json.dumps({
+                "action": act,
+                "status": "success",
+                "file": _strip_repo_prefix(res.get("rel_path") or file_path),
+                "repo": res.get("repo", repo),
+                "category": res.get("category", category),
+                "size_bytes": res.get("size_bytes", 0),
+                "chunks_indexed": res.get("chunks_indexed", 0),
+            })
         elif act == "delete":
             storage.delete_file(file_path, repo=repo)
-            return f"Successfully deleted `{file_path}` and purged associated vector embeddings."
+            return json.dumps({
+                "action": "delete",
+                "status": "success",
+                "file": _strip_repo_prefix(file_path),
+                "repo": repo,
+            })
         elif act == "read":
             res = storage.read_file_content(file_path)
             if res.get("is_pdf"):
-                return res["content"]
-            return f"### File: `{res['rel_path']}` ({res['size_bytes']} bytes)\n\n```\n{res['content']}\n```"
+                raw_content = res["content"]
+                if isinstance(raw_content, str):
+                    try:
+                        parsed = json.loads(raw_content)
+                        return json.dumps({
+                            "action": "read",
+                            "file": _strip_repo_prefix(res.get("rel_path") or file_path),
+                            "is_pdf": True,
+                            **parsed,
+                        })
+                    except Exception:
+                        pass
+                return json.dumps({
+                    "action": "read",
+                    "file": _strip_repo_prefix(res.get("rel_path") or file_path),
+                    "is_pdf": True,
+                    "content": raw_content,
+                })
+            return json.dumps({
+                "action": "read",
+                "file": _strip_repo_prefix(res.get("rel_path") or file_path),
+                "size_bytes": res.get("size_bytes", 0),
+                "content": res.get("content", ""),
+            })
         elif act == "preview":
             if not file_path or not file_path.strip():
-                return "Error: 'file_path' parameter is required for action 'preview'."
+                return json.dumps({"error": "'file_path' parameter is required for action 'preview'."})
             abs_path = storage.resolve_safe_path(file_path)
             if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
                 raise FileNotFoundError(f"File '{file_path}' does not exist in local storage.")
@@ -66,43 +100,39 @@ async def handle_manage_local_file(
                 pdf_extractor_fn = _get_tools_attr("extract_pdf_pages", extract_pdf_pages)
                 pdf_res = pdf_extractor_fn(abs_path, filename=os.path.basename(file_path), ocr_fallback=False)
                 first_page_text = pdf_res.pages[0].text[:1000] if pdf_res.pages else ""
-                if pdf_res.errors:
-                    err_lines = [f"  - Page {e.get('page_number', '?')}: {e.get('error', 'Unknown error')}" for e in pdf_res.errors]
-                    err_summary = f"- **Errors:** {len(pdf_res.errors)}\n" + "\n".join(err_lines) + "\n"
-                else:
-                    err_summary = ""
-                return (
-                    f"### PDF Extraction Preview: {file_path}\n"
-                    f"- **Total Pages:** {pdf_res.total_pages}\n"
-                    f"- **Total Characters:** {pdf_res.total_characters}\n"
-                    f"- **OCR Applied Pages:** {pdf_res.ocr_pages_count}\n"
-                    f"{err_summary}"
-                    f"- **Sample Chunks:** {len(pdf_res.preview_chunks)}\n\n"
-                    f"#### Page 1:\n"
-                    f"{first_page_text}"
-                )
+                return json.dumps({
+                    "action": "preview",
+                    "file": _strip_repo_prefix(file_path),
+                    "is_pdf": True,
+                    "total_pages": pdf_res.total_pages,
+                    "total_characters": pdf_res.total_characters,
+                    "ocr_pages_count": pdf_res.ocr_pages_count,
+                    "errors": pdf_res.errors or [],
+                    "sample_chunks": len(pdf_res.preview_chunks),
+                    "preview": first_page_text,
+                })
             else:
                 with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
                     text_content = f.read()
                 line_count = len(text_content.splitlines())
                 char_count = len(text_content)
                 preview_sample = text_content[:1000]
-                return (
-                    f"### File Preview: {file_path}\n"
-                    f"- **Line Count:** {line_count}\n"
-                    f"- **Character Count:** {char_count}\n\n"
-                    f"```\n"
-                    f"{preview_sample}\n"
-                    f"```"
-                )
+                return json.dumps({
+                    "action": "preview",
+                    "file": _strip_repo_prefix(file_path),
+                    "is_pdf": False,
+                    "line_count": line_count,
+                    "character_count": char_count,
+                    "preview": preview_sample,
+                })
         else:
-            return f"Error: Unsupported action '{action}'. Valid actions are 'upload', 'replace', 'delete', 'read', 'preview'."
+            return json.dumps({"error": f"Unsupported action '{action}'. Valid actions are 'upload', 'replace', 'delete', 'read', 'preview'."})
     except ForbiddenError as e:
         logger.warning(f"Forbidden error executing manage_local_file ({action}): {e}")
-        return f"Forbidden: {str(e)}"
+        return json.dumps({"error": f"Forbidden: {str(e)}", "forbidden": True})
     except Exception as e:
         logger.error(f"Error executing manage_local_file ({action}): {e}")
-        return f"Error executing manage_local_file: {str(e)}"
+        return json.dumps({"error": f"Error executing manage_local_file: {str(e)}"})
 
 
 async def handle_what_is_ingested(
@@ -122,15 +152,12 @@ async def handle_what_is_ingested(
             git_repos = conn.execute("SELECT id, name, url, branch, commit_sha, provider, status, last_synced FROM git_repositories").fetchall()
             indexed_paths = conn.execute("SELECT path, repo, category FROM indexed_paths WHERE enabled = 1").fetchall()
             
-            # Fetch file counts grouped by repo
             f_counts = conn.execute("SELECT repo, count(*) as cnt FROM indexed_files GROUP BY repo").fetchall()
             repo_file_counts = {r["repo"]: r["cnt"] for r in f_counts}
 
-            # Fetch symbol counts grouped by repo
             s_counts = conn.execute("SELECT repo, count(*) as cnt FROM ast_symbols GROUP BY repo").fetchall()
             repo_symbol_counts = {s["repo"]: s["cnt"] for s in s_counts}
 
-            # Filtered file list query if detailed
             detailed_files = []
             if detail == "detailed":
                 query = "SELECT filepath, repo, doc_type, language, mtime FROM indexed_files WHERE 1=1"
@@ -147,57 +174,66 @@ async def handle_what_is_ingested(
                 query += " ORDER BY repo, filepath LIMIT 200"
                 detailed_files = conn.execute(query, params).fetchall()
 
-        out = "# ContextCortex Ingestion Catalog\n\n"
+        result: Dict[str, Any] = {
+            "source_type": st,
+            "detail_level": detail,
+        }
 
-        # 1. Git Repositories
         if st in ("all", "git"):
-            out += "## Git Repositories\n"
             filtered_repos = [r for r in git_repos if not repo_name or r["name"] == repo_name]
-            if filtered_repos:
-                for gr in filtered_repos:
-                    fc = repo_file_counts.get(gr["name"], 0)
-                    sc = repo_symbol_counts.get(gr["name"], 0)
-                    sha = gr["commit_sha"][:8] if gr["commit_sha"] else "None"
-                    out += f"- **{gr['name']}** (`{gr['branch']}` @ `{sha}`) - Status: `{gr['status']}` | Files: {fc} | Symbols: {sc} | URL: {gr['url']}\n"
-            else:
-                out += "_No git repositories match the criteria._\n"
-            out += "\n"
+            result["git_repositories"] = [
+                {
+                    "id": gr["id"],
+                    "name": gr["name"],
+                    "url": gr["url"],
+                    "branch": gr["branch"],
+                    "commit_sha": gr["commit_sha"],
+                    "provider": gr["provider"],
+                    "status": gr["status"],
+                    "last_synced": gr["last_synced"],
+                    "files": repo_file_counts.get(gr["name"], 0),
+                    "symbols": repo_symbol_counts.get(gr["name"], 0),
+                }
+                for gr in filtered_repos
+            ]
 
-        # 2. Monitored Local Paths
         if st in ("all", "monitored_path"):
-            out += "## Monitored Paths\n"
             filtered_paths = [p for p in indexed_paths if not repo_name or p["repo"] == repo_name]
-            if filtered_paths:
-                for p in filtered_paths:
-                    fc = repo_file_counts.get(p["repo"], 0)
-                    out += f"- **{p['repo']}** (`{p['path']}`) - Category: `{p['category']}` | Files: {fc}\n"
-            else:
-                out += "_No monitored paths match the criteria._\n"
-            out += "\n"
+            result["monitored_paths"] = [
+                {
+                    "repo": p["repo"],
+                    "path": p["path"],
+                    "category": p["category"],
+                    "files": repo_file_counts.get(p["repo"], 0),
+                }
+                for p in filtered_paths
+            ]
 
-        # 3. Local Storage Uploads
         if st in ("all", "local_storage"):
-            out += "## Local Storage (Uploaded Files)\n"
             storage = _get_tools_attr("get_local_storage_service", get_local_storage_service)()
             tree = storage.get_file_tree(subfolder=path_prefix if path_prefix and not path_prefix.startswith("/") else None)
             total_ls_files = repo_file_counts.get("local_storage", len(tree.get("files", [])))
-            out += f"- **Root Storage Path**: `{storage.get_storage_root()}`\n"
-            out += f"- **Total Uploaded Files**: {total_ls_files}\n"
-            if tree.get("directories"):
-                out += f"- **Subdirectories**: {', '.join(d['name'] for d in tree['directories'])}\n"
-            out += "\n"
+            result["local_storage"] = {
+                "root_path": storage.get_storage_root(),
+                "total_files": total_ls_files,
+                "directories": [d["name"] for d in tree.get("directories", [])],
+            }
 
-        # Detailed file list if requested
-        if detail == "detailed" and detailed_files:
-            out += f"## Ingested File Details (Showing top {len(detailed_files)} files)\n"
-            for df in detailed_files:
-                out += f"- `[{df['repo']}]` `{df['filepath']}` ({df['doc_type']} | {df['language']})\n"
-            out += "\n"
+        if detail == "detailed":
+            result["files"] = [
+                {
+                    "repo": df["repo"],
+                    "file": _strip_repo_prefix(df["filepath"]),
+                    "doc_type": df["doc_type"],
+                    "language": df["language"],
+                }
+                for df in detailed_files
+            ]
 
-        return out
+        return json.dumps(result)
     except ForbiddenError as e:
         logger.warning(f"Forbidden error retrieving ingestion catalog: {e}")
-        return f"Forbidden: {str(e)}"
+        return json.dumps({"error": f"Forbidden: {str(e)}", "forbidden": True})
     except Exception as e:
         logger.error(f"Error retrieving ingestion catalog: {e}")
-        return f"Error retrieving ingestion catalog: {str(e)}"
+        return json.dumps({"error": f"Error retrieving ingestion catalog: {str(e)}"})
