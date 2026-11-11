@@ -139,7 +139,9 @@ def test_api_routes_pydantic():
 
 @pytest.mark.asyncio
 async def test_mcp_tools_pydantic():
+    import json
     res = await handle_search_code(query="test query", limit=2)
     assert isinstance(res, str)
-    assert "Error" in res or "No matching code snippets" in res or "========================" in res
+    data = json.loads(res)
+    assert "results" in data or "error" in data
 

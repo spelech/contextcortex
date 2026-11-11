@@ -19,6 +19,12 @@ def _get_tools_attr(name, default):
     return getattr(t_mod, name, default) if t_mod else default
 
 
+def _strip_repo_prefix(filepath: Optional[str]) -> str:
+    if not filepath:
+        return ""
+    return filepath.split("://", 1)[1] if "://" in filepath else filepath
+
+
 async def handle_find_symbol(
     name: Annotated[str, Field(description="Symbol name (e.g. 'extract_symbols_and_chunks' or 'FastAPI').")],
     repo: Annotated[Optional[str], Field(description="Optional repository filter.")] = None,
@@ -28,10 +34,10 @@ async def handle_find_symbol(
     """Instant exact or prefix symbol lookup (functions, classes, structs, interfaces) from AST index without broad token scans."""
     sym_name = name.strip() if name else ""
     if not sym_name:
-        return "Error: symbol name cannot be empty."
+        return json.dumps({"error": "symbol name cannot be empty."})
 
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             query = "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language FROM ast_symbols WHERE "
@@ -50,19 +56,30 @@ async def handle_find_symbol(
             query += f" LIMIT {limit}"
             rows = conn.execute(query, params).fetchall()
 
-        if not rows:
-            return f"No symbols found matching '{sym_name}'."
-
-        lines = [f"Found {len(rows)} matching symbols for '{sym_name}':\n"]
+        symbols = []
         for r in rows:
-            lines.append(
-                f"- **{r['name']}** (`{r['kind']}`) in `[{r['repo']}] {r['filepath']}` (Lines {r['start_line']}-{r['end_line']})\n"
-                f"  Signature: `{r['signature']}`"
-            )
-        return "\n".join(lines)
+            symbols.append({
+                "name": r["name"],
+                "symbol": r["full_symbol"] or r["name"],
+                "kind": r["kind"],
+                "repo": r["repo"],
+                "file": _strip_repo_prefix(r["filepath"]),
+                "lines": [r["start_line"], r["end_line"]],
+                "signature": r["signature"],
+                "language": r["language"],
+            })
+
+        return json.dumps({
+            "query": sym_name,
+            "exact": exact,
+            "symbols": symbols,
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_find_symbol: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"find_symbol error: {e}")
-        return f"Error finding symbol: {str(e)}"
+        return json.dumps({"error": f"Error finding symbol: {str(e)}"})
 
 
 async def handle_trace_path(
@@ -74,19 +91,37 @@ async def handle_trace_path(
 ) -> str:
     """Deterministically traverse function call graphs, module imports, and inheritance hierarchies using AST relationships (BFS)."""
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
-        return trace_symbol_path(
+        raw_res = trace_symbol_path(
             symbol=symbol,
             repo=repo,
             direction=direction,
             depth=depth,
             limit=limit
         )
+        if isinstance(raw_res, dict):
+            return json.dumps(raw_res)
+        if isinstance(raw_res, str):
+            stripped = raw_res.strip()
+            if stripped.startswith("{") or stripped.startswith("["):
+                return stripped
+            if stripped.startswith("Error:"):
+                return json.dumps({"error": stripped})
+            return json.dumps({
+                "symbol": (symbol or "").strip(),
+                "repo": repo,
+                "direction": direction,
+                "depth": depth,
+                "trace": raw_res,
+            })
+        return json.dumps({"result": raw_res})
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_trace_path: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"trace_path tool execution failed: {e}")
-        return f"Error executing trace_path: {str(e)}"
-
+        return json.dumps({"error": f"Error executing trace_path: {str(e)}"})
 
 
 async def handle_get_file_outline(
@@ -96,12 +131,12 @@ async def handle_get_file_outline(
     """Get the AST outline (classes, methods, functions, line numbers) of a file without retrieving its entire token body."""
     fp = filepath.strip() if filepath else ""
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             if repo:
                 rows = conn.execute(
-                    "SELECT name, full_symbol, kind, start_line, end_line, signature FROM ast_symbols WHERE (filepath = ? OR filepath LIKE ?) AND repo = ? ORDER BY start_line ASC",
+                    "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature FROM ast_symbols WHERE (filepath = ? OR filepath LIKE ?) AND repo = ? ORDER BY start_line ASC",
                     (fp, f"%{fp}", repo)
                 ).fetchall()
             else:
@@ -110,16 +145,27 @@ async def handle_get_file_outline(
                     (fp, f"%{fp}")
                 ).fetchall()
 
-        if not rows:
-            return f"No outline available for '{fp}'."
-
-        outline_text = f"# File Outline: {fp}\n\n"
+        resolved_repo = repo or (rows[0]["repo"] if rows and "repo" in rows[0].keys() else None)
+        symbols = []
         for r in rows:
-            outline_text += f"- **{r['name']}** ({r['kind']}, lines {r['start_line']}-{r['end_line']}): `{r['signature']}`\n"
-        return outline_text
-    except Exception as e:
-        return f"Failed to get outline: {str(e)}"
+            symbols.append({
+                "name": r["name"],
+                "symbol": r["full_symbol"] or r["name"],
+                "kind": r["kind"],
+                "lines": [r["start_line"], r["end_line"]],
+                "signature": r["signature"],
+            })
 
+        return json.dumps({
+            "file": _strip_repo_prefix(fp),
+            "repo": resolved_repo,
+            "symbols": symbols,
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_get_file_outline: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
+    except Exception as e:
+        return json.dumps({"error": f"Failed to get outline: {str(e)}"})
 
 
 def handle_find_implementation_symbol(
@@ -129,8 +175,9 @@ def handle_find_implementation_symbol(
     """Workflow to locate functions, classes, and logic across registered codebases."""
     from app.services.auth import enforce_tool_permission, Role
     enforce_tool_permission(Role.VIEWER)
-    return f"Please use find_symbol for '{symbol}' in repo '{repo}' and inspect its declaration, line numbers, and implementation details."
-
-
-# --- Registration on FastMCP Server ---
-
+    return json.dumps({
+        "prompt": "find_implementation_symbol",
+        "symbol": symbol,
+        "repo": repo,
+        "instructions": f"Use find_symbol for '{symbol}' in repo '{repo}' and inspect its declaration, line numbers, and implementation details.",
+    })
