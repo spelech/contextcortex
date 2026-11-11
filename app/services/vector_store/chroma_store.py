@@ -451,6 +451,90 @@ class ChromaVectorStore(VectorStore):
             logger.warning(f"Chroma ({self.mode}) health check failed: {e}")
             return False, f"Chroma ({self.mode}) health check failed."
 
+    def get_file_chunks(self, path: str, repo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Returns all chunk payloads for the specified path / rel_path (and optional repo), sorted by (start_line, end_line)."""
+        if self.collection is None:
+            if not self.ensure_collection():
+                return []
+        try:
+            clean_path = path.replace("\\", "/").strip("/")
+            rel_path = clean_path.split("://", 1)[1] if "://" in clean_path else clean_path
+            if repo and rel_path.startswith(f"{repo}/"):
+                rel_path = rel_path[len(repo) + 1:]
+
+            res = self.collection.get(include=["metadatas", "documents"])
+            chunks = []
+            if res and res.get("metadatas"):
+                for idx, meta in enumerate(res["metadatas"]):
+                    payload = dict(meta or {})
+                    doc_text = res["documents"][idx] if res.get("documents") and idx < len(res["documents"]) else ""
+                    if "content" not in payload and doc_text:
+                        payload["content"] = doc_text
+                    p_repo = payload.get("repo")
+                    p_path = payload.get("path")
+                    p_rel = payload.get("rel_path")
+                    if repo and repo not in ("__all__", "all") and p_repo != repo:
+                        continue
+                    if p_path in (path, rel_path) or p_rel in (path, rel_path):
+                        chunks.append(payload)
+
+            chunks.sort(key=lambda p: (p.get("start_line") or 0, p.get("end_line") or 0))
+            return chunks
+        except Exception as e:
+            logger.error(f"Error fetching file chunks from Chroma: {e}")
+            return []
+
+    def grep_chunks(
+        self,
+        pattern: str,
+        repo: Optional[str] = None,
+        path_glob: Optional[str] = None,
+        is_regex: bool = False,
+        case_sensitive: bool = False,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Queries chunks matching pattern in Chroma."""
+        if self.collection is None:
+            if not self.ensure_collection():
+                return []
+        try:
+            import re
+            import fnmatch
+
+            flags = 0 if case_sensitive else re.IGNORECASE
+            regex_pat = pattern if is_regex else re.escape(pattern)
+            compiled = re.compile(regex_pat, flags)
+
+            res = self.collection.get(include=["metadatas", "documents"])
+            matched = []
+            if res and res.get("metadatas"):
+                for idx, meta in enumerate(res["metadatas"]):
+                    payload = dict(meta or {})
+                    doc_text = res["documents"][idx] if res.get("documents") and idx < len(res["documents"]) else ""
+                    if "content" not in payload and doc_text:
+                        payload["content"] = doc_text
+
+                    if repo and repo not in ("__all__", "all") and payload.get("repo") != repo:
+                        continue
+
+                    chunk_path = payload.get("rel_path") or payload.get("path") or ""
+                    if path_glob:
+                        norm_p = chunk_path.replace("\\", "/")
+                        norm_glob = path_glob.replace("\\", "/")
+                        if not (fnmatch.fnmatch(norm_p, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_p), norm_glob)):
+                            continue
+
+                    content = payload.get("content") or ""
+                    if compiled.search(content):
+                        matched.append(payload)
+                        if len(matched) >= limit:
+                            break
+
+            return matched[:limit]
+        except Exception as e:
+            logger.error(f"Error in Chroma grep_chunks: {e}")
+            raise
+
     def close(self):
         """Cleanly close Chroma client handle if applicable."""
         pass

@@ -22,7 +22,7 @@ def _get_tools_attr(name, default):
 async def handle_list_repositories() -> str:
     """Lists all indexed local paths and remote Git repositories, including active branches, commit SHAs, and file counts."""
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             git_repos = conn.execute("SELECT id, name, url, branch, commit_sha, provider, auth_user, status, last_synced FROM git_repositories").fetchall()
@@ -30,25 +30,38 @@ async def handle_list_repositories() -> str:
             counts = conn.execute("SELECT repo, count(*) as cnt FROM indexed_files GROUP BY repo").fetchall()
             file_count_map = {c["repo"]: c["cnt"] for c in counts}
 
-        out = "# Registered Sources & Repositories\n\n"
-        if git_repos:
-            out += "### Git Repositories\n"
-            for gr in git_repos:
-                fc = file_count_map.get(gr["name"], 0)
-                sha = gr["commit_sha"][:8] if gr["commit_sha"] else "None"
-                prov = (gr["provider"] or "git").upper()
-                out += f"- **{gr['name']}** [{prov}] ({gr['url']} @ `{gr['branch']}` | SHA: `{sha}`) - Status: `{gr['status']}` | Files: {fc} | Last Synced: {gr['last_synced'] or 'Never'}\n"
-            out += "\n"
+        repos_list = []
+        for gr in git_repos:
+            repos_list.append({
+                "id": gr["id"],
+                "name": gr["name"],
+                "url": gr["url"],
+                "branch": gr["branch"],
+                "commit_sha": gr["commit_sha"],
+                "provider": (gr["provider"] or "git").lower(),
+                "status": gr["status"],
+                "files": file_count_map.get(gr["name"], 0),
+                "last_synced": gr["last_synced"],
+            })
 
-        if local_paths:
-            out += "### Local Monitored Paths\n"
-            for lp in local_paths:
-                fc = file_count_map.get(lp["repo"], 0)
-                out += f"- **{lp['repo']}** (`{lp['path']}`) - Category: `{lp['category']}` | Files: {fc}\n"
+        monitored_list = []
+        for lp in local_paths:
+            monitored_list.append({
+                "repo": lp["repo"],
+                "path": lp["path"],
+                "category": lp["category"],
+                "files": file_count_map.get(lp["repo"], 0),
+            })
 
-        return out
+        return json.dumps({
+            "git_repositories": repos_list,
+            "local_paths": monitored_list,
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_list_repositories: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
-        return f"Error listing repositories: {str(e)}"
+        return json.dumps({"error": f"Error listing repositories: {str(e)}"})
 
 
 async def handle_sync_repository(
@@ -57,7 +70,7 @@ async def handle_sync_repository(
     """Trigger an immediate re-fetch and re-indexing of a registered Git repo or local path."""
     target_repo = repo
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.EDITOR)
         from app.services.indexing import sync_single_git_repo, run_full_indexing
         import threading
@@ -66,18 +79,31 @@ async def handle_sync_repository(
                 row = conn.execute("SELECT id FROM git_repositories WHERE name = ?", (target_repo,)).fetchone()
             if row:
                 threading.Thread(target=sync_single_git_repo, args=(row["id"],), daemon=True).start()
-                return f"Triggered background sync for repo: '{target_repo}'"
+                return json.dumps({
+                    "status": "triggered",
+                    "scope": "repository",
+                    "repo": target_repo,
+                    "message": f"Triggered background sync for repo: '{target_repo}'",
+                })
 
         threading.Thread(target=run_full_indexing, daemon=True).start()
-        return "Triggered full background re-indexing."
+        return json.dumps({
+            "status": "triggered",
+            "scope": "full",
+            "repo": target_repo,
+            "message": "Triggered full background re-indexing.",
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_sync_repository: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
-        return f"Failed to trigger sync: {str(e)}"
+        return json.dumps({"error": f"Failed to trigger sync: {str(e)}"})
 
 
 async def handle_index_status() -> str:
     """Get global index health, vector counts, Git provider auth sources, and active embedding models."""
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         from app.services.git_manager import check_github_rate_limit, mask_token
         from app.services.database import get_effective_git_token, list_git_host_credentials
@@ -109,61 +135,91 @@ async def handle_index_status() -> str:
             vault_failed = True
         rate_info = check_github_rate_limit(gh_tok)
 
-        vault_str = "[Unavailable - Query Failed]" if vault_failed else f"{len(vault_creds)}"
-        lines = [
-            f"Vector Store Provider: {provider}",
-            f"Storage Mode: {mode_str} ({mode_val})",
-            f"Storage Location: {storage_loc}",
-            f"Collection: {collection_name}",
-            f"Total Vectors: {points_count}",
-            f"Embedding Provider: {EMBEDDING_PROVIDER.upper()} ({DENSE_MODEL_NAME} + {SPARSE_MODEL_NAME})",
-            f"Total Indexed Files: {files_count}",
-            f"Total AST Symbols: {symbols_count}",
-            f"Registered Git Repos: {git_count}",
-            f"Git Auth Sources: GitHub ({gh_src}: {mask_token(gh_tok)}), GitLab ({gl_src}), Gitea ({gt_src}), Host Vaults ({vault_str})",
-        ]
+        vault_status = "[Unavailable - Query Failed]" if vault_failed else len(vault_creds)
+        payload: Dict[str, Any] = {
+            "vector_store": {
+                "provider": provider,
+                "mode": mode_val,
+                "mode_label": mode_str,
+                "location": storage_loc,
+                "collection": collection_name,
+                "total_vectors": points_count,
+            },
+            "embeddings": {
+                "provider": EMBEDDING_PROVIDER.upper(),
+                "dense_model": DENSE_MODEL_NAME,
+                "sparse_model": SPARSE_MODEL_NAME,
+            },
+            "counts": {
+                "indexed_files": files_count,
+                "ast_symbols": symbols_count,
+                "git_repositories": git_count,
+            },
+            "git_auth": {
+                "github": {"source": gh_src, "token": mask_token(gh_tok)},
+                "gitlab": {"source": gl_src},
+                "gitea": {"source": gt_src},
+                "host_vaults": vault_status,
+            },
+        }
         if gh_tok:
-            lines.append(f"GitHub API Rate Limit: {rate_info.get('remaining', 0)} / {rate_info.get('limit', 60)}")
+            payload["github_rate_limit"] = {
+                "remaining": rate_info.get("remaining", 0),
+                "limit": rate_info.get("limit", 60),
+            }
 
-        return "\n".join(lines)
+        return json.dumps(payload)
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_index_status: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
-        return f"Failed to get status: {str(e)}"
-
-
+        return json.dumps({"error": f"Failed to get status: {str(e)}"})
 
 
 async def handle_catalog_summary() -> str:
     """Catalog of indexed repositories, documentation files, and AST symbol distributions."""
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             git_repos = conn.execute("SELECT name, url, branch, commit_sha, status, last_synced FROM git_repositories").fetchall()
             files = conn.execute("SELECT filepath, repo, doc_type, language FROM indexed_files").fetchall()
             symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
 
-        md = "# Repository & Documentation Catalog\n\n"
-        md += f"**Total Files Indexed:** {len(files)} | **Total AST Code Symbols:** {symbols_count}\n\n"
+        repos_data = []
+        for gr in git_repos:
+            repos_data.append({
+                "name": gr["name"],
+                "url": gr["url"],
+                "branch": gr["branch"],
+                "commit_sha": gr["commit_sha"],
+                "status": gr["status"],
+                "last_synced": gr["last_synced"],
+            })
 
-        if git_repos:
-            md += "## Registered Git Repositories\n\n"
-            md += "| Name | URL | Branch | Commit SHA | Status | Last Synced |\n"
-            md += "| --- | --- | --- | --- | --- | --- |\n"
-            for gr in git_repos:
-                sha_short = gr["commit_sha"][:8] if gr["commit_sha"] else "-"
-                md += f"| {gr['name']} | {gr['url']} | {gr['branch']} | `{sha_short}` | {gr['status']} | {gr['last_synced'] or '-'} |\n"
-            md += "\n"
-
-        md += "## Indexed File Overview\n\n"
-        md += "| Repository | File | Type | Language |\n"
-        md += "| --- | --- | --- | --- |\n"
+        files_data = []
         for f in files[:40]:
-            md += f"| {f['repo']} | {f['filepath']} | {f['doc_type']} | {f['language']} |\n"
-        if len(files) > 40:
-            md += f"\n*...and {len(files) - 40} more files.*"
-        return md
+            fp = f["filepath"]
+            clean_fp = fp.split("://", 1)[1] if "://" in fp else fp
+            files_data.append({
+                "repo": f["repo"],
+                "file": clean_fp,
+                "doc_type": f["doc_type"],
+                "language": f["language"],
+            })
+
+        return json.dumps({
+            "total_files": len(files),
+            "total_symbols": symbols_count,
+            "git_repositories": repos_data,
+            "files": files_data,
+            "truncated_files": max(0, len(files) - 40),
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_catalog_summary: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
-        return f"Error generating catalog resource: {str(e)}"
+        return json.dumps({"error": f"Error generating catalog resource: {str(e)}"})
 
 
 def handle_search_infrastructure_docs(
@@ -172,6 +228,8 @@ def handle_search_infrastructure_docs(
     """Workflow to search system infrastructure documentation, container mappings, or network routes."""
     from app.services.auth import enforce_tool_permission, Role
     enforce_tool_permission(Role.VIEWER)
-    return f"Please perform a search using the search_docs tool for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions."
-
-
+    return json.dumps({
+        "prompt": "search_infrastructure_docs",
+        "topic": topic,
+        "instructions": f"Perform a search using the search_docs tool for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions.",
+    })

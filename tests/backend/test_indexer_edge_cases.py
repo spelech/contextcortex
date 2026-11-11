@@ -185,9 +185,10 @@ async def test_catalog_summary_truncation(temp_edge_db):
             conn.execute("INSERT INTO indexed_files (filepath, repo, doc_type, language) VALUES (?, 'repo', 'doc', 'markdown')", (f"/docs/file_{i}.md",))
         conn.commit()
 
-    md = await handle_catalog_summary()
-    assert "**Total Files Indexed:** 50" in md
-    assert "...and 10 more files." in md
+    import json
+    data = json.loads(await handle_catalog_summary())
+    assert data["total_files"] == 50
+    assert data["truncated_files"] == 10
 
 @pytest.mark.asyncio
 async def test_get_prompt_unknown_error(temp_edge_db):

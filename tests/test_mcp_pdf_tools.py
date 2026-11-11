@@ -1,4 +1,5 @@
 import os
+import json
 import pymupdf
 import pytest
 from app.mcp.handlers.storage_handlers import handle_manage_local_file
@@ -27,15 +28,16 @@ async def test_mcp_manage_local_file_preview_pdf(storage_env):
     storage_env.save_file_content("sample.pdf", pdf_bytes)
 
     set_current_auth_context(AuthContext(role=Role.VIEWER))
-    res = await handle_manage_local_file(action="preview", file_path="sample.pdf")
+    res = json.loads(await handle_manage_local_file(action="preview", file_path="sample.pdf"))
 
-    assert "### PDF Extraction Preview: sample.pdf" in res
-    assert "**Total Pages:** 1" in res
-    assert "**Total Characters:**" in res
-    assert "**OCR Applied Pages:** 0" in res
-    assert "**Sample Chunks:**" in res
-    assert "#### Page 1:" in res
-    assert "ASD-STE100 Rules" in res
+    assert res["action"] == "preview"
+    assert res["file"] == "sample.pdf"
+    assert res["is_pdf"] is True
+    assert res["total_pages"] == 1
+    assert res["total_characters"] > 0
+    assert res["ocr_pages_count"] == 0
+    assert "sample_chunks" in res
+    assert "ASD-STE100 Rules" in res["preview"]
 
 
 @pytest.mark.asyncio
@@ -44,10 +46,12 @@ async def test_mcp_manage_local_file_read_pdf(storage_env):
     storage_env.save_file_content("sample.pdf", pdf_bytes)
 
     set_current_auth_context(AuthContext(role=Role.VIEWER))
-    res = await handle_manage_local_file(action="read", file_path="sample.pdf")
+    res = json.loads(await handle_manage_local_file(action="read", file_path="sample.pdf"))
 
-    assert "# Page 1" in res
-    assert "Rule 1.1: Use approved words from dictionary." in res
+    assert res["action"] == "read"
+    assert res["is_pdf"] is True
+    assert "# Page 1" in res["content"]
+    assert "Rule 1.1: Use approved words from dictionary." in res["content"]
 
 
 @pytest.mark.asyncio
@@ -56,26 +60,27 @@ async def test_mcp_manage_local_file_preview_markdown(storage_env):
     storage_env.save_file_content("doc.md", md_content)
 
     set_current_auth_context(AuthContext(role=Role.VIEWER))
-    res = await handle_manage_local_file(action="preview", file_path="doc.md")
+    res = json.loads(await handle_manage_local_file(action="preview", file_path="doc.md"))
 
-    assert "### File Preview: doc.md" in res
-    assert "**Line Count:** 3" in res
-    assert "**Character Count:**" in res
-    assert "# System Architecture" in res
+    assert res["action"] == "preview"
+    assert res["file"] == "doc.md"
+    assert res["line_count"] == 3
+    assert res["character_count"] == len(md_content)
+    assert "# System Architecture" in res["preview"]
 
 
 @pytest.mark.asyncio
 async def test_mcp_manage_local_file_preview_nonexistent(storage_env):
     set_current_auth_context(AuthContext(role=Role.VIEWER))
-    res = await handle_manage_local_file(action="preview", file_path="missing.pdf")
+    res = json.loads(await handle_manage_local_file(action="preview", file_path="missing.pdf"))
 
-    assert "Error executing manage_local_file" in res or "Error:" in res
-    assert "does not exist" in res or "not found" in res
+    assert "error" in res
+    assert "does not exist" in res["error"] or "not found" in res["error"]
 
 
 @pytest.mark.asyncio
 async def test_mcp_manage_local_file_preview_missing_path(storage_env):
     set_current_auth_context(AuthContext(role=Role.VIEWER))
-    res = await handle_manage_local_file(action="preview", file_path="")
+    res = json.loads(await handle_manage_local_file(action="preview", file_path=""))
 
-    assert "Error:" in res or "Error executing manage_local_file" in res
+    assert "error" in res

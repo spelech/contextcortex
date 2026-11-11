@@ -1,3 +1,4 @@
+import json
 import pytest
 import asyncio
 from app.mcp.handlers.storage_handlers import handle_manage_local_file, handle_what_is_ingested
@@ -23,12 +24,15 @@ async def test_manage_local_file_upload_and_read(tmp_path, monkeypatch, db_engin
 
     set_current_auth_context(AuthContext(role=Role.EDITOR))
     up_res = await handle_manage_local_file(action="upload", file_path="notes/guide.md", content="# Guide\nTest content")
-    assert "Successfully uploaded and indexed" in up_res
-    assert "notes/guide.md" in up_res
+    up_data = json.loads(up_res)
+    assert up_data["action"] == "upload"
+    assert up_data["status"] == "success"
+    assert up_data["file"] == "notes/guide.md"
 
     read_res = await handle_manage_local_file(action="read", file_path="notes/guide.md")
-    assert "# Guide" in read_res
-    assert "Test content" in read_res
+    read_data = json.loads(read_res)
+    assert "# Guide" in read_data["content"]
+    assert "Test content" in read_data["content"]
 
 @pytest.mark.asyncio
 async def test_manage_local_file_replace_and_delete(tmp_path, monkeypatch, db_engine):
@@ -42,27 +46,33 @@ async def test_manage_local_file_replace_and_delete(tmp_path, monkeypatch, db_en
 
     # Replace
     rep_res = await handle_manage_local_file(action="replace", file_path="notes/doc.md", content="Updated")
-    assert "Successfully replaced and indexed" in rep_res
+    rep_data = json.loads(rep_res)
+    assert rep_data["action"] == "replace"
+    assert rep_data["status"] == "success"
 
     read_res = await handle_manage_local_file(action="read", file_path="notes/doc.md")
-    assert "Updated" in read_res
+    assert "Updated" in json.loads(read_res)["content"]
 
     # Delete
     del_res = await handle_manage_local_file(action="delete", file_path="notes/doc.md")
-    assert "Successfully deleted" in del_res
+    del_data = json.loads(del_res)
+    assert del_data["action"] == "delete"
+    assert del_data["status"] == "success"
 
     # Read after delete should return error message
     read_after_del = await handle_manage_local_file(action="read", file_path="notes/doc.md")
-    assert "Error executing manage_local_file" in read_after_del
+    assert "error" in json.loads(read_after_del)
 
 @pytest.mark.asyncio
 async def test_manage_local_file_rbac_forbidden():
     set_current_auth_context(AuthContext(role=Role.VIEWER))
     res = await handle_manage_local_file(action="upload", file_path="test.md", content="forbidden")
-    assert "Forbidden" in res or "Permission denied" in res or "Insufficient permissions" in res
+    res_data = json.loads(res)
+    assert res_data.get("forbidden") is True or "Forbidden" in res_data.get("error", "")
 
     del_res = await handle_manage_local_file(action="delete", file_path="test.md")
-    assert "Forbidden" in del_res or "Permission denied" in del_res or "Insufficient permissions" in del_res
+    del_data = json.loads(del_res)
+    assert del_data.get("forbidden") is True or "Forbidden" in del_data.get("error", "")
 
 @pytest.mark.asyncio
 async def test_manage_local_file_input_validation(tmp_path, monkeypatch):
@@ -73,11 +83,11 @@ async def test_manage_local_file_input_validation(tmp_path, monkeypatch):
     set_current_auth_context(AuthContext(role=Role.EDITOR))
     # Missing content on upload
     res = await handle_manage_local_file(action="upload", file_path="test.md", content=None)
-    assert "Error: 'content' parameter is required" in res
+    assert "'content' parameter is required" in json.loads(res)["error"]
 
     # Unsupported action
     inv_res = await handle_manage_local_file(action="invalid_action", file_path="test.md")
-    assert "Unsupported action" in inv_res
+    assert "Unsupported action" in json.loads(inv_res)["error"]
 
 @pytest.mark.asyncio
 async def test_what_is_ingested_summary_and_filters(tmp_path, monkeypatch, db_engine):
@@ -87,10 +97,10 @@ async def test_what_is_ingested_summary_and_filters(tmp_path, monkeypatch, db_en
 
     set_current_auth_context(AuthContext(role=Role.VIEWER))
     out = await handle_what_is_ingested(source_type="all", detail_level="summary")
-    assert "# ContextCortex Ingestion Catalog" in out
-    assert "Git Repositories" in out
-    assert "Monitored Paths" in out
-    assert "Local Storage" in out
+    data = json.loads(out)
+    assert "git_repositories" in data
+    assert "monitored_paths" in data
+    assert "local_storage" in data
 
 @pytest.mark.asyncio
 async def test_what_is_ingested_detailed_with_data(tmp_path, monkeypatch, db_engine):
@@ -125,25 +135,24 @@ async def test_what_is_ingested_detailed_with_data(tmp_path, monkeypatch, db_eng
     set_current_auth_context(AuthContext(role=Role.VIEWER))
 
     # Test source_type git
-    git_out = await handle_what_is_ingested(source_type="git", detail_level="summary")
-    assert "mock_repo" in git_out
-    assert "Local Storage" not in git_out
+    git_out = json.loads(await handle_what_is_ingested(source_type="git", detail_level="summary"))
+    assert any(r["name"] == "mock_repo" for r in git_out["git_repositories"])
+    assert "local_storage" not in git_out
 
     # Test source_type monitored_path
-    mon_out = await handle_what_is_ingested(source_type="monitored_path", detail_level="summary")
-    assert "monitored_repo" in mon_out
-    assert "Git Repositories" not in mon_out
+    mon_out = json.loads(await handle_what_is_ingested(source_type="monitored_path", detail_level="summary"))
+    assert any(p["repo"] == "monitored_repo" for p in mon_out["monitored_paths"])
+    assert "git_repositories" not in mon_out
 
     # Test source_type local_storage
-    ls_out = await handle_what_is_ingested(source_type="local_storage", detail_level="summary")
-    assert "Local Storage (Uploaded Files)" in ls_out
-    assert "**Subdirectories**: sub" in ls_out
+    ls_out = json.loads(await handle_what_is_ingested(source_type="local_storage", detail_level="summary"))
+    assert "local_storage" in ls_out
+    assert "sub" in ls_out["local_storage"]["directories"]
 
     # Test detailed level
-    detailed_out = await handle_what_is_ingested(source_type="all", detail_level="detailed", repo_name="monitored_repo")
-    assert "Ingested File Details" in detailed_out
-    assert "[monitored_repo]" in detailed_out
-    assert "/local/path/main.py" in detailed_out
+    detailed_out = json.loads(await handle_what_is_ingested(source_type="all", detail_level="detailed", repo_name="monitored_repo"))
+    assert "files" in detailed_out
+    assert any(f["repo"] == "monitored_repo" and f["file"] == "/local/path/main.py" for f in detailed_out["files"])
 
 @pytest.mark.asyncio
 async def test_tool_registration():

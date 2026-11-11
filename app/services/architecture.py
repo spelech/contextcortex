@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import logging
 from typing import Optional, List, Dict, Any
 from app.services.database import get_db_connection
@@ -43,7 +44,7 @@ def detect_entry_points(filepaths: List[str]) -> List[str]:
 def synthesize_architecture(repo: Optional[str] = None) -> str:
     """
     Synthesizes language distributions, key entry points, primary frameworks/modules,
-    route counts, and active ADRs into a concise summary (<1,000 tokens).
+    route counts, and active ADRs into a compact JSON summary (<1,000 tokens).
     """
     try:
         with get_db_connection() as conn:
@@ -59,8 +60,17 @@ def synthesize_architecture(repo: Optional[str] = None) -> str:
 
         total_files = len(file_rows)
         if total_files == 0:
-            target_str = f"repository '{repo}'" if repo else "all registered repositories"
-            return f"No indexed architecture data available for {target_str}."
+            return json.dumps({
+                "repo": repo,
+                "total_files": 0,
+                "languages": [],
+                "manifests": [],
+                "entry_points": [],
+                "modules": [],
+                "hub_symbols": [],
+                "api_surface": {"estimated_routes": 0, "namespaces": []},
+                "active_adrs": [],
+            })
 
         filepaths = [r["filepath"] for r in file_rows]
 
@@ -85,17 +95,17 @@ def synthesize_architecture(repo: Optional[str] = None) -> str:
                 if label not in detected_manifests:
                     detected_manifests.append(label)
 
-        lang_summary_items = []
+        languages = []
         for l_name, l_cnt in sorted(lang_counts.items(), key=lambda x: x[1], reverse=True):
-            pct = (l_cnt / total_files) * 100
-            lang_summary_items.append(f"{l_name}: {l_cnt} files ({pct:.1f}%)")
+            pct = round((l_cnt / total_files) * 100, 1)
+            languages.append({"language": l_name, "files": l_cnt, "percent": pct})
 
         # 3. Entry Points Detection
         entry_points = detect_entry_points(filepaths)
 
         # 4. Key Modules & Hub Symbols
         module_counts: Dict[str, int] = {}
-        top_symbols: List[str] = []
+        top_symbols: List[Dict[str, str]] = []
 
         for sr in symbol_rows:
             fp = sr["filepath"].split("://")[-1] if "://" in sr["filepath"] else sr["filepath"]
@@ -104,11 +114,8 @@ def synthesize_architecture(repo: Optional[str] = None) -> str:
 
         sorted_modules = [mod for mod, _ in sorted(module_counts.items(), key=lambda x: x[1], reverse=True)[:5]]
 
-        # Key symbols (functions/classes)
         for sr in symbol_rows[:10]:
-            kind = sr["kind"]
-            name = sr["name"]
-            top_symbols.append(f"`{name}` ({kind})")
+            top_symbols.append({"name": sr["name"], "kind": sr["kind"]})
 
         # 5. API Surface Summary
         route_patterns = [
@@ -138,7 +145,6 @@ def synthesize_architecture(repo: Optional[str] = None) -> str:
             if re.search(r"(route|api|controller|endpoint)", clean_fp, re.IGNORECASE):
                 route_count += 1
 
-        # Deduplicate estimated routes minimum
         route_count = max(route_count, len(namespaces))
 
         # 6. Active ADRs
@@ -146,48 +152,22 @@ def synthesize_architecture(repo: Optional[str] = None) -> str:
         for adr in adr_rows:
             st = adr["status"].upper()
             if st in ("ACCEPTED", "PROPOSED"):
-                active_adrs.append(f"- **{adr['id']}**: {adr['title']} (`{st}`)")
+                active_adrs.append({"id": adr["id"], "title": adr["title"], "status": st})
 
-        # --- Build Markdown Summary ---
-        header_title = f"# Architecture Overview: {repo}" if repo else "# Global Architecture Overview"
-        out = [header_title, ""]
-
-        out.append("### 1. Language & Tech Stack Distribution")
-        out.append("- **Languages:** " + ", ".join(lang_summary_items))
-        if detected_manifests:
-            out.append("- **Framework & Manifest Configs:** " + ", ".join(detected_manifests))
-        out.append("")
-
-        out.append("### 2. Entry Points")
-        if entry_points:
-            for ep in entry_points[:8]:
-                out.append(f"- `{ep}`")
-        else:
-            out.append("- *No explicit entry points matched heuristic patterns.*")
-        out.append("")
-
-        out.append("### 3. Key Modules & Hub Symbols")
-        if sorted_modules:
-            out.append(f"- **Primary Modules/Folders:** {', '.join([f'`{m}`' for m in sorted_modules])}")
-        if top_symbols:
-            out.append(f"- **Hub Symbols:** {', '.join(top_symbols[:6])}")
-        out.append("")
-
-        out.append("### 4. API Surface Summary")
-        out.append(f"- **Detected HTTP Routes / Endpoints:** ~{route_count}")
-        if namespaces:
-            out.append(f"- **Prefix Namespaces:** {', '.join(namespaces)}")
-        else:
-            out.append("- **Prefix Namespaces:** Standard API routes & service handlers")
-        out.append("")
-
-        out.append("### 5. Active Architectural Decisions (ADRs)")
-        if active_adrs:
-            out.extend(active_adrs[:10])
-        else:
-            out.append("- *No active or accepted ADRs registered.*")
-
-        return "\n".join(out)
+        return json.dumps({
+            "repo": repo,
+            "total_files": total_files,
+            "languages": languages,
+            "manifests": detected_manifests,
+            "entry_points": entry_points[:8],
+            "modules": sorted_modules,
+            "hub_symbols": top_symbols[:6],
+            "api_surface": {
+                "estimated_routes": route_count,
+                "namespaces": namespaces,
+            },
+            "active_adrs": active_adrs[:10],
+        })
     except Exception as e:
         logger.error(f"Error synthesizing architecture overview: {e}")
-        return f"Error generating architecture overview: {str(e)}"
+        return json.dumps({"error": f"Error generating architecture overview: {str(e)}"})

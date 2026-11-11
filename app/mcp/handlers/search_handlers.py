@@ -30,10 +30,10 @@ async def handle_search_code(
     """Hybrid semantic and BM25 search over code functions, classes, and logic snippets with line numbers, AST signatures, and GitHub links."""
     query = query.strip() if query else ""
     if not query:
-        return "Error: search query cannot be empty."
+        return json.dumps({"error": "search query cannot be empty."})
 
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
 
         requested_mode = (mode or "hybrid").lower().strip()
@@ -46,44 +46,44 @@ async def handle_search_code(
             dense_weight=dense_weight,
             search_mode=requested_mode
         )
-        if not hits:
-            return f"No matching code snippets found for query: '{query}'."
+        results = []
+        for hit in (hits or []):
+            p = hit.payload or {}
+            raw_path = p.get("rel_path") or p.get("path") or p.get("filepath") or ""
+            rel_path = raw_path.split("://", 1)[1] if "://" in raw_path else raw_path
+            start_l = p.get("start_line")
+            end_l = p.get("end_line")
+            lines_range = [start_l, end_l] if start_l is not None and end_l is not None else None
+            score_val = round(float(hit.score), 4) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
+            d_val = round(float(hit.dense_score), 4) if isinstance(getattr(hit, "dense_score", None), (int, float)) else None
+            s_val = round(float(hit.sparse_score), 4) if isinstance(getattr(hit, "sparse_score", None), (int, float)) else None
 
-        formatted = []
-        for hit in hits:
-            p = hit.payload
-            header = f"### [{p.get('repo')}] {p.get('rel_path')} (Lines {p.get('start_line')}-{p.get('end_line')})\n"
-            
-            sym = p.get("full_symbol") or p.get("symbol")
-            kind = p.get("kind")
-            if sym:
-                kind_str = f" (`{kind}`)" if kind else ""
-                header += f"- **Symbol**: `{sym}`{kind_str}\n"
+            results.append({
+                "repo": p.get("repo"),
+                "file": rel_path,
+                "lines": lines_range,
+                "symbol": p.get("full_symbol") or p.get("symbol"),
+                "kind": p.get("kind"),
+                "signature": p.get("signature"),
+                "language": p.get("language"),
+                "score": score_val,
+                "dense_score": d_val,
+                "sparse_score": s_val,
+                "permalink": p.get("permalink_url") or p.get("github_url"),
+                "content": p.get("content") or "",
+            })
 
-            sig = p.get("signature")
-            if sig:
-                header += f"- **Signature**: `{sig}`\n"
-
-            link_url = p.get("permalink_url") or p.get("github_url")
-            if link_url:
-                header += f"- **Source Link**: {link_url}\n"
-
-            score_val = float(hit.score) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
-            score_str = f"{score_val:.4f} ({score_val * 100:.1f}%)"
-            d_val = getattr(hit, "dense_score", None)
-            s_val = getattr(hit, "sparse_score", None)
-            if isinstance(d_val, (int, float)) and isinstance(s_val, (int, float)):
-                score_str += f" [Semantic: {float(d_val) * 100:.1f}% | Lexical: {float(s_val) * 100:.1f}%]"
-            header += f"- Relevance Score: {score_str}\n\n"
-
-            lang = p.get("language", "")
-            block = f"{header}```{lang}\n{p.get('content')}\n```"
-            formatted.append(block)
-
-        return "\n\n========================\n\n".join(formatted)
+        return json.dumps({
+            "query": query,
+            "mode": requested_mode,
+            "results": results,
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_search_code: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"search_code failed: {e}")
-        return f"Error executing code search: {str(e)}"
+        return json.dumps({"error": f"Error executing code search: {str(e)}"})
 
 
 async def handle_search_docs(
@@ -98,10 +98,10 @@ async def handle_search_docs(
     """Hybrid search across system documentation, markdown notes, architectural decisions, and runbooks."""
     query = query.strip() if query else ""
     if not query:
-        return "Error: search query cannot be empty."
+        return json.dumps({"error": "search query cannot be empty."})
 
     try:
-        from app.services.auth import enforce_tool_permission, Role
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
 
         requested_mode = (mode or "hybrid").lower().strip()
@@ -115,37 +115,35 @@ async def handle_search_docs(
             dense_weight=dense_weight,
             search_mode=requested_mode
         )
-        if not hits:
-            return f"No matching documentation found for query: '{query}'."
+        results = []
+        for hit in (hits or []):
+            p = hit.payload or {}
+            raw_path = p.get("rel_path") or p.get("path") or p.get("filepath") or ""
+            rel_path = raw_path.split("://", 1)[1] if "://" in raw_path else raw_path
+            score_val = round(float(hit.score), 4) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
+            d_val = round(float(hit.dense_score), 4) if isinstance(getattr(hit, "dense_score", None), (int, float)) else None
+            s_val = round(float(hit.sparse_score), 4) if isinstance(getattr(hit, "sparse_score", None), (int, float)) else None
 
-        formatted = []
-        for hit in hits:
-            p = hit.payload
-            tags_str = ", ".join(p.get("tags", []))
-            header = f"### [{p.get('repo')}] {p.get('rel_path')}"
-            if p.get("heading") and p.get("heading") != "Root":
-                header += f" -> {p.get('heading')}"
-            header += "\n"
-            if tags_str:
-                header += f"- **Tags**: {tags_str}\n"
-            link_url = p.get("permalink_url") or p.get("github_url")
-            if link_url:
-                header += f"- **Source Link**: {link_url}\n"
+            results.append({
+                "repo": p.get("repo"),
+                "file": rel_path,
+                "heading": p.get("heading"),
+                "tags": p.get("tags", []),
+                "score": score_val,
+                "dense_score": d_val,
+                "sparse_score": s_val,
+                "permalink": p.get("permalink_url") or p.get("github_url"),
+                "content": p.get("content") or "",
+            })
 
-            score_val = float(hit.score) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
-            score_str = f"{score_val:.4f} ({score_val * 100:.1f}%)"
-            d_val = getattr(hit, "dense_score", None)
-            s_val = getattr(hit, "sparse_score", None)
-            if isinstance(d_val, (int, float)) and isinstance(s_val, (int, float)):
-                score_str += f" [Semantic: {float(d_val) * 100:.1f}% | Lexical: {float(s_val) * 100:.1f}%]"
-            header += f"- Relevance Score: {score_str}\n\n"
-
-            block = f"{header}---\n{p.get('content')}"
-            formatted.append(block)
-
-        return "\n\n========================\n\n".join(formatted)
+        return json.dumps({
+            "query": query,
+            "mode": requested_mode,
+            "results": results,
+        })
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_search_docs: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"search_docs failed: {e}")
-        return f"Error executing doc search: {str(e)}"
-
-
+        return json.dumps({"error": f"Error executing doc search: {str(e)}"})

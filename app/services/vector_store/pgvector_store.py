@@ -656,6 +656,161 @@ class PgVectorStore(VectorStore):
             logger.warning(f"PgVectorStore health check failed: {e}")
             return False, "PgVectorStore health check failed."
 
+    def get_file_chunks(self, path: str, repo: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Returns all chunk payloads for the specified path / rel_path (and optional repo), sorted by (start_line, end_line)."""
+        clean_path = path.replace("\\", "/").strip("/")
+        rel_path = clean_path.split("://", 1)[1] if "://" in clean_path else clean_path
+        if repo and rel_path.startswith(f"{repo}/"):
+            rel_path = rel_path[len(repo) + 1:]
+
+        conditions = [
+            "collection_name = :collection_name",
+            "(rel_path = :rel_path OR path = :path OR rel_path = :path OR path = :rel_path OR path LIKE :path_suffix)"
+        ]
+        params: Dict[str, Any] = {
+            "collection_name": self.collection_name,
+            "rel_path": rel_path,
+            "path": path,
+            "path_suffix": f"%://{repo}/{rel_path}" if (repo and repo not in ("__all__", "all")) else f"%/{rel_path}",
+        }
+        if repo and repo not in ("__all__", "all"):
+            conditions.append("repo = :repo")
+            params["repo"] = repo
+
+        where_clause = " AND ".join(conditions)
+        query_sql = text(f"""
+        SELECT payload, content, start_line, end_line, repo, path, rel_path
+        FROM {self.table_name}
+        WHERE {where_clause}
+        ORDER BY COALESCE(start_line, 0) ASC, COALESCE(end_line, 0) ASC;
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                rows = conn.execute(query_sql, params).mappings().fetchall()
+
+            chunks: List[Dict[str, Any]] = []
+            for r in rows:
+                p = self._parse_payload(r["payload"])
+                if "content" not in p and r["content"]:
+                    p["content"] = r["content"]
+                if "start_line" not in p and r["start_line"] is not None:
+                    p["start_line"] = r["start_line"]
+                if "end_line" not in p and r["end_line"] is not None:
+                    p["end_line"] = r["end_line"]
+                if "repo" not in p and r["repo"]:
+                    p["repo"] = r["repo"]
+                if "path" not in p and r["path"]:
+                    p["path"] = r["path"]
+                if "rel_path" not in p and r["rel_path"]:
+                    p["rel_path"] = r["rel_path"]
+                chunks.append(p)
+
+            chunks.sort(key=lambda p: (p.get("start_line") or 0, p.get("end_line") or 0))
+            return chunks
+        except Exception as e:
+            logger.error(f"Error fetching file chunks from PgVectorStore: {e}")
+            return []
+
+    def grep_chunks(
+        self,
+        pattern: str,
+        repo: Optional[str] = None,
+        path_glob: Optional[str] = None,
+        is_regex: bool = False,
+        case_sensitive: bool = False,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Queries chunks matching pattern using parameterized SQL over table_name."""
+        import fnmatch
+        import re
+
+        is_sqlite = getattr(self.engine.dialect, "name", "") == "sqlite"
+
+        # Validate regex syntax if requested
+        if is_regex:
+            re.compile(pattern)
+
+        conditions = ["collection_name = :collection_name"]
+        params: Dict[str, Any] = {
+            "collection_name": self.collection_name,
+            "limit": limit,
+        }
+
+        if repo and repo not in ("__all__", "all"):
+            conditions.append("repo = :repo")
+            params["repo"] = repo
+
+        # Filtering pattern in SQL
+        if not is_sqlite:
+            # PostgreSQL
+            if is_regex:
+                op = "~" if case_sensitive else "~*"
+                conditions.append(f"content {op} :pattern")
+                params["pattern"] = pattern
+            else:
+                op = "LIKE" if case_sensitive else "ILIKE"
+                # Escape % and _ in pattern for LIKE
+                escaped = pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                conditions.append(f"content {op} :pattern")
+                params["pattern"] = f"%{escaped}%"
+        else:
+            # SQLite: LIKE is case-insensitive for ASCII, but we'll filter in Python if needed
+            if not is_regex:
+                escaped = pattern.replace("/", "//").replace("%", "/%").replace("_", "/_")
+                conditions.append("content LIKE :pattern ESCAPE '/'")
+                params["pattern"] = f"%{escaped}%"
+
+        where_clause = " AND ".join(conditions)
+        query_sql = text(f"""
+        SELECT payload, content, start_line, end_line, repo, path, rel_path
+        FROM {self.table_name}
+        WHERE {where_clause}
+        LIMIT :limit;
+        """)
+
+        try:
+            with self.engine.connect() as conn:
+                rows = conn.execute(query_sql, params).mappings().fetchall()
+
+            flags = 0 if case_sensitive else re.IGNORECASE
+            regex_pat = pattern if is_regex else re.escape(pattern)
+            compiled = re.compile(regex_pat, flags)
+
+            matched_chunks: List[Dict[str, Any]] = []
+            for r in rows:
+                p = self._parse_payload(r["payload"])
+                if "content" not in p and r["content"]:
+                    p["content"] = r["content"]
+                if "start_line" not in p and r["start_line"] is not None:
+                    p["start_line"] = r["start_line"]
+                if "end_line" not in p and r["end_line"] is not None:
+                    p["end_line"] = r["end_line"]
+                if "repo" not in p and r["repo"]:
+                    p["repo"] = r["repo"]
+                if "path" not in p and r["path"]:
+                    p["path"] = r["path"]
+                if "rel_path" not in p and r["rel_path"]:
+                    p["rel_path"] = r["rel_path"]
+
+                chunk_path = p.get("rel_path") or p.get("path") or ""
+                if path_glob:
+                    norm_p = chunk_path.replace("\\", "/")
+                    norm_glob = path_glob.replace("\\", "/")
+                    if not (fnmatch.fnmatch(norm_p, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_p), norm_glob)):
+                        continue
+
+                content = p.get("content") or ""
+                if compiled.search(content):
+                    matched_chunks.append(p)
+                    if len(matched_chunks) >= limit:
+                        break
+
+            return matched_chunks[:limit]
+        except Exception as e:
+            logger.error(f"Error running grep_chunks on PgVectorStore: {e}")
+            raise
+
     def close(self):
         """Disposes underlying database handles if necessary."""
         pass
