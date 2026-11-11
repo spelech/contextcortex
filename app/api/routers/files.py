@@ -122,6 +122,7 @@ async def api_summarize_file(payload: FileSummarizePayload):
 )
 async def api_grep_code(payload: GrepSearchPayload):
     try:
+        import re
         raw_pattern = payload.pattern.strip() if payload.pattern else ""
         if not raw_pattern:
             return JSONResponse(status_code=400, content={"error": "pattern must be a non-empty string."})
@@ -130,16 +131,18 @@ async def api_grep_code(payload: GrepSearchPayload):
         if raw_repo and ("\x00" in raw_repo or any(part == ".." for part in raw_repo.replace("\\", "/").split("/"))):
             return JSONResponse(status_code=400, content={"error": "Path traversal or invalid repo detected."})
 
+        safe_pattern = re.escape(raw_pattern)
         reader = get_file_reader_service()
         result = reader.grep_code(
-            pattern=raw_pattern,
+            pattern=safe_pattern,
             repo=raw_repo,
             path_glob=payload.path_glob,
-            is_regex=False,
+            is_regex=True,
             case_sensitive=payload.case_sensitive,
             context_lines=payload.context_lines,
             limit=payload.limit,
         )
+        result["pattern"] = raw_pattern
         return result
     except ForbiddenError as fe:
         logger.warning(f"Forbidden access during grep_code: {fe}")
