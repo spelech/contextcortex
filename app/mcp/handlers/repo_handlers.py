@@ -56,7 +56,7 @@ async def handle_list_repositories() -> str:
         return json.dumps({
             "git_repositories": repos_list,
             "local_paths": monitored_list,
-        })
+        }, default=str)
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_list_repositories: {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
@@ -72,13 +72,19 @@ async def handle_sync_repository(
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.EDITOR)
-        from app.services.indexing import sync_single_git_repo, run_full_indexing
+        import app.services.indexing as idx_mod
         import threading
         if target_repo:
             with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
                 row = conn.execute("SELECT id FROM git_repositories WHERE name = ?", (target_repo,)).fetchone()
             if row:
-                threading.Thread(target=sync_single_git_repo, args=(row["id"],), daemon=True).start()
+                sync_fn = idx_mod.sync_single_git_repo
+                threading.Thread(
+                    target=sync_fn,
+                    args=(row["id"],),
+                    kwargs={"force": True},
+                    daemon=True,
+                ).start()
                 return json.dumps({
                     "status": "triggered",
                     "scope": "repository",
@@ -86,7 +92,8 @@ async def handle_sync_repository(
                     "message": f"Triggered background sync for repo: '{target_repo}'",
                 })
 
-        threading.Thread(target=run_full_indexing, daemon=True).start()
+        full_fn = idx_mod.run_full_indexing
+        threading.Thread(target=full_fn, daemon=True).start()
         return json.dumps({
             "status": "triggered",
             "scope": "full",
@@ -107,7 +114,7 @@ async def handle_index_status() -> str:
         enforce_tool_permission(Role.VIEWER)
         from app.services.git_manager import check_github_rate_limit, mask_token
         from app.services.database import get_effective_git_token, list_git_host_credentials
-        from app.services.embeddings import EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
+        from app.services.embeddings import EMBEDDING_PROVIDER, DENSE_MODEL_NAME, SPARSE_MODEL_NAME, get_embedding_config
 
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             files_count = conn.execute("SELECT count(*) FROM indexed_files").fetchone()[0]
@@ -122,6 +129,13 @@ async def handle_index_status() -> str:
         collection_name = vs_cfg.get("collection", "knowledge_rag_v1")
         stats = vs_cfg.get("stats", {})
         points_count = stats.get("points_count", 0)
+
+        emb_cfg = get_embedding_config()
+        effective_sparse = (
+            "PostgreSQL Full-Text Search (tsvector + GIN)"
+            if provider == "PGVECTOR"
+            else emb_cfg.get("effective_sparse_model") or SPARSE_MODEL_NAME
+        )
 
         gh_tok, _, gh_src = get_effective_git_token("https://github.com", provider="github")
         gl_tok, _, gl_src = get_effective_git_token("https://gitlab.com", provider="gitlab")
@@ -148,7 +162,7 @@ async def handle_index_status() -> str:
             "embeddings": {
                 "provider": EMBEDDING_PROVIDER.upper(),
                 "dense_model": DENSE_MODEL_NAME,
-                "sparse_model": SPARSE_MODEL_NAME,
+                "sparse_model": effective_sparse,
             },
             "counts": {
                 "indexed_files": files_count,
@@ -168,7 +182,7 @@ async def handle_index_status() -> str:
                 "limit": rate_info.get("limit", 60),
             }
 
-        return json.dumps(payload)
+        return json.dumps(payload, default=str)
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_index_status: {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
@@ -200,7 +214,7 @@ async def handle_catalog_summary() -> str:
         files_data = []
         for f in files[:40]:
             fp = f["filepath"]
-            clean_fp = fp.split("://", 1)[1] if "://" in fp else fp
+            clean_fp = (fp.split("://", 1)[1] if "://" in fp else fp).replace("\\", "/")
             files_data.append({
                 "repo": f["repo"],
                 "file": clean_fp,
@@ -214,7 +228,7 @@ async def handle_catalog_summary() -> str:
             "git_repositories": repos_data,
             "files": files_data,
             "truncated_files": max(0, len(files) - 40),
-        })
+        }, default=str)
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_catalog_summary: {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
@@ -275,7 +289,7 @@ async def handle_get_recent_changes(
                     "commits": [],
                     "message": f"Commit history is not retained for repository '{repo}' (retain_commits_count={retained_limit if repo_row else 0}). Retrieve commit history directly from the Git repository."
                 }
-                return json.dumps(fallback_resp, separators=(",", ":"))
+                return json.dumps(fallback_resp, separators=(",", ":"), default=str)
 
             git_url = repo_row["url"]
             provider = repo_row["provider"]
@@ -283,7 +297,7 @@ async def handle_get_recent_changes(
             # Resolve filter filepath
             target_filepath = None
             if filepath and filepath.strip():
-                clean_fp = filepath.strip().lstrip("/")
+                clean_fp = filepath.strip().replace("\\", "/").lstrip("/")
                 target_filepath = clean_fp
             elif symbol and symbol.strip():
                 sym_row = conn.execute(
@@ -293,9 +307,9 @@ async def handle_get_recent_changes(
                 if sym_row:
                     raw_fp = sym_row["filepath"]
                     if "://" in raw_fp:
-                        target_filepath = raw_fp.split("://", 1)[1]
+                        target_filepath = raw_fp.split("://", 1)[1].replace("\\", "/")
                     else:
-                        target_filepath = raw_fp
+                        target_filepath = raw_fp.replace("\\", "/")
 
             # Query commits from git_commits
             rows = conn.execute(
@@ -307,7 +321,7 @@ async def handle_get_recent_changes(
             for r in rows:
                 files_raw = r["files_changed"]
                 try:
-                    files_list = json.loads(files_raw) if files_raw else []
+                    files_list = [f.replace("\\", "/") for f in (json.loads(files_raw) if files_raw else [])]
                 except Exception:
                     files_list = []
 
@@ -344,7 +358,7 @@ async def handle_get_recent_changes(
             if target_filepath:
                 result["filter_filepath"] = target_filepath
 
-            return json.dumps(result, separators=(",", ":"))
+            return json.dumps(result, separators=(",", ":"), default=str)
 
     except Exception as e:
         logger.error(f"Error in handle_get_recent_changes: {e}")

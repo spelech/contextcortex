@@ -294,6 +294,45 @@ def _seed_defaults(engine: Engine, vault_path: str = "/docs") -> None:
             logger.error(f"Failed to seed embedding configuration: {ee}")
 
 
+def _normalize_stored_paths(engine: Engine) -> None:
+    """Normalizes any legacy Windows backslashes ('\\') in repository-scoped filepaths to POSIX slashes ('/')."""
+    try:
+        with engine.connect() as conn:
+            for tbl, col in [
+                ("indexed_files", "filepath"),
+                ("ast_symbols", "filepath"),
+                ("ast_relationships", "source_filepath"),
+                ("api_routes", "filepath"),
+                ("api_client_calls", "filepath"),
+                ("file_summaries", "filepath"),
+            ]:
+                try:
+                    conn.execute(
+                        text(
+                            f"UPDATE {tbl} SET {col} = REPLACE({col}, '\\\\', '/') "
+                            f"WHERE {col} LIKE '%://%' AND INSTR({col}, '\\\\') > 0"
+                            if not is_postgres(engine=engine)
+                            else f"UPDATE {tbl} SET {col} = REPLACE({col}, '\\', '/') "
+                            f"WHERE {col} LIKE '%://%' AND POSITION('\\' IN {col}) > 0"
+                        )
+                    )
+                except Exception:
+                    pass
+            try:
+                conn.execute(
+                    text(
+                        "UPDATE file_summaries SET folder = REPLACE(folder, '\\\\', '/') WHERE INSTR(folder, '\\\\') > 0"
+                        if not is_postgres(engine=engine)
+                        else "UPDATE file_summaries SET folder = REPLACE(folder, '\\', '/') WHERE POSITION('\\' IN folder) > 0"
+                    )
+                )
+            except Exception:
+                pass
+            conn.commit()
+    except Exception as e:
+        logger.debug(f"Path normalization check skipped: {e}")
+
+
 def init_db(vault_path: str = "/docs", engine: Optional[Engine] = None) -> Engine:
     """
     Initializes database schema and default seeds.
@@ -320,6 +359,8 @@ def init_db(vault_path: str = "/docs", engine: Optional[Engine] = None) -> Engin
             ensure_file_summaries_columns(conn)
     except Exception as me:
         logger.debug(f"Column migration check: {me}")
+
+    _normalize_stored_paths(eng)
 
     # Seed default data
     _seed_defaults(eng, vault_path=vault_path)

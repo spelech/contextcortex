@@ -42,7 +42,7 @@ async def handle_diagnose_issue(
             limit=limit
         )
 
-        return json.dumps(result, indent=2)
+        return json.dumps(result, indent=2, default=str)
 
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_diagnose_issue: {fe}")

@@ -217,12 +217,13 @@ flowchart TD
   - **Streamable HTTP**: Bidirectional JSON-RPC at `/mcp`.
 - **Extended Agent Tools (`app/mcp/tools.py` & `app/mcp/handlers/`)**:
   - `search_handlers.py`: `search_code`, `search_docs` calibrated hybrid search with `dense_weight`, `mode`, score decomposition, and AST signature enrichment.
-  - `symbol_handlers.py`: `find_symbol`, `get_file_outline`, `trace_path` sub-50ms AST lookups and BFS call graph traversal.
-  - `repo_handlers.py`: `list_repositories`, `sync_repository`, `index_status`.
+  - `symbol_handlers.py`: `find_symbol`, `get_file_outline`, `trace_path` sub-50ms AST lookups, BFS call graph traversal, and cross-repo HTTP route/caller resolution (`external_callers`, `external_handlers`).
+  - `repo_handlers.py`: `list_repositories`, `get_recent_changes` (commit history inspection filtered by file or symbol), `sync_repository`, `index_status`.
   - `route_handlers.py`: `find_routes`, `find_api_callers` cross-repo API route and caller discovery.
   - `architecture_handlers.py`: `get_architecture`, `manage_adr` ADR tracking.
   - `storage_handlers.py`: `manage_local_file` (upload, replace, delete, read), `what_is_ingested` (unified multi-source catalog filter).
-  - `file_handlers.py`: `read_file` (bounded line-range file reader) and `summarize_file` (LLM executive file summarizer).
+  - `file_handlers.py`: `read_file` (bounded line-range file reader with vector chunk reconstruction), `summarize_file` (LLM executive file summarizer), and `grep_code` (literal and regex pattern matching across repositories).
+  - `diagnostic_handlers.py`: `diagnose_issue` (forensic stack trace resolution, route/literal matching, and semantic code candidate retrieval).
 - **Dynamic Resource Providers**:
   - `knowledge://catalog/summary`: Markdown catalog of repositories, document types, and symbols.
 - **Agent Prompts**:

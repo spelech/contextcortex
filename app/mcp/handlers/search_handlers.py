@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Annotated
 from pydantic import Field
 
 from app.services.database import get_db_connection, extract_host_from_url, get_adr, list_adrs, create_adr, update_adr, supersede_adr, upsert_adr
-from app.services.search import execute_hybrid_search, trace_symbol_path
+from app.services.search import execute_hybrid_search, trace_symbol_path, normalize_search_mode
 from app.services.indexing import get_dynamic_catalog_description, sync_single_git_repo, run_full_indexing
 from app.services.vector_store import get_vector_store_config
 from app.services.git_manager import format_git_permalink
@@ -25,7 +25,7 @@ async def handle_search_code(
     language: Annotated[Optional[str], Field(description="Optional language filter (e.g. 'python', 'typescript', 'go').")] = None,
     limit: Annotated[int, Field(description="Max number of code blocks to return (default 5).")] = 5,
     dense_weight: Annotated[Optional[float], Field(description="Weight between 0.0 (pure lexical BM25) and 1.0 (pure semantic vector). Default is 0.5 balanced.")] = None,
-    mode: Annotated[Optional[str], Field(description="Search mode: 'hybrid' (default), 'semantic', or 'lexical'.")] = "hybrid"
+    mode: Annotated[Optional[str], Field(description="Search mode: 'hybrid' (default), 'semantic', or 'lexical' (aliases: 'keyword', 'bm25').")] = "hybrid"
 ) -> str:
     """Hybrid semantic and BM25 search over code functions, classes, and logic snippets with line numbers, AST signatures, and GitHub links."""
     query = query.strip() if query else ""
@@ -36,7 +36,7 @@ async def handle_search_code(
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
 
-        requested_mode = (mode or "hybrid").lower().strip()
+        requested_mode = normalize_search_mode(mode)
         hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(
             query_text=query,
             doc_type="code",
@@ -50,13 +50,15 @@ async def handle_search_code(
         for hit in (hits or []):
             p = hit.payload or {}
             raw_path = p.get("rel_path") or p.get("path") or p.get("filepath") or ""
-            rel_path = raw_path.split("://", 1)[1] if "://" in raw_path else raw_path
+            rel_path = (raw_path.split("://", 1)[1] if "://" in raw_path else raw_path).replace("\\", "/")
             start_l = p.get("start_line")
             end_l = p.get("end_line")
             lines_range = [start_l, end_l] if start_l is not None and end_l is not None else None
             score_val = round(float(hit.score), 4) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
             d_val = round(float(hit.dense_score), 4) if isinstance(getattr(hit, "dense_score", None), (int, float)) else None
             s_val = round(float(hit.sparse_score), 4) if isinstance(getattr(hit, "sparse_score", None), (int, float)) else None
+            raw_permalink = p.get("permalink_url") or p.get("github_url")
+            permalink = raw_permalink.replace("\\", "/") if isinstance(raw_permalink, str) else raw_permalink
 
             results.append({
                 "repo": p.get("repo"),
@@ -69,7 +71,7 @@ async def handle_search_code(
                 "score": score_val,
                 "dense_score": d_val,
                 "sparse_score": s_val,
-                "permalink": p.get("permalink_url") or p.get("github_url"),
+                "permalink": permalink,
                 "content": p.get("content") or "",
             })
 
@@ -93,7 +95,7 @@ async def handle_search_docs(
     tag: Annotated[Optional[str], Field(description="Optional tag filter.")] = None,
     limit: Annotated[int, Field(description="Max documents to return (default 5).")] = 5,
     dense_weight: Annotated[Optional[float], Field(description="Weight between 0.0 (pure lexical BM25) and 1.0 (pure semantic vector). Default is 0.5 balanced.")] = None,
-    mode: Annotated[Optional[str], Field(description="Search mode: 'hybrid' (default), 'semantic', or 'lexical'.")] = "hybrid"
+    mode: Annotated[Optional[str], Field(description="Search mode: 'hybrid' (default), 'semantic', or 'lexical' (aliases: 'keyword', 'bm25').")] = "hybrid"
 ) -> str:
     """Hybrid search across system documentation, markdown notes, architectural decisions, and runbooks."""
     query = query.strip() if query else ""
@@ -104,7 +106,7 @@ async def handle_search_docs(
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
 
-        requested_mode = (mode or "hybrid").lower().strip()
+        requested_mode = normalize_search_mode(mode)
         hits = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)(
             query_text=query,
             doc_type="doc",
@@ -119,10 +121,12 @@ async def handle_search_docs(
         for hit in (hits or []):
             p = hit.payload or {}
             raw_path = p.get("rel_path") or p.get("path") or p.get("filepath") or ""
-            rel_path = raw_path.split("://", 1)[1] if "://" in raw_path else raw_path
+            rel_path = (raw_path.split("://", 1)[1] if "://" in raw_path else raw_path).replace("\\", "/")
             score_val = round(float(hit.score), 4) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
             d_val = round(float(hit.dense_score), 4) if isinstance(getattr(hit, "dense_score", None), (int, float)) else None
             s_val = round(float(hit.sparse_score), 4) if isinstance(getattr(hit, "sparse_score", None), (int, float)) else None
+            raw_permalink = p.get("permalink_url") or p.get("github_url")
+            permalink = raw_permalink.replace("\\", "/") if isinstance(raw_permalink, str) else raw_permalink
 
             results.append({
                 "repo": p.get("repo"),
@@ -132,7 +136,7 @@ async def handle_search_docs(
                 "score": score_val,
                 "dense_score": d_val,
                 "sparse_score": s_val,
-                "permalink": p.get("permalink_url") or p.get("github_url"),
+                "permalink": permalink,
                 "content": p.get("content") or "",
             })
 

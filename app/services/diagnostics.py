@@ -112,29 +112,58 @@ def extract_diagnostic_signals(text: str) -> Dict[str, Any]:
     return {"quoted_errors": errors, "exceptions": exceptions, "routes": routes}
 
 
-def _get_callers_and_callees(conn, repo: str, symbol_name: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def _clean_diag_path(p: Optional[str]) -> str:
+    if not p:
+        return ""
+    norm = p.replace("\\", "/")
+    if "://" in norm:
+        return norm.split("://", 1)[1]
+    return norm
+
+
+def _get_callers_and_callees(conn, repo: Optional[str], symbol_name: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Fetches immediate 1-hop callers and callees from ast_relationships for a given symbol."""
     if not symbol_name:
         return [], []
-    c_rows = conn.execute(
-        "SELECT repo, source_symbol, source_filepath, line_number FROM ast_relationships WHERE target_symbol = ? AND (repo = ? OR ? IS NULL) LIMIT 10",
-        (symbol_name, repo, repo)
-    ).fetchall()
-    callers = [{"repo": r["repo"], "symbol": r["source_symbol"], "file": r["source_filepath"], "line": r["line_number"]} for r in c_rows]
+    short_sym = symbol_name.split(".")[-1] if "." in symbol_name else symbol_name
+    effective_repo = repo if (repo and repo != "unknown") else None
 
-    ce_rows = conn.execute(
-        "SELECT repo, target_symbol, source_filepath, line_number FROM ast_relationships WHERE source_symbol = ? AND (repo = ? OR ? IS NULL) LIMIT 10",
-        (symbol_name, repo, repo)
-    ).fetchall()
-    callees = [{"repo": r["repo"], "symbol": r["target_symbol"], "file": r["source_filepath"], "line": r["line_number"]} for r in ce_rows]
+    c_sql = "SELECT repo, source_symbol, source_filepath, line_number FROM ast_relationships WHERE (target_symbol = ? OR target_symbol = ?)"
+    c_params: List[Any] = [symbol_name, short_sym]
+    if effective_repo:
+        c_sql += " AND repo = ?"
+        c_params.append(effective_repo)
+    c_sql += " LIMIT 10"
+    c_rows = conn.execute(c_sql, c_params).fetchall()
+    callers = [
+        {"repo": r["repo"], "symbol": r["source_symbol"], "file": _clean_diag_path(r["source_filepath"]), "line": r["line_number"]}
+        for r in c_rows
+    ]
+
+    ce_sql = "SELECT repo, target_symbol, source_filepath, line_number FROM ast_relationships WHERE (source_symbol = ? OR source_symbol = ?)"
+    ce_params: List[Any] = [symbol_name, short_sym]
+    if effective_repo:
+        ce_sql += " AND repo = ?"
+        ce_params.append(effective_repo)
+    ce_sql += " LIMIT 10"
+    ce_rows = conn.execute(ce_sql, ce_params).fetchall()
+    callees = [
+        {"repo": r["repo"], "symbol": r["target_symbol"], "file": _clean_diag_path(r["source_filepath"]), "line": r["line_number"]}
+        for r in ce_rows
+    ]
     return callers, callees
 
 
 def _find_symbol_enclosing(conn, repo: Optional[str], file_suffix: str, line_no: int) -> Optional[Dict[str, Any]]:
-    norm_path = file_suffix.replace("\\", "/")
-    sql = "SELECT id, repo, filepath, name, full_symbol, kind, signature, start_line, end_line FROM ast_symbols WHERE (filepath = ? OR filepath LIKE ? OR filepath LIKE ?) AND start_line <= ? AND end_line >= ?"
+    norm_path = _clean_diag_path(file_suffix)
+    sql = (
+        "SELECT id, repo, filepath, name, full_symbol, kind, signature, start_line, end_line "
+        "FROM ast_symbols "
+        "WHERE (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?) "
+        "AND start_line <= ? AND end_line >= ?"
+    )
     params: List[Any] = [norm_path, f"%/{norm_path}", f"%{norm_path}", line_no, line_no]
-    if repo:
+    if repo and repo != "unknown":
         sql += " AND repo = ?"
         params.append(repo)
     sql += " ORDER BY (end_line - start_line) ASC LIMIT 1"
@@ -145,7 +174,11 @@ def _find_symbol_enclosing(conn, repo: Optional[str], file_suffix: str, line_no:
 def _find_matching_indexed_file(conn, repo: Optional[str], parsed_path: str) -> Optional[Dict[str, Any]]:
     norm_path = parsed_path.replace("\\", "/").lstrip("/")
     filename = norm_path.split("/")[-1]
-    sql = "SELECT filepath, repo, doc_type, language, commit_sha FROM indexed_files WHERE (filepath = ? OR filepath LIKE ? OR filepath LIKE ?)"
+    sql = (
+        "SELECT filepath, repo, doc_type, language, commit_sha "
+        "FROM indexed_files "
+        "WHERE (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)"
+    )
     params: List[Any] = [norm_path, f"%/{norm_path}", f"%/{filename}"]
     if repo:
         sql += " AND repo = ?"
@@ -154,7 +187,10 @@ def _find_matching_indexed_file(conn, repo: Optional[str], parsed_path: str) -> 
     if row:
         return dict(row)
     if not repo:
-        row2 = conn.execute("SELECT filepath, repo, doc_type, language, commit_sha FROM indexed_files WHERE filepath LIKE ? LIMIT 1", (f"%{filename}",)).fetchone()
+        row2 = conn.execute(
+            "SELECT filepath, repo, doc_type, language, commit_sha FROM indexed_files WHERE REPLACE(filepath, '\\', '/') LIKE ? LIMIT 1",
+            (f"%{filename}",)
+        ).fetchone()
         if row2:
             return dict(row2)
     return None
@@ -169,6 +205,7 @@ def resolve_stack_frames(frames: List[Dict[str, Any]], repo: Optional[str] = Non
             raw_path, line_no = frame["path"], frame["line"]
             matched_file = _find_matching_indexed_file(conn, repo, raw_path)
             file_path = matched_file["filepath"] if matched_file else raw_path
+            clean_file_path = _clean_diag_path(file_path)
             target_repo = matched_file["repo"] if matched_file else (repo or "unknown")
 
             enclosing = _find_symbol_enclosing(conn, target_repo, file_path, line_no)
@@ -186,12 +223,11 @@ def resolve_stack_frames(frames: List[Dict[str, Any]], repo: Optional[str] = Non
             permalink = None
             if target_repo in git_repos:
                 g_info = git_repos[target_repo]
-                rel_p = file_path.split("://", 1)[1] if "://" in file_path else file_path
-                permalink = format_git_permalink(g_info["url"], g_info["commit_sha"], rel_p, line_no, line_no, provider=g_info.get("provider"))
+                permalink = format_git_permalink(g_info["url"], g_info["commit_sha"], clean_file_path, line_no, line_no, provider=g_info.get("provider"))
 
             callers, callees = _get_callers_and_callees(conn, target_repo, symbol_name) if symbol_name else ([], [])
             resolved.append({
-                "repo": target_repo, "file": file_path, "line": line_no, "symbol": symbol_name,
+                "repo": target_repo, "file": clean_file_path, "line": line_no, "symbol": symbol_name,
                 "kind": kind, "signature": signature, "code": code_snippet, "permalink": permalink,
                 "callers": callers, "callees": callees
             })
@@ -216,12 +252,12 @@ def match_routes_and_callers(extracted_routes: List[Tuple[Optional[str], str]], 
                         continue
                     seen.add(route_key)
                     ext_callers = [
-                        {"repo": c["repo"], "symbol": c["caller_symbol"], "file": c["filepath"], "line": c["line_number"]}
+                        {"repo": c["repo"], "symbol": c["caller_symbol"], "file": _clean_diag_path(c["filepath"]), "line": c["line_number"]}
                         for c in all_calls if match_route_and_call(r["path_pattern"], c["url_pattern"])
                     ]
                     matched_results.append({
                         "method": r["http_method"], "path": r["path_pattern"],
-                        "handler": {"repo": r["repo"], "symbol": r["handler_symbol"], "file": r["filepath"], "line": r["start_line"]},
+                        "handler": {"repo": r["repo"], "symbol": r["handler_symbol"], "file": _clean_diag_path(r["filepath"]), "line": r["start_line"]},
                         "external_callers": ext_callers
                     })
     return matched_results
@@ -242,10 +278,11 @@ def match_symbols_and_exceptions(exceptions: List[str], quoted_errors: List[str]
                 sql += " AND repo = ?"
                 params.append(repo)
             for r in conn.execute(sql + " LIMIT 5", params).fetchall():
-                key = (r["repo"], r["name"], r["filepath"], r["start_line"])
+                clean_fp = _clean_diag_path(r["filepath"])
+                key = (r["repo"], r["name"], clean_fp, r["start_line"])
                 if key not in seen:
                     seen.add(key)
-                    matched.append({"repo": r["repo"], "symbol": r["full_symbol"] or r["name"], "kind": r["kind"], "file": r["filepath"], "lines": [r["start_line"], r["end_line"]]})
+                    matched.append({"repo": r["repo"], "symbol": r["full_symbol"] or r["name"], "kind": r["kind"], "file": clean_fp, "lines": [r["start_line"], r["end_line"]]})
     return matched
 
 
@@ -265,11 +302,13 @@ def find_semantic_candidates(issue_text: str, repo: Optional[str] = None, limit:
         for h in hits:
             p = h.payload
             target_repo = p.get("repo") or repo or "unknown"
-            file_path = p.get("rel_path") or p.get("path") or ""
+            file_path = _clean_diag_path(p.get("rel_path") or p.get("path") or "")
             start_l, end_l = p.get("start_line", 1), p.get("end_line", 1)
             sym = p.get("full_symbol") or p.get("symbol")
 
             permalink = p.get("permalink_url") or p.get("github_url")
+            if permalink and "\\" in permalink:
+                permalink = permalink.replace("\\", "/")
             if not permalink and target_repo in git_repos:
                 g_info = git_repos[target_repo]
                 permalink = format_git_permalink(g_info["url"], g_info["commit_sha"], file_path, start_l, end_l, provider=g_info.get("provider"))

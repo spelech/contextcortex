@@ -19,7 +19,8 @@ def _get_tools_attr(name, default):
 def _strip_repo_prefix(filepath: Optional[str]) -> str:
     if not filepath:
         return ""
-    return filepath.split("://", 1)[1] if "://" in filepath else filepath
+    res = filepath.split("://", 1)[1] if "://" in filepath else filepath
+    return res.replace("\\", "/")
 
 
 async def handle_read_file(

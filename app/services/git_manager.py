@@ -69,14 +69,34 @@ def normalize_git_url(url: str) -> str:
 
 def detect_git_provider(url: str, explicit_provider: Optional[str] = None) -> str:
     """Detects git provider type (github, gitlab, gitea, bitbucket, generic)."""
-    if explicit_provider and explicit_provider.strip():
-        ep = explicit_provider.strip().lower()
-        if ep in ("github", "gitlab", "gitea", "bitbucket", "generic"):
-            return ep
-    if not url:
-        return "generic"
-    norm = normalize_git_url(url).lower()
-    if "gitlab" in norm:
+    ep = explicit_provider.strip().lower() if (explicit_provider and explicit_provider.strip()) else ""
+    if ep in ("gitlab", "gitea", "bitbucket", "generic"):
+        return ep
+    if ep == "github":
+        # Check if URL or saved host credential clearly points to a non-GitHub host
+        norm_check = normalize_git_url(url).lower() if url else ""
+        if "gitlab" in norm_check or "/-/" in norm_check:
+            return "gitlab"
+        if "gitea" in norm_check or "forgejo" in norm_check:
+            return "gitea"
+        if "bitbucket" in norm_check:
+            return "bitbucket"
+        if url and "github" not in norm_check:
+            try:
+                from app.services.database import extract_host_from_url, get_git_host_credential
+                host = extract_host_from_url(norm_check or url)
+                if host:
+                    cred = get_git_host_credential(host)
+                    if cred and cred.get("provider"):
+                        cred_prov = str(cred["provider"]).strip().lower()
+                        if cred_prov in ("gitlab", "gitea", "bitbucket", "generic"):
+                            return cred_prov
+            except Exception:
+                pass
+        return "github"
+
+    norm = normalize_git_url(url).lower() if url else ""
+    if "gitlab" in norm or "/-/" in norm:
         return "gitlab"
     if "gitea" in norm or "forgejo" in norm:
         return "gitea"
@@ -84,6 +104,21 @@ def detect_git_provider(url: str, explicit_provider: Optional[str] = None) -> st
         return "bitbucket"
     if "github" in norm:
         return "github"
+
+    # If URL host has a saved credential in git_host_credentials, honor its provider
+    if url:
+        try:
+            from app.services.database import extract_host_from_url, get_git_host_credential
+            host = extract_host_from_url(norm or url)
+            if host:
+                cred = get_git_host_credential(host)
+                if cred and cred.get("provider"):
+                    cred_prov = str(cred["provider"]).strip().lower()
+                    if cred_prov in ("github", "gitlab", "gitea", "bitbucket", "generic"):
+                        return cred_prov
+        except Exception:
+            pass
+
     return "generic"
 
 def mask_token(token: Optional[str]) -> str:
@@ -148,13 +183,57 @@ def sanitize_url_for_logging(url: str) -> str:
     # Matches http(s)://user:pass@host or http(s)://token@host -> http(s)://***host
     return re.sub(r"(https?://)[^/@]+@", r"\1***", url)
 
+_STRIP_GIT_ENV_VARS = {
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_PREFIX",
+}
+
 GIT_ENV = {
-    **os.environ,
+    **{k: v for k, v in os.environ.items() if k not in _STRIP_GIT_ENV_VARS},
     "GIT_TERMINAL_PROMPT": "0",
     "GIT_ASKPASS": "",
     "SSH_ASKPASS": "",
     "GIT_CONFIG_PARAMETERS": "'http.https://github.com/.extraheader='",
 }
+
+def _get_git_env() -> Dict[str, str]:
+    """Builds a sanitized Git subprocess environment without inherited GIT_DIR/GIT_WORK_TREE overrides."""
+    env = {k: v for k, v in os.environ.items() if k not in _STRIP_GIT_ENV_VARS}
+    env.update({
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_ASKPASS": "",
+        "SSH_ASKPASS": "",
+        "GIT_CONFIG_PARAMETERS": "'http.https://github.com/.extraheader='",
+    })
+    return env
+
+def is_valid_git_repo(repo_dir: Optional[str]) -> bool:
+    """Returns True if repo_dir contains a valid, non-corrupted .git repository with HEAD."""
+    if not repo_dir or not os.path.isdir(repo_dir):
+        return False
+    dot_git = os.path.join(repo_dir, ".git")
+    if not os.path.exists(dot_git):
+        return False
+    if os.path.isdir(dot_git) and not os.path.exists(os.path.join(dot_git, "HEAD")):
+        return False
+    try:
+        safe_dir = repo_dir.replace("\\", "/")
+        res = subprocess.run(
+            ["git", "-C", repo_dir, "-c", f"safe.directory={safe_dir}", "rev-parse", "--git-dir"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=_get_git_env(),
+        )
+        return res.returncode == 0
+    except Exception:
+        return os.path.exists(os.path.join(dot_git, "HEAD"))
 
 def get_remote_head_sha(
     git_url: str, 
@@ -178,21 +257,42 @@ def get_remote_head_sha(
 
     target_url = git_url.strip() if (is_ssh_git_url(git_url) and not token and not username) else norm_url
     auth_url = build_authenticated_url(target_url, token, username=username, provider=provider)
+    git_env = _get_git_env()
     try:
         cmd = ["git", "ls-remote", auth_url, f"refs/heads/{branch}", f"refs/tags/{branch}", branch]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=GIT_ENV)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=git_env)
         if result.returncode == 0 and result.stdout.strip():
             first_line = result.stdout.strip().splitlines()[0]
             sha = first_line.split()[0]
             return sha
         # If specific ref not matched, try HEAD
         cmd_head = ["git", "ls-remote", auth_url, "HEAD"]
-        res_head = subprocess.run(cmd_head, capture_output=True, text=True, timeout=20, env=GIT_ENV)
+        res_head = subprocess.run(cmd_head, capture_output=True, text=True, timeout=20, env=git_env)
         if res_head.returncode == 0 and res_head.stdout.strip():
             return res_head.stdout.strip().splitlines()[0].split()[0]
     except Exception as e:
         logger.error(f"Error checking remote SHA for {sanitize_url_for_logging(auth_url)}: {e}")
     return None
+
+def _clone_fresh_into_dir(auth_url: str, branch: str, depth_str: str, dest_dir: str, git_env: Dict[str, str]) -> subprocess.CompletedProcess:
+    """Clones a repository shallowly into dest_dir, falling back to default branch if --branch fails."""
+    if os.path.exists(dest_dir) and os.listdir(dest_dir):
+        cleanup_repo_dir(dest_dir)
+    cmd = [
+        "git", "clone",
+        "--depth", depth_str,
+        "--branch", branch,
+        "--single-branch",
+        auth_url,
+        dest_dir,
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=git_env)
+    if res.returncode != 0:
+        if os.path.exists(dest_dir) and os.listdir(dest_dir):
+            cleanup_repo_dir(dest_dir)
+        cmd_fallback = ["git", "clone", "--depth", depth_str, auth_url, dest_dir]
+        res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120, env=git_env)
+    return res
 
 def shallow_clone_repo(
     git_url: str, 
@@ -209,6 +309,7 @@ def shallow_clone_repo(
     Preserves native SSH URLs when no HTTP token is configured so user SSH keys work seamlessly.
     Returns: CloneResult
     """
+    import time
     from app.services.database import get_effective_git_token
     norm_url = normalize_git_url(git_url)
     use_ssh_native = is_ssh_git_url(git_url) and not token and not username
@@ -229,63 +330,75 @@ def shallow_clone_repo(
     target_url = git_url.strip() if (is_ssh_git_url(git_url) and not token and not username) else norm_url
     auth_url = build_authenticated_url(target_url, token, username=username, provider=provider)
     safe_url = sanitize_url_for_logging(auth_url)
+    git_env = _get_git_env()
 
     logger.info(f"Cloning {safe_url} (branch: {branch}, depth: {depth_str}) shallowly to {repo_dir}...")
     try:
-        # Check if already a git repo in target_dir (incremental shallow update)
-        if target_dir and os.path.exists(os.path.join(repo_dir, ".git")):
+        dot_git_exists = os.path.exists(os.path.join(repo_dir, ".git"))
+        valid_existing = target_dir and dot_git_exists and is_valid_git_repo(repo_dir)
+
+        # Check if already a valid git repo in target_dir (incremental shallow update)
+        if valid_existing:
+            safe_dir = repo_dir.replace("\\", "/")
+            git_base = ["git", "-C", repo_dir, "-c", f"safe.directory={safe_dir}"]
             logger.info(f"Existing shallow clone found in {repo_dir}; fetching latest refs (depth: {depth_str})...")
-            subprocess.run(["git", "remote", "set-url", "origin", auth_url], cwd=repo_dir, capture_output=True, text=True, timeout=15, env=GIT_ENV)
-            fetch_cmd = ["git", "fetch", "--depth", depth_str, "origin", branch]
-            f_res = subprocess.run(fetch_cmd, cwd=repo_dir, capture_output=True, text=True, timeout=60, env=GIT_ENV)
+            subprocess.run(git_base + ["remote", "set-url", "origin", auth_url], cwd=repo_dir, capture_output=True, text=True, timeout=15, env=git_env)
+            fetch_cmd = git_base + ["fetch", "--depth", depth_str, "origin", branch]
+            f_res = subprocess.run(fetch_cmd, cwd=repo_dir, capture_output=True, text=True, timeout=60, env=git_env)
+            if f_res.returncode != 0:
+                # Retry fetch once without explicit branch ref in case remote refspec differs
+                f_res = subprocess.run(git_base + ["fetch", "--depth", depth_str, "origin"], cwd=repo_dir, capture_output=True, text=True, timeout=60, env=git_env)
+
             if f_res.returncode == 0:
-                r_res = subprocess.run(["git", "reset", "--hard", f"origin/{branch}"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
+                r_res = subprocess.run(git_base + ["reset", "--hard", "FETCH_HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=git_env)
                 if r_res.returncode != 0:
-                    r_res = subprocess.run(["git", "reset", "--hard", "FETCH_HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
+                    r_res = subprocess.run(git_base + ["reset", "--hard", f"origin/{branch}"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=git_env)
                 if r_res.returncode == 0:
-                    sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10, env=GIT_ENV)
+                    sha_res = subprocess.run(git_base + ["rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10, env=git_env)
                     commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else "unknown"
                     return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)
-                logger.warning(f"Git reset failed in {repo_dir}; falling back to fresh clone: {r_res.stderr.strip()}")
-                cleanup_repo_dir(repo_dir)
+                logger.warning(f"Git reset failed in {repo_dir} (rc={r_res.returncode}): {r_res.stderr.strip()}; staging fresh clone...")
             else:
-                logger.warning(f"Incremental fetch failed in {repo_dir}; falling back to fresh clone: {f_res.stderr.strip()}")
-                cleanup_repo_dir(repo_dir)
-        elif target_dir and os.path.exists(repo_dir):
-            logger.warning(f"Target directory {repo_dir} exists but is not a valid git repository; cleaning up for fresh clone...")
-            cleanup_repo_dir(repo_dir)
+                logger.warning(
+                    f"Incremental fetch failed in {repo_dir} (rc={f_res.returncode}, stderr={f_res.stderr.strip()!r}, stdout={f_res.stdout.strip()!r}); staging fresh clone..."
+                )
 
-        if os.path.exists(repo_dir) and os.listdir(repo_dir):
-            cleanup_repo_dir(repo_dir)
+            # Stage fresh clone into a sibling directory before replacing the valid persistent clone
+            staging_dir = f"{repo_dir}.staging.{int(time.time() * 1000)}"
+            res = _clone_fresh_into_dir(auth_url, branch, depth_str, staging_dir, git_env)
+            if res.returncode != 0:
+                err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
+                cleanup_repo_dir(staging_dir)
+                return CloneResult(temp_dir=None, commit_sha=None, error=f"Clone failed: {err_msg}")
 
-        # Shallow clone single branch
-        cmd = [
-            "git", "clone",
-            "--depth", depth_str,
-            "--branch", branch,
-            "--single-branch",
-            auth_url,
-            repo_dir
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=GIT_ENV)
-        if res.returncode != 0:
-            if os.path.exists(repo_dir):
+            cleanup_repo_dir(repo_dir)
+            os.replace(staging_dir, repo_dir)
+        else:
+            if target_dir and os.path.exists(repo_dir):
+                logger.warning(f"Target directory {repo_dir} exists but is not a valid git repository; cleaning up for fresh clone...")
                 cleanup_repo_dir(repo_dir)
-            # Fallback to default clone if branch failed (e.g. branch is default)
-            cmd_fallback = ["git", "clone", "--depth", depth_str, auth_url, repo_dir]
-            res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120, env=GIT_ENV)
+
+            res = _clone_fresh_into_dir(auth_url, branch, depth_str, repo_dir, git_env)
             if res.returncode != 0:
                 err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
                 cleanup_repo_dir(repo_dir)
                 return CloneResult(temp_dir=None, commit_sha=None, error=f"Clone failed: {err_msg}")
 
         # Get Commit SHA
-        sha_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=10, env=GIT_ENV)
+        safe_dir = repo_dir.replace("\\", "/")
+        sha_res = subprocess.run(
+            ["git", "-C", repo_dir, "-c", f"safe.directory={safe_dir}", "rev-parse", "HEAD"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=git_env,
+        )
         commit_sha = sha_res.stdout.strip() if sha_res.returncode == 0 else "unknown"
 
         return CloneResult(temp_dir=repo_dir, commit_sha=commit_sha, error=None)
     except Exception as e:
-        if not target_dir or not os.path.exists(os.path.join(repo_dir, ".git")):
+        if not target_dir or not os.path.exists(os.path.join(repo_dir, ".git", "HEAD")):
             cleanup_repo_dir(repo_dir)
         return CloneResult(temp_dir=None, commit_sha=None, error=f"Exception during git clone: {str(e)}")
 
@@ -304,16 +417,17 @@ def extract_recent_commits(repo_dir: str, limit: int = 20) -> list[Dict[str, Any
     record_delim = "===CC_COMMIT_START==="
     files_delim = "===CC_FILES_START==="
 
+    safe_dir = repo_dir.replace("\\", "/")
     # Format: record_delim, SHA, author name <email>, ISO date (%cI), raw body (%B), files_delim
     cmd = [
-        "git", "log",
+        "git", "-C", repo_dir, "-c", f"safe.directory={safe_dir}", "log",
         f"-n{limit}",
         "--name-only",
         f"--pretty=format:{record_delim}%n%H%n%an <%ae>%n%cI%n%B{files_delim}",
     ]
 
     try:
-        res = subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
+        res = subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True, timeout=30, env=_get_git_env())
         if res.returncode != 0 or not res.stdout:
             return []
 
@@ -343,7 +457,7 @@ def extract_recent_commits(repo_dir: str, limit: int = 20) -> list[Dict[str, Any
             # files_part contains the relative filepaths touched by the commit
             files_changed = []
             for f_line in files_part.splitlines():
-                f_path = f_line.strip()
+                f_path = f_line.strip().replace("\\", "/")
                 if f_path and f_path not in files_changed:
                     files_changed.append(f_path)
 
@@ -428,7 +542,8 @@ def format_git_permalink(
     
     prov = detect_git_provider(base, provider)
     ref = commit_sha or "main"
-    clean_rel = rel_path.lstrip("/")
+    raw_rel = rel_path.split("://", 1)[1] if (rel_path and "://" in rel_path) else (rel_path or "")
+    clean_rel = raw_rel.replace("\\", "/").lstrip("/")
 
     if prov == "gitlab":
         # GitLab format: base/-/blob/{ref}/{path}#L{start}-L{end}

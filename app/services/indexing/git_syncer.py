@@ -5,7 +5,24 @@ import gc
 import sys
 import hashlib
 import time
+import threading
 from typing import List, Dict, Any, Tuple, Optional
+
+_repo_sync_locks: Dict[Tuple[str, int], threading.Lock] = {}
+_repo_sync_locks_guard = threading.Lock()
+
+
+def _get_repo_lock(repo_id: int) -> threading.Lock:
+    try:
+        from app.services.database.engine import get_db_url
+        db_key = get_db_url()
+    except Exception:
+        db_key = "default"
+    key = (db_key, repo_id)
+    with _repo_sync_locks_guard:
+        if key not in _repo_sync_locks:
+            _repo_sync_locks[key] = threading.Lock()
+        return _repo_sync_locks[key]
 
 from app.services.memory_utils import trim_memory
 import app.services.indexing.local_syncer as local_syncer
@@ -57,7 +74,7 @@ def compute_git_repo_delta(
     
     with db_service.get_db_connection() as conn:
         rows = conn.execute("SELECT filepath, hash FROM indexed_files WHERE repo = ?", (repo_name,)).fetchall()
-        db_files = {r["filepath"]: r["hash"] for r in rows}
+        db_files = {r["filepath"].replace("\\", "/"): r["hash"] for r in rows}
     
     found_filepaths = set()
     added_files = []
@@ -69,7 +86,7 @@ def compute_git_repo_delta(
         for file in files:
             if not file.startswith(".") and file.endswith(exts):
                 full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, temp_dir)
+                rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
                 db_filepath = f"{repo_name}://{rel_path}"
                 found_filepaths.add(db_filepath)
                 
@@ -93,8 +110,13 @@ def compute_git_repo_delta(
     return added_files, modified_files, deleted_filepaths, unchanged_files
 
 
-def sync_single_git_repo(repo_id: int):
+def sync_single_git_repo(repo_id: int, force: bool = False):
     """Ephemeral shallow clone, delta calculation, incremental vector upsert, and immediate disk cleanup."""
+    repo_lock = _get_repo_lock(repo_id)
+    if not repo_lock.acquire(blocking=False):
+        logger.info(f"Sync already in progress for repo_id={repo_id}; skipping overlapping call.")
+        return
+
     repo_name = f"repo-{repo_id}"
     temp_dir = None
     keep_shallow = False
@@ -109,9 +131,11 @@ def sync_single_git_repo(repo_id: int):
         branch = repo_row["branch"] or "main"
         per_repo_token = repo_row["auth_token"]
         per_repo_user = repo_row["auth_user"] if "auth_user" in repo_row.keys() else None
-        provider = repo_row["provider"] if "provider" in repo_row.keys() else None
+        raw_provider = repo_row["provider"] if "provider" in repo_row.keys() else None
+        provider = gm_service.detect_git_provider(git_url, raw_provider)
         keep_shallow = bool(repo_row["keep_shallow"]) if "keep_shallow" in repo_row.keys() and repo_row["keep_shallow"] else False
         retain_commits_count = int(repo_row["retain_commits_count"]) if "retain_commits_count" in repo_row.keys() and repo_row["retain_commits_count"] is not None else 20
+        prev_status = repo_row["status"] if "status" in repo_row.keys() else None
 
         progress_tracker.get_or_create_job(repo_id, repo_name)
 
@@ -123,12 +147,27 @@ def sync_single_git_repo(repo_id: int):
         )
         safe_url = gm_service.sanitize_url_for_logging(git_url)
 
+        target_dir = gm_service.get_persistent_repo_dir(repo_name) if keep_shallow else None
+        persistent_dir_valid = True
+        if keep_shallow and target_dir:
+            is_valid_fn = getattr(gm_service, "is_valid_git_repo", None)
+            if callable(is_valid_fn):
+                persistent_dir_valid = is_valid_fn(target_dir)
+            else:
+                persistent_dir_valid = os.path.isdir(os.path.join(target_dir, ".git"))
+
         # Stage 1: Connecting & Remote Check
         progress_tracker.update_step(repo_id, 1, "Checking Remote Repository Ref", pct=10)
         progress_tracker.log(repo_id, "INFO", f"Checking remote ref for '{repo_name}' ({safe_url})...")
         logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url}, provider: {provider or 'auto'}, auth: {token_source})...")
         remote_sha = gm_service.get_remote_head_sha(git_url, branch, token=effective_token, username=effective_user, provider=provider)
-        if remote_sha and repo_row["commit_sha"] == remote_sha:
+        if (
+            not force
+            and prev_status != "error"
+            and persistent_dir_valid
+            and remote_sha
+            and repo_row["commit_sha"] == remote_sha
+        ):
             msg = f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone."
             logger.info(msg)
             progress_tracker.log(repo_id, "INFO", msg)
@@ -269,7 +308,7 @@ def sync_single_git_repo(repo_id: int):
 
         # Delete old vector points & SQLite rows ONLY for modified and deleted files
         store = vs_service.get_vector_store()
-        modified_db_filepaths = [f"{repo_name}://{os.path.relpath(f, temp_dir)}" for f in modified_files]
+        modified_db_filepaths = [f"{repo_name}://{os.path.relpath(f, temp_dir).replace('\\', '/')}" for f in modified_files]
         paths_to_delete = modified_db_filepaths + deleted_filepaths
 
         for fpath in paths_to_delete:
@@ -314,7 +353,7 @@ def sync_single_git_repo(repo_id: int):
                 progress_tracker.log(repo_id, "WARN", f"Sync cancelled by user at file {idx+1}/{total_files}")
                 return
 
-            rel_path = os.path.relpath(full_path, temp_dir)
+            rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
             progress_tracker.update_step(
                 repo_id, 4, f"Parsing Files ({idx+1}/{total_files})",
                 current_file=rel_path, processed=idx+1, total=total_files
@@ -494,6 +533,7 @@ def sync_single_git_repo(repo_id: int):
             gm_service.cleanup_repo_dir(temp_dir)
         elif keep_shallow and temp_dir:
             logger.info(f"Retained persistent shallow copy for repo '{repo_name}' at {temp_dir}")
+        repo_lock.release()
         trim_memory()
 
 

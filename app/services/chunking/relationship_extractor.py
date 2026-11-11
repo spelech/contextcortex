@@ -126,13 +126,24 @@ def extract_ast_relationships(
                         relationship_type="CALLS",
                         line_number=line_num
                     ))
-        elif language in ("c_sharp", "java") and node.type in ("invocation_expression", "method_invocation"):
-            func_node = node.child_by_field_name("name") or node.child_by_field_name("expression")
+        elif language in ("c_sharp", "csharp", "java") and node.type in ("invocation_expression", "method_invocation"):
+            func_node = (
+                node.child_by_field_name("function")
+                or node.child_by_field_name("name")
+                or node.child_by_field_name("expression")
+            )
             if func_node:
-                target_sym = get_node_text(func_node, code_bytes).strip()
-                if "." in target_sym:
-                    target_sym = target_sym.split(".")[-1]
-                if target_sym and target_sym != source_sym:
+                raw_target = " ".join(get_node_text(func_node, code_bytes).strip().split())
+                for prefix in ("this.", "base.", "super."):
+                    if raw_target.startswith(prefix):
+                        raw_target = raw_target[len(prefix):]
+                has_receiver = "." in raw_target
+                if has_receiver and "(" not in raw_target:
+                    parts = [p.strip() for p in raw_target.split(".") if p.strip()]
+                    target_sym = f"{parts[-2]}.{parts[-1]}" if len(parts) >= 2 else parts[-1]
+                else:
+                    target_sym = raw_target.split(".")[-1].strip() if has_receiver else raw_target
+                if target_sym and (target_sym != source_sym or has_receiver):
                     relationships.append(CodeRelationship(
                         repo=repo,
                         source_filepath=filepath,

@@ -166,6 +166,29 @@ def get_embedding_config() -> Dict[str, Any]:
     except Exception:
         sys_res = {"cpus": os.cpu_count() or 2, "memory_gb": 4.0}
 
+    vs_provider = os.getenv("VECTOR_STORE_PROVIDER", "").strip().lower()
+    if not vs_provider:
+        try:
+            from app.services.database import get_vector_store_db_config
+            vs_provider = (get_vector_store_db_config().get("provider") or "qdrant").strip().lower()
+        except Exception:
+            vs_provider = "qdrant"
+
+    if vs_provider in ("pgvector", "postgres", "postgresql"):
+        effective_sparse = "PostgreSQL Full-Text Search (tsvector + GIN)"
+    elif _sparse_model is not None:
+        effective_sparse = SPARSE_MODEL_NAME
+    elif EMBEDDING_PROVIDER == "api":
+        effective_sparse = "disabled (FastEmbed not installed)"
+    else:
+        effective_sparse = SPARSE_MODEL_NAME
+
+    reported_sparse = (
+        effective_sparse
+        if vs_provider in ("pgvector", "postgres", "postgresql") or (_sparse_model is None and EMBEDDING_PROVIDER == "api")
+        else SPARSE_MODEL_NAME
+    )
+
     return {
         "provider": EMBEDDING_PROVIDER,
         "requested_provider": REQUESTED_PROVIDER,
@@ -173,7 +196,9 @@ def get_embedding_config() -> Dict[str, Any]:
         "dense_model": DENSE_MODEL_NAME,
         "requested_dense_model": REQUESTED_DENSE_MODEL,
         "effective_dense_model": DENSE_MODEL_NAME,
-        "sparse_model": SPARSE_MODEL_NAME,
+        "sparse_model": reported_sparse,
+        "requested_sparse_model": SPARSE_MODEL_NAME,
+        "effective_sparse_model": effective_sparse,
         "threads": EMBEDDING_NUM_THREADS,
         "batch_size": EMBEDDING_BATCH_SIZE,
         "litellm_url": LITELLM_URL,

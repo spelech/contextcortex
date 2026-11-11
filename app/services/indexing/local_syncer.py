@@ -109,7 +109,7 @@ def _sync_local_paths_internal():
             if cached and abs(cached["mtime"] - mtime) < 0.01:
                 continue # Cached & unchanged
 
-            rel_path = os.path.relpath(filepath, base_dir)
+            rel_path = os.path.relpath(filepath, base_dir).replace("\\", "/")
             doc_type = "code" if is_code_file(filepath) else "doc"
             lang = detect_language(filepath)
 

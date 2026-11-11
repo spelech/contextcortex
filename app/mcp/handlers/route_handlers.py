@@ -51,7 +51,7 @@ async def handle_find_routes(
 
         routes = []
         for r in rows:
-            rel_path = r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]
+            rel_path = (r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]).replace("\\", "/")
             permalink = format_git_permalink(r["git_url"], r["commit_sha"], rel_path, r["start_line"], r["end_line"], provider=r["provider"])
             routes.append({
                 "repo": r["repo"],
@@ -114,7 +114,7 @@ async def handle_find_api_callers(
 
         callers = []
         for c in matching_calls:
-            rel_path = c["filepath"].split("://", 1)[1] if "://" in c["filepath"] else c["filepath"]
+            rel_path = (c["filepath"].split("://", 1)[1] if "://" in c["filepath"] else c["filepath"]).replace("\\", "/")
             permalink = format_git_permalink(c["git_url"], c["commit_sha"], rel_path, c["line_number"], c["line_number"], provider=c["provider"])
             callers.append({
                 "repo": c["repo"],

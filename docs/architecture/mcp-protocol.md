@@ -30,7 +30,7 @@ flowchart TD
     end
 
     subgraph FastMCPEngine["FastMCP 2.0 Engine"]
-        Tools["16 MCP Tools"]
+        Tools["19 MCP Tools"]
         Resources["Dynamic Catalog Resources"]
         Prompts["Guided System Prompts"]
     end

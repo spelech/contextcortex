@@ -22,7 +22,8 @@ def _get_tools_attr(name, default):
 def _strip_repo_prefix(filepath: Optional[str]) -> str:
     if not filepath:
         return ""
-    return filepath.split("://", 1)[1] if "://" in filepath else filepath
+    res = filepath.split("://", 1)[1] if "://" in filepath else filepath
+    return res.replace("\\", "/")
 
 
 async def handle_find_symbol(
@@ -129,20 +130,39 @@ async def handle_get_file_outline(
     repo: Annotated[Optional[str], Field(description="Repository identifier (optional).")] = None
 ) -> str:
     """Get the AST outline (classes, methods, functions, line numbers) of a file without retrieving its entire token body."""
-    fp = filepath.strip() if filepath else ""
+    fp = filepath.strip().replace("\\", "/") if filepath else ""
+    clean_fp = fp.split("://", 1)[1].lstrip("/") if "://" in fp else fp.lstrip("/")
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             if repo:
                 rows = conn.execute(
-                    "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature FROM ast_symbols WHERE (filepath = ? OR filepath LIKE ?) AND repo = ? ORDER BY start_line ASC",
-                    (fp, f"%{fp}", repo)
+                    """
+                    SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature
+                    FROM ast_symbols
+                    WHERE (
+                        REPLACE(filepath, '\\', '/') = ?
+                        OR REPLACE(filepath, '\\', '/') = ?
+                        OR REPLACE(filepath, '\\', '/') LIKE ?
+                        OR REPLACE(filepath, '\\', '/') LIKE ?
+                    ) AND repo = ?
+                    ORDER BY start_line ASC
+                    """,
+                    (fp, clean_fp, f"%/{clean_fp}", f"%://{clean_fp}", repo)
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature FROM ast_symbols WHERE filepath = ? OR filepath LIKE ? ORDER BY start_line ASC",
-                    (fp, f"%{fp}")
+                    """
+                    SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature
+                    FROM ast_symbols
+                    WHERE REPLACE(filepath, '\\', '/') = ?
+                       OR REPLACE(filepath, '\\', '/') = ?
+                       OR REPLACE(filepath, '\\', '/') LIKE ?
+                       OR REPLACE(filepath, '\\', '/') LIKE ?
+                    ORDER BY start_line ASC
+                    """,
+                    (fp, clean_fp, f"%/{clean_fp}", f"%://{clean_fp}")
                 ).fetchall()
 
         resolved_repo = repo or (rows[0]["repo"] if rows and "repo" in rows[0].keys() else None)

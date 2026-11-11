@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1184 Automated Tests** (824 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1193 Automated Tests** (833 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -25,7 +25,7 @@ ContextCortex provides high-precision, syntax-aware semantic and lexical retriev
 │  │    FastMCP 2.0.0+ Server Engine         │  │   FastAPI Admin REST Router │  │
 │  │    • SSE Transport (/sse, /messages/)   │  │   • app/api/routers/        │  │
 │  │    • Streamable HTTP (/mcp)             │  │   • repos, storage, catalog │  │
-│  │    • 16 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
+│  │    • 19 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
 │  └────────────────────┬────────────────────┘  └──────────────┬──────────────┘  │
 └───────────────────────┼──────────────────────────────────────┼─────────────────┘
                         │                                      │
@@ -270,10 +270,13 @@ classDiagram
 - **FR-2.8 (`get_architecture`)**: MUST synthesize high-level codebase architecture including detected entry points, primary language distributions, core directories, framework components, and architectural decision records.
 - **FR-2.9 (`manage_adr`)**: MUST support querying, listing, creating, updating, and superseding Architectural Decision Records (MADR / Nygard format) with lifecycle status tracking.
 - **FR-2.10 (`find_routes` & `find_api_callers`)**: MUST return API endpoint routes and HTTP client invocations parsed from backend frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET).
-- **FR-2.11 (`trace_path`)**: MUST trace AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections using BFS graph traversal.
+- **FR-2.11 (`trace_path`)**: MUST trace AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections (`external_callers`, `external_handlers`) using BFS graph traversal.
 - **FR-2.12 (`manage_local_file`)**: MUST support uploading, replacing, reading, and deleting files under managed local storage (`LOCAL_STORAGE_PATH`) with real-time vector and symbol indexing.
 - **FR-2.13 (`what_is_ingested`)**: MUST inspect and filter across all ingested Git repositories, monitored local paths, and uploaded local storage files with source type and detail level filtering.
-- **FR-2.14 (`read_file` & `summarize_file`)**: MUST support reading bounded line ranges or full files and generating or retrieving cached LLM executive summaries for large files.
+- **FR-2.14 (`read_file` & `summarize_file`)**: MUST support reading bounded line ranges or full files (including vector chunk reconstruction for ephemeral repositories) and generating or retrieving cached LLM executive summaries for large files.
+- **FR-2.15 (`get_recent_changes`)**: MUST return recent commit history from `git_commits` for a repository, optionally filtered by file path or AST symbol name.
+- **FR-2.16 (`grep_code`)**: MUST perform deterministic literal and regular expression pattern matching across one or all indexed repositories with path glob filtering, context lines, and enclosing AST symbol coordinates.
+- **FR-2.17 (`diagnose_issue`)**: MUST perform forensic triage of stack traces, error logs, and bug descriptions by resolving stack frames to AST symbols, matching routes and error literals, and retrieving semantic code candidates.
 
 ### FR-3: Dynamic Resources & Prompt Templates
 - **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `knowledge://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.
@@ -369,7 +372,7 @@ classDiagram
 | Requirement ID | Requirement Description | Implementation Files | Backend Pytest Modules | Frontend Vitest & E2E Suites |
 | :--- | :--- | :--- | :--- | :--- |
 | **FR-1** | FastMCP 2.0 Dual Transport Architecture | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_mcp_ping.py`, `test_indexer_sync.py` | E2E Spec 1 |
-| **FR-2** | FastMCP 16 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_file_reader_and_summarizer.py` | E2E Specs 1, 8 |
+| **FR-2** | FastMCP 19 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_file_reader_and_summarizer.py`, `test_grep_code.py`, `test_diagnostics.py` | E2E Specs 1, 8 |
 | **FR-3** | Dynamic Resources & Prompt Templates | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_tools.py` | E2E Spec 1 |
 | **FR-4** | Universal Multi-Git Provider Ingestion | `app/services/git_manager.py`, `app/services/indexing/git_syncer.py` | `test_multi_git_providers.py`, `test_git_manager.py`, `test_indexer_edge_cases.py` | `GitRepoManager.test.tsx`, E2E Specs 2, 3, 4, 5, 16, 18 |
 | **FR-5** | Multi-Tier Credential Vault & Hierarchy | `app/services/database/credentials.py`, `app/services/git_manager.py` | `test_multi_git_providers.py`, `test_db_and_tools.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
@@ -1039,6 +1042,17 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_dimension_mismatch_during_search_raises_explicit_error` - _Verifies that vector search with mismatched query vector dimension raises ValueError and returns HTTP 400._
 - `test_restart_clears_relational_metadata_on_collection_recreate` - _Verifies that on app restart, if ensure_collection detects a dimension mismatch and recreates the collection, relational metadata is cleared._
 - `test_rollback_and_complete_rebuild` - _Tests model transition, rollback, and complete rebuild across local paths._
+
+#### `tests/test_field_workup_regressions.py` (9 tests)
+- `test_finding_1_git_env_strips_ambient_git_vars`
+- `test_finding_1_shallow_clone_stages_fresh_clone_on_fetch_failure`
+- `test_finding_2_list_repositories_serializes_postgres_datetime`
+- `test_finding_3_diagnose_issue_no_untyped_null_params`
+- `test_finding_4_csharp_call_graph_extraction_and_trace_path`
+- `test_findings_5_6_7_file_outline_permalinks_and_path_normalization`
+- `test_findings_8_and_9_search_mode_aliases_and_or_tsquery`
+- `test_finding_10_get_architecture_hub_symbols_excludes_boilerplate`
+- `test_findings_11_12_13_version_sparse_model_and_readme_tools`
 
 #### `tests/test_file_mcp_and_api.py` (5 tests)
 - `test_env`

@@ -5,6 +5,7 @@
       "release-type": "simple",
       "extra-files": [
         "main.py",
+        "app/mcp/mcp_server.py",
         {
           "type": "json",
           "path": "package.json",

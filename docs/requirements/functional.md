@@ -55,10 +55,10 @@ This section specifies the functional requirements for ContextCortex (`v2.21.2`)
 
 ---
 
-### FR-08: Model Context Protocol (MCP) 2.0 Compliance & 16 Tools
+### FR-08: Model Context Protocol (MCP) 2.0 Compliance & 19 Tools
 - **Description**: The system must implement the official Model Context Protocol using `FastMCP` 2.0.
 - **Transports & Liveness**: The system must provide Server-Sent Events (SSE) at `/sse` (with `/messages/`), Streamable HTTP at `/mcp`, and zero-allocation JSON-RPC `ping` interception via `McpPingMiddleware`.
-- **Tools**: The system must expose **16 dedicated agent tools**: `search_code`, `search_docs`, `find_symbol`, `trace_path`, `find_routes`, `find_api_callers`, `get_file_outline`, `list_repositories`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `manage_local_file`, `what_is_ingested`, `read_file`, and `summarize_file`.
+- **Tools**: The system must expose **19 dedicated agent tools**: `search_code`, `search_docs`, `grep_code`, `diagnose_issue`, `find_symbol`, `trace_path`, `find_routes`, `find_api_callers`, `get_file_outline`, `list_repositories`, `get_recent_changes`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `manage_local_file`, `what_is_ingested`, `read_file`, and `summarize_file`.
 
 ---
 

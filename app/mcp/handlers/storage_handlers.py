@@ -21,7 +21,8 @@ def _get_tools_attr(name, default):
 def _strip_repo_prefix(filepath: Optional[str]) -> str:
     if not filepath:
         return ""
-    return filepath.split("://", 1)[1] if "://" in filepath else filepath
+    res = filepath.split("://", 1)[1] if "://" in filepath else filepath
+    return res.replace("\\", "/")
 
 
 async def handle_manage_local_file(
@@ -230,7 +231,7 @@ async def handle_what_is_ingested(
                 for df in detailed_files
             ]
 
-        return json.dumps(result)
+        return json.dumps(result, default=str)
     except ForbiddenError as e:
         logger.warning(f"Forbidden error retrieving ingestion catalog: {e}")
         return json.dumps({"error": f"Forbidden: {str(e)}", "forbidden": True})

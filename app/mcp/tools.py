@@ -38,7 +38,7 @@ from app.mcp.handlers import (
 logger = logging.getLogger("contextcortex.mcp")
 
 def register_mcp_tools_and_resources(server=None):
-    """Register all 7 tools, resources, and prompts onto the FastMCP server instance."""
+    """Register all 19 tools, resources, and prompts onto the FastMCP server instance."""
     if server is None:
         from app.mcp.mcp_server import mcp_server
         server = mcp_server

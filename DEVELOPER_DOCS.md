@@ -300,19 +300,22 @@ Example configuration:
 }
 ```
 
-### Available MCP Tools (16 Tools):
+### Available MCP Tools (19 Tools):
 - `search_code(query="JWT authentication handler", repo="backend-api")` [Role: `viewer`]
 - `search_docs(query="caddy reverse proxy configuration")` [Role: `viewer`]
+- `grep_code(pattern="enforce_tool_permission", repo="backend-api", path_glob="*.py")` [Role: `viewer`]
+- `diagnose_issue(issue_text="Traceback (most recent call last): ...", repo="backend-api")` [Role: `viewer`]
 - `find_symbol(name="extract_symbols_and_chunks", exact=true)` [Role: `viewer`]
-- `trace_path(target="authenticate_user", repo="backend-api")` [Role: `viewer`]
+- `trace_path(symbol="authenticate_user", repo="backend-api")` [Role: `viewer`]
 - `find_routes(repo="backend-api")` [Role: `viewer`]
-- `find_api_callers(target="/api/v1/auth/login")` [Role: `viewer`]
+- `find_api_callers(path="/api/v1/auth/login")` [Role: `viewer`]
 - `get_file_outline(filepath="app/services/search.py")` [Role: `viewer`]
 - `list_repositories()` [Role: `viewer`]
+- `get_recent_changes(repo="backend-api", filepath="app/services/search.py", limit=10)` [Role: `viewer`]
 - `sync_repository(repo="backend-api")` [Role: `editor`]
 - `index_status()` [Role: `viewer`]
 - `get_architecture(repo="backend-api")` [Role: `viewer`]
-- `manage_adr(action="list", repo="backend-api")` [Role: `editor`]
+- `manage_adr(action="list", repo="backend-api")` [Role: `editor` for mutations, `viewer` for list/get]
 - `manage_local_file(action="upload", file_path="notes/spec.md", content="# Spec")` [Role: `editor` for mutations, `viewer` for read]
 - `what_is_ingested(source_type="all", detail_level="summary")` [Role: `viewer`]
 - `read_file(path="app/services/search.py", repo="backend-api", start_line=1, end_line=120)` [Role: `viewer`]
