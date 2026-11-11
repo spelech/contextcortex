@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "extra-files": [
+        "main.py",
+        {
+          "type": "json",
+          "path": "package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "frontend/package.json",
+          "jsonpath": "$.version"
+        },
+        "README.md",
+        "ARCHITECTURE.md",
+        "REQUIREMENTS.md",
+        "DEVELOPER_DOCS.md",
+        "docs/requirements/index.md",
+        "docs/requirements/functional.md"
+      ]
+    }
+  }
+}

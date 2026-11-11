@@ -114,7 +114,7 @@ def generate_markdown() -> str:
     app_version = ver_match.group(1).strip() if ver_match else "2.20.0"
 
     lines = [
-        f"# Software Requirements Specification: ContextCortex (v{app_version})",
+        f"# Software Requirements Specification: ContextCortex (v{app_version}) <!-- x-release-please-version -->",
         "",
         "> **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.",
         "",

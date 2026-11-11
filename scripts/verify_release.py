@@ -31,7 +31,7 @@ def check_markdown_links(root_dir: Path) -> bool:
 
     checked_count = 0
     for md_file in root_dir.glob("**/*.md"):
-        if any(part in excluded_parts for part in md_file.parts):
+        if any(part in excluded_parts for part in md_file.parts) or md_file.name == "CHANGELOG.md":
             continue
 
         try:
