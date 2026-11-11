@@ -45,8 +45,11 @@ async def test_fastmcp_resources_and_prompts():
 
 @pytest.mark.asyncio
 async def test_fastmcp_tool_execution(temp_mcp_db):
+    import json
     mock_hit = MagicMock()
     mock_hit.score = 0.08
+    mock_hit.dense_score = None
+    mock_hit.sparse_score = None
     mock_hit.payload = {
         "repo": "demo-repo",
         "rel_path": "main.py",
@@ -61,16 +64,20 @@ async def test_fastmcp_tool_execution(temp_mcp_db):
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]):
         res, structured = await mcp_server.call_tool("search_code", {"query": "main entry point"})
         assert len(res) == 1
-        assert "main.py" in res[0].text
-        assert "demo-repo" in res[0].text
-        assert "Relevance Score: 0.0800 (8.0%)" in res[0].text
+        data = json.loads(res[0].text)
+        assert data["results"][0]["file"] == "main.py"
+        assert data["results"][0]["repo"] == "demo-repo"
+        assert data["results"][0]["score"] == 0.08
 
 
 @pytest.mark.asyncio
 async def test_fastmcp_resource_read(temp_mcp_db):
+    import json
     contents = await mcp_server.read_resource(AnyUrl("knowledge://catalog/summary"))
     assert len(contents) > 0
-    assert "Repository & Documentation Catalog" in contents[0].content
+    data = json.loads(contents[0].content)
+    assert "total_files" in data
+    assert "git_repositories" in data
 
 
 
@@ -109,6 +116,7 @@ async def test_fastmcp_streamable_http_transport():
 
 @pytest.mark.asyncio
 async def test_search_code_with_dense_weight_and_score_breakdown(temp_mcp_db):
+    import json
     mock_hit = MagicMock()
     mock_hit.score = 0.82
     mock_hit.dense_score = 0.88
@@ -132,12 +140,13 @@ async def test_search_code_with_dense_weight_and_score_breakdown(temp_mcp_db):
             {"query": "user login", "dense_weight": 0.6, "mode": "hybrid"}
         )
         assert len(res) == 1
-        text = res[0].text
-        assert "services/auth.py" in text
-        assert "AuthService.login" in text
-        assert "def login(self, username: str, password: str)" in text
-        assert "Semantic: 88.0%" in text
-        assert "Lexical: 74.0%" in text
+        data = json.loads(res[0].text)
+        hit = data["results"][0]
+        assert hit["file"] == "services/auth.py"
+        assert hit["symbol"] == "AuthService.login"
+        assert "def login(self, username: str, password: str)" in hit["signature"]
+        assert hit["dense_score"] == 0.88
+        assert hit["sparse_score"] == 0.74
         mock_exec.assert_called_once_with(
             query_text="user login",
             doc_type="code",
@@ -150,10 +159,13 @@ async def test_search_code_with_dense_weight_and_score_breakdown(temp_mcp_db):
 
 @pytest.mark.asyncio
 async def test_search_code_empty_and_missing_ast_boundaries(temp_mcp_db):
-    # 1. Empty results returns polite notice
+    import json
+    # 1. Empty results returns empty results list in JSON
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[]):
         res, _ = await mcp_server.call_tool("search_code", {"query": "nonexistent_func"})
-        assert "No matching code snippets found for query: 'nonexistent_func'" in res[0].text
+        data = json.loads(res[0].text)
+        assert data["query"] == "nonexistent_func"
+        assert data["results"] == []
 
     # 2. Hit without AST signature/symbol renders cleanly without crashing
     mock_hit_no_ast = MagicMock()
@@ -172,13 +184,15 @@ async def test_search_code_empty_and_missing_ast_boundaries(temp_mcp_db):
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit_no_ast]):
         res, _ = await mcp_server.call_tool("search_code", {"query": "build.sh"})
         assert len(res) == 1
-        text = res[0].text
-        assert "scripts/build.sh" in text
-        assert "echo 'building'" in text
-        assert "Signature" not in text
+        data = json.loads(res[0].text)
+        hit = data["results"][0]
+        assert hit["file"] == "scripts/build.sh"
+        assert "echo 'building'" in hit["content"]
+        assert hit["signature"] is None
 
 @pytest.mark.asyncio
 async def test_search_docs_with_dense_weight_and_score_breakdown(temp_mcp_db):
+    import json
     mock_doc = MagicMock()
     mock_doc.score = 0.82
     mock_doc.dense_score = 0.80
@@ -199,10 +213,13 @@ async def test_search_docs_with_dense_weight_and_score_breakdown(temp_mcp_db):
             {"query": "microservices", "dense_weight": 0.4, "mode": "lexical"}
         )
         assert len(res) == 1
-        text = res[0].text
-        assert "docs/architecture.md" in text
-        assert "Microservices" in text
-        assert "Relevance Score: 0.8200 (82.0%) [Semantic: 80.0% | Lexical: 85.0%]" in text
+        data = json.loads(res[0].text)
+        hit = data["results"][0]
+        assert hit["file"] == "docs/architecture.md"
+        assert hit["heading"] == "Microservices"
+        assert hit["score"] == 0.82
+        assert hit["dense_score"] == 0.8
+        assert hit["sparse_score"] == 0.85
         mock_exec.assert_called_once_with(
             query_text="microservices",
             doc_type="doc",
