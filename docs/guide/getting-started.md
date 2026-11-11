@@ -30,6 +30,17 @@ To deploy ContextCortex with PostgreSQL 16 (`pgvector`) or Qdrant in containers:
    docker compose logs -f contextcortex
    ```
 
+### Docker Database & Vector Store Sub-Configurations
+
+You can customize the relational metadata database and vector store engine in `.env` (or switch vector stores live at runtime under **Settings → Vector Database**):
+
+| Sub-Configuration | Relational DB (`DATABASE_URL`) | Vector Store (`VECTOR_STORE_PROVIDER` / `VECTOR_STORE_MODE`) | `.env` / Compose Configuration |
+| :--- | :--- | :--- | :--- |
+| **1A. Bundled PostgreSQL 16 + `pgvector`** *(Default)* | `postgresql+psycopg://contextcortex:cortexsecret@postgres:5432/contextcortex` | `VECTOR_STORE_PROVIDER=pgvector` (`remote`) | Default in `docker-compose.yml` — stores both relational metadata and HNSW vectors in the `postgres` container. |
+| **1B. PostgreSQL Metadata + Remote Qdrant** | `postgresql+psycopg://...` | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=remote` | Set `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=remote`, and `QDRANT_URL=http://qdrant:6333` in `.env`. |
+| **1C. PostgreSQL Metadata + Embedded Qdrant** | `postgresql+psycopg://...` | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` | Set `VECTOR_STORE_PROVIDER=qdrant` and `VECTOR_STORE_MODE=embedded` to persist vectors on the `/app/data/vector_storage` volume. |
+| **1D. Single-Container SQLite + Embedded Qdrant** | `sqlite:////app/data/index_cache.db` | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` | Use `docker-compose.enterprise.yml` with `ENTERPRISE_DATABASE_URL=sqlite:////app/data/index_cache.db` and `ENTERPRISE_VECTOR_STORE_PROVIDER=qdrant` to run without the `postgres` service. |
+
 > [!TIP]
 > **Restricted-Network & Private-CA Environments:** If your environment uses corporate TLS inspection, private CA certificates (`certs/*.crt`), or internal apt/pip/npm mirrors, use `docker-compose.enterprise.yml` or `Dockerfile.overlay`. See [Restricted-Network Builds](/guide/enterprise-build) for full instructions.
 
@@ -50,6 +61,17 @@ For Windows environments without Docker or administrator privileges, ContextCort
    ```
 
 On first launch, the portable bundle automatically initializes a local PostgreSQL 16 + `pgvector` cluster under `.\data\pgdata`, loads any corporate CA certificates placed in `.\certs\*.crt`, and starts the web dashboard and MCP endpoints on `http://127.0.0.1:3000`.
+
+### Windows Portable Database & Vector Store Sub-Configurations
+
+Edit `dist\contextcortex-windows-x64\.env` before running `start-contextcortex.bat` to choose how the standalone bundle stores metadata and vectors:
+
+| Sub-Configuration | Relational DB | Vector Store | `.env` Configuration |
+| :--- | :--- | :--- | :--- |
+| **2A. Embedded Portable PostgreSQL 16 + `pgvector`** *(Default)* | Bundled `pgsql\bin\postgres.exe` on `127.0.0.1:54329` (`.\data\pgdata`) | `VECTOR_STORE_PROVIDER=pgvector` | `PORTABLE_POSTGRES_ENABLED=true`, `PORTABLE_PG_PORT=54329`, `VECTOR_STORE_PROVIDER=pgvector` |
+| **2B. Embedded Portable PostgreSQL 16 + Embedded Qdrant** | Bundled `pgsql\bin\postgres.exe` (`.\data\pgdata`) | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` | `PORTABLE_POSTGRES_ENABLED=true`, `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` |
+| **2C. Local SQLite + Embedded Qdrant** *(No Postgres Subprocess)* | Local SQLite (`.\data\index_cache.db`) | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` | `PORTABLE_POSTGRES_ENABLED=false`, `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` |
+| **2D. External Corporate PostgreSQL / Remote Qdrant** | External `DATABASE_URL` | `pgvector` or remote `QDRANT_URL` | Set `DATABASE_URL=postgresql+psycopg://...` (automatically skips local portable Postgres bootstrap). |
 
 ---
 
@@ -96,9 +118,20 @@ Make sure that your system meets these requirements:
    cd frontend && npm install && npm run build && cd ..
    ```
 
+### Local Python Database & Vector Store Sub-Configurations
+
+Configure `.env` in the repository root to choose your local Python storage profile:
+
+| Sub-Configuration | Relational DB (`DATABASE_URL`) | Vector Store (`VECTOR_STORE_PROVIDER`) | `.env` Configuration |
+| :--- | :--- | :--- | :--- |
+| **3A. Local SQLite + Embedded Qdrant** *(Zero-Setup Default)* | `data/index_cache.db` (default when `DATABASE_URL` is unset) | `qdrant` (`embedded` in `data/vector_storage`) | Only `OPENAI_API_URL` and `OPENAI_API_KEY` required in `.env`. |
+| **3B. Local SQLite + Remote Qdrant** | `data/index_cache.db` | `qdrant` (`remote`) | Set `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=remote`, and `QDRANT_URL=http://localhost:6333`. |
+| **3C. External PostgreSQL 16 + `pgvector`** | `postgresql+psycopg://user:pass@localhost:5432/contextcortex` | `pgvector` (`remote`) | Set `DATABASE_URL=postgresql+psycopg://...` and `VECTOR_STORE_PROVIDER=pgvector`. |
+| **3D. External PostgreSQL 16 + Qdrant (Embedded or Remote)** | `postgresql+psycopg://user:pass@localhost:5432/contextcortex` | `qdrant` (`embedded` or `remote`) | Set `DATABASE_URL=postgresql+psycopg://...` and `VECTOR_STORE_PROVIDER=qdrant`. |
+
 ### Starting the Local Server
 
-1. Start the server (uses local SQLite `data/index_cache.db` and embedded Qdrant `data/vector_storage` by default):
+1. Start the server:
    ```bash
    python main.py
    ```
