@@ -201,7 +201,8 @@ def shallow_clone_repo(
     username: Optional[str] = None,
     provider: Optional[str] = None,
     repo_id: Optional[str] = None,
-    target_dir: Optional[str] = None
+    target_dir: Optional[str] = None,
+    depth: int = 1
 ) -> CloneResult:
     """
     Shallow clones a git repository to a temporary or persistent directory.
@@ -211,6 +212,7 @@ def shallow_clone_repo(
     from app.services.database import get_effective_git_token
     norm_url = normalize_git_url(git_url)
     use_ssh_native = is_ssh_git_url(git_url) and not token and not username
+    depth_str = str(max(1, depth))
 
     if target_dir:
         os.makedirs(os.path.dirname(os.path.abspath(target_dir)), exist_ok=True)
@@ -228,12 +230,12 @@ def shallow_clone_repo(
     auth_url = build_authenticated_url(target_url, token, username=username, provider=provider)
     safe_url = sanitize_url_for_logging(auth_url)
 
-    logger.info(f"Cloning {safe_url} (branch: {branch}) shallowly to {repo_dir}...")
+    logger.info(f"Cloning {safe_url} (branch: {branch}, depth: {depth_str}) shallowly to {repo_dir}...")
     try:
         # Check if already a git repo in target_dir (incremental shallow update)
         if target_dir and os.path.exists(os.path.join(repo_dir, ".git")):
-            logger.info(f"Existing shallow clone found in {repo_dir}; fetching latest refs...")
-            fetch_cmd = ["git", "fetch", "--depth", "1", "origin", branch]
+            logger.info(f"Existing shallow clone found in {repo_dir}; fetching latest refs (depth: {depth_str})...")
+            fetch_cmd = ["git", "fetch", "--depth", depth_str, "origin", branch]
             f_res = subprocess.run(fetch_cmd, cwd=repo_dir, capture_output=True, text=True, timeout=60, env=GIT_ENV)
             if f_res.returncode == 0:
                 subprocess.run(["git", "reset", "--hard", f"origin/{branch}"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
@@ -250,7 +252,7 @@ def shallow_clone_repo(
         # Shallow clone single branch
         cmd = [
             "git", "clone",
-            "--depth", "1",
+            "--depth", depth_str,
             "--branch", branch,
             "--single-branch",
             auth_url,
@@ -259,7 +261,7 @@ def shallow_clone_repo(
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=GIT_ENV)
         if res.returncode != 0:
             # Fallback to default clone if branch failed (e.g. branch is default)
-            cmd_fallback = ["git", "clone", "--depth", "1", auth_url, repo_dir]
+            cmd_fallback = ["git", "clone", "--depth", depth_str, auth_url, repo_dir]
             res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120, env=GIT_ENV)
             if res.returncode != 0:
                 err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
@@ -277,6 +279,77 @@ def shallow_clone_repo(
             cleanup_repo_dir(repo_dir)
         return CloneResult(temp_dir=None, commit_sha=None, error=f"Exception during git clone: {str(e)}")
 
+def extract_recent_commits(repo_dir: str, limit: int = 20) -> list[Dict[str, Any]]:
+    """
+    Extracts recent commit metadata from a local git repository.
+    Returns: List of dicts with commit_sha, author, committed_at (ISO 8601),
+             message (commit subject + body), and files_changed (list of relative filepaths).
+    """
+    if not repo_dir or not os.path.exists(os.path.join(repo_dir, ".git")):
+        return []
+    if limit <= 0:
+        return []
+
+    # Delimiters for structured git log parsing
+    record_delim = "===CC_COMMIT_START==="
+    files_delim = "===CC_FILES_START==="
+
+    # Format: record_delim, SHA, author name <email>, ISO date (%cI), raw body (%B), files_delim
+    cmd = [
+        "git", "log",
+        f"-n{limit}",
+        "--name-only",
+        f"--pretty=format:{record_delim}%n%H%n%an <%ae>%n%cI%n%B{files_delim}",
+    ]
+
+    try:
+        res = subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True, timeout=30, env=GIT_ENV)
+        if res.returncode != 0 or not res.stdout:
+            return []
+
+        raw_output = res.stdout
+        chunks = raw_output.split(record_delim)
+        commits = []
+
+        for chunk in chunks:
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+
+            if files_delim not in chunk:
+                continue
+
+            meta_part, files_part = chunk.split(files_delim, 1)
+            meta_lines = meta_part.splitlines()
+            if len(meta_lines) < 3:
+                continue
+
+            commit_sha = meta_lines[0].strip()
+            author = meta_lines[1].strip()
+            committed_at = meta_lines[2].strip()
+            # Everything after the first 3 lines is the commit message
+            message = "\n".join(meta_lines[3:]).strip() if len(meta_lines) > 3 else ""
+
+            # files_part contains the relative filepaths touched by the commit
+            files_changed = []
+            for f_line in files_part.splitlines():
+                f_path = f_line.strip()
+                if f_path and f_path not in files_changed:
+                    files_changed.append(f_path)
+
+            commits.append({
+                "commit_sha": commit_sha,
+                "author": author,
+                "committed_at": committed_at,
+                "message": message,
+                "files_changed": files_changed,
+            })
+
+        return commits
+    except Exception as e:
+        logger.error(f"Error extracting recent commits from {repo_dir}: {e}")
+        return []
+
 def cleanup_repo_dir(repo_dir: Optional[str]):
     """Safely removes cloned temporary directory from disk."""
     if repo_dir and os.path.exists(repo_dir):
@@ -285,6 +358,29 @@ def cleanup_repo_dir(repo_dir: Optional[str]):
             logger.info(f"Cleaned up temporary repo directory: {repo_dir}")
         except Exception as e:
             logger.warning(f"Failed to cleanup temp directory {repo_dir}: {e}")
+
+def format_git_commit_url(
+    git_url: str,
+    commit_sha: str,
+    provider: Optional[str] = None
+) -> Optional[str]:
+    """Constructs a clickable web URL for a commit (e.g. GitHub, GitLab, Gitea, Bitbucket)."""
+    if not git_url or not commit_sha:
+        return None
+    base = normalize_git_url(git_url).rstrip("/")
+    if base.endswith(".git"):
+        base = base[:-4]
+
+    prov = detect_git_provider(base, provider)
+    if prov == "gitlab":
+        return f"{base}/-/commit/{commit_sha}"
+    elif prov == "bitbucket":
+        return f"{base}/commits/{commit_sha}"
+    elif prov == "gitea":
+        return f"{base}/commit/{commit_sha}"
+    else:
+        # GitHub and generic standard
+        return f"{base}/commit/{commit_sha}"
 
 def format_git_permalink(
     git_url: str, 

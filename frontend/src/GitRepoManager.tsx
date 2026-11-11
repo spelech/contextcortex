@@ -34,6 +34,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
   const [authUser, setAuthUser] = useState('');
   const [token, setToken] = useState('');
   const [keepShallow, setKeepShallow] = useState(false);
+  const [retainCommitsCount, setRetainCommitsCount] = useState(20);
   const [isSaving, setIsSaving] = useState(false);
 
   const loadRepos = useCallback(async () => {
@@ -74,6 +75,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
           auth_user: authUser.trim() || null,
           auth_token: token.trim() || null,
           keep_shallow: keepShallow,
+          retain_commits_count: retainCommitsCount,
         }),
       });
       const data = await res.json();
@@ -87,6 +89,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
       setAuthUser('');
       setToken('');
       setKeepShallow(false);
+      setRetainCommitsCount(20);
       loadRepos();
       refreshStats();
       toast.success(`Repository '${alias.trim()}' added successfully`);
@@ -162,6 +165,29 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
     }
   };
 
+  const updateRetainCommits = async (repoId: number, count: number) => {
+    setRepos((prev) =>
+      prev.map((r) => (r.id === repoId ? { ...r, retain_commits_count: count } : r))
+    );
+
+    try {
+      const res = await fetch(`/admin/api/repos/${repoId}/retain-commits`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retain_commits_count: count }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || data.detail || 'Failed to update commit history retention');
+      }
+      toast.info(`Commit history retention updated to ${count} commits`);
+      loadRepos();
+    } catch (e: any) {
+      loadRepos();
+      toast.error('Failed to update commit history retention: ' + e.message);
+    }
+  };
+
   const handleCopyUrl = async (text: string) => {
     try {
       if (navigator?.clipboard?.writeText) {
@@ -230,6 +256,7 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
           onSync={syncRepo}
           onToggleAutoSync={toggleAutoSync}
           onToggleKeepShallow={toggleKeepShallow}
+          onUpdateRetainCommits={updateRetainCommits}
           onOpenWebhook={(repo) => setWebhookModalRepo(repo)}
           onDelete={deleteRepo}
           onOpenSyncDrawer={(id) => setActiveDrawerRepoId(id)}
@@ -254,6 +281,8 @@ export default function GitRepoManager({ refreshStats }: { refreshStats: () => v
         setToken={setToken}
         keepShallow={keepShallow}
         setKeepShallow={setKeepShallow}
+        retainCommitsCount={retainCommitsCount}
+        setRetainCommitsCount={setRetainCommitsCount}
         isSaving={isSaving}
       />
 

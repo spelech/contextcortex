@@ -7,6 +7,7 @@ interface RepoListTableProps {
   onSync: (id: number) => void;
   onToggleAutoSync: (id: number, current: boolean) => void;
   onToggleKeepShallow?: (id: number, current: boolean) => void;
+  onUpdateRetainCommits?: (id: number, count: number) => void;
   onOpenWebhook: (repo: Repo) => void;
   onDelete: (id: number, name: string) => void;
   onOpenSyncDrawer?: (repoId: number) => void;
@@ -19,6 +20,7 @@ export function RepoListTable({
   onSync,
   onToggleAutoSync,
   onToggleKeepShallow,
+  onUpdateRetainCommits,
   onOpenWebhook,
   onDelete,
   onOpenSyncDrawer,
@@ -87,6 +89,7 @@ export function RepoListTable({
               <th>Commit SHA</th>
               <th>Status</th>
               <th>Auto-Sync</th>
+              <th>History Retained</th>
               <th>Shallow Copy</th>
               <th>Files</th>
               <th>Last Synced</th>
@@ -96,14 +99,14 @@ export function RepoListTable({
           <tbody>
             {isLoading && repos.length === 0 ? (
               <tr>
-                <td colSpan={10} className="empty-state" data-testid="repo-loading-state">
+                <td colSpan={11} className="empty-state" data-testid="repo-loading-state">
                   <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
                   Loading repositories...
                 </td>
               </tr>
             ) : repos.length === 0 ? (
               <tr>
-                <td colSpan={10} className="empty-state">
+                <td colSpan={11} className="empty-state">
                   No Git repositories registered. Click "Add Repository" to index a remote repo.
                 </td>
               </tr>
@@ -111,6 +114,7 @@ export function RepoListTable({
               repos.map((r) => {
                 const isAutoSync = r.auto_sync !== false && r.auto_sync !== 0;
                 const isKeepShallow = r.keep_shallow === true || r.keep_shallow === 1;
+                const retainCount = r.retain_commits_count ?? 20;
                 const job = syncStates?.[r.id];
                 const isSyncing = r.status === 'syncing' || job?.status === 'syncing';
 
@@ -176,6 +180,38 @@ export function RepoListTable({
                           <i className="fa-solid fa-check"></i> Synced
                         </span>
                       )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className={`badge ${retainCount > 0 ? 'badge-primary' : 'badge-secondary'}`}
+                        style={{
+                          cursor: 'pointer',
+                          background: retainCount > 0 ? 'rgba(59, 130, 246, 0.2)' : 'rgba(100, 116, 139, 0.2)',
+                          border: retainCount > 0
+                            ? '1px solid rgba(59, 130, 246, 0.4)'
+                            : '1px solid rgba(100, 116, 139, 0.4)',
+                          color: retainCount > 0 ? '#93c5fd' : '#94a3b8',
+                          padding: '4px 8px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        onClick={() => {
+                          const val = window.prompt(`Enter commits retention count for ${r.name} (0 to disable):`, String(retainCount));
+                          if (val !== null) {
+                            const parsed = parseInt(val, 10);
+                            if (!isNaN(parsed) && parsed >= 0) {
+                              onUpdateRetainCommits?.(r.id, parsed);
+                            }
+                          }
+                        }}
+                        title={`Commit History Retention: ${retainCount > 0 ? `${retainCount} commits` : 'Disabled'} (Click to edit)`}
+                        aria-label={`Edit commit retention for ${r.name}`}
+                      >
+                        <i className={`fa-solid ${retainCount > 0 ? 'fa-clock-rotate-left' : 'fa-ban'}`}></i>
+                        {retainCount > 0 ? `${retainCount} commits` : 'Disabled'}
+                      </button>
                     </td>
                     <td>
                       <button
@@ -350,6 +386,28 @@ export function RepoListTable({
                       aria-label={`Toggle auto-sync for ${r.name}`}
                     >
                       {isAutoSync ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div>
+                    <span className="data-label">Retained Commits:</span>
+                    <button
+                      type="button"
+                      className={`badge ${(r.retain_commits_count ?? 20) > 0 ? 'badge-primary' : 'badge-secondary'}`}
+                      style={{ cursor: 'pointer', padding: '4px 8px', fontSize: '0.75rem', minHeight: '24px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => {
+                        const val = window.prompt(`Enter commits retention count for ${r.name} (0 to disable):`, String(r.retain_commits_count ?? 20));
+                        if (val !== null) {
+                          const parsed = parseInt(val, 10);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            onUpdateRetainCommits?.(r.id, parsed);
+                          }
+                        }
+                      }}
+                      title={`Commit History Retention: ${(r.retain_commits_count ?? 20) > 0 ? `${r.retain_commits_count ?? 20} commits` : 'Disabled'} (Click to edit)`}
+                      aria-label={`Edit commit retention for ${r.name}`}
+                    >
+                      <i className={`fa-solid ${(r.retain_commits_count ?? 20) > 0 ? 'fa-clock-rotate-left' : 'fa-ban'}`}></i>
+                      {(r.retain_commits_count ?? 20) > 0 ? `${r.retain_commits_count ?? 20} commits` : 'Disabled'}
                     </button>
                   </div>
                   <div>

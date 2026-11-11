@@ -129,7 +129,8 @@ describe('GitRepoManager Component', () => {
             branch: 'develop',
             auth_user: null,
             auth_token: null,
-            keep_shallow: false
+            keep_shallow: false,
+            retain_commits_count: 20
           })
         })
       );

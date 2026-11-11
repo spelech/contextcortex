@@ -19,6 +19,8 @@ interface AddRepoModalProps {
   setToken: (val: string) => void;
   keepShallow?: boolean;
   setKeepShallow?: (val: boolean) => void;
+  retainCommitsCount?: number;
+  setRetainCommitsCount?: (val: number) => void;
   isSaving: boolean;
 }
 
@@ -40,6 +42,8 @@ export function AddRepoModal({
   setToken,
   keepShallow = false,
   setKeepShallow,
+  retainCommitsCount = 20,
+  setRetainCommitsCount,
   isSaving,
 }: AddRepoModalProps) {
   if (!isOpen) return null;
@@ -148,7 +152,25 @@ export function AddRepoModal({
               <span>Keep shallow copy on disk</span>
             </label>
             <p className="text-muted" style={{ fontSize: '0.82rem', marginTop: '4px', marginLeft: '24px', lineHeight: '1.4' }}>
-              When enabled, retains a shallow clone (<code>--depth 1</code>) in persistent storage on disk after indexing, enabling instant full-file inspection in Code Navigator and faster delta updates.
+              When enabled, retains a shallow clone in persistent storage on disk after indexing, enabling instant full-file inspection in Code Navigator and faster delta updates.
+            </p>
+          </div>
+
+          <div className="form-group" style={{ marginTop: '12px' }}>
+            <label htmlFor="repo-retain-commits" style={{ fontWeight: 600, color: 'var(--text)' }}>
+              Retain Recent Commits Count
+            </label>
+            <input
+              type="number"
+              id="repo-retain-commits"
+              min={0}
+              max={1000}
+              value={retainCommitsCount}
+              onChange={(e) => setRetainCommitsCount?.(Math.max(0, parseInt(e.target.value, 10) || 0))}
+              style={{ width: '100%', maxWidth: '160px', marginTop: '4px' }}
+            />
+            <p className="text-muted" style={{ fontSize: '0.82rem', marginTop: '4px', lineHeight: '1.4' }}>
+              Number of recent commits to index and retain for <code>get_recent_changes</code> queries (default 20, set to 0 to disable commit history retention).
             </p>
           </div>
 

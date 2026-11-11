@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.services.auth import Role
 from app.api.routers.auth import require_role
 
-from app.models.schemas import RepoConfig, LocalPathConfig, AutoSyncToggleRequest, KeepShallowToggleRequest, SearchRequest
+from app.models.schemas import RepoConfig, LocalPathConfig, AutoSyncToggleRequest, KeepShallowToggleRequest, RetainCommitsRequest, SearchRequest
 import app.services.database as db_service
 import app.services.vector_store as vs_service
 import app.services.indexing as idx_service
@@ -32,7 +32,7 @@ async def api_get_repos():
         with db_service.get_db_connection() as conn:
             rows = conn.execute("""
                 SELECT id, name, url, branch, commit_sha, status, last_error, last_synced, 
-                       auth_token, provider, auth_user, auto_sync, keep_shallow, webhook_secret
+                       auth_token, provider, auth_user, auto_sync, keep_shallow, retain_commits_count, webhook_secret
                 FROM git_repositories 
                 ORDER BY id DESC
             """).fetchall()
@@ -61,11 +61,12 @@ async def api_add_repo(repo: RepoConfig):
     try:
         with db_service.get_db_connection() as conn:
             cursor = conn.cursor()
+            retain_count = repo.retain_commits_count if repo.retain_commits_count is not None else 20
             cursor.execute(
-                """INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user, auto_sync, keep_shallow, webhook_secret)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user, auto_sync, keep_shallow, retain_commits_count, webhook_secret)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (repo.name.strip(), repo.url.strip(), repo.branch or "main", repo.auth_token, repo.provider or "github", repo.auth_user,
-                 1 if repo.auto_sync else 0, 1 if repo.keep_shallow else 0, repo.webhook_secret)
+                 1 if repo.auto_sync else 0, 1 if repo.keep_shallow else 0, max(0, retain_count), repo.webhook_secret)
             )
             conn.commit()
             repo_id = cursor.lastrowid
@@ -113,6 +114,29 @@ async def api_toggle_repo_keep_shallow(repo_id: int, payload: KeepShallowToggleR
     except Exception as e:
         logger.error(f"Error toggling keep-shallow for repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to toggle keep-shallow for repository."})
+
+@router.patch(
+    "/admin/api/repos/{repo_id}/retain-commits",
+    dependencies=[Depends(require_role(Role.ADMIN))],
+)
+async def api_update_repo_retain_commits(repo_id: int, payload: RetainCommitsRequest):
+    try:
+        with db_service.get_db_connection() as conn:
+            cursor = conn.cursor()
+            val = max(0, payload.retain_commits_count)
+            res = cursor.execute("UPDATE git_repositories SET retain_commits_count = ? WHERE id = ?", (val, repo_id))
+            if res.rowcount == 0:
+                return JSONResponse(status_code=404, content={"error": f"Repository with ID {repo_id} not found"})
+            if val == 0:
+                # Delete any stored commits immediately if retention is disabled
+                row = cursor.execute("SELECT name FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+                if row:
+                    cursor.execute("DELETE FROM git_commits WHERE repo = ?", (row["name"],))
+            conn.commit()
+        return {"status": "success", "id": repo_id, "repo_id": repo_id, "retain_commits_count": val}
+    except Exception as e:
+        logger.error(f"Error updating retain_commits_count for repo {repo_id}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Failed to update retain_commits_count for repository."})
 
 @router.post(
     "/admin/api/repos/{repo_id}/sync",
@@ -218,7 +242,7 @@ async def api_delete_repo(repo_id: int):
             name = row["name"]
 
             conn.execute("DELETE FROM git_repositories WHERE id = ?", (repo_id,))
-            for table in ("indexed_files", "ast_symbols", "ast_relationships", "api_routes"):
+            for table in ("indexed_files", "ast_symbols", "ast_relationships", "api_routes", "git_commits"):
                 try:
                     conn.execute(f"DELETE FROM {table} WHERE repo = ?", (name,))
                 except Exception:

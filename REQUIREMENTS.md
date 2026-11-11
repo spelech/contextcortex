@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1172 Automated Tests** (814 Pytest Backend + 308 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1179 Automated Tests** (819 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -528,6 +528,13 @@ classDiagram
 - `test_diagnose_issue_natural_language` - _Verifies diagnose_issue functions on natural-language user reports without stack frames._
 - `test_handle_diagnose_issue_mcp`
 - `test_diagnose_issue_registered_on_mcp_server`
+
+#### `tests/backend/test_git_commits_history.py` (5 tests)
+- `test_extract_recent_commits_unit`
+- `test_format_git_commit_url`
+- `test_sync_single_git_repo_commits_and_pruning`
+- `test_get_recent_changes_mcp_tool`
+- `test_rest_api_patch_retain_commits`
 
 #### `tests/backend/test_git_manager.py` (34 tests)
 - `TestGitManager::test_get_env_token`
@@ -1610,6 +1617,10 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - log
 - cancels sync by calling /admin/api/repos/{id}/cancel-sync
 - closes EventSource on unmount
+
+#### `RetainCommitsControls.test.tsx` (2 tests)
+- renders retain commits input on AddRepoModal and calls setRetainCommitsCount
+- renders history retention badge on RepoListTable and prompts for edit
 
 #### `SearchInspector.test.tsx` (11 tests)
 - renders initial prompt and inputs

@@ -111,6 +111,7 @@ def sync_single_git_repo(repo_id: int):
         per_repo_user = repo_row["auth_user"] if "auth_user" in repo_row.keys() else None
         provider = repo_row["provider"] if "provider" in repo_row.keys() else None
         keep_shallow = bool(repo_row["keep_shallow"]) if "keep_shallow" in repo_row.keys() and repo_row["keep_shallow"] else False
+        retain_commits_count = int(repo_row["retain_commits_count"]) if "retain_commits_count" in repo_row.keys() and repo_row["retain_commits_count"] is not None else 20
 
         progress_tracker.get_or_create_job(repo_id, repo_name)
 
@@ -149,8 +150,9 @@ def sync_single_git_repo(repo_id: int):
 
         target_dir = gm_service.get_persistent_repo_dir(repo_name) if keep_shallow else None
         clone_mode_label = f"persistent storage ({target_dir})" if keep_shallow else "ephemeral directory"
+        clone_depth = max(1, retain_commits_count) if retain_commits_count > 0 else 1
         progress_tracker.update_step(repo_id, 2, "Shallow Cloning Repository", pct=25)
-        progress_tracker.log(repo_id, "INFO", f"Cloning branch '{branch}' to {clone_mode_label}...")
+        progress_tracker.log(repo_id, "INFO", f"Cloning branch '{branch}' (depth {clone_depth}) to {clone_mode_label}...")
 
         clone_start = time.time()
         clone_res = gm_service.shallow_clone_repo(
@@ -160,7 +162,8 @@ def sync_single_git_repo(repo_id: int):
             username=effective_user, 
             provider=provider, 
             repo_id=str(repo_id),
-            target_dir=target_dir
+            target_dir=target_dir,
+            depth=clone_depth
         )
         temp_dir = clone_res.temp_dir
         commit_sha = clone_res.commit_sha
@@ -183,6 +186,53 @@ def sync_single_git_repo(repo_id: int):
             logger.info(f"Sync cancelled for repo '{repo_name}' after clone")
             progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
             return
+
+        # Commit history extraction and pruning
+        try:
+            with db_service.get_db_connection() as conn:
+                if retain_commits_count > 0:
+                    recent_commits = gm_service.extract_recent_commits(temp_dir, limit=retain_commits_count)
+                    if recent_commits:
+                        commit_tuples = [
+                            (
+                                repo_name,
+                                c["commit_sha"],
+                                c.get("author"),
+                                c.get("committed_at"),
+                                c.get("message"),
+                                json.dumps(c.get("files_changed", []))
+                            )
+                            for c in recent_commits
+                        ]
+                        conn.executemany(
+                            """INSERT INTO git_commits (repo, commit_sha, author, committed_at, message, files_changed)
+                               VALUES (?, ?, ?, ?, ?, ?)
+                               ON CONFLICT(repo, commit_sha) DO UPDATE SET
+                                   author = EXCLUDED.author,
+                                   committed_at = EXCLUDED.committed_at,
+                                   message = EXCLUDED.message,
+                                   files_changed = EXCLUDED.files_changed""",
+                            commit_tuples
+                        )
+                        # Prune older rows beyond retain_commits_count for this repo
+                        # We keep the top retain_commits_count commits ordered by committed_at DESC, id DESC
+                        conn.execute(
+                            """DELETE FROM git_commits
+                               WHERE repo = ? AND id NOT IN (
+                                   SELECT id FROM git_commits
+                                   WHERE repo = ?
+                                   ORDER BY committed_at DESC, id DESC
+                                   LIMIT ?
+                               )""",
+                            (repo_name, repo_name, retain_commits_count)
+                        )
+                        conn.commit()
+                else:
+                    # retain_commits_count <= 0: delete all stored commits for this repo
+                    conn.execute("DELETE FROM git_commits WHERE repo = ?", (repo_name,))
+                    conn.commit()
+        except Exception as ce:
+            logger.error(f"Error extracting/pruning commits for repo '{repo_name}': {ce}")
 
         # Stage 3: Computing File Delta & Scanning
         progress_tracker.update_step(repo_id, 3, "Computing File Delta & Scanning", pct=40)

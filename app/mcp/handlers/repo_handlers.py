@@ -7,7 +7,7 @@ from app.services.database import get_db_connection, extract_host_from_url, get_
 from app.services.search import execute_hybrid_search, trace_symbol_path
 from app.services.indexing import get_dynamic_catalog_description, sync_single_git_repo, run_full_indexing
 from app.services.vector_store import get_vector_store_config
-from app.services.git_manager import format_git_permalink
+from app.services.git_manager import format_git_permalink, format_git_commit_url
 from app.services.chunking import match_route_and_call, normalize_path_pattern
 from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
 
@@ -233,3 +233,119 @@ def handle_search_infrastructure_docs(
         "topic": topic,
         "instructions": f"Perform a search using the search_docs tool for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions.",
     })
+
+
+async def handle_get_recent_changes(
+    repo: Annotated[str, Field(description="Repository name to inspect recent commits for.")],
+    filepath: Annotated[Optional[str], Field(description="Optional relative file path filter to only return commits touching this file.")] = None,
+    symbol: Annotated[Optional[str], Field(description="Optional AST symbol name; resolves symbol's file path and filters commits touching that file.")] = None,
+    limit: Annotated[int, Field(description="Max commits to return (default 10, max 50).")] = 10,
+) -> str:
+    """Returns recent commit history for a repository, optionally filtered by file path or symbol name."""
+    try:
+        from app.services.auth import enforce_tool_permission, Role
+        enforce_tool_permission(Role.VIEWER)
+
+        safe_limit = max(1, min(limit if limit is not None else 10, 50))
+
+        with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
+            repo_row = conn.execute(
+                "SELECT id, name, url, provider, retain_commits_count FROM git_repositories WHERE name = ?",
+                (repo,)
+            ).fetchone()
+
+            retained_limit = (
+                int(repo_row["retain_commits_count"])
+                if repo_row and "retain_commits_count" in repo_row.keys() and repo_row["retain_commits_count"] is not None
+                else 20
+            )
+
+            # Check if repository has commits in git_commits
+            stored_count = 0
+            if repo_row:
+                count_row = conn.execute("SELECT count(*) as c FROM git_commits WHERE repo = ?", (repo,)).fetchone()
+                stored_count = count_row["c"] if count_row else 0
+
+            # If retain_commits_count == 0 or no commits are stored
+            if not repo_row or retained_limit == 0 or stored_count == 0:
+                fallback_resp = {
+                    "repo": repo,
+                    "retained": False,
+                    "retained_limit": retained_limit if repo_row else 0,
+                    "commits": [],
+                    "message": f"Commit history is not retained for repository '{repo}' (retain_commits_count={retained_limit if repo_row else 0}). Retrieve commit history directly from the Git repository."
+                }
+                return json.dumps(fallback_resp, separators=(",", ":"))
+
+            git_url = repo_row["url"]
+            provider = repo_row["provider"]
+
+            # Resolve filter filepath
+            target_filepath = None
+            if filepath and filepath.strip():
+                clean_fp = filepath.strip().lstrip("/")
+                target_filepath = clean_fp
+            elif symbol and symbol.strip():
+                sym_row = conn.execute(
+                    "SELECT filepath FROM ast_symbols WHERE repo = ? AND (name = ? OR full_symbol = ?) LIMIT 1",
+                    (repo, symbol.strip(), symbol.strip())
+                ).fetchone()
+                if sym_row:
+                    raw_fp = sym_row["filepath"]
+                    if "://" in raw_fp:
+                        target_filepath = raw_fp.split("://", 1)[1]
+                    else:
+                        target_filepath = raw_fp
+
+            # Query commits from git_commits
+            rows = conn.execute(
+                "SELECT commit_sha, author, committed_at, message, files_changed FROM git_commits WHERE repo = ? ORDER BY committed_at DESC, id DESC",
+                (repo,)
+            ).fetchall()
+
+            matched_commits = []
+            for r in rows:
+                files_raw = r["files_changed"]
+                try:
+                    files_list = json.loads(files_raw) if files_raw else []
+                except Exception:
+                    files_list = []
+
+                if target_filepath:
+                    norm_target = target_filepath.replace("\\", "/").lstrip("/")
+                    matched = False
+                    for f in files_list:
+                        norm_f = f.replace("\\", "/").lstrip("/")
+                        if norm_f == norm_target or norm_f.endswith("/" + norm_target) or norm_target.endswith("/" + norm_f):
+                            matched = True
+                            break
+                    if not matched:
+                        continue
+
+                commit_url = format_git_commit_url(git_url, r["commit_sha"], provider=provider)
+                matched_commits.append({
+                    "sha": r["commit_sha"],
+                    "short_sha": r["commit_sha"][:7],
+                    "author": r["author"],
+                    "date": r["committed_at"],
+                    "message": r["message"],
+                    "files_changed": files_list,
+                    "commit_url": commit_url,
+                })
+
+                if len(matched_commits) >= safe_limit:
+                    break
+
+            result = {
+                "repo": repo,
+                "retained_limit": retained_limit,
+                "commits": matched_commits,
+            }
+            if target_filepath:
+                result["filter_filepath"] = target_filepath
+
+            return json.dumps(result, separators=(",", ":"))
+
+    except Exception as e:
+        logger.error(f"Error in handle_get_recent_changes: {e}")
+        return json.dumps({"error": str(e), "repo": repo, "commits": []}, separators=(",", ":"))

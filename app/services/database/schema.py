@@ -50,6 +50,7 @@ git_repositories = Table(
     Column("enabled", Integer, default=1, server_default="1"),
     Column("auto_sync", Integer, default=1, server_default="1"),
     Column("keep_shallow", Integer, default=0, server_default="0"),
+    Column("retain_commits_count", Integer, default=20, server_default="20"),
     Column("webhook_secret", Text, nullable=True),
     Column("status", Text, default="pending", server_default="pending"),
     Column("last_error", Text, nullable=True),
@@ -255,6 +256,21 @@ pdf_extracted_cache = Table(
     Index("idx_pdf_cache_repo", "repo"),
 )
 
+# 16. Git Commits
+git_commits = Table(
+    "git_commits",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("repo", Text, nullable=False),
+    Column("commit_sha", Text, nullable=False),
+    Column("author", Text, nullable=True),
+    Column("committed_at", Text, nullable=True),
+    Column("message", Text, nullable=True),
+    Column("files_changed", Text, nullable=True),  # JSON array of relative filepaths
+    Index("idx_git_commits_repo_sha", "repo", "commit_sha", unique=True),
+    Index("idx_git_commits_repo_date", "repo", "committed_at"),
+)
+
 # Dictionary mapping table names to SQLAlchemy Table objects
 TABLES: Dict[str, Table] = {t.name: t for t in metadata.tables.values()}
 
@@ -263,6 +279,7 @@ __all__ = [
     "TABLES",
     "indexed_paths",
     "git_repositories",
+    "git_commits",
     "git_host_credentials",
     "indexed_files",
     "file_summaries",
