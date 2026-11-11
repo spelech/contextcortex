@@ -78,6 +78,18 @@ On first start, the bundle does these steps:
 
 All data stays in `.\data\`. To use a different folder, set `DATA_DIR` in `.env`. The launcher works with Windows PowerShell 5.1 and with PowerShell 7.
 
+The bundle contains the tree-sitter grammar DLLs in `.\grammars\`. The app loads them from this folder and does not download grammars at runtime. To use a different folder, set `TREE_SITTER_LANGUAGE_PACK_CACHE_DIR` in `.env`.
+
+> [!WARNING]
+> **Error "start-contextcortex.ps1 is not digitally signed":** Windows marks files that you extract from a downloaded zip as "from the Internet". If Group Policy sets the execution policy to `RemoteSigned` or stricter, PowerShell does not run the marked launcher script, and `-ExecutionPolicy Bypass` cannot change this. Unblock the zip **before** you extract it (right-click the zip, select **Properties**, then select **Unblock**), or run this command in the bundle folder:
+> ```powershell
+> Get-ChildItem -Recurse -File | Unblock-File
+> ```
+> If Group Policy sets `AllSigned`, you must sign the script or ask your administrator.
+
+> [!NOTE]
+> **Endpoint protection (for example Carbon Black):** If your endpoint protection blocks DLLs, keep the bundle in a folder where it allows executables and DLLs. All the DLLs that the bundle loads are in its own folder (`_internal\`, `pgsql\`, and `grammars\`).
+
 ### Windows Portable Database & Vector Store Sub-Configurations
 
 Edit `dist\contextcortex-windows-x64\.env` before running `start-contextcortex.bat` to choose how the standalone bundle stores metadata and vectors:

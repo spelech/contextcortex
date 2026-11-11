@@ -76,6 +76,7 @@ jobs:
           if (-not (Test-Path "$bundle/pgsql/bin/pg_ctl.exe")) { throw "Missing portable pg_ctl.exe" }
           if (-not (Test-Path "$bundle/pgsql/lib/vector.dll")) { throw "Missing compiled pgvector vector.dll" }
           if (-not (Test-Path "$bundle/pgsql/share/extension/vector.control")) { throw "Missing pgvector extension control file" }
+          if (-not (Get-ChildItem "$bundle/grammars" -Recurse -Filter "tree_sitter_python.dll" -ErrorAction SilentlyContinue)) { throw "Missing pre-fetched tree-sitter grammars" }
           if (-not (Test-Path "$bundle/start-contextcortex.bat")) { throw "Missing start-contextcortex.bat" }
           Write-Host "All portable bundle artifacts verified!" -ForegroundColor Green
 

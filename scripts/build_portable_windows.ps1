@@ -46,6 +46,31 @@ if (Test-Path $BundleDir) {
 New-Item -ItemType Directory -Path $BundleDir | Out-Null
 Copy-Item -Path "$FrozenDir\*" -Destination $BundleDir -Recurse -Force
 
+# 3b. Pre-fetch tree-sitter grammar DLLs into .\grammars (the frozen app sets
+# TREE_SITTER_LANGUAGE_PACK_CACHE_DIR to this folder). The bundle then needs no
+# runtime download and loads no DLLs from %LOCALAPPDATA%. The language list comes
+# from EXTENSION_TO_LANGUAGE in app/services/chunking/tree_sitter_loader.py.
+Write-Host "Pre-fetching tree-sitter grammars into the bundle..." -ForegroundColor Cyan
+$GrammarsDir = Join-Path $BundleDir "grammars"
+$env:TREE_SITTER_LANGUAGE_PACK_CACHE_DIR = $GrammarsDir
+python -c @"
+import tree_sitter_language_pack as t
+from app.services.chunking.tree_sitter_loader import EXTENSION_TO_LANGUAGE
+langs = sorted({l for l in EXTENSION_TO_LANGUAGE.values() if l != 'text'})
+# prefetch() accepts only download-manifest names (for example 'csharp', not 'c_sharp')
+manifest = set(t.manifest_languages())
+fetch = sorted({l if l in manifest else l.replace('_', '') for l in langs})
+missing = [l for l in fetch if l not in manifest]
+if missing:
+    raise SystemExit('Grammars not in the download manifest: %s' % missing)
+t.prefetch(fetch)
+for l in langs:
+    t.get_parser(l)
+print('Pre-fetched %d grammars into %s' % (len(fetch), t.cache_dir()))
+"@
+if ($LASTEXITCODE -ne 0) { throw "tree-sitter grammar pre-fetch failed" }
+Remove-Item Env:\TREE_SITTER_LANGUAGE_PACK_CACHE_DIR
+
 # 4. Download & Extract Portable PostgreSQL Windows x64 Binaries
 $TempDir = Join-Path $env:TEMP "cc_pg_build"
 if (Test-Path $TempDir) {
