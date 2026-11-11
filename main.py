@@ -33,6 +33,11 @@ def _apply_frozen_bundle_defaults() -> None:
     # The portable bundle does not include FastEmbed/ONNX, so embeddings must use the API gateway.
     os.environ.setdefault("EMBEDDING_PROVIDER", "api")
     os.environ.setdefault("HOST", "127.0.0.1")
+    # tree-sitter-language-pack loads grammar DLLs from its cache folder (default:
+    # %LOCALAPPDATA%\tree-sitter-language-pack). Endpoint protection often blocks
+    # DLLs there, and offline machines cannot download them. The build script
+    # pre-fetches the grammars into .\grammars next to the exe; use that folder.
+    os.environ.setdefault("TREE_SITTER_LANGUAGE_PACK_CACHE_DIR", os.path.join(exe_dir, "grammars"))
     os.makedirs(os.environ["VAULT_PATH"], exist_ok=True)
 
 
