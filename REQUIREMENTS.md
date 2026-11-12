@@ -516,10 +516,10 @@ classDiagram
 - `test_parse_stack_frames_java`
 - `test_parse_stack_frames_go_rust`
 - `test_extract_diagnostic_signals`
-- `test_resolve_stack_frames_with_db`
-- `test_match_routes_and_callers`
-- `test_match_symbols_and_exceptions`
-- `test_diagnose_issue_natural_language` - _Verifies diagnose_issue functions on natural-language user reports without stack frames._
+- `test_resolve_stack_frames_with_db` - _Verifies stack frame resolution against a real SQLite database and real file on disk, prioritizing production callers and file-scoped callees._
+- `test_match_routes_and_callers` - _Verifies route and caller matching against a real SQLite database while excluding test routes._
+- `test_match_symbols_and_exceptions` - _Verifies exception and symbol matching against a real SQLite database._
+- `test_diagnose_issue_natural_language` - _Verifies diagnose_issue functions on natural-language user reports with symbol extraction and hybrid search._
 - `test_handle_diagnose_issue_mcp`
 - `test_diagnose_issue_registered_on_mcp_server`
 
