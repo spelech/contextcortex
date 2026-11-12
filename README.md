@@ -1,6 +1,5 @@
 # ContextCortex (v2.21.4) <!-- x-release-please-version -->
 
-
 [![Build and Publish Docker Image](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/spelech/contextcortex/actions/workflows/docker-publish.yml)
 [![Docker Image](https://img.shields.io/badge/ghcr.io-spelech%2Fcontextcortex-blue?logo=docker)](https://github.com/spelech/contextcortex/pkgs/container/contextcortex)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue?logo=github)](https://spelech.github.io/contextcortex/)
@@ -8,7 +7,8 @@
 [![MCP](https://img.shields.io/badge/MCP-2026--07--28-0052CC)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A high-performance, multi-repo Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, **Pluggable Dual-Engine Architecture (PostgreSQL 16 + pgvector & SQLite)**, **MCP 2026-07-28 OAuth 2.1 & 3-Tier RBAC**, and **Universal Git Provider indexing** with an integrated Web Admin Dashboard (ContextCortex) and real-time Diagnostic Observability.
+ContextCortex is a multi-repository Model Context Protocol (MCP) server providing **syntax-aware Code RAG**, **Hybrid Retrieval (Dense + BM25)**, **Tree-sitter AST chunking**, **Pluggable Dual-Engine Storage (PostgreSQL 16 + pgvector & SQLite)**, **MCP 2026-07-28 OAuth 2.1 + 3-Tier RBAC**, and **Universal Git Provider indexing** with an integrated Web Admin Dashboard.
+
 <details>
 <summary><b>🖼️ View Dashboard Components</b></summary>
 
@@ -25,12 +25,12 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 </details>
 
 <details open>
-<summary><b>🎨 Multi-Theme Appearance (4 Polished Palettes)</b></summary>
+<summary><b>🎨 Multi-Theme Appearance (4 Palettes)</b></summary>
 
 | **Deep Ocean** *(Dark Default)* | **Midnight Blue** *(Dark Space)* |
 |:---:|:---:|
 | ![Deep Ocean](docs/assets/theme_deep_ocean.png) | ![Midnight Blue](docs/assets/theme_midnight_blue.png) |
-| *Petrol spruce `#07181b` with vibrant cyan `#0891b2` & mint* | *Obsidian navy `#0a0f1d` with royal blue `#3b82f6` & teal* |
+| *Petrol spruce `#07181b` with cyan `#0891b2` & mint* | *Obsidian navy `#0a0f1d` with royal blue `#3b82f6` & teal* |
 | **Lavender Haze** *(Light Purple)* | **Amber Warmth** *(Light Sandstone)* |
 |:---:|:---:|
 | ![Lavender Haze](docs/assets/theme_lavender_haze.png) | ![Amber Warmth](docs/assets/theme_amber_warmth.png) |
@@ -38,120 +38,78 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 
 </details>
 
-
 ---
 
 ## 🌟 Key Features
 
-- **Pluggable Dual-Engine Architecture**:
-  - **PostgreSQL 16 + pgvector Profile**: Containerized production deployment with native `vector(384)` HNSW cosine distance indexing (`vector_cosine_ops`), `JSONB` metadata payload queries, and robust connection pooling (`psycopg3`).
-  - **SQLite Profile**: Zero-configuration, zero-dependency embedded disk mode with automatic WAL journaling, 15000ms busy timeout, and resilient relational caching.
-- **SQLAlchemy 2.0 Core Unified Schema**: Single source of truth relational schema (`metadata`) shared seamlessly between SQLite and PostgreSQL, with startup connection retry loops (`wait_for_db`) and automatic metadata seeding.
-- **MCP 2026-07-28 OAuth 2.1 & RBAC Security Engine**:
-  - **RFC 9728 Protected Resource Metadata**: Standard discovery endpoint at `/.well-known/oauth-protected-resource` exposing resource indicators, authorization server issuers, and MCP scopes.
-  - **JWT & OIDC Discovery**: Validates RS256/ES256 signed bearer tokens with automatic JWKS key discovery and cached key rotation.
-  - **Database-Backed API Keys**: Cryptographically secure `cc_...` API keys with SHA-256 hash verification, expiration timestamps, and one-click revocation.
-  - **3-Tier RBAC Hierarchy**: `admin` (Level 30 / `mcp:admin`), `editor` (Level 20 / `mcp:editor`), and `viewer` (Level 10 / `mcp:viewer`).
-  - **Zero-Friction Local Dev Bypass**: Runs in unrestricted admin mode when `AUTH_ENABLED=false` for local developer velocity.
-- **FastMCP 2.0 Native Architecture**: Built on the official Model Context Protocol Python SDK 2.0.0+ (`FastMCP`), supporting modern decorator patterns, typed schemas, dynamic catalog resources, and custom agent prompts.
-- **Dual MCP Transports**:
-  - **Server-Sent Events (SSE)**: Full streaming events at `/sse` with POST message routing at `/messages/`.
-  - **Streamable HTTP**: Bidirectional JSON-RPC transport endpoint at `/mcp`.
-- **Multi-Vector Database Backends**:
-  - **pgvector**: PostgreSQL 16 vector extension with HNSW cosine search and GIN Full-Text Search (`tsvector`) lexical/hybrid fusion.
-  - **Qdrant**: High-scale vector engine supporting dense + sparse BM25 multi-vectors with Reciprocal Rank Fusion (RRF) in both embedded disk and remote server modes.
-  - **Dynamic Backend Switching**: Test and switch vector backends live from the Settings UI or REST API without server restarts.
-- **Universal Git Provider Support & Persistent Shallow Retention**:
-  - Ingest repositories from **any source where Git lives**: **GitHub**, **GitLab (Cloud, Enterprise & Self-Hosted)**, **Gitea & Forgejo**, **Bitbucket (Cloud & Server)**, **Generic Git HTTP/HTTPS**, and **Native SSH (`git@...` / `ssh://...`)**.
-  - **Configurable Shallow Copy Retention (`keep_shallow`)**: Choose between **ephemeral shallow clones** (immediate deletion after indexing to save storage) or **persistent shallow clones** (`--depth 1` retained on disk under `/app/data/repos/{repo_name}` on the cache volume). Persistent copies power instant full source code inspection in Code Navigator and accelerated incremental delta syncing (`git fetch --depth 1` + `git reset --hard`).
-  - **Configurable Commit History Retention (`retain_commits_count`)**: Optionally retain the last `N` commits (`0`–`50`, default `20`) per Git repository in relational storage (`git_commits`), enabling instant commit history inspection filtered by file path or AST symbol via `get_recent_changes`.
-  - **Full-Screen React Portals for Modals**: Add Repository modal, Webhook setup modal, and Sync Drawer render cleanly via React Portals (`createPortal(..., document.body)`), eliminating containment clipping from glassmorphism cards.
-  - **Provider-Aware Permalinks**: Automatically generates exact deep-links for code results (`/blob/`, `/-/blob/`, `/src/branch/`, `/src/commit/`, `/src/#lines-`).
-  - **Custom Git Host Credential Vault**: Register per-host tokens and authentication types for private internal domains (e.g. `gitlab.company.internal` or `http://git.lan:3000`).
-- **AST-Aware Code Chunking (Tree-sitter)**: Understands syntax structures across Python, TypeScript/JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more. Chunks along class, method, and function boundaries with exact line numbers and symbol names.
-- **Forensic Triage, Multi-Repo Grep & Vector File Reconstruction**:
-  - **Multi-Repo Pattern Search (`grep_code`)**: Deterministic literal and regular expression search across one or all indexed repositories (including ephemeral repositories via indexed vector chunks) with `path_glob` filtering, surrounding context lines, and enclosing AST symbol attribution.
-  - **Automated Issue & Stack Trace Triage (`diagnose_issue`)**: Forensic triage engine accepting stack traces, error logs, or bug descriptions across Python, TypeScript/JavaScript, C#/.NET, Go, and Java—automatically resolving stack frames to AST symbols and code context, matching HTTP routes and error literals, and retrieving semantic code candidates.
-  - **Cross-Repo HTTP Boundary Tracing (`trace_path`)**: Bridges outbound HTTP client calls (`api_client_calls`) and inbound route handlers (`api_routes`) across repositories (`external_callers` and `external_handlers`) alongside intra-repo AST call graphs.
-  - **Vector-Store File Reconstruction (`read_file`)**: Reconstructs line-accurate file slices directly from indexed vector chunks when ephemeral Git repositories (`keep_shallow=0`) are not stored on disk.
-  - **Token-Efficient Structured JSON**: All 19 MCP tools emit compact, schema-consistent JSON responses optimized for AI agent context windows.
-- **Multi-Tier Git Authentication Hierarchy**:
-  1. Per-repository override token & optional username.
-  2. Domain-level Custom Git Host Vault (`git_host_credentials`).
-  3. Global provider tokens (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `GITEA_TOKEN` in DB or Settings UI).
-  4. Environment variable fallback, `gh auth token` / `glab config get token` CLI fallback, and native SSH key pass-through when no HTTP token is configured.
-- **Managed Local Storage Option & Real-Time Incremental Indexing**:
-  - Direct file upload, replace, read, and delete operations within a managed directory (`LOCAL_STORAGE_PATH` / `/app/data/storage`).
-  - Real-time incremental AST extraction, semantic chunking, embedding generation, and vector store upserts with zero delay.
-  - Strict path sanitization preventing directory traversal attacks (`..`, leading slashes, null bytes).
-  - Immediate vector point and relational metadata purging upon file deletion.
-- **Unified Ingestion Catalog (`what_is_ingested`)**:
-  - Comprehensive inspection of all ingested Git repositories, monitored local directory vaults, and uploaded local storage files.
-  - Granular multi-dimensional filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo_name`, `path_prefix`, and `file_extension`.
-  - Flexible granularity (`summary` for totals and status; `detailed` for hierarchical file trees).
-- **Fast Deterministic Symbol Lookup**: Built-in symbol table (`ast_symbols`) powers instantaneous symbol searches (`find_symbol`) and file outlines (`get_file_outline`) without token bloat.
-- **High-Performance Codebase Navigator & Omni-Search**:
-  - **Omni-Search Command Palette (`Ctrl+K` / `Cmd+K`)**: Unified command palette searching across repositories, file paths, and AST symbols with live fuzzy scoring and keyboard navigation.
-  - **Dual-Pane Sidebar (Files & Symbols)**: Tabbed sidebar separating file directory hierarchy and AST symbol outline. Preserves folder expansion state per-repository across browser sessions (`sessionStorage`).
-  - **Hero Viewport (Full Source Code & Documentation)**:
-    - **Syntax-Highlighted Source Code Viewer**: High-fidelity syntax highlighting across 8+ languages (C#, Python, JavaScript/TypeScript, C++, Go, Rust, SQL, COBOL, JSON, YAML, etc.) with line numbers, highlighted target symbol line ranges, permalink copy, and collapsible caller impact drawer.
-    - **Markdown Document Reader**: Automatic table auto-normalization (bridging gaps and synthesizing separator rows for loose Markdown) and interactive Mermaid diagram rendering.
-    - **Instant Intelligence & Impact Tab**: Caller/callee analysis, route mappings, AST signatures, and cross-file jump navigation, immediately clickable and populated upon file selection without requiring manual outline navigation.
-  - **Customizable Layout Density & Mobile Responsiveness**: Persisted `Compact` (IDE density), `Balanced` (default), and `Spacious` (cards) modes with responsive vertical stacking and zero horizontal overflow across devices.
-- **Diagnostic Logging & Observability**: In-memory ring buffer (500 events) capturing server warnings, errors, indexing lifecycle events, and expandable stack traces with a REST API (`/admin/api/logs`).
-- **Enterprise Private-CA Gateways & Restricted-Network Deployment**:
-  - **Private CA Certificate Bootstrap (`certs/*.crt` & `EXTRA_CA_CERTS_DIR`)**: Automatically installs internal CA certificates into the system trust store at both build time (`Dockerfile`, `Dockerfile.overlay`) and runtime (`docker-entrypoint.sh`) for Python (`httpx`, `openai`, `requests`), Node.js (`NODE_EXTRA_CA_CERTS`), and Git (`GIT_SSL_CAINFO`).
-  - **Custom Gateway Base URLs & Request Headers (`LLM_EXTRA_HEADERS`)**: Preserves custom OpenAI-compatible proxy paths (e.g., `/api/v3`) across model discovery, embeddings, file summarization, and PDF vision OCR, and attaches CR/LF-validated custom HTTP headers to every gateway call.
-  - **Private Mirror & Image-Overlay Builds (`docker-compose.enterprise.yml` & `Dockerfile.overlay`)**: Supports internal Debian/apt, PyPI, and npm package mirrors with 30-day quarantine compatibility, or fast CA-only image overlays on pre-built `ghcr.io/spelech/contextcortex` releases.
-- **Multi-Theme Engine & Modern Tabbed Web Dashboard (`/admin/`)**:
-  - **Appearance & Theme Settings**: Instant zero-latency switching between 4 distinct dark and light themes (**Deep Ocean**, **Midnight Blue**, **Lavender Haze**, and **Amber Warmth**) with live palette swatches and browser persistence.
-  - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
-  - **Codebase Navigator**: Hero split layout with Omni-Search palette, folder tree persistence, syntax-highlighted code viewer, Mermaid documentation reader, and instant intelligence inspection.
-  - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, configure shallow copy retention and commit history retention, trigger syncs, inspect commit SHAs, and manage sources.
-  - **Files & Storage**: Unified explorer managing monitored local directory vaults and managed local file storage with upload modal and file preview.
-  - **Ingestion Catalog**: Unified multi-source explorer with source type filters, repository lookup, and file listings.
-  - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews, target type toggle (Code vs Docs), and syntax highlighted results.
-  - **Settings**: Vector Database manager (`pgvector` & `Qdrant` switcher & connection tester), OpenAI-compatible Model Discovery with dynamic categorized model dropdowns (Embeddings, Vision OCR, and Chat models), multi-provider token cards, GitHub rate limit monitor, and interactive Custom Git Host Credential Vault table/modal.
-  - **Diagnostics & Logs**: Real-time log viewer with level filtering (ALL, INFO, WARNING, ERROR, DEBUG), keyword search, traceback modal/drawer, and buffer clearing.
+- **Pluggable Dual-Engine Storage**:
+  - **PostgreSQL 16 + pgvector**: Production profile with `vector(384)` HNSW cosine indexing, `tsvector` GIN full-text search, and `psycopg3` pooling.
+  - **SQLite + Qdrant**: Zero-configuration embedded profile with WAL journaling (`15000ms` busy timeout) and embedded or remote Qdrant RRF fusion.
+  - **Live Vector Backend Switching**: Test and switch vector backends (`pgvector` <-> `Qdrant`) from the Settings UI or REST API without restarts.
+- **MCP 2026-07-28 OAuth 2.1 & 3-Tier RBAC**:
+  - **RFC 9728 Discovery**: Exposes `/.well-known/oauth-protected-resource` for OAuth resource indicators and scopes.
+  - **JWT/OIDC & API Keys**: Validates RS256/ES256 bearer tokens via JWKS and SHA-256 hashed `cc_...` API keys across `admin`, `editor`, and `viewer` roles (`AUTH_ENABLED=false` enables local dev bypass).
+- **FastMCP 2.0 Dual Transports**: Exposes SSE (`/sse` + `/messages/`) and Streamable HTTP (`/mcp`) with bounded JSON pagination across all tools and resources.
+- **Universal Git Provider Indexing**:
+  - Supports **GitHub**, **GitLab**, **Gitea/Forgejo**, **Bitbucket**, **Generic HTTP/HTTPS**, and **SSH (`git@...` / `ssh://...`)** with a 4-tier credential hierarchy.
+  - **Shallow Clone & Commit Retention**: Configure persistent `--depth 1` clones (`keep_shallow`) for instant source navigation and retain `0..50` recent commits (`retain_commits_count`) for `get_recent_changes`.
+- **Multi-Language AST & Forensic Intelligence**:
+  - Extracts AST symbols, call graphs, and HTTP routes across **Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++**.
+  - Provides multi-repo regex/literal `grep_code`, stack-trace `diagnose_issue` triage, cross-repo HTTP `trace_path`, and vector-chunk `read_file` reconstruction.
+- **Managed Local Storage & Enterprise Private-CA Support**:
+  - Upload, replace, preview, read, and delete files in `LOCAL_STORAGE_PATH` with immediate incremental indexing and path-traversal protection.
+  - Bootstraps private CA certificates (`certs/*.crt`), custom OpenAI-compatible gateways (`OPENAI_API_URL`, `LLM_EXTRA_HEADERS`), and restricted-network mirror builds (`docker-compose.enterprise.yml`).
 
 ---
 
 ## 🛠️ MCP Tools, Resources & Prompts
 
+See the full **[MCP Tools, Resources, and Pagination Reference](docs/mcp-tools-and-resources.md)** for complete schemas, [pagination conventions](docs/mcp-tools-and-resources.md#pagination-conventions), [tool parameter bounds](docs/mcp-tools-and-resources.md#mcp-tools-reference), [resource templates](docs/mcp-tools-and-resources.md#mcp-resources-and-templates), and [workflow prompts](docs/mcp-tools-and-resources.md#mcp-workflow-prompts).
+
 ### Tools & RBAC Permissions (19 Tools)
-| Tool | Required Role | Parameters | Description |
+
+| Tool | Role | Key Parameters & Bounds | Description |
 | :--- | :---: | :--- | :--- |
-| `search_code` | `viewer` | `query` (str), `repo` (str, opt), `language` (str, opt), `limit` (int, default 5), `dense_weight` (float, opt), `mode` (str, default `hybrid`) | Calibrated hybrid semantic + BM25 code search with AST signatures, decomposed scores, and Git permalinks. |
-| `search_docs` | `viewer` | `query` (str), `repo` (str, opt), `category` (str, opt), `tag` (str, opt), `limit` (int, default 5), `dense_weight` (float, opt), `mode` (str, default `hybrid`) | Calibrated hybrid search across Markdown documentation, system architecture, summaries, and PDFs. |
-| `find_symbol` | `viewer` | `name` (str), `repo` (str, opt), `exact` (bool, default True), `limit` (int, default 10) | Instant exact or prefix AST symbol lookup (functions, classes, structs, interfaces). |
-| `get_file_outline` | `viewer` | `filepath` (str), `repo` (str, opt) | Returns the AST structure (classes, methods, signatures, lines) without full file token costs. |
-| `trace_path` | `viewer` | `symbol` (str), `repo` (str, opt), `direction` (str, default `both`), `depth` (int, default 2), `limit` (int, default 25) | Traces AST symbol calls, imports, inheritance, and cross-repo HTTP route/caller boundaries (`external_callers`, `external_handlers`) via BFS. |
-| `find_routes` | `viewer` | `query` (str, opt), `method` (str, opt), `repo` (str, opt), `limit` (int, default 20) | Lists or searches declared API endpoint routes across backend frameworks. |
-| `find_api_callers` | `viewer` | `path` (str), `method` (str, opt), `repo` (str, opt) | Finds client call sites and services that invoke a specific HTTP endpoint or URL pattern. |
-| `list_repositories` | `viewer` | *None* | Lists all registered Git repositories and local paths with commit SHAs and indexing status. |
-| `get_recent_changes` | `viewer` | `repo` (str), `filepath` (str, opt), `symbol` (str, opt), `limit` (int, default 10) | Returns recent commits for a Git repository, optionally filtered by file path or AST symbol name. |
-| `sync_repository` | `editor` | `repo` (str, opt) | Triggers background shallow clone or delta sync for a specific repository or all sources. |
-| `index_status` | `viewer` | *None* | Returns vector counts, collection status, embedding models, and GitHub rate limits. |
-| `get_architecture` | `viewer` | `repo` (str, opt) | Synthesizes codebase entry points, language breakdown, core directories, and architectural overview. |
-| `manage_adr` | `editor` / `viewer` | `action` (str: `list`\|`get`\|`create`\|`update`\|`supersede`), `repo` (str), `id` (str, opt), `title` (str, opt), `decision` (str, opt), `status` (str, opt) | Query, create, update, or supersede Architectural Decision Records (MADR / Nygard format). |
-| `manage_local_file` | `editor` / `viewer` | `action` (str: `upload`\|`replace`\|`delete`\|`read`), `file_path` (str), `content` (str, opt), `repo` (str, opt), `category` (str, opt) | Manage files in ContextCortex local storage: upload, replace, read, or delete files with immediate vector indexing. |
-| `what_is_ingested` | `viewer` | `source_type` (str, opt), `repo_name` (str, opt), `path_prefix` (str, opt), `file_extension` (str, opt), `detail_level` (str, opt) | Inspect all ingested Git repositories, monitored local paths, and uploaded local storage files with optional filtering. |
-| `read_file` | `viewer` | `path` (str), `repo` (str, opt), `start_line` (int, opt), `end_line` (int, opt) | Read full file content or bounded 1-indexed line ranges from disk or reconstructed from vector chunks. |
-| `summarize_file` | `viewer` | `path` (str), `repo` (str, opt), `force_refresh` (bool, default False) | Retrieve a cached summary or generate a structured LLM executive summary for a large file. |
-| `grep_code` | `viewer` | `pattern` (str), `repo` (str, opt), `path_glob` (str, opt), `is_regex` (bool, default False), `case_sensitive` (bool, default False), `context_lines` (int, default 2), `limit` (int, default 30) | Deterministic literal and regex pattern matching across one or all indexed repositories with context lines and AST symbol coordinates. |
-| `diagnose_issue` | `viewer` | `issue_text` (str), `repo` (str, opt), `context_lines` (int, default 5), `limit` (int, default 5) | Forensic triage tool that resolves stack traces, matches error literals and API routes, and retrieves semantic code candidates. |
+| `search_code` | `viewer` | `query`, `repo`, `language`, `top_k`/`limit` (`1..25`), `offset`, `max_snippet_chars` (`200..6000`), `mode` | Hybrid semantic + BM25 code search with AST signatures, permalinks, and bounded snippets. |
+| `search_docs` | `viewer` | `query`, `repo`, `category`, `tag`, `top_k`/`limit` (`1..25`), `offset`, `max_snippet_chars` (`200..6000`), `mode` | Hybrid search across Markdown docs, runbooks, ADRs, summaries, and PDFs. |
+| `find_symbol` | `viewer` | `name`, `repo`, `exact` (`True`), `limit` (`1..100`, default `30`), `offset` | Deterministic exact or substring AST symbol lookup without broad token scans. |
+| `get_file_outline` | `viewer` | `filepath`, `repo`, `limit` (`1..500`, default `150`), `offset` | Returns deduplicated AST classes, functions, signatures, and line spans for a file. |
+| `trace_path` | `viewer` | `symbol`, `repo`, `direction`, `depth` (`1..5`), `limit` (`1..200`, default `50`), `offset` | Traverses AST callers/callees and cross-repo HTTP route/client boundaries via BFS. |
+| `find_routes` | `viewer` | `query`, `method`, `repo`, `limit` (`1..200`, default `50`), `offset` | Searches declared backend HTTP/API route endpoints across frameworks. |
+| `find_api_callers` | `viewer` | `path`, `method`, `repo`, `limit` (`1..200`, default `50`), `offset` | Finds frontend and service HTTP client call sites invoking a target route pattern. |
+| `list_repositories` | `viewer` | *None* | Lists registered Git repositories and monitored local paths with status and file totals. |
+| `get_recent_changes` | `viewer` | `repo`, `filepath`, `symbol`, `limit` (`1..50`, default `10`), `offset` | Returns retained Git commits (capping `files_changed` at `<= 25` entries per commit). |
+| `sync_repository` | `editor` | `repo` (opt) | Triggers asynchronous background Git delta sync for one repo or all sources. |
+| `index_status` | `viewer` | *None* | Reports vector store health, point totals, active embedding models, and Git auth status. |
+| `get_architecture` | `viewer` | `repo` (opt) | Synthesizes language distribution, manifests, entry points, modules, hub symbols, and ADRs. |
+| `manage_adr` | `editor`/`viewer` | `action` (`list`\|`search`\|`get`\|`create`\|`update`\|`supersede`), `repo`, `query`, `limit` (`25`), `offset` | Queries, searches, creates, updates, or supersedes Architecture Decision Records. |
+| `manage_local_file` | `editor`/`viewer` | `action` (`upload`\|`replace`\|`delete`\|`read`\|`preview`), `file_path`, `content`, `repo`, `category` | Manages files in `LOCAL_STORAGE_PATH` with immediate vector and AST indexing. |
+| `what_is_ingested` | `viewer` | `source_type`, `repo_name`, `path_prefix`, `file_extension`, `detail_level`, `include_files`, `limit` (`1..500`), `offset` | Inspects ingested sources with per-source paginated file lists when `include_files=True`. |
+| `read_file` | `viewer` | `path`, `repo`, `start_line`, `end_line` | Reads bounded 1-based line ranges (`total_lines`, `has_more`, `next_start_line`). |
+| `summarize_file` | `viewer` | `path`, `repo`, `force_refresh` (`False`) | Retrieves a cached summary or generates a structured LLM executive file summary. |
+| `grep_code` | `viewer` | `pattern`, `repo`, `path_glob`, `is_regex`, `case_sensitive`, `context_lines` (`0..10`), `max_results`/`limit` (`1..100`), `offset` | Literal/regex search with AST attribution; truncates lines `> 400` chars cleanly. |
+| `diagnose_issue` | `viewer` | `issue_text`, `repo`, `context_lines` (`1..15`), `limit` (`1..20`) | Forensic triage resolving stack traces, error literals, routes, and semantic candidates. |
 
-### Resources
-| Resource URI | MIME Type | Description |
-| :--- | :--- | :--- |
-| `knowledge://catalog/summary` | `text/markdown` | Dynamic catalog of all indexed repositories, document distributions, and AST symbol totals. |
+### Resources & Paginated Resource Templates
 
+| Resource URI / Template | MIME Type | Pagination / Scope | Description |
+| :--- | :---: | :---: | :--- |
+| `knowledge://catalog/summary` | `application/json` | Compact (`<= 40` sample files) | Global catalog summary plus `resource_templates` discovery metadata. |
+| `knowledge://repo/{repo}/summary` | `application/json` | Per-repo | Status, commit SHA, language breakdown, symbol/route/ADR counts, and sub-resource URIs. |
+| `knowledge://repo/{repo}/architecture` | `application/json` | Per-repo | Synthesized architecture overview (manifests, entry points, modules, hub symbols). |
+| `knowledge://repo/{repo}/files/{page}` | `application/json` | `100` files / page | 1-indexed paginated file inventory (`total_files`, `total_pages`, `has_more`, `next_uri`). |
+| `knowledge://repo/{repo}/routes/{page}` | `application/json` | `50` routes / page | 1-indexed paginated API routes (`total_routes`, `total_pages`, `has_more`, `next_uri`). |
+| `knowledge://repo/{repo}/adrs` | `application/json` | Per-repo | Architecture Decision Records registered for `{repo}`. |
 
-### Prompts
+### Workflow Prompts (5 Prompts)
+
 | Prompt Name | Arguments | Description |
 | :--- | :--- | :--- |
-| `search_infrastructure_docs` | `topic` (str) | Guided agent workflow to retrieve system architecture, container port mappings, and reverse proxy configs. |
-| `find_implementation_symbol` | `symbol` (str), `repo` (str, opt) | Guided agent workflow to locate symbol definitions, class signatures, and implementations. |
+| `search_infrastructure_docs` | `topic` | Guided workflow across `search_docs`, `manage_adr`, and `read_file` for infra configs. |
+| `find_implementation_symbol` | `symbol`, `repo` (opt) | Locates symbol definitions, exact line slices, and caller/callee paths. |
+| `onboard_repository` | `repo` | Maps architecture, HTTP routes, file outlines, and recent commits for `{repo}`. |
+| `triage_error` | `issue_text`, `repo` (opt) | Diagnoses stack traces or failing routes down to root-cause lines and commits. |
+| `investigate_change_impact` | `symbol`, `repo` (opt) | Evaluates blast radius across internal callers, cross-repo API clients, and tests. |
 
 ---
 
@@ -159,275 +117,94 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `DATABASE_URL` | SQLAlchemy connection string (e.g. `postgresql+psycopg://user:pass@host:5432/db` or `sqlite:////app/data/index_cache.db`) | `sqlite:////app/data/index_cache.db` |
-| `POSTGRES_DB` | PostgreSQL database name (Docker Compose) | `contextcortex` |
-| `POSTGRES_USER` | PostgreSQL username (Docker Compose) | `contextcortex` |
-| `POSTGRES_PASSWORD` | PostgreSQL password (Docker Compose) | `cortexsecret` |
-| `POSTGRES_PORT` | PostgreSQL host port mapping | `5432` |
-| `LOCAL_STORAGE_PATH` | Managed local storage directory for direct file uploads & real-time incremental indexing | `/app/data/storage` |
-| `AUTH_ENABLED` | Enable MCP 2026-07-28 OAuth 2.1 & API Key RBAC | `false` |
-| `AUTH_OIDC_ISSUER` | OpenID Connect Identity Provider Issuer URL (e.g. `https://auth.company.com/realms/master`) | `None` |
-| `AUTH_JWKS_URI` | Custom JWKS URI override for JWT verification | `None` |
-| `AUTH_RESOURCE_INDICATOR` | RFC 8707 / RFC 9728 Resource Indicator for ContextCortex | `https://contextcortex.local` |
-| `ADMIN_INITIAL_KEY` | Initial admin API key or secret token for container bootstrapping | `None` |
-| `VECTOR_STORE_PROVIDER` | Vector database backend (`pgvector` or `qdrant`) | `pgvector` (PostgreSQL) / `qdrant` (SQLite) |
-| `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` (Qdrant) / `remote` (pgvector) |
-| `COLLECTION_NAME` | Vector collection name | `knowledge_rag_v1` |
-| `QDRANT_URL` | URL to remote Qdrant vector database (if mode is `remote`) | `http://localhost:6333` |
-| `QDRANT_STORAGE_PATH` | Embedded Qdrant disk directory | `/app/data/qdrant_storage` |
-| `OPENAI_API_URL` | OpenAI-compatible gateway base URL (e.g. internal gateway, LiteLLM, vLLM, Ollama, OpenAI) | `http://litellm:4000/v1` |
-| `OPENAI_API_KEY` | API key / Bearer token for the OpenAI-compatible gateway | `dummy` |
-| `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
-| `EXTRA_CA_CERTS_DIR` | Folder of private CA certificates (`*.crt`) trusted at container start (see [certs/README.md](certs/README.md)) | `/certs` |
-| `GITHUB_TOKEN` | Optional GitHub Personal Access Token for higher rate limits & private repos | `None` |
-| `GITLAB_TOKEN` | Optional GitLab Personal Access Token for private repos | `None` |
-| `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |
-| `CACHE_DB_PATH` | Path to persistent SQLite cache database | `/app/data/index_cache.db` |
-| `CHUNK_SIZE` | Maximum character length per chunk | `1500` |
-| `CHUNK_OVERLAP` | Character overlap between consecutive chunks | `200` |
+| `DATABASE_URL` | SQLAlchemy URL (`postgresql+psycopg://...` or `sqlite:////app/data/index_cache.db`) | `sqlite:////app/data/index_cache.db` |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | PostgreSQL container credentials (`POSTGRES_PORT` default `5432`) | `contextcortex` / `cortexsecret` |
+| `LOCAL_STORAGE_PATH` | Managed local storage root for direct uploads and incremental indexing | `/app/data/storage` |
+| `AUTH_ENABLED` | Enable MCP 2026-07-28 OAuth 2.1 and API Key RBAC | `false` |
+| `AUTH_OIDC_ISSUER` / `AUTH_JWKS_URI` | OIDC Issuer URL and optional custom JWKS URI override | `None` |
+| `AUTH_RESOURCE_INDICATOR` | RFC 8707 / RFC 9728 OAuth Resource Indicator | `https://contextcortex.local` |
+| `ADMIN_INITIAL_KEY` | Bootstrap admin API key on container startup | `None` |
+| `VECTOR_STORE_PROVIDER` | Vector backend (`pgvector` or `qdrant`) | `pgvector` (PG) / `qdrant` (SQLite) |
+| `VECTOR_STORE_MODE` | Vector mode (`embedded` or `remote`) | `embedded` (Qdrant) / `remote` (PG) |
+| `COLLECTION_NAME` | Active vector collection name | `knowledge_rag_v1` |
+| `QDRANT_URL` / `QDRANT_STORAGE_PATH` | Remote Qdrant URL or embedded storage path | `http://localhost:6333` / `/app/data/qdrant_storage` |
+| `OPENAI_API_URL` / `OPENAI_API_KEY` | OpenAI-compatible gateway base URL and Bearer key | `http://litellm:4000/v1` / `dummy` |
+| `LLM_EXTRA_HEADERS` | JSON object of custom HTTP headers sent to the AI gateway | `None` |
+| `EXTRA_CA_CERTS_DIR` | Directory of private `*.crt` CA certificates trusted at startup ([certs/README.md](certs/README.md)) | `/certs` |
+| `GITHUB_TOKEN` / `GITLAB_TOKEN` | Optional global Personal Access Tokens for private Git hosts | `None` |
+| `CACHE_DB_PATH` | Persistent SQLite database path when `DATABASE_URL` is unset | `/app/data/index_cache.db` |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | Character chunk length and overlap window | `1500` / `200` |
 
 ---
 
 ## 🚀 Three Ways to Deploy ContextCortex
 
-ContextCortex supports three first-class deployment modes depending on your environment:
+| Deployment Mode | Relational Metadata DB | Vector Store | Best For |
+| :--- | :--- | :--- | :--- |
+| **1. Docker Compose** *(Recommended)* | **PostgreSQL 16** (or SQLite) | **`pgvector`** or **Qdrant** | Production, homelab, and enterprise containers (`docker-compose.yml`) |
+| **2. Windows Portable Bundle** | **Embedded PostgreSQL 16** | **Embedded `pgvector`** or **Qdrant** | Zero-admin Windows workstations (`scripts/build_portable_windows.ps1`) |
+| **3. Local Python (`venv`)** | **SQLite** (or external Postgres) | **Embedded Qdrant** | Local development and lightweight CLI/MCP workflows |
 
-| Deployment Mode | Relational Metadata DB | Vector Store | AI / Embeddings | Best For |
-| :--- | :--- | :--- | :--- | :--- |
-| **1. Docker / Compose** *(Recommended)* | **PostgreSQL 16** (or SQLite) | **PostgreSQL (`pgvector`)** or **Qdrant** (Remote or Embedded) | `OPENAI_API_URL` + `OPENAI_API_KEY` (with `/v1/models` discovery in UI) | Production, homelab, and multi-container setups (`docker-compose.yml` / `docker-compose.enterprise.yml`) |
-| **2. Windows Standalone Portable Bundle** | **Embedded User-Space PostgreSQL 16** (`pgvector` pre-bundled) | **Embedded `pgvector`** or **Embedded Qdrant** on local disk | `OPENAI_API_URL` + `OPENAI_API_KEY` (discovered in UI) | Zero-dependency Windows workstations or enterprise deployments without Docker (`scripts/build_portable_windows.ps1`) |
-| **3. Local Python (`venv`)** | **SQLite** (`data/index_cache.db`, zero-setup default) or external Postgres | **Embedded Qdrant** (`data/vector_storage`, zero-setup default) | `OPENAI_API_URL` + `OPENAI_API_KEY` configured in `.env` or Settings UI | Local development, rapid testing, or lightweight single-user CLI/MCP usage |
-
----
-
-### Mode 1: Running via Docker Compose (Recommended)
-
-ContextCortex provides a production-ready multi-container configuration with **PostgreSQL 16 + pgvector** by default, while supporting **Qdrant** (remote or embedded) and **SQLite** sub-configurations:
+### Mode 1: Docker Compose (Recommended)
 
 ```bash
-# 1. Clone the repository
 git clone git@github.com:spelech/contextcortex.git
 cd contextcortex
-
-# 2. Copy and customize environment variables (set OPENAI_API_URL & OPENAI_API_KEY)
 cp .env.example .env
-
-# 3. Launch PostgreSQL 16 + pgvector and ContextCortex
 docker compose up -d
 ```
 
-#### Docker Database & Vector Store Sub-Configurations
-
-| Sub-Configuration | Relational DB (`DATABASE_URL`) | Vector Store (`VECTOR_STORE_PROVIDER` / `VECTOR_STORE_MODE`) | `.env` / Compose Settings |
+| Sub-Configuration | Relational DB (`DATABASE_URL`) | Vector Store | Configuration |
 | :--- | :--- | :--- | :--- |
-| **1A. Bundled PostgreSQL 16 + `pgvector`** *(Default)* | `postgresql+psycopg://contextcortex:cortexsecret@postgres:5432/contextcortex` | `VECTOR_STORE_PROVIDER=pgvector` (`remote`) | Default in `docker-compose.yml` — zero extra setup required. |
-| **1B. PostgreSQL Metadata + Remote Qdrant** | `postgresql+psycopg://...` | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=remote` | Set `QDRANT_URL=http://qdrant:6333` in `.env` (or switch live in **Settings → Vector Database**). |
-| **1C. PostgreSQL Metadata + Embedded Qdrant** | `postgresql+psycopg://...` | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` | Stores vectors on the `/app/data/vector_storage` volume while keeping relational tables in Postgres. |
-| **1D. Single-Container SQLite + Embedded Qdrant** | `sqlite:////app/data/index_cache.db` | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` | Run with `docker-compose.enterprise.yml` (`ENTERPRISE_DATABASE_URL=sqlite:////app/data/index_cache.db`, `ENTERPRISE_VECTOR_STORE_PROVIDER=qdrant`) to skip the Postgres container entirely. |
+| **1A. PostgreSQL 16 + `pgvector`** *(Default)* | `postgresql+psycopg://...@postgres:5432/contextcortex` | `pgvector` (`remote`) | Default in `docker-compose.yml`. |
+| **1B. PostgreSQL + Remote Qdrant** | `postgresql+psycopg://...` | `qdrant` (`remote`) | Set `VECTOR_STORE_PROVIDER=qdrant`, `QDRANT_URL=http://qdrant:6333`. |
+| **1C. PostgreSQL + Embedded Qdrant** | `postgresql+psycopg://...` | `qdrant` (`embedded`) | Stores vectors on `/app/data/vector_storage`. |
+| **1D. Single-Container SQLite + Qdrant** | `sqlite:////app/data/index_cache.db` | `qdrant` (`embedded`) | Use `docker-compose.enterprise.yml` overrides without Postgres. |
 
-Once the container is running, open the Web Admin Dashboard (`http://localhost:3000/admin/` → **Settings** → **AI & Model Gateway**), enter your OpenAI-compatible gateway URL (`OPENAI_API_URL`, e.g., `http://litellm:4000/v1`), click **Test Connection & Discover Models**, and select your **API Embedding Model**, **Chat Completion Model**, and **Vision OCR Model** from the discovered list to persist them in the database.
-
-For environments behind corporate TLS-inspecting proxies, private CA certificates (`certs/*.crt`), internal package mirrors (`APT_MIRROR`, `PIP_INDEX_URL`, `NPM_REGISTRY`), or verified local image overlays (`Dockerfile.overlay`), use the enterprise override file (see [Restricted-Network Builds & Local Deployment](docs/guide/enterprise-build.md)):
+Open `http://localhost:3000/admin/` -> **Settings** -> **AI & Model Gateway** to test `OPENAI_API_URL` and select your Embedding, Chat, and Vision OCR models. For corporate TLS proxies, private CAs (`certs/*.crt`), and internal package mirrors, see [Restricted-Network Builds & Enterprise Deployment](docs/guide/enterprise-build.md):
 
 ```bash
-# Build and deploy using local verified image tag and enterprise mirror/CA overrides
 docker compose -f docker-compose.yml -f docker-compose.enterprise.yml up -d --build
 ```
 
-#### `docker-compose.yml` Architecture:
-```yaml
-version: '3.8'
+### Mode 2: Windows Standalone Portable Deployment
 
-services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: contextcortex-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-contextcortex}
-      POSTGRES_USER: ${POSTGRES_USER:-contextcortex}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cortexsecret}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  contextcortex:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: contextcortex-app
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "${PORT:-3000}:3000"
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-contextcortex}:${POSTGRES_PASSWORD:-cortexsecret}@postgres:5432/${POSTGRES_DB:-contextcortex}
-      AUTH_ENABLED: ${AUTH_ENABLED:-false}
-      AUTH_OIDC_ISSUER: ${AUTH_OIDC_ISSUER:-}
-      AUTH_JWKS_URI: ${AUTH_JWKS_URI:-}
-      AUTH_RESOURCE_INDICATOR: ${AUTH_RESOURCE_INDICATOR:-https://contextcortex.local}
-      ADMIN_INITIAL_KEY: ${ADMIN_INITIAL_KEY:-}
-    volumes:
-      - repo_cache:/app/data
-      - ./certs:/certs:ro
-
-volumes:
-  postgres_data:
-  repo_cache:
-```
-
----
-
-### Mode 2: Windows Standalone Portable Deployment (Embedded Everything)
-
-For Windows environments without Docker or administrator privileges, ContextCortex can be packaged into a self-contained portable folder (`dist\contextcortex-windows-x64`) bundling:
-- Frozen `contextcortex.exe` executable (FastAPI + FastMCP + Tree-sitter AST + built React Dashboard)
-- User-space **Portable PostgreSQL 16** binaries (`initdb`, `pg_ctl`, `postgres`)
-- Pre-compiled **`pgvector`** extension (`vector.dll`) automatically initialized in `.\data\pgdata`
-- Private CA certificate auto-loader (`.\certs\*.crt`) and launcher scripts (`start-contextcortex.ps1` / `start-contextcortex.bat`)
+Packages a frozen `contextcortex.exe`, user-space **PostgreSQL 16**, pre-compiled **`pgvector`**, private CA loader, and React Dashboard into `dist\contextcortex-windows-x64`:
 
 ```powershell
-# Assemble the self-contained Windows x64 portable bundle
 .\scripts\build_portable_windows.ps1
-
-# Launch from the portable bundle directory
 .\dist\contextcortex-windows-x64\start-contextcortex.bat
 ```
 
-#### Windows Portable Database & Vector Store Sub-Configurations (`.env`)
+Set `PORTABLE_POSTGRES_ENABLED=true` (default `127.0.0.1:54329` + `pgvector`) or `PORTABLE_POSTGRES_ENABLED=false` with `VECTOR_STORE_PROVIDER=qdrant` in `dist\contextcortex-windows-x64\.env`.
 
-Edit `dist\contextcortex-windows-x64\.env` before launching `start-contextcortex.bat` to choose your portable storage profile:
+### Mode 3: Local Python (`venv`)
 
-| Sub-Configuration | Relational DB | Vector Store | `.env` Settings |
-| :--- | :--- | :--- | :--- |
-| **2A. Embedded Portable PostgreSQL 16 + `pgvector`** *(Default)* | Bundled `pgsql\bin\postgres.exe` on `127.0.0.1:54329` (`.\data\pgdata`) | `VECTOR_STORE_PROVIDER=pgvector` | `PORTABLE_POSTGRES_ENABLED=true`, `PORTABLE_PG_PORT=54329`, `VECTOR_STORE_PROVIDER=pgvector` |
-| **2B. Embedded Portable PostgreSQL 16 + Embedded Qdrant** | Bundled `pgsql\bin\postgres.exe` (`.\data\pgdata`) | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` | `PORTABLE_POSTGRES_ENABLED=true`, `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` |
-| **2C. Local SQLite + Embedded Qdrant** *(No Postgres Subprocess)* | Local SQLite (`.\data\index_cache.db`) | `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` | `PORTABLE_POSTGRES_ENABLED=false`, `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=embedded` |
-| **2D. External Corporate PostgreSQL / Qdrant** | External `DATABASE_URL` | `pgvector` or remote `QDRANT_URL` | Set `DATABASE_URL=postgresql+psycopg://...` (automatically skips local portable Postgres bootstrap). |
+Requires **Python 3.11+**, **Node.js 20+**, and **Git**:
 
----
-
-### Mode 3: Running Locally via Python (`venv`)
-
-ContextCortex can also be run directly from source on Linux, macOS, or Windows without Docker. By default, local Python mode operates with **zero external database containers required** by using embedded Qdrant (`data/vector_storage`), local SQLite (`data/index_cache.db`), and your configured OpenAI-compatible AI gateway (`OPENAI_API_URL` / `OPENAI_API_KEY`).
-
-#### 1. Prerequisites
-- **Python 3.11+**
-- **Node.js 20+** & **npm**
-- **Git** (available on system `PATH`)
-
-#### 2. Automated Setup (Recommended)
-
-Clone the repository and run the automated setup script for your platform:
-
-**Linux / macOS (Bash):**
 ```bash
 git clone git@github.com:spelech/contextcortex.git
 cd contextcortex
-./setup.sh
-```
-
-**Windows (PowerShell):**
-```powershell
-git clone git@github.com:spelech/contextcortex.git
-cd contextcortex
-.\setup.ps1
-```
-
-<details>
-<summary><b>Or follow manual step-by-step setup</b></summary>
-
-```bash
-# 1. Create and activate a Python virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# 2. Install Python dependencies
-pip install -r requirements.txt
-
-# 3. Build the React 19 administrative dashboard frontend
-cd frontend
-npm install
-npm run build
-cd ..
-```
-</details>
-
-#### 3. Local Python Database & Vector Store Sub-Configurations (`.env`)
-
-| Sub-Configuration | Relational DB (`DATABASE_URL`) | Vector Store (`VECTOR_STORE_PROVIDER`) | `.env` Settings |
-| :--- | :--- | :--- | :--- |
-| **3A. Local SQLite + Embedded Qdrant** *(Zero-Setup Default)* | `data/index_cache.db` (automatic when `DATABASE_URL` is unset) | `qdrant` (`embedded` in `data/vector_storage`) | Only `OPENAI_API_URL` and `OPENAI_API_KEY` needed in `.env`. |
-| **3B. Local SQLite + Remote Qdrant** | `data/index_cache.db` | `qdrant` (`remote`) | Set `VECTOR_STORE_PROVIDER=qdrant`, `VECTOR_STORE_MODE=remote`, `QDRANT_URL=http://localhost:6333`. |
-| **3C. External PostgreSQL 16 + `pgvector`** | `postgresql+psycopg://user:pass@localhost:5432/contextcortex` | `pgvector` (`remote`) | Set `DATABASE_URL=postgresql+psycopg://...` and `VECTOR_STORE_PROVIDER=pgvector`. |
-| **3D. External PostgreSQL 16 + Qdrant (Embedded or Remote)** | `postgresql+psycopg://user:pass@localhost:5432/contextcortex` | `qdrant` (`embedded` or `remote`) | Set `DATABASE_URL=postgresql+psycopg://...` and `VECTOR_STORE_PROVIDER=qdrant`. |
-
-#### 4. Start the Server
-```bash
-# Activate virtual environment (if not already active)
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Run ContextCortex
+./setup.sh            # Windows PowerShell: .\setup.ps1
+source venv/bin/activate
 python3 main.py
 ```
 
-The server starts on port `3000`:
-- **Web Dashboard**: Access the admin interface at `http://localhost:3000/admin/`
-- **MCP SSE Transport**: `http://localhost:3000/sse`
-- **MCP Streamable HTTP Transport**: `http://localhost:3000/mcp`
-- **OAuth Protected Resource Metadata**: `http://localhost:3000/.well-known/oauth-protected-resource`
-- **Health Check Probes**: Liveness at `http://localhost:3000/health`, Readiness at `http://localhost:3000/ready`
+Default endpoints on port `3000`:
+- **Web Dashboard**: `http://localhost:3000/admin/`
+- **MCP Streamable HTTP / SSE**: `http://localhost:3000/mcp` and `http://localhost:3000/sse`
+- **OAuth Metadata & Health**: `http://localhost:3000/.well-known/oauth-protected-resource`, `/health`, `/ready`
 
 ---
 
 ## 📡 Connecting MCP Clients
 
-Connect any MCP client (VS Code, Cursor, Antigravity CLI, Claude Desktop, or Windsurf) using either Server-Sent Events (SSE) or Streamable HTTP.
+Configure Cursor, VS Code, Antigravity CLI, Claude Desktop, or Windsurf via Streamable HTTP (`/mcp`) or SSE (`/sse`):
 
-### Server-Sent Events (SSE) Configuration (`claude_desktop_config.json` / Cursor)
-
-#### Unauthenticated (Local Dev Bypass):
 ```json
 {
   "mcpServers": {
     "contextcortex": {
-      "url": "http://localhost:3000/sse"
-    }
-  }
-}
-```
-
-#### Authenticated (API Key or Bearer Token):
-```json
-{
-  "mcpServers": {
-    "contextcortex": {
-      "url": "http://localhost:3000/sse",
-      "headers": {
-        "Authorization": "Bearer cc_live_your_api_key_here"
-      }
-    }
-  }
-}
-```
-
-### Streamable HTTP Configuration
-
-```json
-{
-  "mcpServers": {
-    "contextcortex-http": {
       "url": "http://localhost:3000/mcp",
       "headers": {
         "Authorization": "Bearer cc_live_your_api_key_here"
@@ -437,92 +214,44 @@ Connect any MCP client (VS Code, Cursor, Antigravity CLI, Claude Desktop, or Win
 }
 ```
 
----
-
-## 🌐 REST Administration APIs
-
-ContextCortex provides REST endpoints under `/admin/api/*` protected by RBAC authentication (`Role.VIEWER`, `Role.EDITOR`, `Role.ADMIN`):
-
-### Codebase Navigator (`/admin/api/navigator/*`)
-| Endpoint | Method | Required Role | Description |
-| :--- | :---: | :---: | :--- |
-| `/admin/api/navigator/tree` | `GET` | `viewer` | Returns repository file and directory hierarchy (`?repo=...`) with aggregate symbol and route counts. |
-| `/admin/api/navigator/file-outline` | `GET` | `viewer` | Returns language-aware AST symbol outline (`?filepath=...&repo=...`) and associated API routes. |
-| `/admin/api/navigator/symbol-impact` | `GET` | `viewer` | Returns comprehensive symbol impact intelligence (`?symbol_id=...` or `?name=...&filepath=...`) including callers, callees, imports, and route mappings. |
-
-### Local Storage (`/admin/api/storage/*`)
-| Endpoint | Method | Required Role | Description |
-| :--- | :---: | :---: | :--- |
-| `/admin/api/storage/upload` | `POST` | `editor` | Uploads and indexes a new file via `multipart/form-data` or JSON payload (`path`, `content`, `repo`, `category`). |
-| `/admin/api/storage/file` | `PUT` | `editor` | Replaces existing file content and re-indexes vector representations. |
-| `/admin/api/storage/file` | `DELETE` | `editor` | Deletes file from disk (`?path=...`) and purges vector embeddings and AST symbols. |
-| `/admin/api/storage/file` | `GET` | `viewer` | Retrieves raw file content and metadata (`size_bytes`, `mtime`, `repo`, `category`). |
-| `/admin/api/storage/tree` | `GET` | `viewer` | Explores storage directory hierarchy (`?folder=...`) with file and subdirectory listings. |
-
-### Ingestion Catalog (`/admin/api/ingestion/*`)
-| Endpoint | Method | Required Role | Description |
-| :--- | :---: | :---: | :--- |
-| `/admin/api/ingestion/catalog` | `GET` | `viewer` | Unified inventory across Git repos, monitored paths, and uploaded files. Supports `source_type`, `repo_name`, `path_prefix`, `file_extension`, `detail_level`. |
+*(Omit `headers` when running locally with `AUTH_ENABLED=false`.)*
 
 ---
 
-## 🔐 OAuth 2.1 & API Key Management
+## 🌐 REST Administration APIs & OAuth 2.1
 
-### Protected Resource Discovery
-ContextCortex implements RFC 9728 Protected Resource Metadata. Clients can discover OAuth capabilities:
+All `/admin/api/*` routes enforce RBAC (`viewer`, `editor`, `admin`):
+
+| Endpoint Group | Routes | Role | Purpose |
+| :--- | :--- | :---: | :--- |
+| **Navigator** | `GET /admin/api/navigator/{tree,file-outline,symbol-impact}` | `viewer` | File hierarchy, AST outlines, and caller/callee impact graphs. |
+| **Local Storage** | `POST /upload`, `PUT\|DELETE\|GET /file`, `GET /tree` under `/admin/api/storage` | `editor` / `viewer` | Upload, replace, delete, read, and browse managed storage files. |
+| **Ingestion Catalog** | `GET /admin/api/ingestion/catalog` | `viewer` | Multi-source inventory across Git repos, watched paths, and storage. |
+| **API Keys** | `POST /admin/api/auth/keys` | `admin` | Issue scoped `cc_...` keys (`viewer`, `editor`, `admin`). |
+
 ```bash
+# Discover RFC 9728 OAuth metadata
 curl http://localhost:3000/.well-known/oauth-protected-resource
-```
-Response:
-```json
-{
-  "resource": "https://contextcortex.local",
-  "authorization_servers": ["https://auth.company.com/realms/master"],
-  "scopes_supported": ["mcp:admin", "mcp:editor", "mcp:viewer"],
-  "bearer_methods_supported": ["header"],
-  "resource_documentation": "https://github.com/spelech/contextcortex"
-}
-```
 
-### Generating API Keys (Admin API)
-```bash
-# Create a Viewer API key
+# Issue a Viewer API key
 curl -X POST http://localhost:3000/admin/api/auth/keys \
-  -H "Authorization: Bearer cc_admin_key" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Cursor Agent Key", "role": "viewer"}'
+  -H "Authorization: Bearer cc_admin_key" -H "Content-Type: application/json" \
+  -d '{"name": "Agent Viewer Key", "role": "viewer"}'
 ```
 
 ---
 
-## 📚 Documentation & Specifications
+## 📚 Documentation & Verification
 
-- [**Interactive Documentation Site (VitePress)**](https://spelech.github.io/contextcortex/): Complete user guide with component screenshots, interactive Mermaid architecture diagrams, REST API reference, and software requirements specification.
-  - Run locally: `npm run docs:dev`
-  - Build static site: `npm run docs:build`
-  - Preview production build: `npm run docs:preview`
-- [**Restricted-Network Builds & Enterprise Deployment (`docs/guide/enterprise-build.md`)**](docs/guide/enterprise-build.md): Private CA certificates, internal apt/pip/npm mirrors, 30-day quarantine workflows, and `Dockerfile.overlay` deployment.
-- [**Software Requirements Specification (`REQUIREMENTS.md`)**](REQUIREMENTS.md): Authoritative functional and non-functional requirements with test traceability matrix and Mermaid ERD data models.
-- [**System Architecture (`ARCHITECTURE.md`)**](ARCHITECTURE.md): FastMCP 2.0 transport topologies, component interaction diagrams, SQLAlchemy 2.0 schema ERD, and vector store data models.
-- [**Developer Documentation (`DEVELOPER_DOCS.md`)**](DEVELOPER_DOCS.md): Setup, configuration, development workflow, and testing guidelines.
-- [**Test Coverage Reports (`docs/TEST_COVERAGE.md`)**](docs/TEST_COVERAGE.md): Pytest, Vitest, and Playwright verification metrics.
-
----
-
-## 🧪 Testing & Verification
-
-Run the full automated test suites across backend and frontend:
+- **[Interactive Documentation Site (VitePress)](https://spelech.github.io/contextcortex/)** (`npm run docs:dev` / `npm run docs:build`)
+- **[MCP Tools, Resources, and Pagination Reference (`docs/mcp-tools-and-resources.md`)](docs/mcp-tools-and-resources.md)**
+- **[Restricted-Network & Enterprise Builds (`docs/guide/enterprise-build.md`)](docs/guide/enterprise-build.md)**
+- **[Software Requirements (`REQUIREMENTS.md`)](REQUIREMENTS.md)** | **[Architecture (`ARCHITECTURE.md`)](ARCHITECTURE.md)** | **[Developer Docs (`DEVELOPER_DOCS.md`)](DEVELOPER_DOCS.md)** | **[Test Coverage (`docs/TEST_COVERAGE.md`)](docs/TEST_COVERAGE.md)**
 
 ```bash
-# Python Backend Tests & Code Coverage
+# Backend Pytest Suite
 pytest -v --cov=app
 
-# Synchronize Requirements Catalog
-python3 scripts/generate_requirements.py
-
-# Frontend Unit & Component Tests (Vitest)
-cd frontend && npm run test
-
-# Frontend End-to-End Tests (Playwright)
-cd frontend && npx playwright test
+# Frontend Unit (Vitest) & E2E (Playwright) Suites
+cd frontend && npm run test && npx playwright test
 ```
