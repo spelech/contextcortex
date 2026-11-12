@@ -388,80 +388,8 @@ def extract_api_routes_and_calls(
     # ----------------------------------------------------
     # 2. CLIENT CALL EXTRACTION
     # ----------------------------------------------------
-
-    for i, line in enumerate(lines, start=1):
-        # fetch(...) or apiRequest<T>(...) / httpRequest(...) in JS/TS
-        m_fetch = re.search(r'\b(?:fetch|apiRequest|httpRequest|requestJson)\b[\s\S]*?\(\s*(["\'`]([^"\'`]+)["\'`])', line)
-        if m_fetch:
-            url_raw = m_fetch.group(2)
-            url_pattern = normalize_path_pattern(url_raw)
-            # Infer method if method: 'POST' is on same line or within options object in next 4 lines
-            tail_on_line = line[m_fetch.end():]
-            next_lines = "\n".join(lines[i:min(len(lines), i + 4)])
-            call_window = tail_on_line + "\n" + next_lines
-            # Stop at semicolon closing statement so we don't bleed into a subsequent fetch call
-            stmt_window = call_window.split(";")[0]
-            m_method = re.search(r'method\s*:\s*["\'](GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)["\']', stmt_window, re.IGNORECASE)
-            method = m_method.group(1).upper() if m_method else "GET"
-            caller = find_enclosing_symbol(i, symbols)
-            calls.append(ApiClientCallRecord(
-                repo=repo, filepath=filepath, http_method=method,
-                url_pattern=url_pattern, caller_symbol=caller, line_number=i
-            ))
-            continue
-
-        # axios.get / post / etc.
-        m_axios = re.search(r'\baxios\.(get|post|put|delete|patch|options|head)\s*\(\s*(["\'`]([^"\'`]+)["\'`])', line, re.IGNORECASE)
-        if m_axios:
-            method = m_axios.group(1).upper()
-            url_raw = m_axios.group(3)
-            url_pattern = normalize_path_pattern(url_raw)
-            caller = find_enclosing_symbol(i, symbols)
-            calls.append(ApiClientCallRecord(
-                repo=repo, filepath=filepath, http_method=method,
-                url_pattern=url_pattern, caller_symbol=caller, line_number=i
-            ))
-            continue
-
-        # Python requests / httpx
-        m_req = re.search(r'\b(?:requests|httpx|client)\.(get|post|put|delete|patch|options|head)\s*\(\s*f?["\']([^"\']+)["\']', line, re.IGNORECASE)
-        if m_req:
-            method = m_req.group(1).upper()
-            url_raw = m_req.group(2)
-            url_pattern = normalize_path_pattern(url_raw)
-            caller = find_enclosing_symbol(i, symbols)
-            calls.append(ApiClientCallRecord(
-                repo=repo, filepath=filepath, http_method=method,
-                url_pattern=url_pattern, caller_symbol=caller, line_number=i
-            ))
-            continue
-
-        # Go http client
-        m_go_http = re.search(r'\bhttp\.(Get|Post|Head)\s*\(\s*["\']([^"\']+)["\']', line)
-        if m_go_http:
-            method = m_go_http.group(1).upper()
-            url_raw = m_go_http.group(2)
-            url_pattern = normalize_path_pattern(url_raw)
-            caller = find_enclosing_symbol(i, symbols)
-            calls.append(ApiClientCallRecord(
-                repo=repo, filepath=filepath, http_method=method,
-                url_pattern=url_pattern, caller_symbol=caller, line_number=i
-            ))
-            continue
-
-        # C# HttpClient (GetAsync, PostAsync, etc.)
-        m_cs_client = re.search(r'\b(?:httpClient|_httpClient|client)\.(GetAsync|PostAsync|PutAsync|DeleteAsync|GetFromJsonAsync|PostAsJsonAsync)\s*\(\s*["\']([^"\']+)["\']', line, re.IGNORECASE)
-        if m_cs_client:
-            method_raw = m_cs_client.group(1)
-            method = "GET" if "Get" in method_raw else "POST" if "Post" in method_raw else "PUT" if "Put" in method_raw else "DELETE" if "Delete" in method_raw else None
-            url_raw = m_cs_client.group(2)
-            url_pattern = normalize_path_pattern(url_raw)
-            caller = find_enclosing_symbol(i, symbols)
-            calls.append(ApiClientCallRecord(
-                repo=repo, filepath=filepath, http_method=method,
-                url_pattern=url_pattern, caller_symbol=caller, line_number=i
-            ))
-            continue
+    from app.services.chunking.api_client_calls import extract_client_calls
+    calls.extend(extract_client_calls(lines, repo, filepath, symbols, language))
 
     return routes, calls
 

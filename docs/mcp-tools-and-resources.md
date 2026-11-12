@@ -50,7 +50,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 | `search_docs` | `viewer` | `top_k`/`limit`: `5` (`1..25`), `max_snippet_chars`: `2000` (`200..6000`) | `offset`, `total`, `has_more`, `next_offset` |
 | `find_symbol` | `viewer` | `limit`: `30` (`1..100`) | `offset`, `total`, `has_more`, `next_offset` |
 | `get_file_outline` | `viewer` | `limit`: `150` (`1..500`) | `offset`, `total_symbols`, `has_more`, `next_offset` |
-| `trace_path` | `viewer` | `depth`: `2` (`1..5`), `limit`: `50` (`1..200`) | `offset`, `total_callers`, `total_callees`, `has_more`, `next_offset` |
+| `trace_path` | `viewer` | `depth`: `2` (`1..5`), `limit`: `50` (`1..200`), `include_permalinks`: `False` | `offset`, `total_callers`, `total_callees`, `has_more`, `next_offset` |
 | `find_routes` | `viewer` | `limit`: `50` (`1..200`) | `offset`, `total`, `has_more`, `next_offset` |
 | `find_api_callers` | `viewer` | `limit`: `50` (`1..200`) | `offset`, `total`, `has_more`, `next_offset` |
 | `grep_code` | `viewer` | `max_results`/`limit`: `30` (`1..100`), `context_lines`: `2` (`0..10`), line `<= 400` chars | `offset`, `total_matches`, `has_more`, `next_offset` |
@@ -77,12 +77,12 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 
 - **`find_symbol`**: Queries `ast_symbols` directly by `name` (`exact=True` or substring `exact=False`) and optional `repo`. Clamps `limit` to `1..100` (default `30`) with `offset` pagination. Use this tool first when you know an identifier name.
 - **`get_file_outline`**: Returns deduplicated classes, methods, functions, signatures, and `[start_line, end_line]` spans for `filepath`. Clamps `limit` to `1..500` (default `150`) with `offset` pagination (`total_symbols`, `has_more`, `next_offset`).
-- **`trace_path`**: Traverses AST `callers`, `callees`, or `both` via BFS (`depth` clamped `1..5`, default `2`) and resolves cross-repository HTTP route/caller boundaries (`external_callers`, `external_handlers`). Clamps `limit` to `1..200` (default `50`) with `offset`, returning `total_callers`, `total_callees`, `has_more`, and `next_offset`.
+- **`trace_path`**: Traverses AST `callers`, `callees`, or `both` via BFS (`depth` clamped `1..5`, default `2`) and resolves cross-repository HTTP route/caller boundaries (`external_callers`, `external_handlers`). Clamps `limit` to `1..200` (default `50`) with `offset`, returning `total_callers`, `total_callees`, `has_more`, and `next_offset`. Caller/callee nodes omit their Git permalinks unless `include_permalinks=True` (the target always keeps its permalink), which keeps deep traces compact.
 
 ### HTTP Route and Client Discovery Tools
 
 - **`find_routes`**: Searches declared backend endpoints (`api_routes`) by `query`, `method`, and `repo` while excluding unit test fixtures. Clamps `limit` to `1..200` (default `50`) with `offset`.
-- **`find_api_callers`**: Matches frontend and service HTTP client calls (`api_client_calls`) against `path` (including `{id}` / `:id` parameter templates), `method`, and `repo`. Clamps `limit` to `1..200` (default `50`) with `offset`.
+- **`find_api_callers`**: Matches frontend and service HTTP client calls (`api_client_calls`) against `path` (including `{id}` / `:id` parameter templates), `method`, and `repo`. Client calls are recognized for `fetch`, `axios`, Python `requests`/`httpx`, Go `http`, C# `HttpClient`, and JS/TS request helpers whose name suggests HTTP (for example ``getJson(`/api/items/${id}`)`` or `apiClient.post('/api/items', ...)`); the method comes from the helper name or a `method:` option. Clamps `limit` to `1..200` (default `50`) with `offset`.
 
 ### File Inspection and Pattern Matching Tools
 

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1164 Automated Tests** (800 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1172 Automated Tests** (808 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -882,6 +882,13 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_storage_repos_paths_and_settings_rebuild_confirmation_lifecycle` - _Verifies storage CRUD, repo/path CRUD, AI/file/auto-sync settings, and embedding rebuild confirmation._
 - `test_rbac_enforcement_across_ui_and_admin_endpoints` - _When AUTH_ENABLED=true, Anonymous gets 401, Viewer gets 200 read / 403 write, Admin gets 200._
 
+#### `tests/test_api_client_calls.py` (5 tests)
+- `test_get_json_helper_with_encoded_template_parameter_matches_the_route`
+- `test_helper_name_and_method_option_set_the_http_method`
+- `test_navigation_logging_and_non_http_calls_are_not_client_calls`
+- `test_helper_rule_applies_only_to_javascript_and_typescript`
+- `test_fetch_and_axios_calls_still_extracted`
+
 #### `tests/test_auth_endpoints.py` (9 tests)
 - `test_oauth_protected_resource_metadata` - _Verify GET /.well-known/oauth-protected-resource returns valid RFC 9728 JSON._
 - `test_local_dev_bypass_allows_unauthenticated_requests` - _When AUTH_ENABLED=false, endpoints allow access without authorization header._
@@ -1380,6 +1387,11 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_upsert_skips_only_the_rejected_record_and_keeps_the_rest`
 - `test_upsert_reports_failure_when_every_record_is_rejected`
 - `test_rejected_record_warnings_do_not_log_the_chunk_text`
+
+#### `tests/test_trace_path_compact.py` (3 tests)
+- `test_trace_nodes_have_no_permalinks_by_default_but_the_target_keeps_one`
+- `test_include_permalinks_returns_them_on_every_node`
+- `test_compact_answer_drops_the_four_node_permalinks`
 
 #### `tests/test_webhooks.py` (12 tests)
 - `test_github_webhook_no_secret`

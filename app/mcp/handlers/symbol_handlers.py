@@ -22,6 +22,21 @@ def _strip_repo_prefix(filepath: Optional[str]) -> str:
     return res.replace("\\", "/")
 
 
+def _without_node_permalinks(nodes: List[Any]) -> List[Any]:
+    """Copies trace nodes without their ~250-character permalinks (recursively through nested callers/callees)."""
+    compact = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            compact.append(node)
+            continue
+        item = {key: value for key, value in node.items() if key != "permalink"}
+        for nested in ("callers", "callees"):
+            if isinstance(item.get(nested), list):
+                item[nested] = _without_node_permalinks(item[nested])
+        compact.append(item)
+    return compact
+
+
 def _paginate_trace_tree(
     nodes: List[Dict[str, Any]],
     child_key: str,
@@ -143,6 +158,7 @@ async def handle_trace_path(
     depth: Annotated[int, Field(description="Maximum BFS hop depth, clamped to 1..5 (default 2).")] = 2,
     limit: Annotated[int, Field(description="Maximum caller/callee relationships per direction per page, clamped to 1..200 (default 50).")] = 50,
     offset: Annotated[int, Field(description="0-based relationship offset per direction for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
+    include_permalinks: Annotated[bool, Field(description="Include a Git permalink on every caller/callee node (default False keeps answers compact; the target always has its permalink).")] = False,
 ) -> str:
     """Traverse AST call graphs, imports, inheritance, and cross-repo HTTP route/client boundaries via bounded BFS."""
     try:
@@ -210,6 +226,9 @@ async def handle_trace_path(
         has_more = callers_more or callees_more
         next_offset = (safe_offset + safe_limit) if has_more else None
 
+        if not include_permalinks:
+            paged_callers = _without_node_permalinks(paged_callers)
+            paged_callees = _without_node_permalinks(paged_callees)
         parsed["callers"] = paged_callers
         parsed["callees"] = paged_callees
         parsed["total_callers"] = total_callers
