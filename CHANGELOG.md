@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.23.0](https://github.com/spelech/contextcortex/compare/v2.22.0...v2.23.0) (2026-11-12)
+
+
+### Features
+
+* **trace-path:** compact answers without per-node permalinks by default ([afc42bd](https://github.com/spelech/contextcortex/commit/afc42bd936dc37043071d12969943f799203e339))
+
+
+### Bug Fixes
+
+* **api-callers:** recognize JS/TS request helpers with template-literal URLs ([afc42bd](https://github.com/spelech/contextcortex/commit/afc42bd936dc37043071d12969943f799203e339))
+* **indexing:** decode UTF-16 sources and isolate PostgreSQL upsert failures ([#118](https://github.com/spelech/contextcortex/issues/118)) ([8dd1799](https://github.com/spelech/contextcortex/commit/8dd179996a225c6c577dd4deeacc9c90224b678a))
+
 ## [2.22.0](https://github.com/spelech/contextcortex/compare/v2.21.4...v2.22.0) (2026-11-12)
 
 
