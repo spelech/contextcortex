@@ -74,7 +74,7 @@ See the full **[MCP Tools, Resources, and Pagination Reference](docs/mcp-tools-a
 | `search_docs` | `viewer` | `query`, `repo`, `category`, `tag`, `top_k`/`limit` (`1..25`), `offset`, `max_snippet_chars` (`200..6000`), `mode` | Hybrid search across Markdown docs, runbooks, ADRs, summaries, and PDFs. |
 | `find_symbol` | `viewer` | `name`, `repo`, `exact` (`True`), `limit` (`1..100`, default `30`), `offset` | Deterministic exact or substring AST symbol lookup without broad token scans. |
 | `get_file_outline` | `viewer` | `filepath`, `repo`, `limit` (`1..500`, default `150`), `offset` | Returns deduplicated AST classes, functions, signatures, and line spans for a file. |
-| `trace_path` | `viewer` | `symbol`, `repo`, `direction`, `depth` (`1..5`), `limit` (`1..200`, default `50`), `offset` | Traverses AST callers/callees and cross-repo HTTP route/client boundaries via BFS. |
+| `trace_path` | `viewer` | `symbol`, `repo`, `direction`, `depth` (`1..5`), `limit` (`1..200`, default `50`), `offset`, `include_permalinks` (`False`) | Traverses AST callers/callees and cross-repo HTTP route/client boundaries via BFS. |
 | `find_routes` | `viewer` | `query`, `method`, `repo`, `limit` (`1..200`, default `50`), `offset` | Searches declared backend HTTP/API route endpoints across frameworks. |
 | `find_api_callers` | `viewer` | `path`, `method`, `repo`, `limit` (`1..200`, default `50`), `offset` | Finds frontend and service HTTP client call sites invoking a target route pattern. |
 | `list_repositories` | `viewer` | *None* | Lists registered Git repositories and monitored local paths with status and file totals. |
