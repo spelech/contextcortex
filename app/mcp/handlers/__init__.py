@@ -16,12 +16,19 @@ from app.mcp.handlers.repo_handlers import (
     handle_list_repositories,
     handle_sync_repository,
     handle_index_status,
-    handle_catalog_summary,
     handle_search_infrastructure_docs,
     handle_onboard_repository,
     handle_triage_error,
     handle_investigate_change_impact,
     handle_get_recent_changes,
+)
+from app.mcp.handlers.resource_handlers import (
+    handle_catalog_summary,
+    handle_repo_summary_resource,
+    handle_repo_architecture_resource,
+    handle_repo_files_resource,
+    handle_repo_routes_resource,
+    handle_repo_adrs_resource,
 )
 from app.mcp.handlers.architecture_handlers import (
     handle_get_architecture,
@@ -34,6 +41,8 @@ from app.mcp.handlers.storage_handlers import (
 from app.mcp.handlers.file_handlers import (
     handle_read_file,
     handle_summarize_file,
+)
+from app.mcp.handlers.grep_handlers import (
     handle_grep_code,
 )
 from app.mcp.handlers.diagnostic_handlers import (
@@ -53,6 +62,11 @@ __all__ = [
     "handle_sync_repository",
     "handle_index_status",
     "handle_catalog_summary",
+    "handle_repo_summary_resource",
+    "handle_repo_architecture_resource",
+    "handle_repo_files_resource",
+    "handle_repo_routes_resource",
+    "handle_repo_adrs_resource",
     "handle_search_infrastructure_docs",
     "handle_onboard_repository",
     "handle_triage_error",

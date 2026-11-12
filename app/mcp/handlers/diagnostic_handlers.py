@@ -16,12 +16,12 @@ def _get_tools_attr(name, default):
 
 
 async def handle_diagnose_issue(
-    issue_text: Annotated[str, Field(description="Raw stack trace, error log, user symptom report, or combination to triage.")],
-    repo: Annotated[Optional[str], Field(description="Optional repository identifier to scope diagnostics and resolution.")] = None,
-    context_lines: Annotated[int, Field(description="Number of surrounding code lines for stack frames (clamped 1..15, default 5).")] = 5,
-    limit: Annotated[int, Field(description="Maximum number of semantic code candidate blocks to retrieve (clamped 1..20, default 5).")] = 5
+    issue_text: Annotated[str, Field(description="Raw stack trace, exception log, HTTP failure payload, or bug symptom report across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")],
+    repo: Annotated[Optional[str], Field(description="Optional repository name to scope stack frame, route, and semantic candidate resolution.")] = None,
+    context_lines: Annotated[int, Field(description="Surrounding source lines returned per resolved stack frame, clamped to 1..15 (default 5).")] = 5,
+    limit: Annotated[int, Field(description="Maximum semantic code candidates returned alongside resolved stack frames, clamped to 1..20 (default 5).")] = 5,
 ) -> str:
-    """Accepts any combination of stack traces, error logs, and user bug descriptions, returning a unified compact JSON forensic payload."""
+    """Forensic triage engine resolving stack frames, error string literals, HTTP routes, and semantic code candidates in one call."""
     try:
         enforce_tool_permission(Role.VIEWER)
 
@@ -31,22 +31,25 @@ async def handle_diagnose_issue(
                 "resolved_frames": [],
                 "matched_routes": [],
                 "matched_symbols": [],
-                "semantic_candidates": []
+                "semantic_candidates": [],
             })
+
+        safe_ctx = max(1, min(int(context_lines if context_lines is not None else 5), 15))
+        safe_limit = max(1, min(int(limit if limit is not None else 5), 20))
 
         diag_fn = _get_tools_attr("diagnose_issue", diagnose_issue)
         result = diag_fn(
             issue_text=text,
             repo=repo,
-            context_lines=context_lines,
-            limit=limit
+            context_lines=safe_ctx,
+            limit=safe_limit,
         )
 
         return json.dumps(result, indent=2, default=str)
 
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_diagnose_issue: {fe}")
-        return json.dumps({"error": f"Forbidden: {str(fe)}"})
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"Error executing diagnose_issue triage: {e}", exc_info=True)
         return json.dumps({"error": f"Error executing diagnostics: {str(e)}"})

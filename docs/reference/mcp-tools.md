@@ -254,13 +254,27 @@ Retrieves a cached executive summary or generates a structured LLM summary for a
 
 ---
 
-## Dynamic Catalog Resources & Guided Prompts
+## Bounded Payload & Pagination Conventions
 
-### Dynamic Catalog Resources
+All list- and search-oriented MCP tools enforce safe upper bounds and return standardized pagination metadata:
+- **Inputs**: `limit` (or `top_k` / `max_results`, clamped per tool) and `offset` (0-based integer, default `0`).
+- **Outputs**: `total` (or `total_matches` / `total_symbols` / `total_files`), `offset`, `limit`, `has_more` (`boolean`), and `next_offset` (`integer | null`).
+- **Snippet & Line Caps**: `search_code` and `search_docs` accept `max_snippet_chars` (`200..6000`, default `2000`, marking `content_truncated: true` when clipped). `grep_code` caps individual matched/context lines at `400` characters (`...[line truncated]`). `read_file` returns `has_more` and `next_start_line` for chunked file reading.
 
-| Resource URI | MIME Type | Description |
+---
+
+## Dynamic Catalog Resources, Paginated Templates & Guided Prompts
+
+### Dynamic Resources & Repository Resource Templates
+
+| Resource URI / Template | MIME Type | Description |
 | :--- | :--- | :--- |
-| `knowledge://catalog/summary` | `text/markdown` | Real-time catalog report summarizing all indexed repositories, document distributions, and AST symbol totals. |
+| `knowledge://catalog/summary` | `application/json` | Compact global catalog (`≤ 40` sample files) listing repositories, status, language/symbol totals, and sub-resource templates. |
+| `knowledge://repo/{repo}/summary` | `application/json` | Single-repository overview with commit SHA, sync status, language distribution, symbol/route/ADR counts, and sub-resource URIs. |
+| `knowledge://repo/{repo}/architecture` | `application/json` | Synthesized entry points, hub symbols, directory breakdown, API surface summary, and active ADRs for `{repo}`. |
+| `knowledge://repo/{repo}/files/{page}` | `application/json` | Paginated indexed file inventory (`100` files per 1-indexed `page`) with `total_files`, `total_pages`, `has_more`, and `next_uri`. |
+| `knowledge://repo/{repo}/routes/{page}` | `application/json` | Paginated HTTP route table (`50` routes per 1-indexed `page`) with `total_routes`, `total_pages`, `has_more`, and `next_uri`. |
+| `knowledge://repo/{repo}/adrs` | `application/json` | Architectural Decision Records (`ADR` id, title, status, date, filepath) registered for `{repo}`. |
 
 ### Guided Prompts
 
@@ -270,4 +284,4 @@ Retrieves a cached executive summary or generates a structured LLM summary for a
 
 #### 2. `find_implementation_symbol`
 - **Arguments**: `symbol` (*string*), `repo` (*string, optional*)
-- **Description**: Guides an AI assistant to locate symbol declarations, parameter signatures, and call sites across registered codebases.
+- **Description**: Guides an AI assistant to locate symbol declarations, parameter signatures, and call sites across registered codebases (including Python, TypeScript/JS/TSX, C#, and COBOL).

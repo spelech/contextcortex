@@ -7,6 +7,7 @@ from pydantic import Field
 from app.services.auth import enforce_tool_permission, Role, ForbiddenError
 from app.services.file_reader import get_file_reader_service, FileReaderService
 from app.services.summarizer import get_summarizer_service, SummarizerService
+from app.mcp.handlers.grep_handlers import handle_grep_code
 
 logger = logging.getLogger("contextcortex.mcp.files")
 
@@ -24,12 +25,12 @@ def _strip_repo_prefix(filepath: Optional[str]) -> str:
 
 
 async def handle_read_file(
-    path: Annotated[str, Field(description="Relative or absolute file path within a watched local directory or uploaded local storage.")],
-    repo: Annotated[Optional[str], Field(description="Optional repository identifier or storage namespace to target.")] = None,
-    start_line: Annotated[Optional[int], Field(description="1-based starting line number (inclusive).")] = None,
-    end_line: Annotated[Optional[int], Field(description="1-based ending line number (inclusive).")] = None
+    path: Annotated[str, Field(description="Relative or absolute file path within an indexed repository, watched directory, or local storage (supports Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, and config files).")],
+    repo: Annotated[Optional[str], Field(description="Optional repository name or 'local_storage' namespace. Recommended when reading relative paths or reconstructing ephemeral Git files from vector chunks.")] = None,
+    start_line: Annotated[Optional[int], Field(description="1-based inclusive starting line number (default 1). Pass next_start_line from a prior call to paginate long files.")] = None,
+    end_line: Annotated[Optional[int], Field(description="1-based inclusive ending line number (default end of file, bounded by read_file_max_lines=2000 per call).")] = None,
 ) -> str:
-    """Read entire file content or bounded line ranges from monitored local directories or local storage with safety limits."""
+    """Read bounded 1-based line ranges or full file content from disk, shallow clones, or vector chunk reconstruction."""
     try:
         enforce_tool_permission(Role.VIEWER)
         reader_fn = _get_tools_attr("get_file_reader_service", get_file_reader_service)
@@ -39,17 +40,33 @@ async def handle_read_file(
             path=path,
             repo=repo,
             start_line=start_line,
-            end_line=end_line
+            end_line=end_line,
         )
+
+        s_line = result.get("start_line")
+        e_line = result.get("end_line")
+        t_lines = result.get("total_lines")
+        is_truncated = bool(result.get("truncated", False))
+        has_more = bool(
+            t_lines is not None
+            and e_line is not None
+            and t_lines > 0
+            and e_line < t_lines
+        )
+        next_start_line = (e_line + 1) if (has_more and e_line is not None) else None
 
         return json.dumps({
             "file": _strip_repo_prefix(result.get("filepath") or path),
             "repo": repo,
             "source": result.get("source"),
-            "lines": [result.get("start_line"), result.get("end_line")],
-            "total_lines": result.get("total_lines"),
+            "lines": [s_line, e_line],
+            "start_line": s_line,
+            "end_line": e_line,
+            "total_lines": t_lines,
+            "has_more": has_more,
+            "next_start_line": next_start_line,
             "size_bytes": result.get("size_bytes"),
-            "truncated": bool(result.get("truncated", False)),
+            "truncated": is_truncated,
             "content": result.get("content", ""),
         })
 
@@ -66,11 +83,11 @@ async def handle_read_file(
 
 
 async def handle_summarize_file(
-    path: Annotated[str, Field(description="Path to the file to summarize (monitored local path or uploaded local storage).")],
-    repo: Annotated[Optional[str], Field(description="Optional repository or storage namespace filter.")] = None,
-    force_refresh: Annotated[bool, Field(description="If True, bypasses SQLite cache and regenerates a fresh LLM summary.")] = False
+    path: Annotated[str, Field(description="Relative or absolute path to the source or documentation file to summarize (Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, PDF).")],
+    repo: Annotated[Optional[str], Field(description="Optional repository identifier or 'local_storage' namespace filter.")] = None,
+    force_refresh: Annotated[bool, Field(description="Set True to bypass cached summaries in relational storage and generate a fresh LLM executive summary (default False).")] = False,
 ) -> str:
-    """Retrieve an existing summary or generate a structured LLM executive summary for a large file."""
+    """Retrieve a cached file summary or generate a structured LLM executive summary for large source or documentation files."""
     try:
         enforce_tool_permission(Role.VIEWER)
         summarizer_fn = _get_tools_attr("get_summarizer_service", get_summarizer_service)
@@ -79,7 +96,7 @@ async def handle_summarize_file(
         summary_text = summarizer.get_or_create_summary(
             filepath=path,
             repo=repo,
-            force_refresh=force_refresh
+            force_refresh=force_refresh,
         )
 
         if not summary_text or not summary_text.strip():
@@ -108,37 +125,8 @@ async def handle_summarize_file(
         return json.dumps({"error": f"Error summarizing file: {str(e)}"})
 
 
-async def handle_grep_code(
-    pattern: Annotated[str, Field(description="Exact substring or regex pattern to search for across repositories.")],
-    repo: Annotated[Optional[str], Field(description="Optional repository identifier or storage namespace filter.")] = None,
-    path_glob: Annotated[Optional[str], Field(description="Optional fnmatch file path glob (e.g., '*.py' or 'app/services/*').")] = None,
-    is_regex: Annotated[bool, Field(description="If True, treats pattern as a regular expression. Defaults to False (literal string).")] = False,
-    case_sensitive: Annotated[bool, Field(description="If True, performs case-sensitive matching. Defaults to False.")] = False,
-    context_lines: Annotated[int, Field(description="Number of context lines surrounding each match (0-10). Defaults to 2.")] = 2,
-    limit: Annotated[int, Field(description="Maximum number of matched lines to return (1-100). Defaults to 30.")] = 30
-) -> str:
-    """Exact literal and regex pattern matching across one or all indexed repositories returning compact JSON."""
-    try:
-        enforce_tool_permission(Role.VIEWER)
-        reader_fn = _get_tools_attr("get_file_reader_service", get_file_reader_service)
-        reader = reader_fn()
-
-        result = reader.grep_code(
-            pattern=pattern,
-            repo=repo,
-            path_glob=path_glob,
-            is_regex=is_regex,
-            case_sensitive=case_sensitive,
-            context_lines=context_lines,
-            limit=limit,
-        )
-        return json.dumps(result, separators=(",", ":"))
-
-    except ForbiddenError as fe:
-        logger.warning(f"Forbidden error in handle_grep_code: {fe}")
-        return json.dumps({"error": "forbidden", "message": str(fe)}, separators=(",", ":"))
-    except ValueError as ve:
-        return json.dumps({"error": "invalid_argument", "message": str(ve)}, separators=(",", ":"))
-    except Exception as e:
-        logger.error(f"Error searching code with grep: {e}")
-        return json.dumps({"error": str(e)}, separators=(",", ":"))
+__all__ = [
+    "handle_read_file",
+    "handle_summarize_file",
+    "handle_grep_code",
+]

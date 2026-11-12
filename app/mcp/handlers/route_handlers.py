@@ -1,36 +1,52 @@
 import json
 import logging
+import sys
 from typing import List, Dict, Any, Optional, Annotated
 from pydantic import Field
 
-from app.services.database import get_db_connection, extract_host_from_url, get_adr, list_adrs, create_adr, update_adr, supersede_adr, upsert_adr
-from app.services.search import execute_hybrid_search, trace_symbol_path
-from app.services.indexing import get_dynamic_catalog_description, sync_single_git_repo, run_full_indexing
-from app.services.vector_store import get_vector_store_config
+from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
-from app.services.chunking import match_route_and_call, normalize_path_pattern
-from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
+from app.services.chunking import match_route_and_call
 
 logger = logging.getLogger("contextcortex")
-import sys
+
 
 def _get_tools_attr(name, default):
     t_mod = sys.modules.get("app.mcp.tools")
     return getattr(t_mod, name, default) if t_mod else default
 
 
+def _is_test_route_file(rel_path: str) -> bool:
+    path_parts = [p.lower() for p in rel_path.strip("/").split("/") if p]
+    bname = path_parts[-1] if path_parts else ""
+    return (
+        any(p in ("tests", "test", "__tests__") for p in path_parts[:-1])
+        or bname.startswith("test_")
+        or bname.endswith(("_test.py", ".test.ts", ".spec.ts", "tests.cs"))
+    )
+
+
 async def handle_find_routes(
-    query: Annotated[Optional[str], Field(description="Path substring or pattern (e.g. '/api/v1/users' or 'checkout').")] = None,
-    method: Annotated[Optional[str], Field(description="Filter by HTTP method (GET, POST, PUT, DELETE, etc.).")] = None,
-    repo: Annotated[Optional[str], Field(description="Filter by repository name.")] = None,
-    limit: Annotated[int, Field(description="Maximum routes to return (default 20).")] = 20
+    query: Annotated[Optional[str], Field(description="Optional route path or handler substring filter (e.g. '/api/v1/users' or 'checkout') across FastAPI, Flask, Django, Express/NestJS, ASP.NET Core, Go, Rust, and Spring controllers.")] = None,
+    method: Annotated[Optional[str], Field(description="Optional HTTP verb filter (GET, POST, PUT, PATCH, DELETE).")] = None,
+    repo: Annotated[Optional[str], Field(description="Optional repository name filter.")] = None,
+    limit: Annotated[int, Field(description="Maximum API routes returned per page, clamped to 1..200 (default 50).")] = 50,
+    offset: Annotated[int, Field(description="0-based route offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
 ) -> str:
-    """List or search API endpoints and HTTP route handlers across registered repositories."""
+    """List or search declared HTTP/API route endpoints across indexed repositories with bounded pagination."""
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
+
+        safe_limit = max(1, min(int(limit if limit is not None else 50), 200))
+        safe_offset = max(0, int(offset if offset is not None else 0))
+
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
-            sql = "SELECT r.id, r.repo, r.filepath, r.framework, r.http_method, r.path_pattern, r.handler_symbol, r.start_line, r.end_line, g.url as git_url, g.commit_sha, g.provider FROM api_routes r LEFT JOIN git_repositories g ON r.repo = g.name WHERE 1=1"
+            sql = (
+                "SELECT r.id, r.repo, r.filepath, r.framework, r.http_method, r.path_pattern, "
+                "r.handler_symbol, r.start_line, r.end_line, g.url as git_url, g.commit_sha, g.provider "
+                "FROM api_routes r LEFT JOIN git_repositories g ON r.repo = g.name WHERE 1=1"
+            )
             params: List[Any] = []
 
             if query and query.strip():
@@ -46,23 +62,23 @@ async def handle_find_routes(
                 sql += " AND r.repo = ?"
                 params.append(repo.strip())
 
-            sql += f" ORDER BY r.repo ASC, r.path_pattern ASC LIMIT {limit}"
+            sql += " ORDER BY r.repo ASC, r.path_pattern ASC, r.http_method ASC, r.start_line ASC"
             rows = conn.execute(sql, params).fetchall()
 
-        routes = []
+        all_routes = []
         seen_routes = set()
         for r in rows:
             rel_path = (r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]).replace("\\", "/")
-            path_parts = [p.lower() for p in rel_path.strip("/").split("/") if p]
-            bname = path_parts[-1] if path_parts else ""
-            if any(p in ("tests", "test", "__tests__") for p in path_parts[:-1]) or bname.startswith("test_") or bname.endswith(("_test.py", ".test.ts", ".spec.ts", "tests.cs")):
+            if _is_test_route_file(rel_path):
                 continue
             dedup_key = (r["repo"], r["http_method"], r["path_pattern"], rel_path, r["start_line"])
             if dedup_key in seen_routes:
                 continue
             seen_routes.add(dedup_key)
-            permalink = format_git_permalink(r["git_url"], r["commit_sha"], rel_path, r["start_line"], r["end_line"], provider=r["provider"])
-            routes.append({
+            permalink = format_git_permalink(
+                r["git_url"], r["commit_sha"], rel_path, r["start_line"], r["end_line"], provider=r["provider"]
+            )
+            all_routes.append({
                 "repo": r["repo"],
                 "method": r["http_method"],
                 "path": r["path_pattern"],
@@ -73,11 +89,21 @@ async def handle_find_routes(
                 "permalink": permalink,
             })
 
+        total = len(all_routes)
+        paged_routes = all_routes[safe_offset : safe_offset + safe_limit]
+        has_more = (safe_offset + safe_limit) < total
+        next_offset = (safe_offset + safe_limit) if has_more else None
+
         return json.dumps({
             "query": (query or "").strip() or None,
             "method": method.strip().upper() if method and method.strip() else None,
             "repo": repo.strip() if repo and repo.strip() else None,
-            "routes": routes,
+            "total": total,
+            "offset": safe_offset,
+            "limit": safe_limit,
+            "has_more": has_more,
+            "next_offset": next_offset,
+            "routes": paged_routes,
         })
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_find_routes: {fe}")
@@ -88,11 +114,13 @@ async def handle_find_routes(
 
 
 async def handle_find_api_callers(
-    path: Annotated[str, Field(description="Endpoint path pattern or URL segment to match (e.g. '/users/{id}' or '/auth/login').")],
-    method: Annotated[Optional[str], Field(description="Target HTTP method (GET, POST, etc.).")] = None,
-    repo: Annotated[Optional[str], Field(description="Filter client search by repository.")] = None
+    path: Annotated[str, Field(description="Target HTTP endpoint path pattern or URL segment to match (e.g. '/api/v1/users/{id}' or '/auth/login') across TypeScript/JS/TSX, Python, C#, Go, Rust, and Java clients.")],
+    method: Annotated[Optional[str], Field(description="Optional HTTP verb filter (GET, POST, PUT, PATCH, DELETE).")] = None,
+    repo: Annotated[Optional[str], Field(description="Optional client repository name filter.")] = None,
+    limit: Annotated[int, Field(description="Maximum client call sites returned per page, clamped to 1..200 (default 50).")] = 50,
+    offset: Annotated[int, Field(description="0-based caller offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
 ) -> str:
-    """Find client call sites and services that invoke a specific API endpoint or URL pattern."""
+    """Discover frontend and service HTTP client call sites invoking a target API route pattern with bounded pagination."""
     target_path = path.strip() if path else ""
     if not target_path:
         return json.dumps({"error": "endpoint path cannot be empty."})
@@ -100,32 +128,47 @@ async def handle_find_api_callers(
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
+
+        safe_limit = max(1, min(int(limit if limit is not None else 50), 200))
+        safe_offset = max(0, int(offset if offset is not None else 0))
+
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
-            sql = "SELECT c.id, c.repo, c.filepath, c.http_method, c.url_pattern, c.caller_symbol, c.line_number, g.url as git_url, g.commit_sha, g.provider FROM api_client_calls c LEFT JOIN git_repositories g ON c.repo = g.name WHERE 1=1"
+            sql = (
+                "SELECT c.id, c.repo, c.filepath, c.http_method, c.url_pattern, c.caller_symbol, "
+                "c.line_number, g.url as git_url, g.commit_sha, g.provider "
+                "FROM api_client_calls c LEFT JOIN git_repositories g ON c.repo = g.name WHERE 1=1"
+            )
             params: List[Any] = []
 
             if repo and repo.strip():
                 sql += " AND c.repo = ?"
                 params.append(repo.strip())
 
+            sql += " ORDER BY c.repo ASC, c.filepath ASC, c.line_number ASC"
             rows = conn.execute(sql, params).fetchall()
 
-        matching_calls = []
         target_method_clean = method.strip().upper() if method and method.strip() else None
+        all_callers = []
+        seen_callers = set()
 
-        for r in rows:
-            call_method = (r["http_method"] or "").upper()
+        for c in rows:
+            call_method = (c["http_method"] or "").upper()
             if target_method_clean and call_method and call_method != "ALL" and call_method != target_method_clean:
                 continue
 
-            if match_route_and_call(target_path, r["url_pattern"]):
-                matching_calls.append(r)
+            if not match_route_and_call(target_path, c["url_pattern"]):
+                continue
 
-        callers = []
-        for c in matching_calls:
             rel_path = (c["filepath"].split("://", 1)[1] if "://" in c["filepath"] else c["filepath"]).replace("\\", "/")
-            permalink = format_git_permalink(c["git_url"], c["commit_sha"], rel_path, c["line_number"], c["line_number"], provider=c["provider"])
-            callers.append({
+            dedup_key = (c["repo"], rel_path, c["http_method"], c["url_pattern"], c["caller_symbol"], c["line_number"])
+            if dedup_key in seen_callers:
+                continue
+            seen_callers.add(dedup_key)
+
+            permalink = format_git_permalink(
+                c["git_url"], c["commit_sha"], rel_path, c["line_number"], c["line_number"], provider=c["provider"]
+            )
+            all_callers.append({
                 "repo": c["repo"],
                 "method": c["http_method"],
                 "url": c["url_pattern"],
@@ -135,10 +178,20 @@ async def handle_find_api_callers(
                 "permalink": permalink,
             })
 
+        total = len(all_callers)
+        paged_callers = all_callers[safe_offset : safe_offset + safe_limit]
+        has_more = (safe_offset + safe_limit) < total
+        next_offset = (safe_offset + safe_limit) if has_more else None
+
         return json.dumps({
             "path": target_path,
             "method": target_method_clean,
-            "callers": callers,
+            "total": total,
+            "offset": safe_offset,
+            "limit": safe_limit,
+            "has_more": has_more,
+            "next_offset": next_offset,
+            "callers": paged_callers,
         })
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_find_api_callers: {fe}")
