@@ -190,6 +190,18 @@ def trace_symbol_path(
         up = sym_str.upper()
         return syms_by_full_upper.get(up) or syms_by_name_upper.get(up) or []
 
+    def _single_implementation(full: str) -> str:
+        """`IRepo.Save` -> `SqlRepo.Save` when exactly one class implements `IRepo` and has the member."""
+        if "." not in full:
+            return full
+        owner, member = full.rsplit(".", 1)
+        impls = iface_to_concretes.get(owner.split(".")[-1], set())
+        if len(impls) == 1:
+            impl_cands = syms_by_full.get(f"{next(iter(impls))}.{member}", [])
+            if impl_cands:
+                return impl_cands[0]["full_symbol"]
+        return full
+
     def _resolve_di_callee(raw_target: str, caller_sym: str, candidates: List[dict]) -> str:
         if not candidates:
             if "." in raw_target:
@@ -201,7 +213,7 @@ def trace_symbol_path(
                         return impl_cands[0]["full_symbol"]
             return raw_target
         if len(candidates) == 1:
-            return candidates[0].get("full_symbol") or candidates[0].get("name") or raw_target
+            return _single_implementation(candidates[0].get("full_symbol") or candidates[0].get("name") or raw_target)
         non_iface = [
             c for c in candidates
             if (c.get("full_symbol") or "").rsplit(".", 1)[0] not in interface_names and c.get("kind") != "interface_declaration"
