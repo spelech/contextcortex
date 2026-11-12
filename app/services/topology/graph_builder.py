@@ -110,6 +110,7 @@ def get_topology_graph(
     # Symbol nodes
     symbol_id_by_db_id: Dict[int, str] = {}
     symbols_by_name: Dict[Tuple[str, str], List[str]] = {}
+    symbols_by_full: Dict[Tuple[str, str], List[str]] = {}
     symbols_by_file: Dict[Tuple[str, str], List[str]] = {}
     
     for r in symbol_rows:
@@ -119,6 +120,8 @@ def get_topology_graph(
         
         key_name = (r["repo"], r["name"])
         symbols_by_name.setdefault(key_name, []).append(s_id)
+        if r["full_symbol"]:
+            symbols_by_full.setdefault((r["repo"], r["full_symbol"]), []).append(s_id)
         
         key_file = (r["repo"], clean_fp)
         symbols_by_file.setdefault(key_file, []).append(s_id)
@@ -296,6 +299,11 @@ def get_topology_graph(
 
         tgt_sym_name = rel["target_symbol"]
         tgt_s_ids = symbols_by_name.get((rel["repo"], tgt_sym_name), [])
+        if not tgt_s_ids and tgt_sym_name and "." in tgt_sym_name:
+            # Typed call target (`ToolService.PublishInstance`): match the full symbol, else the method name.
+            tgt_s_ids = symbols_by_full.get((rel["repo"], tgt_sym_name), [])
+            if not tgt_s_ids:
+                tgt_s_ids = symbols_by_name.get((rel["repo"], tgt_sym_name.rsplit(".", 1)[-1]), [])
         if not tgt_s_ids:
             # Try finding across all repos
             for (s_repo, s_name), s_ids in symbols_by_name.items():

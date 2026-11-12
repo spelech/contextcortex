@@ -52,6 +52,10 @@ def _get_callers_and_callees(
         "FROM ast_relationships WHERE (target_symbol = ? OR target_symbol = ?)"
     )
     c_params: List[Any] = [symbol_name, short_sym]
+    if "." not in symbol_name:
+        # C# call targets can be stored with the receiver type (`ToolService.PublishInstance`).
+        c_sql = c_sql[:-1] + " OR target_symbol LIKE ?)"
+        c_params.append(f"%.{symbol_name}")
     if effective_repo:
         c_sql += " AND repo = ?"
         c_params.append(effective_repo)
