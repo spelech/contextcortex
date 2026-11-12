@@ -1,13 +1,19 @@
-import os
-import uuid
 import logging
+import os
 import tempfile
-from typing import List, Dict, Any, Optional, Tuple, Union
+import uuid
+from typing import Any, Dict, List, Optional, Tuple, Union
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
-from app.services.embeddings import get_dense_embedding, get_sparse_embedding, get_dense_dim
+from app.services.embeddings import get_dense_dim, get_dense_embedding, get_sparse_embedding
+from app.services.vector_store.base import VectorDocument, VectorSearchResult, VectorStore
+from app.services.vector_store.qdrant_queries import (
+    build_qdrant_filter,
+    execute_qdrant_file_chunks,
+    execute_qdrant_grep_chunks,
+    execute_qdrant_search,
+)
 
 logger = logging.getLogger("contextcortex.vector_store.qdrant")
 
@@ -54,7 +60,6 @@ class QdrantVectorStore(VectorStore):
 
         if prefer_remote is None:
             prefer_remote = os.getenv("QDRANT_PREFER_REMOTE", "true").lower() in ("true", "1", "yes")
-
         if allow_fallback is None:
             allow_fallback = os.getenv("QDRANT_ALLOW_FALLBACK", "false").lower() in ("true", "1", "yes")
 
@@ -134,29 +139,18 @@ class QdrantVectorStore(VectorStore):
 
                 needs_recreate = False
                 if not isinstance(vectors_config, dict) or "dense" not in vectors_config:
-                    logger.warning(
-                        f"Existing collection '{self.collection_name}' uses legacy single-vector schema. "
-                        f"Upgrading to Named Multi-Vectors (Dense + Sparse)..."
-                    )
+                    logger.warning(f"Existing collection '{self.collection_name}' uses legacy single-vector schema. Upgrading...")
                     needs_recreate = True
                 elif sparse_config is None or "sparse" not in sparse_config:
-                    logger.warning(
-                        f"Collection '{self.collection_name}' missing sparse vector index. "
-                        f"Upgrading to Hybrid collection..."
-                    )
+                    logger.warning(f"Collection '{self.collection_name}' missing sparse vector index. Upgrading...")
                     needs_recreate = True
                 elif hasattr(vectors_config.get("dense"), "size") and vectors_config["dense"].size != dim:
                     logger.warning(
-                        f"Dense vector dimension mismatch in '{self.collection_name}': "
-                        f"expected {dim}, found {vectors_config['dense'].size}. Recreating..."
+                        f"Dense vector dimension mismatch in '{self.collection_name}': expected {dim}, found {vectors_config['dense'].size}. Recreating..."
                     )
                     needs_recreate = True
 
                 if needs_recreate:
-                    logger.warning(
-                        f"Recreating Qdrant collection '{self.collection_name}' due to schema/dimension mismatch. "
-                        f"Clearing relational index metadata..."
-                    )
                     self.client.delete_collection(self.collection_name)
                     try:
                         from app.services.database import clear_indexing_metadata
@@ -168,12 +162,8 @@ class QdrantVectorStore(VectorStore):
                 logger.info(f"Creating Hybrid Qdrant collection: {self.collection_name} (Dense: {dim}d, Sparse: BM25)")
                 self.client.create_collection(
                     collection_name=self.collection_name,
-                    vectors_config={
-                        "dense": qmodels.VectorParams(size=dim, distance=qmodels.Distance.COSINE)
-                    },
-                    sparse_vectors_config={
-                        "sparse": qmodels.SparseVectorParams()
-                    }
+                    vectors_config={"dense": qmodels.VectorParams(size=dim, distance=qmodels.Distance.COSINE)},
+                    sparse_vectors_config={"sparse": qmodels.SparseVectorParams()},
                 )
                 if self.mode == "remote":
                     for field in ["repo", "doc_type", "language", "path"]:
@@ -181,7 +171,7 @@ class QdrantVectorStore(VectorStore):
                             self.client.create_payload_index(
                                 collection_name=self.collection_name,
                                 field_name=field,
-                                field_schema=qmodels.PayloadSchemaType.KEYWORD
+                                field_schema=qmodels.PayloadSchemaType.KEYWORD,
                             )
                         except Exception as ie:
                             logger.debug(f"Payload index creation for '{field}' info: {ie}")
@@ -195,7 +185,7 @@ class QdrantVectorStore(VectorStore):
     def upsert_documents(
         self,
         documents: List[Union[VectorDocument, Dict[str, Any]]],
-        batch_size: int = 100
+        batch_size: int = 100,
     ) -> bool:
         """Upserts a batch of document chunks with vectors and payload."""
         if not documents:
@@ -220,7 +210,7 @@ class QdrantVectorStore(VectorStore):
                     sparse_indices = doc.get("sparse_indices")
                     sparse_values = doc.get("sparse_values")
                     sparse_vec = doc.get("sparse")
-                    payload = doc.get("payload") if "payload" in doc else {
+                    payload = dict(doc.get("payload")) if "payload" in doc and isinstance(doc.get("payload"), dict) else {
                         k: v for k, v in doc.items()
                         if k not in ("id", "text", "dense_vector", "sparse_indices", "sparse_values", "dense", "sparse")
                     }
@@ -234,6 +224,12 @@ class QdrantVectorStore(VectorStore):
                     sparse_values = doc.sparse_values
                     sparse_vec = None
                     payload = doc.to_payload()
+
+                if isinstance(text, str):
+                    text = text.replace("\x00", "")
+                for pk in ("path", "rel_path", "filepath", "folder", "permalink_url", "github_url"):
+                    if isinstance(payload.get(pk), str):
+                        payload[pk] = payload[pk].replace("\x00", "").replace("\\", "/")
 
                 try:
                     point_id = str(uuid.UUID(doc_id))
@@ -256,33 +252,19 @@ class QdrantVectorStore(VectorStore):
                     if isinstance(sparse_vec, qmodels.SparseVector):
                         vectors["sparse"] = sparse_vec
                     elif isinstance(sparse_vec, dict):
-                        vectors["sparse"] = qmodels.SparseVector(
-                            indices=sparse_vec["indices"],
-                            values=sparse_vec["values"]
-                        )
+                        vectors["sparse"] = qmodels.SparseVector(indices=sparse_vec["indices"], values=sparse_vec["values"])
                 elif sparse_indices is not None and sparse_values is not None:
-                    vectors["sparse"] = qmodels.SparseVector(
-                        indices=sparse_indices,
-                        values=sparse_values
-                    )
+                    vectors["sparse"] = qmodels.SparseVector(indices=sparse_indices, values=sparse_values)
                 elif text:
                     s_vec = get_sparse_embedding(text)
                     if s_vec is not None:
                         vectors["sparse"] = s_vec
 
-                points.append(qmodels.PointStruct(
-                    id=point_id,
-                    vector=vectors,
-                    payload=payload
-                ))
+                points.append(qmodels.PointStruct(id=point_id, vector=vectors, payload=payload))
 
             effective_batch_size = max(1, batch_size)
             for i in range(0, len(points), effective_batch_size):
-                chunk = points[i : i + effective_batch_size]
-                self.client.upsert(
-                    collection_name=self.collection_name,
-                    points=chunk
-                )
+                self.client.upsert(collection_name=self.collection_name, points=points[i : i + effective_batch_size])
             return True
         except Exception as e:
             logger.error(f"Error upserting documents into Qdrant collection '{self.collection_name}': {e}")
@@ -290,19 +272,15 @@ class QdrantVectorStore(VectorStore):
 
     def delete_by_path(self, filepath: str) -> bool:
         """Purges vectors associated with a specific file path."""
+        norm_fp = (filepath or "").replace("\\", "/")
+        conds = [qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=filepath))]
+        if norm_fp != filepath:
+            conds.append(qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=norm_fp)))
+        filt = qmodels.Filter(must=conds) if len(conds) == 1 else qmodels.Filter(should=conds)
         try:
             self.client.delete(
                 collection_name=self.collection_name,
-                points_selector=qmodels.FilterSelector(
-                    filter=qmodels.Filter(
-                        must=[
-                            qmodels.FieldCondition(
-                                key="path",
-                                match=qmodels.MatchValue(value=filepath)
-                            )
-                        ]
-                    )
-                )
+                points_selector=qmodels.FilterSelector(filter=filt),
             )
             return True
         except Exception as e:
@@ -316,14 +294,9 @@ class QdrantVectorStore(VectorStore):
                 collection_name=self.collection_name,
                 points_selector=qmodels.FilterSelector(
                     filter=qmodels.Filter(
-                        must=[
-                            qmodels.FieldCondition(
-                                key="repo",
-                                match=qmodels.MatchValue(value=repo_name)
-                            )
-                        ]
+                        must=[qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo_name))]
                     )
-                )
+                ),
             )
             return True
         except Exception as e:
@@ -340,356 +313,82 @@ class QdrantVectorStore(VectorStore):
         tag: Optional[str] = None,
         limit: int = 5,
         dense_weight: Optional[float] = None,
-        search_mode: str = "hybrid"
+        search_mode: str = "hybrid",
     ) -> List[VectorSearchResult]:
-        """Performs vector search returning ranked results using Dense, Sparse, or configurable Weighted Fusion."""
-        if not query_text or not query_text.strip():
-            return []
-
-        try:
-            if not self.client.collection_exists(self.collection_name):
-                logger.warning(f"Collection '{self.collection_name}' does not exist in Qdrant.")
-                return []
-
-            must_conditions = []
-            if doc_type:
-                if doc_type == "doc":
-                    must_conditions.append(qmodels.FieldCondition(key="doc_type", match=qmodels.MatchAny(any=["doc", "pdf"])))
-                else:
-                    must_conditions.append(qmodels.FieldCondition(key="doc_type", match=qmodels.MatchValue(value=doc_type)))
-            if repo:
-                must_conditions.append(qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo)))
-            if language:
-                must_conditions.append(qmodels.FieldCondition(key="language", match=qmodels.MatchValue(value=language)))
-            if category:
-                must_conditions.append(qmodels.FieldCondition(key="category", match=qmodels.MatchValue(value=category)))
-            if tag:
-                must_conditions.append(qmodels.FieldCondition(key="tags", match=qmodels.MatchAny(any=[tag])))
-
-            query_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
-
-            raw_mode = (search_mode or "hybrid").lower().strip()
-            mode_aliases = {
-                "keyword": "lexical",
-                "keywords": "lexical",
-                "bm25": "lexical",
-                "fulltext": "lexical",
-                "fts": "lexical",
-                "vector": "semantic",
-                "dense": "semantic",
-                "sparse": "lexical",
-            }
-            mode = mode_aliases.get(raw_mode, raw_mode)
-            caps = self.get_capabilities()
-            supported = caps.get("search_modes", ["hybrid", "semantic", "lexical"])
-            if mode not in supported:
-                mode = "hybrid"
-
-            if mode == "semantic":
-                alpha = 1.0
-            elif mode == "lexical":
-                alpha = 0.0
-            elif dense_weight is not None:
-                try:
-                    alpha = float(dense_weight)
-                except (ValueError, TypeError):
-                    alpha = 0.5
-                alpha = max(0.0, min(1.0, alpha))
-            else:
-                try:
-                    env_alpha = os.getenv("HYBRID_DENSE_WEIGHT")
-                    alpha = float(env_alpha) if env_alpha is not None else 0.5
-                except (ValueError, TypeError):
-                    alpha = 0.5
-                alpha = max(0.0, min(1.0, alpha))
-
-            # Compute embeddings lazily based on mode to avoid unnecessary inference
-            dense_vec = get_dense_embedding(query_text.strip()) if mode in ("hybrid", "semantic") else None
-            sparse_vec = get_sparse_embedding(query_text.strip()) if mode in ("hybrid", "lexical") else None
-
-            if dense_vec is not None:
-                info = self.client.get_collection(self.collection_name)
-                vectors_config = getattr(info.config.params, "vectors", None)
-                if isinstance(vectors_config, dict) and "dense" in vectors_config:
-                    col_dim = getattr(vectors_config["dense"], "size", None)
-                    if col_dim is not None and len(dense_vec) != col_dim:
-                        msg = f"Vector dimension mismatch: query vector ({len(dense_vec)}d) does not match collection '{self.collection_name}' ({col_dim}d). An index rebuild is required."
-                        logger.error(msg)
-                        raise ValueError(msg)
-
-            candidate_limit = max(limit * 5, 50)
-
-            # If pure lexical search was explicitly requested but query produced no sparse indices, return empty
-            if mode == "lexical":
-                if sparse_vec is None or len(sparse_vec.indices) == 0:
-                    logger.warning(f"Lexical search requested for '{query_text}', but no sparse BM25 tokens were generated.")
-                    return []
-
-            # Pure semantic search or hybrid fallback if no sparse vector is available
-            if mode == "semantic" or (mode == "hybrid" and (sparse_vec is None or len(sparse_vec.indices) == 0)):
-                if dense_vec is None:
-                    dense_vec = get_dense_embedding(query_text.strip())
-                response = self.client.query_points(
-                    collection_name=self.collection_name,
-                    query=dense_vec,
-                    using="dense",
-                    query_filter=query_filter,
-                    limit=limit,
-                    with_payload=True,
-                )
-                results: List[VectorSearchResult] = []
-                for rank_idx, pt in enumerate(response.points, start=1):
-                    raw_score = float(pt.score) if pt.score is not None else 0.0
-                    clamped_score = max(0.0, min(1.0, raw_score))
-                    results.append(
-                        VectorSearchResult(
-                            id=str(pt.id),
-                            score=round(clamped_score, 4),
-                            dense_score=round(clamped_score, 4),
-                            sparse_score=0.0,
-                            dense_rank=rank_idx,
-                            sparse_rank=None,
-                            payload=pt.payload or {},
-                        )
-                    )
-                return results
-
-            # Pure lexical search
-            if mode == "lexical":
-                response = self.client.query_points(
-                    collection_name=self.collection_name,
-                    query=sparse_vec,
-                    using="sparse",
-                    query_filter=query_filter,
-                    limit=limit,
-                    with_payload=True,
-                )
-                sparse_scores = [p.score for p in response.points if p.score is not None]
-                max_sparse = max(sparse_scores, default=1.0)
-                if max_sparse <= 0.0:
-                    max_sparse = 1.0
-
-                results: List[VectorSearchResult] = []
-                for rank_idx, pt in enumerate(response.points, start=1):
-                    raw_s = float(pt.score) if pt.score is not None else 0.0
-                    norm_s = max(0.0, min(1.0, raw_s / max_sparse))
-                    results.append(
-                        VectorSearchResult(
-                            id=str(pt.id),
-                            score=round(norm_s, 4),
-                            dense_score=0.0,
-                            sparse_score=round(norm_s, 4),
-                            dense_rank=None,
-                            sparse_rank=rank_idx,
-                            payload=pt.payload or {},
-                        )
-                    )
-                return results
-
-            # Hybrid mode: query both dense and sparse representations
-            batch_response = self.client.query_batch_points(
-                collection_name=self.collection_name,
-                requests=[
-                    qmodels.QueryRequest(
-                        query=dense_vec,
-                        using="dense",
-                        limit=candidate_limit,
-                        filter=query_filter,
-                        with_payload=True,
-                    ),
-                    qmodels.QueryRequest(
-                        query=sparse_vec,
-                        using="sparse",
-                        limit=candidate_limit,
-                        filter=query_filter,
-                        with_payload=True,
-                    ),
-                ],
-            )
-
-            dense_pts = {str(p.id): p for p in batch_response[0].points}
-            sparse_pts = {str(p.id): p for p in batch_response[1].points}
-
-            # Map ranks
-            dense_ranks = {str(p.id): idx for idx, p in enumerate(batch_response[0].points, start=1)}
-            sparse_ranks = {str(p.id): idx for idx, p in enumerate(batch_response[1].points, start=1)}
-
-            sparse_scores = [p.score for p in sparse_pts.values() if p.score is not None]
-            max_sparse = max(sparse_scores, default=1.0)
-            if max_sparse <= 0.0:
-                max_sparse = 1.0
-
-            all_uids = set(dense_pts.keys()).union(sparse_pts.keys())
-            scored_results: List[VectorSearchResult] = []
-
-            for uid in all_uids:
-                d_score = max(0.0, min(1.0, float(dense_pts[uid].score))) if uid in dense_pts and dense_pts[uid].score is not None else 0.0
-                s_score = (float(sparse_pts[uid].score) / max_sparse) if uid in sparse_pts and sparse_pts[uid].score is not None and max_sparse > 0 else 0.0
-                s_score = max(0.0, min(1.0, s_score))
-
-                if uid in dense_pts and uid in sparse_pts:
-                    final_score = alpha * d_score + (1.0 - alpha) * s_score
-                elif uid in dense_pts:
-                    final_score = alpha * d_score
-                else:
-                    final_score = (1.0 - alpha) * s_score
-
-                final_score = max(0.0, min(1.0, final_score))
-                pt = dense_pts.get(uid) or sparse_pts.get(uid)
-                payload = (pt.payload or {}) if pt else {}
-
-                scored_results.append(
-                    VectorSearchResult(
-                        id=uid,
-                        score=round(final_score, 4),
-                        dense_score=round(d_score, 4),
-                        sparse_score=round(s_score, 4),
-                        dense_rank=dense_ranks.get(uid),
-                        sparse_rank=sparse_ranks.get(uid),
-                        payload=payload,
-                    )
-                )
-
-            scored_results.sort(key=lambda r: r.score, reverse=True)
-            return scored_results[:limit]
-        except ValueError:
-            raise
-        except Exception as e:
-            err_str = str(e).lower()
-            if "dimension" in err_str or "size" in err_str or "mismatch" in err_str:
-                msg = f"Vector dimension mismatch during Qdrant search in collection '{self.collection_name}': {e}. An index rebuild is required."
-                logger.error(msg)
-                raise ValueError(msg) from e
-            logger.error(f"Error searching Qdrant collection '{self.collection_name}': {e}")
-            return []
+        supported = self.get_capabilities().get("search_modes", ["hybrid", "semantic", "lexical"])
+        return execute_qdrant_search(
+            client=self.client,
+            collection_name=self.collection_name,
+            supported_modes=supported,
+            dense_embed_fn=get_dense_embedding,
+            sparse_embed_fn=get_sparse_embedding,
+            query_text=query_text,
+            doc_type=doc_type,
+            repo=repo,
+            language=language,
+            category=category,
+            tag=tag,
+            limit=limit,
+            dense_weight=dense_weight,
+            search_mode=search_mode,
+        )
 
     def get_capabilities(self) -> Dict[str, Any]:
-        """Returns capabilities supported by Qdrant vector store backend."""
-        return {
-            "search_modes": ["hybrid", "semantic", "lexical"],
-            "supports_weighting": True,
-        }
+        return {"search_modes": ["hybrid", "semantic", "lexical"], "supports_weighting": True}
 
     def get_stats(self) -> Dict[str, Any]:
-        """Returns collection info including point count, backend, and mode."""
+        base_stats: Dict[str, Any] = {
+            "backend": "qdrant",
+            "mode": self.mode,
+            "configured_mode": getattr(self, "configured_mode", self.mode),
+            "effective_mode": getattr(self, "effective_mode", self.mode),
+            "fallback_active": getattr(self, "fallback_active", False),
+            "fallback_reason": getattr(self, "fallback_reason", None),
+            "collection_name": self.collection_name,
+            "location": self.location,
+        }
         try:
-            base_stats = {
-                "backend": "qdrant",
-                "mode": self.mode,
-                "configured_mode": getattr(self, "configured_mode", self.mode),
-                "effective_mode": getattr(self, "effective_mode", self.mode),
-                "fallback_active": getattr(self, "fallback_active", False),
-                "fallback_reason": getattr(self, "fallback_reason", None),
-                "collection_name": self.collection_name,
-                "location": self.location,
-            }
             if not self.client.collection_exists(self.collection_name):
                 base_stats.update({
-                    "exists": False,
-                    "points_count": 0,
-                    "status": "not_found",
+                    "exists": False, "points_count": 0, "status": "not_found",
                     "capabilities": self.get_capabilities(),
                 })
                 return base_stats
             info = self.client.get_collection(self.collection_name)
             points_count = info.points_count or 0
-            vectors_count = getattr(info, "vectors_count", points_count)
             base_stats.update({
-                "exists": True,
-                "points_count": points_count,
-                "vectors_count": vectors_count,
+                "exists": True, "points_count": points_count,
+                "vectors_count": getattr(info, "vectors_count", points_count),
                 "status": str(info.status),
                 "capabilities": self.get_capabilities(),
             })
             return base_stats
         except Exception as e:
             logger.error(f"Error getting stats for Qdrant collection '{self.collection_name}': {e}")
-            return {
-                "backend": "qdrant",
-                "mode": self.mode,
-                "configured_mode": getattr(self, "configured_mode", self.mode),
-                "effective_mode": getattr(self, "effective_mode", self.mode),
-                "fallback_active": getattr(self, "fallback_active", False),
-                "fallback_reason": getattr(self, "fallback_reason", None),
-                "collection_name": self.collection_name,
-                "exists": False,
-                "error": str(e),
-                "location": self.location,
+            base_stats.update({
+                "exists": False, "error": "Failed to retrieve Qdrant statistics.",
                 "capabilities": self.get_capabilities(),
-            }
+            })
+            return base_stats
 
     def health_check(self) -> Tuple[bool, str]:
-        """Validates connection and readiness of the backend."""
         try:
             self.client.get_collections()
             exists = self.client.collection_exists(self.collection_name)
-            fallback_note = f" [DEGRADED: Fallback to {self.effective_mode} from {self.configured_mode} active; reason: {self.fallback_reason}]" if getattr(self, "fallback_active", False) else ""
+            fallback_note = (
+                f" [DEGRADED: Fallback to {self.effective_mode} from {self.configured_mode} active; reason: {self.fallback_reason}]"
+                if getattr(self, "fallback_active", False)
+                else ""
+            )
             return True, f"Qdrant ({self.effective_mode} @ {self.location}) is healthy; collection '{self.collection_name}' exists: {exists}{fallback_note}"
         except Exception as e:
             logger.warning(f"Qdrant ({self.mode}) health check failed: {e}")
             return False, f"Qdrant ({self.mode}) health check failed."
 
     def get_file_chunks(self, path: str, repo: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Returns all chunk payloads for the specified path / rel_path (and optional repo), sorted by (start_line, end_line)."""
         if not hasattr(self, "client") or not self.client:
             return []
-        try:
-            if not self.client.collection_exists(self.collection_name):
-                return []
-
-            clean_path = path.replace("\\", "/").strip("/")
-            rel_path = clean_path.split("://", 1)[1] if "://" in clean_path else clean_path
-            if repo and rel_path.startswith(f"{repo}/"):
-                rel_path = rel_path[len(repo) + 1:]
-
-            must_conditions = []
-            if repo and repo not in ("__all__", "all"):
-                must_conditions.append(qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo)))
-
-            should_conditions = [
-                qmodels.FieldCondition(key="rel_path", match=qmodels.MatchValue(value=rel_path)),
-                qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=path)),
-                qmodels.FieldCondition(key="rel_path", match=qmodels.MatchValue(value=path)),
-                qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=rel_path)),
-            ]
-            if repo and repo not in ("__all__", "all"):
-                should_conditions.append(
-                    qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=f"git://{repo}/{rel_path}"))
-                )
-                should_conditions.append(
-                    qmodels.FieldCondition(key="path", match=qmodels.MatchValue(value=f"{repo}/{rel_path}"))
-                )
-            filter_obj = qmodels.Filter(
-                must=must_conditions if must_conditions else None,
-                should=should_conditions
-            )
-
-            all_records = []
-            next_page_offset = None
-            while True:
-                records, next_page_offset = self.client.scroll(
-                    collection_name=self.collection_name,
-                    scroll_filter=filter_obj,
-                    limit=250,
-                    offset=next_page_offset,
-                    with_payload=True,
-                    with_vectors=False
-                )
-                if records:
-                    all_records.extend(records)
-                if not next_page_offset:
-                    break
-
-            payloads = []
-            for r in all_records:
-                payload = dict(r.payload or {})
-                payloads.append(payload)
-
-            payloads.sort(key=lambda p: (p.get("start_line") or 0, p.get("end_line") or 0))
-            return payloads
-        except Exception as e:
-            logger.error(f"Error fetching file chunks from Qdrant: {e}")
-            return []
+        return execute_qdrant_file_chunks(client=self.client, collection_name=self.collection_name, path=path, repo=repo)
 
     def grep_chunks(
         self,
@@ -698,69 +397,27 @@ class QdrantVectorStore(VectorStore):
         path_glob: Optional[str] = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        limit: int = 100
+        limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """Queries chunks matching pattern using bounded scroll paging and python line matching."""
         if not hasattr(self, "client") or not self.client:
             return []
-        try:
-            import re
-            import fnmatch
+        return execute_qdrant_grep_chunks(
+            client=self.client, collection_name=self.collection_name,
+            pattern=pattern, repo=repo, path_glob=path_glob,
+            is_regex=is_regex, case_sensitive=case_sensitive, limit=limit,
+        )
 
-            if not self.client.collection_exists(self.collection_name):
-                return []
-
-            flags = 0 if case_sensitive else re.IGNORECASE
-            regex_pat = pattern if is_regex else re.escape(pattern)
-            compiled = re.compile(regex_pat, flags)
-
-            must_conditions = []
-            if repo and repo not in ("__all__", "all"):
-                must_conditions.append(qmodels.FieldCondition(key="repo", match=qmodels.MatchValue(value=repo)))
-
-            scroll_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
-
-            matched_chunks: List[Dict[str, Any]] = []
-            next_offset = None
-
-            while True:
-                records, next_offset = self.client.scroll(
-                    collection_name=self.collection_name,
-                    scroll_filter=scroll_filter,
-                    limit=250,
-                    offset=next_offset,
-                    with_payload=True,
-                    with_vectors=False
-                )
-
-                for r in (records or []):
-                    payload = dict(r.payload or {})
-                    chunk_path = payload.get("rel_path") or payload.get("path") or ""
-                    if path_glob:
-                        norm_p = chunk_path.replace("\\", "/")
-                        norm_glob = path_glob.replace("\\", "/")
-                        if not (fnmatch.fnmatch(norm_p, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_p), norm_glob)):
-                            continue
-
-                    text_content = payload.get("content") or payload.get("text") or ""
-                    if compiled.search(text_content):
-                        matched_chunks.append(payload)
-                        if len(matched_chunks) >= limit:
-                            break
-
-                if len(matched_chunks) >= limit or not next_offset:
-                    break
-
-            return matched_chunks[:limit]
-        except Exception as e:
-            logger.error(f"Error running grep_chunks on Qdrant: {e}")
-            raise
-
-    def close(self):
-        """Cleanly close Qdrant client connection and release local storage lock."""
+    def close(self) -> None:
         try:
             if hasattr(self, "client") and self.client is not None:
                 self.client.close()
         except Exception as e:
             logger.debug(f"Error closing Qdrant client: {e}")
 
+
+__all__ = [
+    "QdrantVectorStore",
+    "get_default_qdrant_storage_path",
+    "validate_qdrant_storage_path",
+    "build_qdrant_filter",
+]

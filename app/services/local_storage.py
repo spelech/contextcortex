@@ -1,24 +1,32 @@
+import hashlib
+import json
+import logging
 import os
 import shutil
-import json
-import hashlib
-import logging
 from dataclasses import asdict
-from typing import Optional, Dict, Any, List, Union
+from typing import Any, Dict, Optional, Union
 
 import app.services.database as db_service
 import app.services.vector_store as vs_service
-from app.services.indexing.processor import process_file_content, MAX_FILE_SIZE_BYTES
+from app.services.chunking import detect_language
+from app.services.file_path_resolver import ALLOWED_TEXT_EXTENSIONS, is_allowed_text_file
+from app.services.indexing.git_delta_scanner import persist_sync_batch
+from app.services.indexing.processor import MAX_FILE_SIZE_BYTES, process_file_content
 from app.services.indexing.state import trigger_list_changed_notification
-from app.services.pdf_extractor import extract_pdf_pages, MAX_PDF_SIZE_BYTES
+from app.services.pdf_extractor import MAX_PDF_SIZE_BYTES, extract_pdf_pages
 
 logger = logging.getLogger("contextcortex.storage")
+
+DOC_TEXT_EXTENSIONS = (".md", ".markdown", ".txt", ".rst", ".yaml", ".yml", ".json", ".html", ".htm", ".css", ".sql", ".xml", ".csv")
+CODE_TEXT_EXTENSIONS = tuple(sorted(ext for ext in ALLOWED_TEXT_EXTENSIONS if ext not in DOC_TEXT_EXTENSIONS))
+
 
 def get_default_storage_path() -> str:
     return os.getenv("LOCAL_STORAGE_PATH") or os.path.join(
         os.getenv("DATA_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))),
-        "storage"
+        "storage",
     )
+
 
 LOCAL_STORAGE_PATH = get_default_storage_path()
 DEFAULT_STORAGE_PATH = LOCAL_STORAGE_PATH
@@ -38,7 +46,10 @@ _PDF_CACHE_UPSERT_SQL = """
         hash = excluded.hash
 """
 
+
 class LocalStorageService:
+    ALLOWED_TEXT_EXTENSIONS = ALLOWED_TEXT_EXTENSIONS
+
     def __init__(self, storage_root: Optional[str] = None):
         self.storage_root = os.path.abspath(storage_root or get_default_storage_path())
         os.makedirs(self.storage_root, exist_ok=True)
@@ -46,10 +57,13 @@ class LocalStorageService:
     def get_storage_root(self) -> str:
         return self.storage_root
 
+    def is_allowed_text_file(self, rel_path: str) -> bool:
+        return is_allowed_text_file(rel_path)
+
     def resolve_safe_path(self, rel_path: str) -> str:
         if not rel_path or not isinstance(rel_path, str) or "\x00" in rel_path:
             raise ValueError("Path traversal or invalid path detected")
-        
+
         cleaned_raw = rel_path.strip()
         if not cleaned_raw or cleaned_raw.startswith("/") or cleaned_raw.startswith("\\") or os.path.isabs(cleaned_raw):
             raise ValueError("Path traversal or invalid path detected")
@@ -67,11 +81,15 @@ class LocalStorageService:
             raise ValueError("Path traversal or invalid path detected")
 
         try:
-            common = os.path.commonpath([target, norm_root])
-        except ValueError:
-            raise ValueError("Path traversal or invalid path detected")
+            if os.path.commonpath([target, norm_root]) != norm_root:
+                raise ValueError("Path traversal or invalid path detected")
+        except ValueError as exc:
+            raise ValueError("Path traversal or invalid path detected") from exc
 
-        if common != norm_root:
+        root_real = os.path.realpath(norm_root)
+        target_real = os.path.realpath(target)
+        real_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
+        if not target_real.startswith(real_prefix) and target_real != root_real:
             raise ValueError("Path traversal or invalid path detected")
 
         return target
@@ -81,7 +99,7 @@ class LocalStorageService:
         rel_path: str,
         content: Union[str, bytes],
         repo: str = "local_storage",
-        category: Optional[str] = None
+        category: Optional[str] = None,
     ) -> Dict[str, Any]:
         target_path = self.resolve_safe_path(rel_path)
         if not target_path.startswith(self.storage_root):
@@ -102,24 +120,21 @@ class LocalStorageService:
             with open(target_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        mtime = os.path.getmtime(target_path)
-        size_bytes = os.path.getsize(target_path)
-
         return {
             "status": "success",
             "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
             "abs_path": target_path,
-            "size_bytes": size_bytes,
-            "mtime": mtime,
+            "size_bytes": os.path.getsize(target_path),
+            "mtime": os.path.getmtime(target_path),
             "repo": repo or "local_storage",
-            "category": category or os.path.dirname(rel_path) or "root"
+            "category": category or os.path.dirname(rel_path) or "root",
         }
 
     def index_file(
         self,
         rel_path: str,
         repo: str = "local_storage",
-        category: Optional[str] = None
+        category: Optional[str] = None,
     ) -> Dict[str, Any]:
         abs_path = self.resolve_safe_path(rel_path)
         if not abs_path.startswith(self.storage_root):
@@ -129,9 +144,10 @@ class LocalStorageService:
 
         cat = category or os.path.dirname(rel_path) or "root"
         pdf_res = None
-
         pdf_errors = []
-        if abs_path.lower().endswith(".pdf"):
+        lower_abs = abs_path.lower()
+
+        if lower_abs.endswith(".pdf"):
             pdf_res = extract_pdf_pages(abs_path, filename=os.path.basename(rel_path), ocr_fallback=True)
             content = "\n\n".join([f"# Page {p.page_number}\n{p.text}" for p in pdf_res.pages])
             doc_type = "pdf"
@@ -139,7 +155,7 @@ class LocalStorageService:
         else:
             with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
-            doc_type = "doc" if abs_path.endswith((".md", ".txt", ".yaml", ".yml", ".json", ".html", ".css", ".sql")) else "code"
+            doc_type = "doc" if lower_abs.endswith(DOC_TEXT_EXTENSIONS) else "code"
 
         points, ast_symbols, summary_tuple, ast_rel, api_routes, api_calls = process_file_content(
             filepath=abs_path,
@@ -147,13 +163,11 @@ class LocalStorageService:
             content=content,
             repo=repo,
             doc_type=doc_type,
-            category_override=cat
+            category_override=cat,
         )
 
         try:
             store = vs_service.get_vector_store()
-            # Deletion/upsert may partially succeed. Invalidate the old index first
-            # so a failed replacement remains retryable even after disk rollback.
             with db_service.get_db_connection() as conn:
                 for table, col in (
                     ("indexed_files", "filepath"), ("file_summaries", "filepath"),
@@ -176,7 +190,6 @@ class LocalStorageService:
                     if result is False:
                         raise RuntimeError("Vector store failed to upsert file vectors")
                 except Exception:
-                    # A batch failure can leave some new vectors behind.
                     try:
                         if store.delete_by_path(abs_path) is False:
                             logger.error(f"Failed to clean up incomplete vectors for {abs_path}")
@@ -188,9 +201,23 @@ class LocalStorageService:
             trigger_list_changed_notification()
             raise RuntimeError(f"Failed to index vector points for {abs_path}") from e
 
-        # Update relational DB
         mtime = os.path.getmtime(abs_path)
         text_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        detected_lang = (detect_language(abs_path) or "code") if doc_type == "code" else doc_type
+        normalized_symbols = []
+        for sym in ast_symbols:
+            name = sym.get("name") or sym.get("symbol_name") or ""
+            normalized_symbols.append({
+                "repo": sym.get("repo") or repo,
+                "filepath": sym.get("filepath") or abs_path,
+                "name": name,
+                "full_symbol": sym.get("full_symbol") or name,
+                "kind": sym.get("kind") or sym.get("symbol_type") or "",
+                "start_line": sym.get("start_line") or sym.get("line_number") or 1,
+                "end_line": sym.get("end_line") or sym.get("line_number") or 1,
+                "signature": sym.get("signature") or sym.get("docstring") or "",
+                "language": sym.get("language") or (detected_lang if doc_type == "code" else ""),
+            })
         with db_service.get_db_connection() as conn:
             if doc_type == "pdf" and pdf_res is not None:
                 try:
@@ -198,61 +225,31 @@ class LocalStorageService:
                     conn.execute(
                         _PDF_CACHE_UPSERT_SQL,
                         (
-                            abs_path,
-                            repo,
-                            content,
-                            pages_json,
-                            pdf_res.total_pages,
-                            pdf_res.ocr_pages_count,
-                            pdf_res.total_characters,
-                            mtime,
-                            text_hash
-                        )
+                            abs_path, repo, content, pages_json,
+                            pdf_res.total_pages, pdf_res.ocr_pages_count,
+                            pdf_res.total_characters, mtime, text_hash,
+                        ),
                     )
                 except Exception as e:
                     logger.warning(f"Failed to cache PDF extraction for '{abs_path}': {e}")
-            # Insert indexed_file
-            conn.execute(
-                "INSERT INTO indexed_files (filepath, repo, doc_type, language, mtime, hash) VALUES (?, ?, ?, ?, ?, ?)",
-                (abs_path, repo, doc_type, doc_type, mtime, text_hash)
+
+            persist_sync_batch(
+                conn,
+                [(abs_path, repo, doc_type, detected_lang, None, mtime, text_hash)],
+                [summary_tuple] if summary_tuple else [],
+                list(normalized_symbols),
+                list(ast_rel),
+                list(api_routes),
+                list(api_calls),
             )
 
-            # Insert file summary
-            if summary_tuple:
-                conn.execute(
-                    """INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    summary_tuple
-                )
-
-            # Insert AST symbols
-            for sym in ast_symbols:
-                name = sym.get("name") or sym.get("symbol_name") or ""
-                kind = sym.get("kind") or sym.get("symbol_type") or ""
-                sym_filepath = sym.get("filepath") or abs_path
-                sym_repo = sym.get("repo") or repo
-                start_line = sym.get("start_line") or sym.get("line_number") or 1
-                end_line = sym.get("end_line") or sym.get("line_number") or 1
-                sig = sym.get("signature") or sym.get("docstring") or ""
-                full_sym = sym.get("full_symbol") or name
-                lang = sym.get("language") or ""
-                try:
-                    conn.execute(
-                        """INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (sym_repo, sym_filepath, name, full_sym, kind, start_line, end_line, sig, lang)
-                    )
-                except Exception:
-                    pass
-            conn.commit()
-
         trigger_list_changed_notification()
-        res = {
+        res: Dict[str, Any] = {
             "status": "success" if not pdf_errors else "partial_success",
             "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
             "abs_path": abs_path,
             "chunks_indexed": len(points),
-            "symbols_indexed": len(ast_symbols)
+            "symbols_indexed": len(ast_symbols),
         }
         if pdf_errors:
             res["errors"] = pdf_errors
@@ -263,7 +260,7 @@ class LocalStorageService:
         rel_path: str,
         content: Union[str, bytes],
         repo: str = "local_storage",
-        category: Optional[str] = None
+        category: Optional[str] = None,
     ) -> Dict[str, Any]:
         target_path = self.resolve_safe_path(rel_path)
         if not target_path.startswith(self.storage_root):
@@ -306,12 +303,12 @@ class LocalStorageService:
             logger.error(f"Error removing vector points for {abs_path}: {e}")
 
         with db_service.get_db_connection() as conn:
-            for table in ("indexed_files", "file_summaries", "ast_symbols", "pdf_extracted_cache"):
-                try:
-                    conn.execute(f"DELETE FROM {table} WHERE filepath = ?", (abs_path,))
-                except Exception:
-                    pass
-            for table, col in (("ast_relationships", "source_filepath"), ("api_routes", "filepath"), ("api_client_calls", "filepath")):
+            for table, col in (
+                ("indexed_files", "filepath"), ("file_summaries", "filepath"),
+                ("ast_symbols", "filepath"), ("pdf_extracted_cache", "filepath"),
+                ("ast_relationships", "source_filepath"), ("api_routes", "filepath"),
+                ("api_client_calls", "filepath"),
+            ):
                 try:
                     conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (abs_path,))
                 except Exception:
@@ -330,6 +327,7 @@ class LocalStorageService:
 
         size_bytes = os.path.getsize(target_path)
         mtime = os.path.getmtime(target_path)
+        clean_rel = rel_path.strip().replace("\\", "/").lstrip("/")
 
         if target_path.lower().endswith(".pdf"):
             cached_data = None
@@ -337,12 +335,10 @@ class LocalStorageService:
                 with db_service.get_db_connection() as conn:
                     row = conn.execute(
                         "SELECT * FROM pdf_extracted_cache WHERE filepath = ?",
-                        (target_path,)
+                        (target_path,),
                     ).fetchone()
-                    if row:
-                        cached_mtime = row["mtime"]
-                        if cached_mtime is not None and abs(cached_mtime - mtime) < 0.01:
-                            cached_data = row
+                    if row and row["mtime"] is not None and abs(row["mtime"] - mtime) < 0.01:
+                        cached_data = row
             except Exception as e:
                 logger.warning(f"Error querying pdf_extracted_cache for '{target_path}': {e}")
 
@@ -350,7 +346,7 @@ class LocalStorageService:
                 pages_list = json.loads(cached_data["pages_json"]) if cached_data["pages_json"] else []
                 return {
                     "status": "success",
-                    "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
+                    "rel_path": clean_rel,
                     "abs_path": target_path,
                     "content": cached_data["extracted_text"],
                     "total_pages": cached_data["total_pages"],
@@ -359,10 +355,9 @@ class LocalStorageService:
                     "pages": pages_list,
                     "is_pdf": True,
                     "size_bytes": size_bytes,
-                    "mtime": mtime
+                    "mtime": mtime,
                 }
 
-            # Cache miss or stale: extract with ocr_fallback=True and update cache
             pdf_res = extract_pdf_pages(target_path, filename=os.path.basename(rel_path), ocr_fallback=True)
             formatted_text = "\n\n".join([f"# Page {p.page_number}\n{p.text}" for p in pdf_res.pages])
             pages_list = [asdict(p) for p in pdf_res.pages]
@@ -373,24 +368,18 @@ class LocalStorageService:
                     conn.execute(
                         _PDF_CACHE_UPSERT_SQL,
                         (
-                            target_path,
-                            "local_storage",
-                            formatted_text,
-                            json.dumps(pages_list),
-                            pdf_res.total_pages,
-                            pdf_res.ocr_pages_count,
-                            pdf_res.total_characters,
-                            mtime,
-                            text_hash
-                        )
+                            target_path, "local_storage", formatted_text, json.dumps(pages_list),
+                            pdf_res.total_pages, pdf_res.ocr_pages_count, pdf_res.total_characters,
+                            mtime, text_hash,
+                        ),
                     )
                     conn.commit()
             except Exception as e:
                 logger.warning(f"Error updating pdf_extracted_cache on read for '{target_path}': {e}")
 
-            res = {
+            res: Dict[str, Any] = {
                 "status": "success" if not pdf_res.errors else "partial_success",
-                "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
+                "rel_path": clean_rel,
                 "abs_path": target_path,
                 "content": formatted_text,
                 "total_pages": pdf_res.total_pages,
@@ -399,7 +388,7 @@ class LocalStorageService:
                 "pages": pages_list,
                 "is_pdf": True,
                 "size_bytes": size_bytes,
-                "mtime": mtime
+                "mtime": mtime,
             }
             if pdf_res.errors:
                 res["errors"] = pdf_res.errors
@@ -413,11 +402,11 @@ class LocalStorageService:
 
         return {
             "status": "success",
-            "rel_path": rel_path.strip().replace("\\", "/").lstrip("/"),
+            "rel_path": clean_rel,
             "abs_path": target_path,
             "content": text,
             "size_bytes": size_bytes,
-            "mtime": mtime
+            "mtime": mtime,
         }
 
     def delete_file_disk(self, rel_path: str) -> bool:
@@ -440,42 +429,38 @@ class LocalStorageService:
         if not os.path.exists(scan_root):
             return {"root": self.storage_root, "current_folder": subfolder or "", "directories": [], "files": []}
 
-        dirs = []
-        files = []
+        dirs, files = [], []
         try:
             for entry in os.scandir(scan_root):
                 if entry.name.startswith("."):
                     continue
                 rel = os.path.relpath(entry.path, self.storage_root).replace("\\", "/")
                 if entry.is_dir():
-                    dirs.append({
-                        "name": entry.name,
-                        "rel_path": rel,
-                        "abs_path": os.path.abspath(entry.path)
-                    })
+                    dirs.append({"name": entry.name, "rel_path": rel, "abs_path": os.path.abspath(entry.path)})
                 elif entry.is_file():
+                    st = entry.stat()
                     files.append({
                         "name": entry.name,
                         "rel_path": rel,
                         "abs_path": os.path.abspath(entry.path),
-                        "size_bytes": entry.stat().st_size,
-                        "mtime": entry.stat().st_mtime
+                        "size_bytes": st.st_size,
+                        "mtime": st.st_mtime,
                     })
         except Exception as e:
             logger.error(f"Error scanning local storage tree at {scan_root}: {e}")
 
         dirs.sort(key=lambda x: x["name"].lower())
         files.sort(key=lambda x: x["name"].lower())
-
         return {
             "root": self.storage_root,
             "current_folder": subfolder or "",
             "directories": dirs,
-            "files": files
+            "files": files,
         }
 
 
 _storage_service: Optional[LocalStorageService] = None
+
 
 def get_local_storage_service() -> LocalStorageService:
     global _storage_service

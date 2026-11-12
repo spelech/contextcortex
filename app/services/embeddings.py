@@ -383,11 +383,16 @@ def get_dense_embeddings_batch(texts: List[str], batch_size: Optional[int] = Non
     elif EMBEDDING_PROVIDER == "api":
         if _openai_client is None:
             raise RuntimeError("API Embedding client not initialized.")
-        response = _openai_client.embeddings.create(
-            input=texts,
-            model=DENSE_MODEL_NAME
-        )
-        return [d.embedding for d in response.data]
+        api_bs = max(1, min(int(bs or 64), 128))
+        all_embeddings: List[List[float]] = []
+        for start in range(0, len(texts), api_bs):
+            batch_slice = texts[start:start + api_bs]
+            response = _openai_client.embeddings.create(
+                input=batch_slice,
+                model=DENSE_MODEL_NAME
+            )
+            all_embeddings.extend([d.embedding for d in response.data])
+        return all_embeddings
     else:
         raise RuntimeError(f"Unknown embedding provider: {EMBEDDING_PROVIDER}")
 

@@ -1,42 +1,51 @@
-import os
 import json
 import logging
-import uuid
+import os
 import tempfile
-from typing import List, Dict, Any, Optional, Tuple, Union
+import uuid
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 import chromadb
 
-
-from app.services.vector_store.base import VectorStore, VectorDocument, VectorSearchResult
-from app.services.embeddings import get_dense_embedding, get_dense_dim
+from app.services.embeddings import get_dense_dim, get_dense_embedding
+from app.services.vector_store.base import VectorDocument, VectorSearchResult, VectorStore
+from app.services.vector_store.chroma_queries import (
+    build_chroma_where_filter,
+    execute_chroma_file_chunks,
+    execute_chroma_grep_chunks,
+    execute_chroma_search,
+)
 
 logger = logging.getLogger("contextcortex.vector_store.chroma")
 
 
 def _sanitize_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
-    """Sanitizes metadata dictionary to conform to ChromaDB constraints.
-
-    ChromaDB allows strings, ints, floats, bools, and non-empty lists of primitives.
-    None values, empty lists, and complex dicts are dropped or converted.
-    """
+    """Sanitizes metadata dictionary to conform to ChromaDB constraints."""
     clean: Dict[str, Any] = {}
-    for key, value in metadata.items():
+    for raw_key, value in metadata.items():
         if value is None:
             continue
-        if isinstance(value, (str, int, float, bool)):
+        key = str(raw_key)
+        if key.startswith("$"):
+            key = f"meta_{key.lstrip('$') or 'field'}"
+        if isinstance(value, str):
+            val_clean = value.replace("\x00", "")
+            if key in ("path", "rel_path", "filepath", "folder", "permalink_url", "github_url"):
+                val_clean = val_clean.replace("\\", "/")
+            clean[key] = val_clean
+        elif isinstance(value, (int, float, bool)):
             clean[key] = value
         elif isinstance(value, list):
             if len(value) == 0:
                 continue
             if all(isinstance(x, (str, int, float, bool)) for x in value):
-                clean[key] = value
+                clean[key] = [x.replace("\x00", "") if isinstance(x, str) else x for x in value]
             else:
-                clean[key] = [str(x) for x in value]
+                clean[key] = [str(x).replace("\x00", "") for x in value]
         elif isinstance(value, dict):
             clean[key] = json.dumps(value)
         else:
-            clean[key] = str(value)
+            clean[key] = str(value).replace("\x00", "")
     return clean
 
 
@@ -99,7 +108,6 @@ class ChromaVectorStore(VectorStore):
             prefer_remote = os.getenv("CHROMA_PREFER_REMOTE", "false").lower() in ("true", "1", "yes")
             if host is not None:
                 prefer_remote = True
-
         if allow_fallback is None:
             allow_fallback = os.getenv("CHROMA_ALLOW_FALLBACK", "false").lower() in ("true", "1", "yes")
 
@@ -116,10 +124,7 @@ class ChromaVectorStore(VectorStore):
             self.configured_mode = "remote"
             try:
                 remote_client = chromadb.HttpClient(
-                    host=target_host,
-                    port=target_port,
-                    ssl=target_ssl,
-                    headers=headers,
+                    host=target_host, port=target_port, ssl=target_ssl, headers=headers,
                 )
                 remote_client.heartbeat()
                 self.client = remote_client
@@ -174,10 +179,8 @@ class ChromaVectorStore(VectorStore):
         """Initializes or retrieves the collection with cosine distance metric."""
         try:
             dim = get_dense_dim()
-
             try:
                 col = self.client.get_collection(name=self.collection_name)
-                # Check for existing points dimension if collection exists
                 if col.count() > 0:
                     peek_res = col.get(limit=1, include=["embeddings"])
                     if peek_res and peek_res.get("embeddings") is not None and len(peek_res["embeddings"]) > 0:
@@ -197,7 +200,7 @@ class ChromaVectorStore(VectorStore):
 
             self.collection = self.client.get_or_create_collection(
                 name=self.collection_name,
-                metadata={"hnsw:space": "cosine"}
+                metadata={"hnsw:space": "cosine"},
             )
             logger.info(f"Chroma collection '{self.collection_name}' ready.")
             return True
@@ -208,16 +211,14 @@ class ChromaVectorStore(VectorStore):
     def upsert_documents(
         self,
         documents: List[Union[VectorDocument, Dict[str, Any]]],
-        batch_size: int = 100
+        batch_size: int = 100,
     ) -> bool:
         """Upserts a batch of document chunks with vectors and payload."""
         if not documents:
             return True
-
         try:
-            if self.collection is None:
-                if not self.ensure_collection():
-                    return False
+            if self.collection is None and not self.ensure_collection():
+                return False
 
             ids: List[str] = []
             embeddings: List[List[float]] = []
@@ -227,9 +228,9 @@ class ChromaVectorStore(VectorStore):
             for doc in documents:
                 if isinstance(doc, dict):
                     doc_id = str(doc.get("id") or uuid.uuid4())
-                    text = str(doc.get("text") or doc.get("content") or "")
+                    text = str(doc.get("text") or doc.get("content") or "").replace("\x00", "")
                     dense_vec = doc.get("dense_vector") or doc.get("dense")
-                    raw_payload = doc.get("payload") if "payload" in doc else {
+                    raw_payload = dict(doc.get("payload")) if "payload" in doc and isinstance(doc.get("payload"), dict) else {
                         k: v for k, v in doc.items()
                         if k not in ("id", "text", "dense_vector", "dense", "sparse_indices", "sparse_values", "sparse")
                     }
@@ -237,19 +238,17 @@ class ChromaVectorStore(VectorStore):
                         raw_payload["content"] = text
                 else:
                     doc_id = str(doc.id)
-                    text = doc.text
+                    text = (doc.text or "").replace("\x00", "")
                     dense_vec = doc.dense_vector
                     raw_payload = doc.to_payload()
 
                 if dense_vec is None and text:
                     dense_vec = get_dense_embedding(text)
 
-                clean_metadata = _sanitize_metadata(raw_payload)
-
                 ids.append(doc_id)
                 embeddings.append(dense_vec if dense_vec is not None else [0.0] * 384)
                 documents_text.append(text)
-                metadatas.append(clean_metadata)
+                metadatas.append(_sanitize_metadata(raw_payload))
 
             effective_batch_size = max(1, batch_size)
             for i in range(0, len(ids), effective_batch_size):
@@ -267,10 +266,15 @@ class ChromaVectorStore(VectorStore):
     def delete_by_path(self, filepath: str) -> bool:
         """Purges vectors associated with a specific file path."""
         try:
-            if self.collection is None:
-                if not self.ensure_collection():
-                    return False
-            self.collection.delete(where={"path": filepath})
+            if self.collection is None and not self.ensure_collection():
+                return False
+            norm_fp = (filepath or "").replace("\\", "/")
+            where_clause: Dict[str, Any] = (
+                {"path": {"$eq": filepath}}
+                if norm_fp == filepath
+                else {"$or": [{"path": {"$eq": filepath}}, {"path": {"$eq": norm_fp}}]}
+            )
+            self.collection.delete(where=where_clause)
             return True
         except Exception as e:
             logger.error(f"Error deleting by path '{filepath}' in Chroma: {e}")
@@ -279,10 +283,9 @@ class ChromaVectorStore(VectorStore):
     def delete_by_repo(self, repo_name: str) -> bool:
         """Purges all vectors belonging to a repository."""
         try:
-            if self.collection is None:
-                if not self.ensure_collection():
-                    return False
-            self.collection.delete(where={"repo": repo_name})
+            if self.collection is None and not self.ensure_collection():
+                return False
+            self.collection.delete(where={"repo": {"$eq": repo_name}})
             return True
         except Exception as e:
             logger.error(f"Error deleting by repo '{repo_name}' in Chroma: {e}")
@@ -298,191 +301,86 @@ class ChromaVectorStore(VectorStore):
         tag: Optional[str] = None,
         limit: int = 5,
         dense_weight: Optional[float] = None,
-        search_mode: str = "semantic"
+        search_mode: str = "semantic",
     ) -> List[VectorSearchResult]:
-        """Performs dense vector search returning ranked results."""
-        if not query_text or not query_text.strip():
+        if not query_text or not query_text.replace("\x00", "").strip():
             return []
-
+        supported = self.get_capabilities().get("search_modes", ["semantic"])
         mode = (search_mode or "semantic").lower().strip()
-        caps = self.get_capabilities()
-        supported = caps.get("search_modes", ["semantic"])
         if mode not in supported:
             raise ValueError(
                 f"Search mode '{search_mode}' is not supported by Chroma vector store. "
                 f"Supported modes: {supported}"
             )
-
-        try:
-            if self.collection is None:
-                if not self.ensure_collection():
-                    return []
-
-            dense_vec = get_dense_embedding(query_text.strip())
-
-            conditions: List[Dict[str, Any]] = []
-            if doc_type:
-                if doc_type == "doc":
-                    conditions.append({"doc_type": {"$in": ["doc", "pdf"]}})
-                else:
-                    conditions.append({"doc_type": doc_type})
-            if repo:
-                conditions.append({"repo": repo})
-            if language:
-                conditions.append({"language": language})
-            if category:
-                conditions.append({"category": category})
-            if tag:
-                conditions.append({"tags": {"$contains": tag}})
-
-            where_filter = None
-            if len(conditions) == 1:
-                where_filter = conditions[0]
-            elif len(conditions) > 1:
-                where_filter = {"$and": conditions}
-
-            query_kwargs: Dict[str, Any] = {
-                "query_embeddings": [dense_vec],
-                "n_results": limit,
-            }
-            if where_filter:
-                query_kwargs["where"] = where_filter
-
-            response = self.collection.query(**query_kwargs)
-
-            results: List[VectorSearchResult] = []
-            if response and response.get("ids") and len(response["ids"]) > 0:
-                ids_list = response["ids"][0]
-                distances = response.get("distances", [[]])[0] if response.get("distances") else []
-                metadatas = response.get("metadatas", [[]])[0] if response.get("metadatas") else []
-                documents = response.get("documents", [[]])[0] if response.get("documents") else []
-
-                for i, doc_id in enumerate(ids_list):
-                    dist = distances[i] if i < len(distances) and distances[i] is not None else 0.0
-                    score = float(max(0.0, 1.0 - dist))
-                    payload = dict(metadatas[i]) if i < len(metadatas) and metadatas[i] is not None else {}
-                    if "content" not in payload and i < len(documents) and documents[i]:
-                        payload["content"] = documents[i]
-
-                    results.append(
-                        VectorSearchResult(
-                            id=str(doc_id),
-                            score=round(score, 4),
-                            dense_score=round(score, 4),
-                            sparse_score=0.0,
-                            dense_rank=i + 1,
-                            sparse_rank=None,
-                            payload=payload
-                        )
-                    )
-
-            return results
-        except ValueError:
-            raise
-        except Exception as e:
-            err_str = str(e).lower()
-            if "dimension" in err_str or "size" in err_str or "mismatch" in err_str:
-                msg = f"Vector dimension mismatch during Chroma search in collection '{self.collection_name}': {e}. An index rebuild is required."
-                logger.error(msg)
-                raise ValueError(msg) from e
-            logger.error(f"Error searching Chroma collection '{self.collection_name}': {e}")
+        if self.collection is None and not self.ensure_collection():
             return []
+        return execute_chroma_search(
+            collection=self.collection,
+            collection_name=self.collection_name,
+            supported_modes=supported,
+            dense_embed_fn=get_dense_embedding,
+            query_text=query_text,
+            doc_type=doc_type,
+            repo=repo,
+            language=language,
+            category=category,
+            tag=tag,
+            limit=limit,
+            search_mode=search_mode,
+        )
 
     def get_capabilities(self) -> Dict[str, Any]:
-        """Returns capabilities supported by Chroma vector store backend."""
-        return {
-            "search_modes": ["semantic"],
-            "supports_weighting": False,
-        }
+        return {"search_modes": ["semantic"], "supports_weighting": False}
 
     def get_stats(self) -> Dict[str, Any]:
-        """Returns collection info including point count, backend, and mode."""
+        base_stats: Dict[str, Any] = {
+            "backend": "chroma",
+            "mode": self.mode,
+            "configured_mode": getattr(self, "configured_mode", self.mode),
+            "effective_mode": getattr(self, "effective_mode", self.mode),
+            "fallback_active": getattr(self, "fallback_active", False),
+            "fallback_reason": getattr(self, "fallback_reason", None),
+            "collection_name": self.collection_name,
+            "location": self.location,
+        }
         try:
-            base_stats = {
-                "backend": "chroma",
-                "mode": self.mode,
-                "configured_mode": getattr(self, "configured_mode", self.mode),
-                "effective_mode": getattr(self, "effective_mode", self.mode),
-                "fallback_active": getattr(self, "fallback_active", False),
-                "fallback_reason": getattr(self, "fallback_reason", None),
-                "collection_name": self.collection_name,
-                "location": self.location,
-            }
             if self.collection is None:
                 base_stats.update({
-                    "exists": False,
-                    "points_count": 0,
-                    "status": "not_initialized",
+                    "exists": False, "points_count": 0, "status": "not_initialized",
                     "capabilities": self.get_capabilities(),
                 })
                 return base_stats
-            count = self.collection.count()
             base_stats.update({
-                "exists": True,
-                "points_count": count,
-                "status": "ok",
+                "exists": True, "points_count": self.collection.count(), "status": "ok",
                 "capabilities": self.get_capabilities(),
             })
             return base_stats
         except Exception as e:
             logger.error(f"Error getting stats for Chroma collection '{self.collection_name}': {e}")
-            return {
-                "backend": "chroma",
-                "mode": self.mode,
-                "configured_mode": getattr(self, "configured_mode", self.mode),
-                "effective_mode": getattr(self, "effective_mode", self.mode),
-                "fallback_active": getattr(self, "fallback_active", False),
-                "fallback_reason": getattr(self, "fallback_reason", None),
-                "collection_name": self.collection_name,
-                "exists": False,
-                "error": str(e),
-                "location": self.location,
+            base_stats.update({
+                "exists": False, "error": "Failed to retrieve Chroma statistics.",
                 "capabilities": self.get_capabilities(),
-            }
+            })
+            return base_stats
 
     def health_check(self) -> Tuple[bool, str]:
-        """Validates connection and readiness of the backend."""
         try:
             hb = self.client.heartbeat()
             count = self.collection.count() if self.collection is not None else 0
-            fallback_note = f" [DEGRADED: Fallback to {self.effective_mode} from {self.configured_mode} active; reason: {self.fallback_reason}]" if getattr(self, "fallback_active", False) else ""
+            fallback_note = (
+                f" [DEGRADED: Fallback to {self.effective_mode} from {self.configured_mode} active; reason: {self.fallback_reason}]"
+                if getattr(self, "fallback_active", False)
+                else ""
+            )
             return True, f"Chroma ({self.effective_mode} @ {self.location}) is healthy; heartbeat: {hb}, collection '{self.collection_name}' count: {count}{fallback_note}"
         except Exception as e:
             logger.warning(f"Chroma ({self.mode}) health check failed: {e}")
             return False, f"Chroma ({self.mode}) health check failed."
 
     def get_file_chunks(self, path: str, repo: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Returns all chunk payloads for the specified path / rel_path (and optional repo), sorted by (start_line, end_line)."""
-        if self.collection is None:
-            if not self.ensure_collection():
-                return []
-        try:
-            clean_path = path.replace("\\", "/").strip("/")
-            rel_path = clean_path.split("://", 1)[1] if "://" in clean_path else clean_path
-            if repo and rel_path.startswith(f"{repo}/"):
-                rel_path = rel_path[len(repo) + 1:]
-
-            res = self.collection.get(include=["metadatas", "documents"])
-            chunks = []
-            if res and res.get("metadatas"):
-                for idx, meta in enumerate(res["metadatas"]):
-                    payload = dict(meta or {})
-                    doc_text = res["documents"][idx] if res.get("documents") and idx < len(res["documents"]) else ""
-                    if "content" not in payload and doc_text:
-                        payload["content"] = doc_text
-                    p_repo = payload.get("repo")
-                    p_path = payload.get("path")
-                    p_rel = payload.get("rel_path")
-                    if repo and repo not in ("__all__", "all") and p_repo != repo:
-                        continue
-                    if p_path in (path, rel_path) or p_rel in (path, rel_path):
-                        chunks.append(payload)
-
-            chunks.sort(key=lambda p: (p.get("start_line") or 0, p.get("end_line") or 0))
-            return chunks
-        except Exception as e:
-            logger.error(f"Error fetching file chunks from Chroma: {e}")
+        if self.collection is None and not self.ensure_collection():
             return []
+        return execute_chroma_file_chunks(collection=self.collection, path=path, repo=repo)
 
     def grep_chunks(
         self,
@@ -491,51 +389,24 @@ class ChromaVectorStore(VectorStore):
         path_glob: Optional[str] = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        limit: int = 100
+        limit: int = 100,
     ) -> List[Dict[str, Any]]:
-        """Queries chunks matching pattern in Chroma."""
-        if self.collection is None:
-            if not self.ensure_collection():
-                return []
-        try:
-            import re
-            import fnmatch
+        if self.collection is None and not self.ensure_collection():
+            return []
+        return execute_chroma_grep_chunks(
+            collection=self.collection, pattern=pattern, repo=repo,
+            path_glob=path_glob, is_regex=is_regex,
+            case_sensitive=case_sensitive, limit=limit,
+        )
 
-            flags = 0 if case_sensitive else re.IGNORECASE
-            regex_pat = pattern if is_regex else re.escape(pattern)
-            compiled = re.compile(regex_pat, flags)
-
-            res = self.collection.get(include=["metadatas", "documents"])
-            matched = []
-            if res and res.get("metadatas"):
-                for idx, meta in enumerate(res["metadatas"]):
-                    payload = dict(meta or {})
-                    doc_text = res["documents"][idx] if res.get("documents") and idx < len(res["documents"]) else ""
-                    if "content" not in payload and doc_text:
-                        payload["content"] = doc_text
-
-                    if repo and repo not in ("__all__", "all") and payload.get("repo") != repo:
-                        continue
-
-                    chunk_path = payload.get("rel_path") or payload.get("path") or ""
-                    if path_glob:
-                        norm_p = chunk_path.replace("\\", "/")
-                        norm_glob = path_glob.replace("\\", "/")
-                        if not (fnmatch.fnmatch(norm_p, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_p), norm_glob)):
-                            continue
-
-                    content = payload.get("content") or ""
-                    if compiled.search(content):
-                        matched.append(payload)
-                        if len(matched) >= limit:
-                            break
-
-            return matched[:limit]
-        except Exception as e:
-            logger.error(f"Error in Chroma grep_chunks: {e}")
-            raise
-
-    def close(self):
-        """Cleanly close Chroma client handle if applicable."""
+    def close(self) -> None:
         pass
 
+
+__all__ = [
+    "ChromaVectorStore",
+    "_sanitize_metadata",
+    "get_default_chroma_storage_path",
+    "validate_chroma_storage_path",
+    "build_chroma_where_filter",
+]
