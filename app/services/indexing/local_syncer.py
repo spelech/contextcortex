@@ -60,11 +60,12 @@ def _sync_local_paths_internal():
         })
 
     found_files = {} # abs_path -> (repo, category, base_dir)
-    supported_extensions = (
-        ".md", ".txt", ".yaml", ".yml", ".json", ".py", ".js", ".jsx", 
-        ".ts", ".tsx", ".go", ".rs", ".cs", ".cpp", ".c", ".h", ".java", 
-        ".rb", ".php", ".sh", ".sql", ".html", ".css"
+    from app.services.indexing.git_delta_scanner import (
+        DEFAULT_SUPPORTED_EXTENSIONS,
+        _IGNORED_DIR_NAMES,
+        _should_skip_indexed_file,
     )
+    supported_extensions = DEFAULT_SUPPORTED_EXTENSIONS
 
     for target in active_paths:
         tpath = os.path.abspath(target["path"])
@@ -72,22 +73,25 @@ def _sync_local_paths_internal():
             continue
 
         if target["type"] == "file":
-            if tpath.endswith(supported_extensions):
+            if tpath.lower().endswith(supported_extensions) and not _should_skip_indexed_file(os.path.basename(tpath), os.path.basename(tpath)):
                 found_files[tpath] = (target["repo"], target["category"], os.path.dirname(tpath))
         else:
             base_dir = tpath
             if target["recursive"]:
                 for root, dirs, files in os.walk(tpath):
-                    dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "vendor", "__pycache__", "venv", ".git")]
+                    dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _IGNORED_DIR_NAMES]
                     for file in files:
-                        if not file.startswith(".") and file.endswith(supported_extensions):
+                        if not file.startswith(".") and file.lower().endswith(supported_extensions):
                             full = os.path.abspath(os.path.join(root, file))
-                            found_files[full] = (target["repo"], target["category"], base_dir)
+                            rel_p = os.path.relpath(full, base_dir).replace("\\", "/")
+                            if not _should_skip_indexed_file(rel_p, file):
+                                found_files[full] = (target["repo"], target["category"], base_dir)
             else:
                 try:
                     for entry in os.scandir(tpath):
-                        if not entry.name.startswith(".") and entry.is_file() and entry.name.endswith(supported_extensions):
-                            found_files[os.path.abspath(entry.path)] = (target["repo"], target["category"], base_dir)
+                        if not entry.name.startswith(".") and entry.is_file() and entry.name.lower().endswith(supported_extensions):
+                            if not _should_skip_indexed_file(entry.name, entry.name):
+                                found_files[os.path.abspath(entry.path)] = (target["repo"], target["category"], base_dir)
                 except Exception:
                     pass
 

@@ -56,8 +56,13 @@ export function HighlightMatch({ text, query }: { text: string; query: string })
 export function formatKind(kind?: string): string {
   if (!kind) return '';
   const k = kind.toLowerCase();
+  if (k.includes('constructor')) return 'ctor';
   if (k.includes('method')) return 'method';
   if (k.includes('func')) return 'func';
+  if (k.includes('record')) return 'record';
+  if (k.includes('program')) return 'program';
+  if (k === 'section') return 'section';
+  if (k === 'paragraph') return 'paragraph';
   if (k.includes('class')) return 'class';
   if (k.includes('interface')) return 'interface';
   if (k.includes('struct')) return 'struct';

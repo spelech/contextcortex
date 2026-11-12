@@ -2,13 +2,13 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1122 Automated Tests** (762 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1155 Automated Tests** (791 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
 ## 1. System Vision & Architecture Scope
 
-ContextCortex provides high-precision, syntax-aware semantic and lexical retrieval over source code repositories, markdown notes, architecture documents, API route graphs, and system documentation. It features a modular, sub-500 LOC architecture, dual MCP transports, pluggable vector store backends (pgvector, Qdrant & ChromaDB), background auto-sync pollers, multi-provider webhooks, ADR tracking, managed local storage file uploads, unified ingestion catalog exploration, and an interactive visual topology explorer in a React 19 administrative dashboard.
+ContextCortex provides high-precision, syntax-aware semantic and lexical retrieval over source code repositories, markdown notes, architecture documents, API route graphs, and system documentation. It features a modular, sub-500 LOC architecture, dual MCP transports, bounded pagination and modular MCP resource templates, pluggable vector store backends (pgvector, Qdrant & ChromaDB), background auto-sync pollers, multi-provider webhooks, ADR tracking, managed local storage file uploads, unified ingestion catalog exploration, and an interactive visual topology explorer in a React 19 administrative dashboard.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────┐
@@ -25,24 +25,24 @@ ContextCortex provides high-precision, syntax-aware semantic and lexical retriev
 │  │    FastMCP 2.0.0+ Server Engine         │  │   FastAPI Admin REST Router │  │
 │  │    • SSE Transport (/sse, /messages/)   │  │   • app/api/routers/        │  │
 │  │    • Streamable HTTP (/mcp)             │  │   • repos, storage, catalog │  │
-│  │    • 19 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
+│  │    • 19 Bounded Tools & Repo Resources  │  │   • webhooks, search, logs  │  │
 │  └────────────────────┬────────────────────┘  └──────────────┬──────────────┘  │
 └───────────────────────┼──────────────────────────────────────┼─────────────────┘
                         │                                      │
 ┌───────────────────────▼──────────────────────────────────────▼─────────────────┐
 │                          Core Modular Services Layer                           │
-│  ┌────────────────────┐ ┌────────────────────┐ ┌─────────────────────────────┐  │
-│  │ app.services.      │ │ app.services.      │ │ app.services.               │  │
-│  │ git_manager        │ │ chunking.*         │ │ embeddings & search         │  │
-│  │ GitHub, GitLab,    │ │ 10 Language AST    │ │ Dense (BGE-Small)           │  │
-│  │ Gitea, Bitbucket   │ │ Routes & Calls     │ │ Sparse (BM25) + RRF         │  │
-│  └──────────┬─────────┘ └──────────┬─────────┘ └──────────────┬──────────────┘  │
-│  ┌──────────▼─────────┐ ┌──────────▼─────────┐ ┌──────────────▼──────────────┐  │
-│  │ app.services.      │ │ app.services.      │ │ app.services.               │  │
-│  │ indexing.*         │ │ topology.*         │ │ local_storage, poller, adr  │  │
-│  │ git/local syncers  │ │ graph & details    │ │ incremental index & storage │  │
-│  └──────────┬─────────┘ └──────────┬─────────┘ └──────────────┬──────────────┘  │
-└─────────────┼──────────────────────┼──────────────────────────┼─────────────────┘
+│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────────────┐  │
+│  │ app.services.      │ │ app.services.      │ │ app.services.              │  │
+│  │ git_manager        │ │ chunking.*         │ │ embeddings & search        │  │
+│  │ GitHub, GitLab,    │ │ Multi-Lang + COBOL │ │ Dense (BGE-Small / API)    │  │
+│  │ Gitea, Bitbucket   │ │ Routes & Calls     │ │ Sparse (BM25) + RRF        │  │
+│  └──────────┬─────────┘ └──────────┬─────────┘ └──────────────┬─────────────┘  │
+│  ┌──────────▼─────────┐ ┌──────────▼─────────┐ ┌──────────────▼─────────────┐  │
+│  │ app.services.      │ │ app.services.      │ │ app.services.              │  │
+│  │ indexing.*         │ │ topology.*         │ │ local_storage, poller, adr │  │
+│  │ git/local syncers  │ │ graph & details    │ │ incremental index & storage│  │
+│  └──────────┬─────────┘ └──────────┬─────────┘ └──────────────┬─────────────┘  │
+└─────────────┼──────────────────────┼──────────────────────────┼────────────────┘
               │                      │                          │
 ┌─────────────▼──────────────────────▼──────────────────────────▼────────────────┐
 │                            Storage & Vector Layer                              │
@@ -108,7 +108,7 @@ erDiagram
         string filepath PK "File path (relative to repo or absolute)"
         string repo "Repository or vault alias"
         string doc_type "code | doc"
-        string language "python | typescript | markdown | etc."
+        string language "python | typescript | c_sharp | cobol | markdown | etc."
         string commit_sha "Commit SHA when indexed"
         real mtime "Filesystem last modified timestamp"
         string hash "Content SHA-256 hash"
@@ -118,7 +118,7 @@ erDiagram
         int id PK "Primary Key (Auto-Increment)"
         string repo "Repository alias"
         string filepath "Relative file path"
-        string kind "class | function | method | interface | struct"
+        string kind "class | function | method | record | program_definition | paragraph"
         string name "Symbol identifier name"
         string full_symbol "Qualified symbol path"
         string signature "Function / Method parameter signature"
@@ -205,7 +205,7 @@ erDiagram
 
 ---
 
-### 2.2 Pluggable Vector Store Data Model (Qdrant & ChromaDB)
+### 2.2 Pluggable Vector Store Data Model (pgvector, Qdrant & ChromaDB)
 
 ```mermaid
 classDiagram
@@ -260,33 +260,33 @@ classDiagram
 - **FR-1.3 (JSON-RPC Schema Compliance)**: All tool definitions, parameter schemas, resource templates, and prompt descriptions MUST adhere strictly to the Model Context Protocol 2024-11-05 / 2025 specification.
 
 ### FR-2: FastMCP Extended Agent Tools Contract
-- **FR-2.1 (`search_code`)**: MUST execute calibrated hybrid (Dense + BM25) code searches with configurable `dense_weight` and `mode`, returning code chunks, line ranges, decomposed scores, AST symbol signatures, and clickable Git permalinks.
-- **FR-2.2 (`search_docs`)**: MUST execute calibrated hybrid searches across markdown notes and documentation, with category and tag filtering.
-- **FR-2.3 (`find_symbol`)**: MUST perform sub-50ms exact and prefix symbol lookups against SQLite `ast_symbols` without vector search overhead.
-- **FR-2.4 (`get_file_outline`)**: MUST return the structural AST outline (classes, methods, signatures, start/end lines) for a specified file path.
+- **FR-2.1 (`search_code`)**: MUST execute calibrated hybrid (Dense + BM25) code searches with configurable `dense_weight`, `mode`, `offset`, and `max_snippet_chars`, returning bounded code chunks, line ranges, decomposed scores, AST symbol signatures, and clickable Git permalinks.
+- **FR-2.2 (`search_docs`)**: MUST execute calibrated hybrid searches across markdown notes and documentation, with category/tag filtering and bounded pagination.
+- **FR-2.3 (`find_symbol`)**: MUST perform sub-50ms exact and prefix symbol lookups against SQLite `ast_symbols` with `limit`/`offset` pagination without vector search overhead.
+- **FR-2.4 (`get_file_outline`)**: MUST return the structural AST outline (classes, methods, records, COBOL paragraphs/sections, signatures, start/end lines) with bounded pagination for a specified file path.
 - **FR-2.5 (`list_repositories`)**: MUST return all registered Git repositories (with provider tags e.g. `[GITHUB]`, `[GITLAB]`, commit SHAs, and sync status) and local paths.
 - **FR-2.6 (`sync_repository`)**: MUST trigger background incremental or shallow sync for a single repo or all sources.
 - **FR-2.7 (`index_status`)**: MUST report vector count, active embedding models, collection name, and provider rate limit status.
 - **FR-2.8 (`get_architecture`)**: MUST synthesize high-level codebase architecture including detected entry points, primary language distributions, core directories, framework components, and architectural decision records.
-- **FR-2.9 (`manage_adr`)**: MUST support querying, listing, creating, updating, and superseding Architectural Decision Records (MADR / Nygard format) with lifecycle status tracking.
-- **FR-2.10 (`find_routes` & `find_api_callers`)**: MUST return API endpoint routes and HTTP client invocations parsed from backend frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET).
-- **FR-2.11 (`trace_path`)**: MUST trace AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections (`external_callers`, `external_handlers`) using BFS graph traversal.
+- **FR-2.9 (`manage_adr`)**: MUST support querying, listing, creating, updating, and superseding Architectural Decision Records (MADR / Nygard format) with lifecycle status tracking and pagination.
+- **FR-2.10 (`find_routes` & `find_api_callers`)**: MUST return API endpoint routes and HTTP client invocations parsed from backend and frontend frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET, React `fetch`/Axios) with `limit`/`offset` pagination.
+- **FR-2.11 (`trace_path`)**: MUST trace AST symbol calls, JSX usages, DI interface-to-implementation edges, COBOL `PERFORM`/`CALL`/`COPY` chains, imports, inheritance, and cross-repo API client-to-route connections using bounded BFS graph traversal.
 - **FR-2.12 (`manage_local_file`)**: MUST support uploading, replacing, reading, and deleting files under managed local storage (`LOCAL_STORAGE_PATH`) with real-time vector and symbol indexing.
-- **FR-2.13 (`what_is_ingested`)**: MUST inspect and filter across all ingested Git repositories, monitored local paths, and uploaded local storage files with source type and detail level filtering.
-- **FR-2.14 (`read_file` & `summarize_file`)**: MUST support reading bounded line ranges or full files (including vector chunk reconstruction for ephemeral repositories) and generating or retrieving cached LLM executive summaries for large files.
-- **FR-2.15 (`get_recent_changes`)**: MUST return recent commit history from `git_commits` for a repository, optionally filtered by file path or AST symbol name.
-- **FR-2.16 (`grep_code`)**: MUST perform deterministic literal and regular expression pattern matching across one or all indexed repositories with path glob filtering, context lines, and enclosing AST symbol coordinates.
-- **FR-2.17 (`diagnose_issue`)**: MUST perform forensic triage of stack traces, error logs, and bug descriptions by resolving stack frames to AST symbols, matching routes and error literals, and retrieving semantic code candidates.
+- **FR-2.13 (`what_is_ingested`)**: MUST inspect and filter across all ingested Git repositories, monitored local paths, and uploaded local storage files with bounded `limit`/`offset` file pagination.
+- **FR-2.14 (`read_file` & `summarize_file`)**: MUST support reading bounded line ranges (`has_more`, `next_start_line`) or full files (including vector chunk reconstruction for ephemeral repositories) and generating or retrieving cached LLM executive summaries.
+- **FR-2.15 (`get_recent_changes`)**: MUST return paginated recent commit history from `git_commits` for a repository, optionally filtered by file path or AST symbol name.
+- **FR-2.16 (`grep_code`)**: MUST perform deterministic literal and regular expression pattern matching across one or all indexed repositories with path glob filtering, context lines, per-line truncation caps, and enclosing AST symbol coordinates.
+- **FR-2.17 (`diagnose_issue`)**: MUST perform forensic triage of Python, C#/.NET, TS/JS/React, and COBOL/CICS stack traces, error logs, and bug descriptions by resolving stack frames to AST symbols, matching routes and error literals, and retrieving semantic code candidates.
 
-### FR-3: Dynamic Resources & Prompt Templates
-- **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `knowledge://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.
+### FR-3: Dynamic Resources & Paginated Resource Templates
+- **FR-3.1 (Dynamic Catalog Resource & Repo Templates)**: MUST expose compact `knowledge://catalog/summary` plus modular repository resource templates (`knowledge://repo/{repo}/summary`, `architecture`, `files/{page}`, `routes/{page}`, `adrs`).
 - **FR-3.2 (Prompt: `search_infrastructure_docs`)**: MUST provide a prompt template guiding agents to explore system architecture, networking, Docker setups, and container guides.
 - **FR-3.3 (Prompt: `find_implementation_symbol`)**: MUST provide a prompt template assisting agents in locating symbol declarations, methods, and interface signatures across repositories.
 
 ### FR-4: Universal Multi-Provider Git Ingestion Engine
 - **FR-4.1 (Multi-Provider Detection & Support)**: MUST detect and support repositories from GitHub, GitLab (Cloud & Self-Hosted), Gitea/Forgejo, Bitbucket, and Generic Git HTTP/HTTPS with custom ports.
-- **FR-4.2 (Ephemeral Shallow Cloning & Zero Disk Bloat)**: MUST clone via `--depth 1 --branch <branch> --single-branch` into temporary directories and delete the cloned files immediately after AST extraction and vector upserts.
-- **FR-4.3 (Remote SHA Change Tracking)**: MUST query remote commit SHAs via `git ls-remote` and skip redundant cloning when the remote SHA matches the local SQLite database.
+- **FR-4.2 (Ephemeral Shallow Cloning & Zero Disk Bloat)**: MUST clone via `--depth 1 --branch <branch> --single-branch` into temporary directories and delete the cloned files immediately after AST extraction and vector upserts unless persistent shallow clone is configured.
+- **FR-4.3 (Remote SHA Change Tracking)**: MUST query remote commit SHAs via `git ls-remote` and skip redundant cloning when the remote SHA matches the local SQLite database (unless `force=True`).
 - **FR-4.4 (Provider-Exact Permalinks)**: MUST construct valid deep links to specific lines of code across all providers (GitHub, GitLab, Gitea, Bitbucket).
 - **FR-4.5 (Credential Masking & URL Sanitization)**: MUST redact all access tokens and passwords from log files, console output, and API responses (e.g. `https://***github.com/...`).
 
@@ -294,10 +294,10 @@ classDiagram
 - **FR-5.1 (Resolution Hierarchy)**: Ingestion MUST resolve credentials in strict priority order: 1. Repo Override → 2. Host Vault → 3. Global DB Tokens → 4. Environment Variables.
 - **FR-5.2 (Host Credential Vault CRUD)**: MUST provide REST APIs (`GET/POST/DELETE /admin/api/settings/hosts`) to manage self-hosted domain credentials with provider types, auth users, and masked tokens.
 
-### FR-6: Multi-Language Tree-sitter AST Syntax Chunking
-- **FR-6.1 (10-Language AST Parsing)**: MUST parse code across 10 major programming languages (Python, TS/JS, Go, Rust, C#, C++, Java, Ruby, PHP) using Tree-sitter grammars along structural node boundaries.
+### FR-6: Multi-Language Tree-sitter & COBOL AST Syntax Chunking
+- **FR-6.1 (11+ Language AST Parsing)**: MUST parse code across Python, TypeScript/TSX/JavaScript, C#, COBOL (`.cbl`, `.cob`, `.cpy`), Go, Rust, C/C++, Java, Ruby, and PHP along structural node boundaries while excluding compiled/minified asset bundles.
 - **FR-6.2 (1-Indexed Line Ranges & Exact Signatures)**: Chunks MUST preserve exact 1-indexed start and end line ranges, signatures, and parent scope identifiers.
-- **FR-6.3 (Relationship & Route Extraction)**: MUST extract symbol relationships (`CALLS`, `IMPORTS`, `EXTENDS`) and REST API route definitions / HTTP client calls into SQLite relational tables.
+- **FR-6.3 (Relationship & Route Extraction)**: MUST extract symbol relationships (`CALLS`, `IMPORTS`, `INHERITS`, `IMPLEMENTS`) and REST API route definitions / HTTP client calls into SQLite relational tables.
 
 ### FR-7: Contextual Markdown & Fallback Chunking
 - **FR-7.1 (Hierarchical Markdown Breadcrumbs)**: Markdown chunks MUST preserve heading hierarchies (`# Title > ## Section > ### Subsection`) in chunk payloads to maintain semantic context during vector retrieval.
@@ -311,7 +311,7 @@ classDiagram
 - **FR-8.4 (Runtime Provider Switching)**: MUST support dynamic vector backend switching via `POST /admin/api/settings/vector-store/switch` with health checking and live schema verification.
 
 ### FR-9: Codebase & Dependency Topology Graph Engine
-- **FR-9.1 (Graph Topology API)**: `GET /admin/api/graph/topology` MUST return graph nodes (files, classes, functions, routes) and edges (`IMPORTS`, `CALLS`, `DEFINES`, `HANDLES`, `ROUTES_TO`) with depth, limit, view type (`files`, `symbols`, `routes`, `full`), and root node BFS filtering.
+- **FR-9.1 (Graph Topology API)**: `GET /admin/api/graph/topology` MUST return bounded graph nodes and edges (`IMPORTS`, `CALLS`, `DEFINES`, `HANDLES`, `ROUTES_TO`) with compiled-bundle filtering, depth, limit, view type, and root node BFS filtering.
 - **FR-9.2 (Node Details API)**: `GET /admin/api/graph/node-details` MUST return detailed symbol signatures, code snippets, incoming/outgoing neighbor connections, and Git permalinks.
 
 ### FR-10: Architecture Decision Records (ADR) & High-Level Architecture
@@ -323,12 +323,12 @@ classDiagram
 - **FR-11.2 (Multi-Provider Webhook Ingestion)**: `POST /api/webhooks/{provider}` MUST authenticate incoming webhook payloads from GitHub (`X-Hub-Signature-256`), GitLab (`X-Gitlab-Token`), Gitea (`X-Gitea-Signature`), and Bitbucket with HMAC verification, triggering instantaneous repository syncs upon push events.
 
 ### FR-12: REST Administration APIs & Subrouter Hierarchy
-- **FR-12.1 (Modular Subrouters)**: REST APIs MUST be organized into dedicated FastAPI subrouters under `app/api/routers/` (`repositories.py`, `settings.py`, `graph.py`, `auth.py`, `storage.py`, `ingestion.py`) and top-level modules (`webhooks.py`, `routes.py`).
-- **FR-12.2 (Complete CRUD & Search Endpoints)**: Full repository management, local path indexing, local storage file management, ingestion catalog querying, directory browsing, vector settings switching, diagnostic logs, and live search tester endpoints.
+- **FR-12.1 (Modular Subrouters)**: REST APIs MUST be organized into dedicated FastAPI subrouters under `app/api/routers/` (`repositories.py`, `settings.py`, `ai_settings.py`, `graph.py`, `auth.py`, `storage.py`, `ingestion.py`) and top-level modules (`webhooks.py`, `routes.py`).
+- **FR-12.2 (Complete CRUD & Search Endpoints)**: Full repository management, local path indexing, local storage file management, ingestion catalog querying, directory browsing, vector/embedding settings switching, diagnostic logs, and live search tester endpoints.
 
 ### FR-13: React 19 Single Page Administrative Dashboard
-- **FR-13.1 (Tab Navigation & Responsive Layout)**: Single page dashboard supporting desktop and mobile drawer navigation across Overview, Topology, Git Repositories, Local Paths, Local Storage, Ingestion Catalog, Search & Inspector, Settings, and Diagnostics & Logs.
-- **FR-13.2 (Modular Component Architecture)**: Dedicated modular component tree under `frontend/src/components/` and dedicated manager views (`LocalStorageManager.tsx`, `IngestionCatalogViewer.tsx`) with all source files under 450 lines.
+- **FR-13.1 (Tab Navigation & Responsive Layout)**: Single page dashboard supporting desktop and mobile drawer navigation across Overview, Topology, Navigator, Git Repositories, Local Paths, Local Storage, Ingestion Catalog, Search & Inspector, Settings, and Diagnostics & Logs.
+- **FR-13.2 (Modular Component Architecture)**: Dedicated modular component tree under `frontend/src/components/` with multi-language badges/grammars and all production source files strictly `<= 500` lines.
 
 ### FR-14: Interactive Visual Topology Explorer
 - **FR-14.1 (Interactive Force Canvas)**: Interactive SVG/Canvas graph visualization with zoom, pan, drag physics, minimap, view type toggling (`FILES`, `SYMBOLS`, `ROUTES`, `FULL`), and depth selection.
@@ -362,7 +362,7 @@ classDiagram
 - **NFR-3 (Security & Credential Sanitization)**: Personal access tokens, OAuth tokens, and passwords MUST NEVER appear in cleartext in logs, console output, URLs, or client API payloads.
 - **NFR-4 (Reliability & Concurrency)**: SQLite database MUST operate in WAL mode; Vector store schemas MUST automatically auto-heal/upgrade on startup.
 - **NFR-5 (Failure Isolation)**: Failure to sync an individual repository MUST NOT abort other repositories or crash the server.
-- **NFR-6 (Codebase Modularity & File Size Floor)**: All individual Python and TypeScript source code files MUST remain under 500 lines of code for long-term maintainability.
+- **NFR-6 (Codebase Modularity & File Size Floor)**: All individual Python (`app/`, `scripts/`) and non-test TypeScript/React (`frontend/src/`) source code files and classes MUST remain at or under 500 lines of code (`≤ 500 LOC`) with semantic role-based naming.
 - **NFR-7 (Test Quality & Coverage Floor)**: Backend statement coverage `≥ 85%`; Frontend line coverage `≥ 85%`; 100% Playwright E2E pass rate.
 
 ---
@@ -372,30 +372,30 @@ classDiagram
 | Requirement ID | Requirement Description | Implementation Files | Backend Pytest Modules | Frontend Vitest & E2E Suites |
 | :--- | :--- | :--- | :--- | :--- |
 | **FR-1** | FastMCP 2.0 Dual Transport Architecture | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_mcp_ping.py`, `test_indexer_sync.py` | E2E Spec 1 |
-| **FR-2** | FastMCP 19 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_file_reader_and_summarizer.py`, `test_grep_code.py`, `test_diagnostics.py` | E2E Specs 1, 8 |
-| **FR-3** | Dynamic Resources & Prompt Templates | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_tools.py` | E2E Spec 1 |
-| **FR-4** | Universal Multi-Git Provider Ingestion | `app/services/git_manager.py`, `app/services/indexing/git_syncer.py` | `test_multi_git_providers.py`, `test_git_manager.py`, `test_indexer_edge_cases.py` | `GitRepoManager.test.tsx`, E2E Specs 2, 3, 4, 5, 16, 18 |
+| **FR-2** | FastMCP 19 Bounded Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_mcp_pagination_and_resources.py`, `test_db_and_tools.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_grep_code.py`, `test_diagnostics_and_services_multilang.py` | E2E Specs 1, 8 |
+| **FR-3** | Dynamic Resources, Repo Templates & Prompts | `app/mcp/handlers/resource_handlers.py`, `app/mcp/tools.py` | `test_mcp_pagination_and_resources.py`, `test_mcp_v2.py` | E2E Spec 1 |
+| **FR-4** | Universal Multi-Git Provider Ingestion | `app/services/git_manager.py`, `app/services/indexing/*` | `test_multi_git_providers.py`, `test_git_manager.py`, `test_indexer_edge_cases.py` | `GitRepoManager.test.tsx`, E2E Specs 2, 3, 4, 5, 16, 18 |
 | **FR-5** | Multi-Tier Credential Vault & Hierarchy | `app/services/database/credentials.py`, `app/services/git_manager.py` | `test_multi_git_providers.py`, `test_db_and_tools.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
-| **FR-6** | 10-Language Tree-sitter AST Syntax & Routes | `app/services/chunking/*` | `test_chunker.py`, `test_chunker_languages.py`, `test_api_route_discovery.py`, `test_ast_relationships.py` | `SearchInspector.test.tsx`, E2E Spec 8 |
+| **FR-6** | Multi-Language + COBOL AST Syntax & Routes | `app/services/chunking/*` | `test_cobol_ast_and_linking.py`, `test_multilanguage_cs_ts_py.py`, `test_chunker_languages.py`, `test_api_route_discovery.py` | `MultiLanguageAndRebuildFlow.test.tsx`, E2E Spec 8 |
 | **FR-7** | Markdown Breadcrumbs & Fallbacks | `app/services/chunking/text_chunker.py` | `test_chunker.py`, `test_chunker_languages.py` | `SearchInspector.test.tsx`, E2E Spec 8 |
-| **FR-8** | Pluggable Multi-Backend Vector Retrieval | `app/services/vector_store/*`, `app/services/search.py` | `test_vector_store_base.py`, `test_vector_store_qdrant.py`, `test_vector_store_chroma.py`, `test_vector_store_manager.py`, `test_search.py`, `test_pgvector_store.py` | `Settings.test.tsx`, `SearchInspector.test.tsx`, E2E Specs 8, 9 |
-| **FR-9** | Codebase & Dependency Topology Graph | `app/services/topology/*`, `app/api/routers/graph.py` | `test_topology_graph.py`, `test_trace_path.py` | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
+| **FR-8** | Pluggable Multi-Backend Vector Retrieval | `app/services/vector_store/*`, `app/services/search.py` | `test_vector_store_qdrant.py`, `test_vector_store_chroma.py`, `test_pgvector_store.py`, `test_diagnostics_and_services_multilang.py` | `Settings.test.tsx`, `SearchInspector.test.tsx`, E2E Specs 8, 9 |
+| **FR-9** | Codebase & Dependency Topology Graph | `app/services/topology/*`, `app/api/routers/graph.py` | `test_topology_graph.py`, `test_admin_ui_api_consistency.py`, `test_trace_path.py` | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
 | **FR-10** | Architecture ADRs & System Synthesis | `app/services/adr.py`, `app/services/architecture.py`, `app/services/database/adrs.py` | `test_architecture_adr.py` | `SearchInspector.test.tsx` |
 | **FR-11** | Auto-Sync Poller Daemon & Webhooks | `app/services/poller.py`, `app/api/webhooks.py`, `app/services/database/sync_config.py` | `test_poller.py`, `test_webhooks.py`, `test_auto_sync_api.py`, `test_auto_sync_db.py` | `GitRepoManager.test.tsx`, `Settings.test.tsx`, E2E Specs 22, 23, 24 |
-| **FR-12** | Administrative REST APIs & Subrouters | `app/api/routes.py`, `app/api/routers/*`, `app/services/litellm_service.py`, `app/services/llm_client.py` | `test_api_routes.py`, `test_api_vector_store.py`, `test_diagnostic_logger.py`, `test_storage_api_routes.py`, `test_litellm_service.py`, `test_llm_client.py` | `Overview.test.tsx`, `DiagnosticsViewer.test.tsx`, E2E Specs 1-26 |
-| **FR-13** | React 19 Single Page Admin Dashboard | `frontend/src/*`, `frontend/src/components/*` | N/A | `App.test.tsx`, `GitRepoManager.test.tsx`, `LocalPathManager.test.tsx`, `LocalStorageManager.test.tsx`, `IngestionCatalogViewer.test.tsx`, `Settings.test.tsx`, `Overview.test.tsx`, E2E Specs 1-26 |
-| **FR-14** | Interactive Visual Topology Explorer UI | `frontend/src/TopologyExplorer.tsx`, `frontend/src/components/topology/*` | N/A | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
-| **FR-15** | Diagnostics & Live In-Memory Log Viewer | `app/services/logger.py`, `frontend/src/DiagnosticsViewer.tsx` | `test_diagnostic_logger.py` | `DiagnosticsViewer.test.tsx`, E2E Specs 13, 21 |
+| **FR-12** | Administrative REST APIs & Subrouters | `app/api/routes.py`, `app/api/routers/*`, `app/services/litellm_service.py`, `app/services/llm_client.py` | `test_admin_ui_api_consistency.py`, `test_api_routes.py`, `test_storage_api_routes.py`, `test_litellm_service.py` | `Overview.test.tsx`, `DiagnosticsViewer.test.tsx`, E2E Specs 1-26 |
+| **FR-13** | React 19 Single Page Admin Dashboard | `frontend/src/*`, `frontend/src/components/*` | `test_admin_ui_api_consistency.py` | `App.test.tsx`, `MultiLanguageAndRebuildFlow.test.tsx`, `Settings.test.tsx`, E2E Specs 1-26 |
+| **FR-14** | Interactive Visual Topology Explorer UI | `frontend/src/TopologyExplorer.tsx`, `frontend/src/components/topology/*` | `test_admin_ui_api_consistency.py` | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
+| **FR-15** | Diagnostics & Live In-Memory Log Viewer | `app/services/logger.py`, `frontend/src/DiagnosticsViewer.tsx` | `test_diagnostic_logger.py`, `test_diagnostics_and_services_multilang.py` | `DiagnosticsViewer.test.tsx`, E2E Specs 13, 21 |
 | **FR-16** | Managed Local Storage & Incremental Indexing | `app/services/local_storage.py`, `app/api/routers/storage.py` | `test_local_storage_service.py`, `test_local_storage_indexing.py`, `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `LocalStorageManager.test.tsx` |
-| **FR-17** | Unified Ingestion Catalog Explorer | `app/api/routers/ingestion.py`, `app/mcp/handlers/storage_handlers.py` | `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `IngestionCatalogViewer.test.tsx` |
+| **FR-17** | Unified Ingestion Catalog Explorer | `app/api/routers/ingestion.py`, `app/mcp/handlers/storage_handlers.py` | `test_mcp_pagination_and_resources.py`, `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `IngestionCatalogViewer.test.tsx` |
 | **FR-18** | Enterprise Private-CA Gateways & Mirror Builds | `app/services/llm_client.py`, `app/services/litellm_service.py`, `docker-entrypoint.sh`, `Dockerfile`, `Dockerfile.overlay`, `docker-compose.enterprise.yml` | `test_llm_client.py`, `test_litellm_service.py`, `test_docker_entrypoint.py`, `test_docker_orchestration.py` | `Settings.test.tsx` |
 | **NFR-1** | Performance & Latency Budgets | `app/services/database/connection.py`, `app/services/search.py` | `test_db_and_tools.py`, `test_search.py` | E2E Specs 8, 9 |
 | **NFR-2** | Zero Disk Bloat & Memory Efficiency | `app/services/git_manager.py`, `app/services/embeddings.py` | `test_git_manager.py`, `test_indexer_and_embeddings.py` | E2E Specs 2, 3 |
 | **NFR-3** | Credential Sanitization in Logs/APIs | `app/services/git_manager.py`, `app/api/routers/*` | `test_multi_git_providers.py`, `test_api_routes.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
 | **NFR-4** | SQLite WAL & Vector Store Auto-Healing | `app/services/database/*`, `app/services/vector_store/*`, `docker-entrypoint.sh` | `test_db_and_tools.py`, `test_vector_store_manager.py`, `test_docker_orchestration.py`, `test_docker_entrypoint.py` | E2E Spec 1 |
 | **NFR-5** | Sync Failure Isolation | `app/services/indexing/*` | `test_indexer_edge_cases.py`, `test_indexer_sync.py` | `GitRepoManager.test.tsx`, E2E Spec 5 |
-| **NFR-6** | Codebase Modularity & File Size Floor | `app/` (all < 450 LOC), `frontend/src/` (all < 450 LOC) | N/A | Sub-500 LOC CI Check |
-| **NFR-7** | Test Quality & Coverage Floors | Entire Test Suite | `pytest` (415+ tests, 88% cov) | `vitest` (174 tests, 87% cov), `playwright` (26 tests) |
+| **NFR-6** | Codebase Modularity & File Size Floor (`≤ 500 LOC`) | `app/`, `scripts/`, `frontend/src/` | `test_engineering_style_guardrails.py` | Sub-500 LOC & Semantic Naming Guardrail |
+| **NFR-7** | Test Quality & Coverage Floors | Entire Test Suite | `pytest` (700+ tests, 88%+ cov) | `vitest` (334 tests, 87%+ cov), `playwright` (26 tests) |
 
 ---
 
@@ -875,6 +875,13 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_delete_by_repo`
 - `test_get_stats_and_health_check`
 
+#### `tests/test_admin_ui_api_consistency.py` (5 tests)
+- `test_overview_stats_and_catalog_multi_language_consistency` - _Overview stats and Ingestion Catalog return UI-aligned schemas and multi-language files._
+- `test_navigator_and_file_endpoints_for_cobol_and_csharp` - _Code Navigator tree, outline, symbol-impact, omni-search, file read, and grep work across COBOL & C#._
+- `test_topology_excludes_compiled_bundles_and_classifies_cobol_csharp` - _Topology graph strips www/assets, wwwroot/_framework, and .min.js bundles and enforces caps._
+- `test_storage_repos_paths_and_settings_rebuild_confirmation_lifecycle` - _Verifies storage CRUD, repo/path CRUD, AI/file/auto-sync settings, and embedding rebuild confirmation._
+- `test_rbac_enforcement_across_ui_and_admin_endpoints` - _When AUTH_ENABLED=true, Anonymous gets 401, Viewer gets 200 read / 403 write, Admin gets 200._
+
 #### `tests/test_auth_endpoints.py` (9 tests)
 - `test_oauth_protected_resource_metadata` - _Verify GET /.well-known/oauth-protected-resource returns valid RFC 9728 JSON._
 - `test_local_dev_bypass_allows_unauthenticated_requests` - _When AUTH_ENABLED=false, endpoints allow access without authorization header._
@@ -890,20 +897,12 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_fastmcp_streamable_transport_auth_enforced` - _Test FastMCP /mcp endpoint requires authentication when AUTH_ENABLED=true._
 - `test_api_key_delete_nonexistent` - _Test DELETE /admin/api/auth/keys/{id} with nonexistent ID returns 404._
 
-#### `tests/test_auth_service.py` (24 tests)
+#### `tests/test_auth_service.py` (12 tests)
 - `test_role_enum_values_and_hierarchy`
 - `test_role_from_str`
 - `test_auth_context_and_user_alias`
 - `test_api_key_create_and_out_models`
-- `test_api_key_issue_and_validate`
-- `test_api_key_validate_invalid_and_tampered_key`
-- `test_api_key_expiration`
-- `test_api_key_revocation_and_deletion`
-- `test_api_key_list_multiple`
-- `test_jwt_validator_with_valid_token`
-- `test_jwt_validator_role_extraction_sources`
-- `test_jwt_validator_expired_and_invalid_signature`
-- `test_jwt_validator_issuer_and_audience_mismatch`
+- `test_auth_context_has_scope_admin_override`
 - `test_auth_service_bypass_when_disabled`
 - `test_auth_service_routes_api_key`
 - `test_auth_service_routes_jwt`
@@ -911,8 +910,18 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_auth_service_rbac_permissions`
 - `test_auth_service_proxies_key_management`
 - `test_auth_service_singleton_getter`
-- `test_auth_context_has_scope_admin_override`
+
+#### `tests/test_auth_tokens_and_sessions.py` (12 tests)
+- `test_api_key_issue_and_validate`
+- `test_api_key_validate_invalid_and_tampered_key`
+- `test_api_key_expiration`
+- `test_api_key_revocation_and_deletion`
+- `test_api_key_list_multiple`
 - `test_api_key_get_nonexistent`
+- `test_jwt_validator_with_valid_token`
+- `test_jwt_validator_role_extraction_sources`
+- `test_jwt_validator_expired_and_invalid_signature`
+- `test_jwt_validator_issuer_and_audience_mismatch`
 - `test_jwt_validator_oidc_discovery_resolution`
 - `test_jwt_validator_stale_cache_refresh`
 
@@ -930,6 +939,13 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_repo_auto_sync_and_list`
 - `test_auto_sync_interval_edge_cases`
 
+#### `tests/test_cobol_ast_and_linking.py` (5 tests)
+- `test_cobol_language_registration_and_parser`
+- `test_fixed_format_cobol_symbols_lines_and_relationships`
+- `test_free_format_cobol_and_copybook_line_preservation`
+- `test_cobol_end_to_end_indexing_architecture_and_trace_path`
+- `test_local_storage_cobol_persists_language_and_relationships` - _Uploading COBOL programs via LocalStorageService persists language='cobol' and ast_relationships for trace_path & diagnose_issue._
+
 #### `tests/test_database_engine.py` (11 tests)
 - `test_schema_metadata_contains_all_tables`
 - `test_schema_api_keys_columns`
@@ -942,6 +958,15 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_is_postgres_detection`
 - `test_wait_for_db_retries_and_success`
 - `test_wait_for_db_exhausts_retries`
+
+#### `tests/test_diagnostics_and_services_multilang.py` (7 tests)
+- `test_parse_csharp_posix_and_windows_frames`
+- `test_parse_ts_react_vite_and_bundler_frames`
+- `test_parse_all_four_cobol_diagnostic_and_abend_formats`
+- `test_diagnose_issue_multilang_end_to_end`
+- `test_file_reader_and_local_storage_extensions_resolution_and_security`
+- `test_vector_stores_special_character_hardening`
+- `test_module_reexports_and_line_count_guardrail`
 
 #### `tests/test_doc_links.py` (5 tests)
 - `test_extract_markdown_doc_links`
@@ -1012,6 +1037,12 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_restart_clears_relational_metadata_on_collection_recreate` - _Verifies that on app restart, if ensure_collection detects a dimension mismatch and recreates the collection, relational metadata is cleared._
 - `test_rollback_and_complete_rebuild` - _Tests model transition, rollback, and complete rebuild across local paths._
 
+#### `tests/test_engineering_style_guardrails.py` (4 tests)
+- `test_repository_root_structure_hygiene` - _Verify repository root contains required living docs, no stray test_*.py files, and synced www/ overlay._
+- `test_all_python_files_and_classes_under_500_loc` - _Verify every Python file and class across main.py, app/, scripts/, and tests/ stays <= 500 LOC._
+- `test_all_frontend_and_script_files_under_500_loc` - _Verify every TypeScript, TSX, CSS, shell, and PowerShell file in source/tests/scripts stays <= 500 LOC._
+- `test_semantic_naming_bans_junk_drawer_modules_and_classes` - _Verify case-insensitively that no new *Manager, *Helper, *Util, *Utils, or *Data modules/classes exist._
+
 #### `tests/test_field_workup_regressions.py` (9 tests)
 - `test_finding_1_git_env_strips_ambient_git_vars`
 - `test_finding_1_shallow_clone_stages_fresh_clone_on_fetch_failure`
@@ -1064,7 +1095,7 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_mcp_grep_code_registration_and_execution`
 - `test_api_search_grep_endpoint`
 
-#### `tests/test_incremental_pipeline.py` (3 tests)
+#### `tests/test_incremental_pipeline.py` (1 tests)
 - `test_full_incremental_sync_pipeline` - _End-to-End integration test for the full ingestion & incremental sync pipeline:
 1. Initial full repo ingestion (code + markdown with wikilinks & standard links).
 2. Subsequent sync with 0 changes: verifies no re-indexing occurs.
@@ -1074,6 +1105,8 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
    - Verifies deleted file's vectors and SQLite entries are purged.
    - Verifies embedding_cache is populated and reused.
    - Verifies doc links (DOC_LINKS_TO) appear in the topology graph and search works across all indexed files._
+
+#### `tests/test_incremental_rename_and_delete.py` (2 tests)
 - `test_incremental_pipeline_batching_and_large_commit` - _Verifies that incremental sync handles batches exceeding the 25-file batch threshold,
 persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
@@ -1115,6 +1148,12 @@ and leaves the prior indexed state intact without data loss._
 - `test_delete_file_and_directory`
 - `test_get_file_tree`
 - `test_get_local_storage_service_singleton`
+
+#### `tests/test_mcp_pagination_and_resources.py` (4 tests)
+- `test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports` - _Verifies all 19 tools expose rich descriptions, parameter Field docs, and backward-compatible imports._
+- `test_symbol_outline_trace_and_route_pagination` - _Verifies limit clamping and offset pagination across find_symbol, get_file_outline, trace_path, find_routes, and find_api_callers._
+- `test_grep_search_recent_changes_adr_ingested_and_read_file_bounds` - _Verifies line/snippet truncation and pagination for grep_code, search_code/docs, get_recent_changes, manage_adr, what_is_ingested, and read_file._
+- `test_granular_mcp_resources_and_paginated_templates` - _Verifies compact catalog summary and all 5 per-repository MCP resource templates end-to-end._
 
 #### `tests/test_mcp_pdf_tools.py` (5 tests)
 - `test_mcp_manage_local_file_preview_pdf`
@@ -1167,6 +1206,12 @@ commit and re-sync, verifying zero duplicate symbols/routes/relationships and ac
 - `test_env_variable_fallbacks`
 - `test_set_embedding_db_config_persists_to_system_metadata`
 - `test_update_embedding_config_service`
+
+#### `tests/test_multilanguage_cs_ts_py.py` (4 tests)
+- `test_ts_js_mjs_cts_jsx_extensions_imports_generics_and_jsx_component_linking`
+- `test_csharp_primary_ctors_records_mapgroup_routes_and_di_call_tracing`
+- `test_python_apirouter_prefixes_generics_aliased_imports_and_cross_file_tracing`
+- `test_multilang_tsx_ts_csharp_python_extraction_and_asset_filtering` - _Verify TSX arrow/memo/object methods, C# records/ctors, stacked FastAPI routes, and asset bundle filtering._
 
 #### `tests/test_native_postgres_readiness.py` (2 tests)
 - `test_native_postgres_readiness_accepts_initialized_schema`
@@ -1276,6 +1321,22 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_large_file_auto_summarization`
 - `test_large_file_disabled_summarization`
 
+#### `tests/test_rag_pipeline.py` (14 tests)
+- `TestKnowledgeRAG::test_tree_sitter_python_ast`
+- `TestKnowledgeRAG::test_markdown_chunking`
+- `TestKnowledgeRAG::test_hybrid_embeddings`
+- `TestKnowledgeRAG::test_github_permalink`
+- `TestKnowledgeRAG::test_ephemeral_clone_and_cleanup`
+- `TestKnowledgeRAG::test_db_symbols_and_metadata`
+- `test_api_routes_pydantic`
+- `test_mcp_tools_pydantic`
+- `test_tree_sitter_python_ast`
+- `test_markdown_chunking`
+- `test_hybrid_embeddings`
+- `test_github_permalink`
+- `test_ephemeral_clone_and_cleanup`
+- `test_db_symbols_and_metadata`
+
 #### `tests/test_rest_role_permissions.py` (4 tests)
 - `test_anonymous_and_invalid_key_requests_denied` - _Anonymous or invalid/revoked requests receive 401 Unauthorized._
 - `test_viewer_role_permissions` - _Viewer key can read resources but is denied content mutations & administrative settings (403)._
@@ -1322,22 +1383,6 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_missing_repo_url_payload`
 - `test_verify_hmac_sha256_helper`
 - `test_parse_webhook_payload_helper`
-
-#### `test_rag_pipeline.py` (14 tests)
-- `TestKnowledgeRAG::test_tree_sitter_python_ast`
-- `TestKnowledgeRAG::test_markdown_chunking`
-- `TestKnowledgeRAG::test_hybrid_embeddings`
-- `TestKnowledgeRAG::test_github_permalink`
-- `TestKnowledgeRAG::test_ephemeral_clone_and_cleanup`
-- `TestKnowledgeRAG::test_db_symbols_and_metadata`
-- `test_api_routes_pydantic`
-- `test_mcp_tools_pydantic`
-- `test_tree_sitter_python_ast`
-- `test_markdown_chunking`
-- `test_hybrid_embeddings`
-- `test_github_permalink`
-- `test_ephemeral_clone_and_cleanup`
-- `test_db_symbols_and_metadata`
 
 ### 6.2 Frontend Vitest Tests (`frontend/src/tests/`)
 
@@ -1396,13 +1441,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - renders settings fields and loads data from api
 - submits updated settings when Save button is clicked
 
-#### `GitRepoManager.test.tsx` (13 tests)
-- renders repository list with status badges, auto-sync buttons, and details
-- shows empty state when no repositories are registered
-- opens modal, handles cancel, and submits new repository registration
-- triggers repo sync, refreshes stats, and updates status optimistically
-- toggles auto-sync state and sends PATCH request
-- handles auto-sync toggle error with rollback and error toast
+#### `GitRepoDrawerAndActions.test.tsx` (7 tests)
 - opens webhook modal, displays URL & instructions, and copies URL
 - closes webhook modal via close button and backdrop click
 - triggers repo deletion, calls refreshStats, and removes repo optimistically
@@ -1410,6 +1449,14 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - renders mobile cards for repositories with action buttons and auto-sync toggles
 - opens and closes RepoSyncDrawer when Live Logs button is clicked
 - displays loading state initially and then renders loaded repositories seamlessly
+
+#### `GitRepoManager.test.tsx` (6 tests)
+- renders repository list with status badges, auto-sync buttons, and details
+- shows empty state when no repositories are registered
+- opens modal, handles cancel, and submits new repository registration
+- triggers repo sync, refreshes stats, and updates status optimistically
+- toggles auto-sync state and sends PATCH request
+- handles auto-sync toggle error with rollback and error toast
 
 #### `IngestionCatalogViewer.test.tsx` (5 tests)
 - renders summary catalog with git repos, monitored paths, and local storage stats
@@ -1428,17 +1475,25 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - handles errors when loading paths, adding path, deleting path, and browsing
 - renders loading state initially and transitions to empty state when no paths are configured
 
-#### `LocalStorageManager.test.tsx` (10 tests)
+#### `LocalStorageManager.test.tsx` (6 tests)
 - renders storage header, upload button, and tree view
 - supports folder navigation drilling and climbing back
 - opens upload modal, submits new file with custom category, and refreshes stats
 - opens preview modal, displays file text, and closes modal
 - replaces file content, updates vector store, and provides feedback
 - deletes file upon confirmation and refreshes list and stats
+
+#### `LocalStorageModals.test.tsx` (4 tests)
 - renders PDF files with red PDF icon in files table
 - intercepts .pdf upload, fetches preview data, opens PdfPreviewModal, and ingests on confirm
 - displays PDF notice and hides text textarea when upload path is a PDF
 - prevents direct text replacement of PDF files in replace modal
+
+#### `MultiLanguageAndRebuildFlow.test.tsx` (4 tests)
+- prompts confirmation and retries with rebuild_index=true when POST /admin/api/settings/embedding returns 400
+- displays COBOL, C#, TSX, TypeScript, JavaScript, and Python badges in IngestionCatalogViewer detailed table
+- classifies and formats COBOL and C# AST symbol kinds across NavigatorOutline, OmniSearch, Inspector, and CodeViewer
+- filters compiled frontend/framework bundle artifacts from topology graph data
 
 #### `NavigatorBreadcrumbs.test.tsx` (4 tests)
 - renders repo badge and clickable path segments
@@ -1583,7 +1638,7 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - renders hits with missing AST metadata and null scores without error
 - handles network error during search gracefully
 
-#### `Settings.test.tsx` (29 tests)
+#### `Settings.test.tsx` (8 tests)
 - renders vector database panel, auto-sync panel, multi-provider token boxes, rate limits, and host vault list
 - handles empty stats or fallback provider auth structure and vector store load error
 - switches vector store form fields between Qdrant and pgvector and changes default paths/urls
@@ -1592,6 +1647,8 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - executes vector store backend switch with user confirmation and refreshes stats
 - cancels vector store backend switch when confirmation is dismissed
 - handles vector store backend switch API failure
+
+#### `SettingsProvidersAndModels.test.tsx` (10 tests)
 - saves new tokens for GitHub, GitLab, and Gitea
 - handles token save failures gracefully
 - clears tokens with confirmation
@@ -1599,6 +1656,11 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - deletes host credential and handles cancellation / delete error
 - handles loadHostCredentials network failure gracefully
 - renders responsive mobile card list for host credentials and handles mobile deletion
+- renders embedding engine settings panel with current CPU threads, batch size, and system hardware
+- updates thread cap and batch size and saves embedding settings
+- handles embedding save failure and load errors gracefully
+
+#### `SettingsVectorAndSync.test.tsx` (11 tests)
 - renders auto-sync settings panel with loaded interval, secret placeholder, and webhook endpoint URL
 - changes polling interval and saves auto-sync settings
 - enters new global webhook secret and saves settings successfully
@@ -1609,9 +1671,6 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - copies webhook endpoint URL to clipboard
 - handles clipboard copy failure gracefully
 - handles auto-sync load and save API errors gracefully
-- renders embedding engine settings panel with current CPU threads, batch size, and system hardware
-- updates thread cap and batch size and saves embedding settings
-- handles embedding save failure and load errors gracefully
 - dynamically syncs vectorStore state when stats prop updates
 
 #### `ThemeSettings.test.tsx` (7 tests)
@@ -1666,24 +1725,26 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - triggers SVG and JSON export callbacks
 - falls back to legacy viewType buttons when onSelectPreset is not provided
 
-#### `TopologyExplorer.test.tsx` (18 tests)
+#### `TopologyExplorer.test.tsx` (10 tests)
 - renders toolbar, repository selector, view mode switcher, architectural presets, and default neighborhood view
-- handles switching architectural presets and queries topology with dynamic view_type
-- displays live node counts next to filter chips
-- toggles individual filter chips and updates activePreset accordingly
 - handles toggling between neighborhood view and global 2d canvas view
-- opens and closes physics controls popover in 2d canvas mode and handles preset selection & localStorage persistence
 - handles breadcrumb navigation and focal node selection in neighborhood view
-- handles changing repository selection and depth in canvas mode
 - opens slide-over inspector drawer on node inspect click and renders details
 - filters search matches and focuses on matching node
 - triggers SVG and JSON exports on button click
 - handles error state when topology API fails
-- handles changing node limit in canvas mode and queries topology with limit parameter
-- toggles hide orphans to filter disconnected nodes in canvas mode
 - renders TopologyMinimap with dynamic bounding box viewBox
 - findInitialFocalNode prioritizes entrypoints and non-test hub files over test files
 - computeInitialLayout scales layout bounds dynamically for generous spacing
+
+#### `TopologyExplorerControls.test.tsx` (8 tests)
+- handles switching architectural presets and queries topology with dynamic view_type
+- displays live node counts next to filter chips
+- toggles individual filter chips and updates activePreset accordingly
+- opens and closes physics controls popover in 2d canvas mode and handles preset selection & localStorage persistence
+- handles changing repository selection and depth in canvas mode
+- handles changing node limit in canvas mode and queries topology with limit parameter
+- toggles hide orphans to filter disconnected nodes in canvas mode
 - findMatchingPreset identifies exact matching presets or returns null for custom configurations
 
 #### `TopologyPhysicsControls.test.tsx` (15 tests)
@@ -1717,30 +1778,30 @@ over the PostgresConnectionAdapter using an initialized test engine._
 
 ### 6.3 Playwright End-to-End User Journeys (`frontend/e2e/`)
 
-- 1. navigates through all tabs including Diagnostics & Logs
+- 10. saves GitHub personal access token and verifies rate limit update
+- 11. clears GitHub token with confirmation dialog
+- 18. [Mobile] Add Repository modal renders correctly on mobile viewport and registers repo
+- 19. [Mobile] filesystem browser modal navigates and selects path on mobile viewport
+- 23. opens Webhook setup modal, displays copyable endpoint, and shows provider setup guides
+- 24. configures auto-sync polling schedule and manages global webhook secret in Settings
 - 2. adds a new Git repository via modal and verifies table/card update + toast
 - 3. triggers single-repo sync and verifies status feedback
 - 4. deletes a repository with window.confirm dialog verification
 - 5. renders repository error status with last_error diagnostic message
 - 6. opens filesystem browser, navigates directories, and selects folder for local path
 - 7. adds local path and deletes local path with confirmation
+- 16. [Mobile] renders repositories as responsive cards with sync and delete actions
+- 17. [Mobile] renders local paths as responsive cards with category badges and actions
+- 22. toggles repository auto-sync ON/OFF with optimistic UI update and toast confirmation
+- 1. navigates through all tabs including Diagnostics & Logs
 - 8. executes hybrid search with target type toggle (code vs doc) and repo filter
 - 9. handles empty search query and error response states
-- 10. saves GitHub personal access token and verifies rate limit update
-- 11. clears GitHub token with confirmation dialog
 - 12. triggers Reindex All Sources on Overview tab
 - 13. filters, searches, and clears logs in Diagnostics & Logs tab
 - 14. [Mobile] hamburger menu button opens and closes navigation drawer
 - 15. [Mobile] selecting a tab in drawer navigates to view and auto-closes drawer
-- 16. [Mobile] renders repositories as responsive cards with sync and delete actions
-- 17. [Mobile] renders local paths as responsive cards with category badges and actions
-- 18. [Mobile] Add Repository modal renders correctly on mobile viewport and registers repo
-- 19. [Mobile] filesystem browser modal navigates and selects path on mobile viewport
 - 20. [Mobile] performs search and renders responsive result item on mobile viewport
 - 21. [Mobile] log viewer filter pills, search bar, and traceback toggle operate cleanly on mobile
-- 22. toggles repository auto-sync ON/OFF with optimistic UI update and toast confirmation
-- 23. opens Webhook setup modal, displays copyable endpoint, and shows provider setup guides
-- 24. configures auto-sync polling schedule and manages global webhook secret in Settings
 - 1. renders multi-stage progress chip, percentage, and current file in table and mobile card
 - 2. opens RepoSyncDrawer when clicking progress chip and renders 5-stage checklist and overall progress
 - 3. opens RepoSyncDrawer via
@@ -1758,12 +1819,12 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - 7. Add Repository Modal - Layout Shift & Center Alignment
 - 8. Navigator Tab - Desktop 3-Pane Zero Element Collisions & Layout Fit
 - 9. Navigator Tab - Mobile Responsive Stack & Layout Fit
+- 3. Symbol Outline & Category Filtering: loads symbols, filters by category chips, and searches
+- 8. Document Reader: opens markdown document, renders full content and switches between rendered and source view
+- 9. Omni-Search & Synchronized Full-File Code Viewer: searches across symbols, opens full source, highlights target line with zero layout shift
 - 1. Navigation and Initial Load: mounts CodeNavigator container, toolbar, and stats
 - 2. File Tree Interaction: hierarchical structure, expand/collapse, and search filtering
-- 3. Symbol Outline & Category Filtering: loads symbols, filters by category chips, and searches
 - 4. Impact Inspector & Route Details: displays metrics, route card, signature, and copy permalink
 - 5. Caller Click-Through Navigation: jumps from caller card in inspector to caller file and symbol
 - 6. Density Mode Toggling: toggles Compact, Balanced, and Spacious layout modes
 - 7. Responsive Layout Audit: zero overflow, zero element collisions, and stable layout across desktop and mobile
-- 8. Document Reader: opens markdown document, renders full content and switches between rendered and source view
-- 9. Omni-Search & Synchronized Full-File Code Viewer: searches across symbols, opens full source, highlights target line with zero layout shift

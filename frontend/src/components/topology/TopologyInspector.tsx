@@ -1,4 +1,5 @@
 import type { NodeDetails } from '../../types';
+import { formatLanguageLabel, formatSymbolKind } from '../navigator/syntaxSemantics';
 
 interface TopologyInspectorProps {
   isOpen: boolean;
@@ -19,13 +20,22 @@ export function TopologyInspector({
 }: TopologyInspectorProps) {
   if (!isOpen) return null;
 
+  const rawLang = typeof nodeDetails?.metadata?.language === 'string' ? nodeDetails.metadata.language : undefined;
+  const rawKind = typeof nodeDetails?.metadata?.kind === 'string' ? nodeDetails.metadata.kind : undefined;
+  const displayLang = nodeDetails ? formatLanguageLabel(rawLang, nodeDetails.filepath) : '';
+
   return (
     <div className="topology-drawer">
       <div className="topology-drawer-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span className={`topology-badge-type badge-${nodeDetails?.type || 'file'}`}>
-            {nodeDetails?.type || 'NODE'}
+            {rawKind ? formatSymbolKind(rawKind) : nodeDetails?.type || 'NODE'}
           </span>
+          {displayLang && displayLang !== 'text' && (
+            <span className="badge badge-info" style={{ fontSize: '0.72rem' }}>
+              {displayLang}
+            </span>
+          )}
           <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text)' }}>
             {nodeDetails?.name || 'Inspecting Node'}
           </h3>

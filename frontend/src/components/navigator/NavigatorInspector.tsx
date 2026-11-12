@@ -3,6 +3,7 @@ import type { SymbolImpact, DensityMode, FileContentResult } from './types';
 import { getMethodBadgeClass, getKindBadgeClass } from './NavigatorOutline';
 import { NavigatorDocReader } from './NavigatorDocReader';
 import { NavigatorCodeViewer } from './NavigatorCodeViewer';
+import { formatLanguageLabel, formatSymbolKind } from './syntaxSemantics';
 
 interface NavigatorInspectorProps {
   impact: SymbolImpact | null;
@@ -161,6 +162,7 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
               content={fileContent.content}
               totalLines={fileContent.total_lines}
               sizeBytes={fileContent.size_bytes}
+              language={fileContent.language}
               targetStartLine={targetStartLine || symbol?.start_line}
               targetEndLine={targetEndLine || symbol?.end_line}
               impact={impact}
@@ -205,7 +207,9 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
             {/* Symbol Title & Location Card */}
             <div className="inspector-card symbol-summary-card">
               <div className="summary-title-row">
-                <span className={`symbol-kind-badge ${getKindBadgeClass(symbol.kind)}`}>{symbol.kind}</span>
+                <span className={`symbol-kind-badge ${getKindBadgeClass(symbol.kind)}`} title={symbol.kind}>
+                  {formatSymbolKind(symbol.kind)}
+                </span>
                 <h3 className="summary-name" title={symbol.full_symbol || symbol.name}>
                   {symbol.name}
                 </h3>
@@ -248,7 +252,9 @@ export const NavigatorInspector: React.FC<NavigatorInspectorProps> = ({
               <div className="metric-box">
                 <span className="metric-label">Language</span>
                 <span className="metric-value metric-lang" data-testid="metric-scope">
-                  {symbol.language || 'code'}
+                  {symbol.language || symbol.filepath
+                    ? formatLanguageLabel(symbol.language, symbol.filepath)
+                    : 'code'}
                 </span>
               </div>
             </div>

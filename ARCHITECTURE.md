@@ -56,13 +56,14 @@ flowchart TD
             TSLoader["tree_sitter_loader.py"]
             TextChunk["text_chunker.py"]
             SymExtract["symbol_extractor.py"]
-            RelExtract["relationship_extractor.py"]
+            CobolExtract["cobol_extractor.py"]
             RouteExtract["api_route_extractor.py"]
         end
 
         subgraph IndexingPkg["app/services/indexing/"]
             IdxState["state.py"]
             GitSync["git_syncer.py"]
+            GitDelta["git_delta_scanner.py"]
             LocalSync["local_syncer.py"]
             ProcFile["processor.py"]
         end
@@ -70,6 +71,7 @@ flowchart TD
         subgraph TopologyPkg["app/services/topology/"]
             GraphBuilder["graph_builder.py"]
             NodeDetails["node_details.py"]
+            GraphFilters["graph_filters.py"]
             TopoHelpers["helpers.py"]
         end
 
@@ -222,35 +224,40 @@ flowchart TD
   - `route_handlers.py`: `find_routes`, `find_api_callers` cross-repo API route and caller discovery.
   - `architecture_handlers.py`: `get_architecture`, `manage_adr` ADR tracking.
   - `storage_handlers.py`: `manage_local_file` (upload, replace, delete, read), `what_is_ingested` (unified multi-source catalog filter).
-  - `file_handlers.py`: `read_file` (bounded line-range file reader with vector chunk reconstruction), `summarize_file` (LLM executive file summarizer), and `grep_code` (literal and regex pattern matching across repositories).
-  - `diagnostic_handlers.py`: `diagnose_issue` (forensic stack trace resolution, route/literal matching, and semantic code candidate retrieval).
-- **Dynamic Resource Providers**:
-  - `knowledge://catalog/summary`: Markdown catalog of repositories, document types, and symbols.
+  - `file_handlers.py`: `read_file` (bounded line-range file reader with vector chunk reconstruction) and `summarize_file` (LLM executive file summarizer).
+  - `grep_handlers.py`: `grep_code` (deterministic literal and regex pattern matching across repositories with bounded line lengths and pagination).
+  - `diagnostic_handlers.py`: `diagnose_issue` (multi-language Python, C#, TS/JS, and COBOL/CICS stack trace resolution, route/literal matching, and semantic code candidate retrieval).
+  - `resource_handlers.py`: Compact catalog and per-repository paginated resource handlers.
+- **Dynamic Resource Providers & Paginated Templates**:
+  - `knowledge://catalog/summary`: Compact catalog of repositories, document types, symbol totals, and sub-resource templates.
+  - `knowledge://repo/{repo}/summary`, `knowledge://repo/{repo}/architecture`, `knowledge://repo/{repo}/files/{page}`, `knowledge://repo/{repo}/routes/{page}`, and `knowledge://repo/{repo}/adrs`.
 - **Agent Prompts**:
   - `search_infrastructure_docs`, `find_implementation_symbol`.
 
 ---
 
-### 5. Multi-Language Tree-sitter AST & Chunking (`app/services/chunking/`)
-- `tree_sitter_loader.py`: Lazy loader for 10 Tree-sitter grammars (Python, TS/JS, Go, Rust, C#, C++, Java, Ruby, PHP).
-- `text_chunker.py`: Hierarchical markdown breadcrumbs (`# > ## > ###`) and sliding window text chunking.
-- `symbol_extractor.py`: AST symbol declaration extraction with 1-indexed line numbers and signatures.
-- `relationship_extractor.py`: AST relations extraction (`CALLS`, `IMPORTS`, `EXTENDS`).
-- `api_route_extractor.py`: REST route definitions and client invocations across backend frameworks.
+### 5. Multi-Language Tree-sitter & COBOL AST Chunking (`app/services/chunking/`)
+- `tree_sitter_loader.py`: Lazy loader for 11+ Tree-sitter grammars including Python, TypeScript/TSX/JavaScript, C#, COBOL (`.cbl`, `.cob`, `.cpy`), Go, Rust, C/C++, Java, Ruby, and PHP.
+- `text_chunker.py`: Hierarchical markdown breadcrumbs (`# > ## > ###`), Tree-sitter relationship extraction (`CALLS`, `IMPORTS`, `INHERITS`, `IMPLEMENTS`, JSX usages), and sliding window text chunking.
+- `symbol_extractor.py`: AST symbol declaration extraction (classes, methods, C# records/constructors, TS/React callable arrow functions and object methods) with 1-indexed line numbers and signatures.
+- `cobol_extractor.py`: Fixed- and free-format COBOL AST & structural extractor (`PROGRAM-ID`, standalone `.cpy` copybooks, `01` records, sections, paragraphs, `PERFORM`, static/dynamic `CALL`, `EXEC CICS LINK/XCTL`, `COPY`, `EXEC SQL INCLUDE`).
+- `api_route_extractor.py`: REST route definitions and client invocations across FastAPI, Flask, ASP.NET Minimal APIs (`MapGroup`) & Controllers, Express, Gin, Axum, and `fetch`/Axios/typed API wrappers.
 
 ---
 
 ### 6. Incremental Ingestion & Syncing (`app/services/indexing/`)
 - `state.py`: Global indexing lock, active session notifications (`send_tool_list_changed`), configuration constants.
 - `git_syncer.py`: Ephemeral shallow git cloning, remote commit SHA tracking, AST symbol ingestion, vector upserts.
-- `local_syncer.py`: Local filesystem directories and Obsidian markdown vault indexing with mtime caching.
+- `git_delta_scanner.py`: Incremental tree hashing, compiled/minified bundle filtering, and forced re-sync delta calculation.
+- `local_syncer.py`: Local filesystem directories and Obsidian markdown vault indexing with mtime caching and bundle exclusion.
 - `processor.py`: Unified file parsing, YAML frontmatter extraction, and AST chunk generation.
 
 ---
 
 ### 7. Topology & Dependency Graph (`app/services/topology/`)
-- `graph_builder.py`: Builds multi-repo dependency graphs combining files, classes, functions, and API routes with depth-bounded BFS filtering.
+- `graph_builder.py`: Builds multi-repo dependency graphs combining files, classes, functions, COBOL programs/paragraphs, and API routes with depth-bounded BFS filtering.
 - `node_details.py`: Formats deep inspection data (code previews, line ranges, neighbor relations, permalinks).
+- `graph_filters.py`: Compiled asset bundle exclusion, multi-language AST node classification, and node/edge cardinality caps (`MAX_TOPOLOGY_NODES`, `MAX_TOPOLOGY_EDGES`).
 - `helpers.py`: Cross-repo node ID generation, URL link normalization, and graph pruning.
 
 ---

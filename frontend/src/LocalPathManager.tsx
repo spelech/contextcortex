@@ -290,7 +290,7 @@ export default function LocalPathManager({ refreshStats }: { refreshStats: () =>
       )}
 
       {isBrowserOpen && browseData && (
-        <div className="modal-backdrop" style={{ zIndex: 1100 }}>
+        <div className="modal-backdrop" style={{ zIndex: 10100 }}>
           <div className="glass-card modal-card browser-card">
             <div className="modal-header">
               <h2><i className="fa-solid fa-search"></i> Browse Workspace Files</h2>

@@ -6,16 +6,18 @@ from app.services.chunking.tree_sitter_loader import detect_language
 def normalize_path_pattern(path: str) -> str:
     """
     Normalizes path patterns across route definitions and client calls.
-    Converts express (:id), template literal (${id}), django (<int:id>), and next.js ([id])
-    formats to canonical {id} format.
+    Converts ASP.NET/FastAPI ({id:guid}), express (:id), template literal (${id}),
+    django (<int:id>), and next.js ([id]) formats to canonical {id} format.
     """
     if not path:
         return "/"
     path = path.strip("'\"` ")
+    # ASP.NET / FastAPI typed route constraints {id:guid}, {id:int}, {slug:str}
+    path = re.sub(r'\{([a-zA-Z_][a-zA-Z0-9_]*):[^{}]+\}', r'{\1}', path)
     # Django <int:id> or <id>
     path = re.sub(r'<(?:\w+:)?([a-zA-Z_][a-zA-Z0-9_]*)>', r'{\1}', path)
     # Express style :param
-    path = re.sub(r':([a-zA-Z_][a-zA-Z0-9_]*)', r'{\1}', path)
+    path = re.sub(r'(?:^|(?<=/)):([a-zA-Z_][a-zA-Z0-9_]*)', r'{\1}', path)
     # Template literal ${param}
     path = re.sub(r'\$\{([^{}]+)\}', r'{\1}', path)
     # Next.js [id]
@@ -26,6 +28,8 @@ def normalize_path_pattern(path: str) -> str:
         path = "/" + path
     # Remove duplicate slashes (except after http://)
     path = re.sub(r'(?<!:)/{2,}', '/', path)
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
     return path
 
 def route_pattern_to_regex(pattern: str) -> re.Pattern:
@@ -76,6 +80,14 @@ def _is_test_filepath(filepath: str) -> bool:
     return False
 
 
+def _join_route_prefix(prefix: str, sub_path: str) -> str:
+    if not prefix:
+        return sub_path or "/"
+    if not sub_path or sub_path == "/":
+        return prefix
+    return f"{prefix.rstrip('/')}/{sub_path.lstrip('/')}"
+
+
 def extract_api_routes_and_calls(
     code: str,
     filepath: str,
@@ -97,25 +109,50 @@ def extract_api_routes_and_calls(
 
     # Python: FastAPI / Starlette / Flask / Django
     if language == "python":
+        router_prefixes: Dict[str, str] = {}
+        for m_rtr in re.finditer(r'\b(\w+)\s*=\s*(?:[\w\.]*\.)?APIRouter\s*\(([\s\S]*?)\)', code):
+            mp = re.search(r'prefix\s*=\s*["\']([^"\']*)["\']', m_rtr.group(2))
+            router_prefixes[m_rtr.group(1)] = mp.group(1) if mp else ""
+        for m_bp in re.finditer(r'\b(\w+)\s*=\s*(?:[\w\.]*\.)?Blueprint\s*\(([\s\S]*?)\)', code):
+            mp = re.search(r'url_prefix\s*=\s*["\']([^"\']*)["\']', m_bp.group(2))
+            router_prefixes[m_bp.group(1)] = mp.group(1) if mp else ""
+
         for i, line in enumerate(lines, start=1):
-            # FastAPI / Starlette
-            m_fastapi = re.search(r'@(?:app|router|api_router)\.(get|post|put|delete|patch|options|head|trace)\s*\(\s*["\']([^"\']+)["\']', line, re.IGNORECASE)
+            window_text = " ".join(l.strip() for l in lines[i - 1:min(len(lines), i + 3)])
+            # FastAPI / Starlette (supports APIRouter(prefix=...), custom router vars, and empty "" sub-paths)
+            m_fastapi = re.search(r'@(\w+)\.(get|post|put|delete|patch|options|head|trace)\s*\(', line, re.IGNORECASE)
             if m_fastapi:
-                method = m_fastapi.group(1).upper()
-                path = normalize_path_pattern(m_fastapi.group(2))
-                handler = find_enclosing_symbol(i + 1, symbols) or find_enclosing_symbol(i, symbols)
-                routes.append(ApiRouteRecord(
-                    repo=repo, filepath=filepath, framework="fastapi",
-                    http_method=method, path_pattern=path, handler_symbol=handler,
-                    start_line=i, end_line=i
-                ))
-                continue
+                rtr_var = m_fastapi.group(1)
+                low_var = rtr_var.lower()
+                if rtr_var in router_prefixes or low_var in ("app", "router", "api_router") or low_var.endswith("_router") or low_var.startswith("router_"):
+                    m_path = re.search(
+                        rf'@{re.escape(rtr_var)}\.(?:get|post|put|delete|patch|options|head|trace)\s*\(\s*(?:path\s*=\s*)?["\']([^"\']*)["\']',
+                        window_text,
+                        re.IGNORECASE,
+                    )
+                    if m_path:
+                        method = m_fastapi.group(2).upper()
+                        raw_path = _join_route_prefix(router_prefixes.get(rtr_var, ""), m_path.group(1))
+                        path = normalize_path_pattern(raw_path)
+                        handler = None
+                        for offset in range(0, 12):
+                            handler = find_enclosing_symbol(i + offset, symbols)
+                            if handler:
+                                break
+                        routes.append(ApiRouteRecord(
+                            repo=repo, filepath=filepath, framework="fastapi",
+                            http_method=method, path_pattern=path, handler_symbol=handler,
+                            start_line=i, end_line=i
+                        ))
+                        continue
 
             # Flask
-            m_flask = re.search(r'@\w+\.route\s*\(\s*["\']([^"\']+)["\'](?:,\s*methods=\[([^\]]+)\])?', line, re.IGNORECASE)
+            m_flask = re.search(r'@(\w+)\.route\s*\(\s*["\']([^"\']*)["\'](?:,\s*methods=\[([^\]]+)\])?', line, re.IGNORECASE)
             if m_flask:
-                path = normalize_path_pattern(m_flask.group(1))
-                methods_str = m_flask.group(2)
+                bp_var = m_flask.group(1)
+                raw_path = _join_route_prefix(router_prefixes.get(bp_var, ""), m_flask.group(2))
+                path = normalize_path_pattern(raw_path)
+                methods_str = m_flask.group(3)
                 methods = ["GET"]
                 if methods_str:
                     methods = [m.strip(" \"'").upper() for m in methods_str.split(",") if m.strip(" \"'")]
@@ -156,18 +193,16 @@ def extract_api_routes_and_calls(
 
         # NestJS: Controller prefix + decorators
         nest_prefix = ""
-        nest_prefix_line = 1
         for i, line in enumerate(lines, start=1):
             m_ctrl = re.search(r'@Controller\s*\(\s*(?:["\'`]([^"\'`]*)["\'`])?\s*\)', line)
             if m_ctrl:
                 nest_prefix = m_ctrl.group(1) or ""
-                nest_prefix_line = i
 
             m_nest = re.search(r'@(Get|Post|Put|Delete|Patch|All|Options|Head)\s*\(\s*(?:["\'`]([^"\'`]*)["\'`])?\s*\)', line, re.IGNORECASE)
             if m_nest:
                 method = m_nest.group(1).upper()
                 sub_path = m_nest.group(2) or ""
-                full_path = normalize_path_pattern(f"{nest_prefix}/{sub_path}".replace("//", "/"))
+                full_path = normalize_path_pattern(_join_route_prefix(nest_prefix, sub_path))
                 handler = find_enclosing_symbol(i + 1, symbols) or find_enclosing_symbol(i, symbols)
                 routes.append(ApiRouteRecord(
                     repo=repo, filepath=filepath, framework="nestjs",
@@ -178,8 +213,6 @@ def extract_api_routes_and_calls(
         # Next.js App Router (route.ts / route.js)
         norm_fp = filepath.replace("\\", "/")
         if re.search(r'route\.(?:ts|js|tsx|jsx)$', norm_fp):
-            # Infer route path from folder structure
-            # e.g. app/api/users/[id]/route.ts -> /api/users/{id}
             route_base = re.sub(r'/route\.(?:ts|js|tsx|jsx)$', '', norm_fp)
             parts = route_base.split('/')
             raw_route_path = "/"
@@ -239,10 +272,11 @@ def extract_api_routes_and_calls(
                     start_line=i, end_line=i
                 ))
 
-    # C# / ASP.NET
+    # C# / ASP.NET Core Controllers & Minimal APIs
     elif language in ("c_sharp", "csharp"):
         controller_route = ""
         controller_name = ""
+        group_prefixes: Dict[str, str] = {}
         for i, line in enumerate(lines, start=1):
             m_class = re.search(r'class\s+([a-zA-Z0-9_]+Controller)\b', line)
             if m_class:
@@ -253,22 +287,33 @@ def extract_api_routes_and_calls(
             if m_croute and not controller_route:
                 controller_route = m_croute.group(1)
 
+            m_grp = re.search(r'\b(\w+)\s*=\s*(\w+)\.MapGroup\s*\(\s*["\']([^"\']*)["\']', line, re.IGNORECASE)
+            if m_grp:
+                grp_var, parent_var, grp_path = m_grp.group(1), m_grp.group(2), m_grp.group(3)
+                parent_prefix = group_prefixes.get(parent_var, "")
+                group_prefixes[grp_var] = _join_route_prefix(parent_prefix, grp_path)
+
         for i, line in enumerate(lines, start=1):
-            # Attribute routes [HttpGet("save")], [HttpPost], etc.
+            # Attribute routes [HttpGet("save")], [HttpGet("{id:guid}")], [HttpPost], etc.
             m_asp = re.search(r'\[(HttpGet|HttpPost|HttpPut|HttpDelete|HttpPatch)\s*(?:\(\s*["\']([^"\']*)["\']\s*\))?\]', line, re.IGNORECASE)
             if m_asp:
                 method = m_asp.group(1)[4:].upper()
                 sub_path = m_asp.group(2) or ""
-                # Handle [controller] replacement
                 c_route_resolved = controller_route.replace("[controller]", controller_name) if controller_route else ""
                 if sub_path.startswith("/"):
                     full_p = sub_path
                 elif c_route_resolved:
-                    full_p = f"{c_route_resolved}/{sub_path}".replace("//", "/")
+                    full_p = _join_route_prefix(c_route_resolved, sub_path)
                 else:
                     full_p = sub_path or "/"
                 path = normalize_path_pattern(full_p)
-                handler = find_enclosing_symbol(i + 1, symbols) or find_enclosing_symbol(i, symbols)
+                handler = None
+                for offset in range(1, 6):
+                    handler = find_enclosing_symbol(i + offset, symbols)
+                    if handler and "." in handler:
+                        break
+                if not handler:
+                    handler = find_enclosing_symbol(i + 1, symbols) or find_enclosing_symbol(i, symbols)
                 routes.append(ApiRouteRecord(
                     repo=repo, filepath=filepath, framework="aspnet",
                     http_method=method, path_pattern=path, handler_symbol=handler,
@@ -276,17 +321,49 @@ def extract_api_routes_and_calls(
                 ))
                 continue
 
-            # Minimal APIs: app.MapGet("/path", ...)
-            m_min = re.search(r'(?:app|routes|builder)\.Map(Get|Post|Put|Delete|Patch)\s*\(\s*["\']([^"\']+)["\']', line, re.IGNORECASE)
-            if m_min:
-                method = m_min.group(1).upper()
-                path = normalize_path_pattern(m_min.group(2))
-                handler = find_enclosing_symbol(i, symbols)
+            # Chained Minimal API: app.MapGroup("/api/v1").MapGet("/{id:guid}", ...)
+            m_chained = re.search(
+                r'\b(\w+)\.MapGroup\s*\(\s*["\']([^"\']*)["\']\s*\)\.Map(Get|Post|Put|Delete|Patch)\s*\(\s*["\']([^"\']*)["\'](?:\s*,\s*([a-zA-Z_][\w\.]*))?',
+                line,
+                re.IGNORECASE,
+            )
+            if m_chained:
+                parent_prefix = group_prefixes.get(m_chained.group(1), "")
+                grp_prefix = _join_route_prefix(parent_prefix, m_chained.group(2))
+                method = m_chained.group(3).upper()
+                path = normalize_path_pattern(_join_route_prefix(grp_prefix, m_chained.group(4)))
+                arg_handler = m_chained.group(5)
+                if arg_handler and arg_handler.lower() in ("async", "static"):
+                    arg_handler = None
+                handler = find_enclosing_symbol(i, symbols) or arg_handler
                 routes.append(ApiRouteRecord(
                     repo=repo, filepath=filepath, framework="aspnet",
                     http_method=method, path_pattern=path, handler_symbol=handler,
                     start_line=i, end_line=i
                 ))
+                continue
+
+            # Minimal APIs: app.MapGet("/path", ...) or groupVar.MapPost("/{id:guid}", Handler)
+            m_min = re.search(
+                r'\b(\w+)\.Map(Get|Post|Put|Delete|Patch)\s*\(\s*["\']([^"\']*)["\'](?:\s*,\s*([a-zA-Z_][\w\.]*))?',
+                line,
+                re.IGNORECASE,
+            )
+            if m_min:
+                recv = m_min.group(1)
+                if recv in group_prefixes or recv.lower() in ("app", "routes", "builder", "endpoints") or recv.lower().endswith(("group", "routes", "api")):
+                    method = m_min.group(2).upper()
+                    raw_p = _join_route_prefix(group_prefixes.get(recv, ""), m_min.group(3))
+                    path = normalize_path_pattern(raw_p)
+                    arg_handler = m_min.group(4)
+                    if arg_handler and arg_handler.lower() in ("async", "static"):
+                        arg_handler = None
+                    handler = find_enclosing_symbol(i, symbols) or arg_handler
+                    routes.append(ApiRouteRecord(
+                        repo=repo, filepath=filepath, framework="aspnet",
+                        http_method=method, path_pattern=path, handler_symbol=handler,
+                        start_line=i, end_line=i
+                    ))
 
     # Java / Spring
     elif language == "java":
@@ -313,13 +390,18 @@ def extract_api_routes_and_calls(
     # ----------------------------------------------------
 
     for i, line in enumerate(lines, start=1):
-        # fetch(...) in JS/TS
-        m_fetch = re.search(r'\bfetch\s*\(\s*(["\'`]([^"\'`]+)["\'`])', line)
+        # fetch(...) or apiRequest<T>(...) / httpRequest(...) in JS/TS
+        m_fetch = re.search(r'\b(?:fetch|apiRequest|httpRequest|requestJson)\b[\s\S]*?\(\s*(["\'`]([^"\'`]+)["\'`])', line)
         if m_fetch:
             url_raw = m_fetch.group(2)
             url_pattern = normalize_path_pattern(url_raw)
-            # Infer method if method: 'POST' is on same line
-            m_method = re.search(r'method:\s*["\'](GET|POST|PUT|DELETE|PATCH)["\']', line, re.IGNORECASE)
+            # Infer method if method: 'POST' is on same line or within options object in next 4 lines
+            tail_on_line = line[m_fetch.end():]
+            next_lines = "\n".join(lines[i:min(len(lines), i + 4)])
+            call_window = tail_on_line + "\n" + next_lines
+            # Stop at semicolon closing statement so we don't bleed into a subsequent fetch call
+            stmt_window = call_window.split(";")[0]
+            m_method = re.search(r'method\s*:\s*["\'](GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)["\']', stmt_window, re.IGNORECASE)
             method = m_method.group(1).upper() if m_method else "GET"
             caller = find_enclosing_symbol(i, symbols)
             calls.append(ApiClientCallRecord(

@@ -1,5 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import type { FileOutline, SymbolOutlineItem, DensityMode, OutlineCategory } from './types';
+import {
+  classifyOutlineSymbolCategory,
+  formatSymbolKind,
+  resolveLanguageDescriptor,
+} from './syntaxSemantics';
 
 interface NavigatorOutlineProps {
   outline: FileOutline | null;
@@ -28,18 +33,40 @@ export function getMethodBadgeClass(method: string): string {
 }
 
 export function getKindBadgeClass(kind: string): string {
-  switch (kind.toLowerCase()) {
+  const norm = (kind || '').trim().toLowerCase();
+  switch (norm) {
     case 'class':
+    case 'class_declaration':
+    case 'record':
+    case 'record_declaration':
+    case 'record_definition':
+    case 'program':
+    case 'program_definition':
       return 'kind-class';
     case 'function':
+    case 'function_declaration':
     case 'method':
+    case 'method_definition':
+    case 'method_declaration':
     case 'async function':
+    case 'constructor':
+    case 'constructor_declaration':
+    case 'section':
+    case 'paragraph':
       return 'kind-function';
     case 'variable':
     case 'constant':
+    case 'property':
+    case 'property_declaration':
       return 'kind-variable';
     case 'interface':
+    case 'interface_declaration':
     case 'type':
+    case 'type_alias_declaration':
+    case 'struct':
+    case 'struct_declaration':
+    case 'enum':
+    case 'enum_declaration':
       return 'kind-type';
     default:
       return 'kind-default';
@@ -59,7 +86,7 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
 
   const symbols = useMemo(() => outline?.symbols || [], [outline?.symbols]);
 
-  // Compute counts for category chips
+  // Compute counts for category chips across Python, TS/JS, C#, and COBOL AST kinds
   const counts = useMemo(() => {
     let routes = 0;
     let classes = 0;
@@ -67,11 +94,9 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
 
     for (const s of symbols) {
       if (s.route) routes++;
-      const k = s.kind.toLowerCase();
-      if (k === 'class' || k === 'interface') classes++;
-      else if (k.includes('func') || k === 'method') {
-        if (!s.route) functions++;
-      }
+      const cat = classifyOutlineSymbolCategory(s.kind);
+      if (cat === 'class') classes++;
+      else if (cat === 'function' && !s.route) functions++;
     }
 
     return {
@@ -85,27 +110,23 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
   // Filter symbols based on category & search query
   const filteredSymbols = useMemo(() => {
     return symbols.filter((s) => {
-      // Category filter
       if (activeCategory === 'routes') {
         if (!s.route) return false;
       } else if (activeCategory === 'classes') {
-        const k = s.kind.toLowerCase();
-        if (k !== 'class' && k !== 'interface') return false;
+        if (classifyOutlineSymbolCategory(s.kind) !== 'class') return false;
       } else if (activeCategory === 'functions') {
-        const k = s.kind.toLowerCase();
-        if (!k.includes('func') && k !== 'method') return false;
-        if (s.route) return false;
+        if (classifyOutlineSymbolCategory(s.kind) !== 'function' || s.route) return false;
       }
 
-      // Search query
       if (filterQuery.trim()) {
         const q = filterQuery.toLowerCase();
         const matchesName = s.name.toLowerCase().includes(q);
         const matchesSig = (s.signature || '').toLowerCase().includes(q);
+        const matchesKind = formatSymbolKind(s.kind).toLowerCase().includes(q) || s.kind.toLowerCase().includes(q);
         const matchesRoute = s.route
           ? s.route.path_pattern.toLowerCase().includes(q) || s.route.http_method.toLowerCase().includes(q)
           : false;
-        if (!matchesName && !matchesSig && !matchesRoute) return false;
+        if (!matchesName && !matchesSig && !matchesKind && !matchesRoute) return false;
       }
 
       return true;
@@ -113,6 +134,7 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
   }, [symbols, activeCategory, filterQuery]);
 
   const basename = outline?.filepath ? outline.filepath.split('/').pop() : '';
+  const langDescriptor = outline ? resolveLanguageDescriptor(outline.language, outline.filepath) : null;
 
   return (
     <div className={`nav-outline-pane density-${density}`} data-testid="navigator-outline-container">
@@ -141,6 +163,15 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
           {outline && (
             <div className="nav-file-badge" title={outline.filepath}>
               <span className="file-name">{basename}</span>
+              {langDescriptor && (
+                <span
+                  className={`symbol-kind-badge ${langDescriptor.badgeClass}`}
+                  style={{ marginLeft: '6px' }}
+                  data-testid="outline-language-badge"
+                >
+                  {langDescriptor.shortCode}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -297,7 +328,9 @@ export const NavigatorOutline: React.FC<NavigatorOutlineProps> = ({
                 >
                   <div className="symbol-header-row">
                     <div className="symbol-name-col">
-                      <span className={`symbol-kind-badge ${kindClass}`}>{s.kind}</span>
+                      <span className={`symbol-kind-badge ${kindClass}`} title={s.kind}>
+                        {formatSymbolKind(s.kind)}
+                      </span>
                       <span className="symbol-name-text" title={s.full_symbol || s.name}>
                         {s.name}
                       </span>

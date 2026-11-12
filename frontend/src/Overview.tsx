@@ -104,7 +104,7 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
 
             <div className="spec-row">
               <span>AST Chunker:</span>
-              <span>Tree-sitter AST (Classes, Functions, Methods)</span>
+              <span>Tree-sitter + COBOL AST (Python, TS/JS, C#, COBOL)</span>
             </div>
             <div className="spec-row">
               <span>Last Global Index:</span>

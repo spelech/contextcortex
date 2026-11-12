@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import type { SearchHit } from './types';
 import { useToast } from './ToastContext';
 import { getKindBadgeClass } from './components/navigator/NavigatorOutline';
+import { resolveLanguageDescriptor } from './components/navigator/syntaxSemantics';
 
 export interface SearchInspectorProps {
   onOpenInNavigator?: (repo: string, path: string, symbolId?: number, startLine?: number, endLine?: number) => void;
@@ -11,6 +12,11 @@ export interface SearchInspectorProps {
 export function cleanKind(kind?: string): string {
   if (!kind) return '';
   const k = kind.toLowerCase();
+  if (k.includes('constructor')) return 'constructor';
+  if (k.includes('record')) return 'record';
+  if (k.includes('program')) return 'program';
+  if (k === 'section') return 'section';
+  if (k === 'paragraph') return 'paragraph';
   if (k.includes('class')) return 'class';
   if (k.includes('method')) return 'method';
   if (k.includes('func')) return 'func';
@@ -18,7 +24,7 @@ export function cleanKind(kind?: string): string {
   if (k.includes('struct')) return 'struct';
   if (k.includes('enum')) return 'enum';
   if (k.includes('module')) return 'module';
-  return kind.replace(/_declaration|_item/g, '');
+  return kind.replace(/_declaration|_definition|_item/g, '');
 }
 
 export default function SearchInspector({ onOpenInNavigator }: SearchInspectorProps = {}) {
@@ -331,6 +337,7 @@ export default function SearchInspector({ onOpenInNavigator }: SearchInspectorPr
               const hasDense = hit.dense_score !== undefined && hit.dense_score !== null;
               const hasSparse = hit.sparse_score !== undefined && hit.sparse_score !== null;
               const displayKind = cleanKind(p.kind);
+              const langDesc = resolveLanguageDescriptor((p as any).language, p.rel_path);
 
               return (
                 <div className="search-hit-card" key={idx}>
@@ -338,6 +345,11 @@ export default function SearchInspector({ onOpenInNavigator }: SearchInspectorPr
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
                       <span className="badge badge-primary">{p.repo}</span>
                       <strong>{p.rel_path}</strong>
+                      {langDesc && (
+                        <span className={`badge ${langDesc.badgeClass}`} title={`Language: ${langDesc.label}`}>
+                          {langDesc.shortCode}
+                        </span>
+                      )}
                       {displayKind && (
                         <span className={`badge ${getKindBadgeClass(displayKind)}`}>
                           {displayKind}

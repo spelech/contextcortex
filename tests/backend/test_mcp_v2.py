@@ -152,7 +152,7 @@ async def test_search_code_with_dense_weight_and_score_breakdown(temp_mcp_db):
             doc_type="code",
             repo=None,
             language=None,
-            limit=5,
+            limit=6,
             dense_weight=0.6,
             search_mode="hybrid"
         )
@@ -226,7 +226,7 @@ async def test_search_docs_with_dense_weight_and_score_breakdown(temp_mcp_db):
             repo=None,
             category=None,
             tag=None,
-            limit=5,
+            limit=6,
             dense_weight=0.4,
             search_mode="lexical"
         )

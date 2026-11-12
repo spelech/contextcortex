@@ -57,6 +57,8 @@ python -c @"
 import tree_sitter_language_pack as t
 from app.services.chunking.tree_sitter_loader import EXTENSION_TO_LANGUAGE
 langs = sorted({l for l in EXTENSION_TO_LANGUAGE.values() if l != 'text'})
+if 'cobol' not in langs:
+    raise SystemExit('Expected cobol in EXTENSION_TO_LANGUAGE grammar set')
 # prefetch() accepts only download-manifest names (for example 'csharp', not 'c_sharp')
 manifest = set(t.manifest_languages())
 fetch = sorted({l if l in manifest else l.replace('_', '') for l in langs})

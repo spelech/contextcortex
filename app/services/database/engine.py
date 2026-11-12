@@ -38,13 +38,23 @@ def get_default_db_path() -> str:
 
 
 def get_current_db_path() -> str:
-    """Dynamically resolves SQLite path respecting module attribute overrides."""
-    db_mod = sys.modules.get("app.services.database")
-    if db_mod and hasattr(db_mod, "CACHE_DB_PATH") and db_mod.CACHE_DB_PATH:
-        return db_mod.CACHE_DB_PATH
+    """Dynamically resolves SQLite path respecting module attribute, function, and env overrides."""
+    env_path = os.getenv("CACHE_DB_PATH")
     conn_mod = sys.modules.get("app.services.database.connection")
-    if conn_mod and hasattr(conn_mod, "CACHE_DB_PATH") and conn_mod.CACHE_DB_PATH:
-        return conn_mod.CACHE_DB_PATH
+    initial_default = getattr(conn_mod, "_INITIAL_CACHE_DB_PATH", None) if conn_mod else None
+    conn_val = getattr(conn_mod, "CACHE_DB_PATH", None) if conn_mod else None
+    db_mod = sys.modules.get("app.services.database")
+    db_val = getattr(db_mod, "CACHE_DB_PATH", None) if db_mod else None
+
+    if conn_val and db_val and conn_val != db_val:
+        if conn_val != env_path and conn_val != initial_default:
+            return conn_val
+        if db_val != env_path and db_val != initial_default:
+            return db_val
+    if conn_val and conn_val != initial_default and conn_val != env_path:
+        return conn_val
+    if db_val and db_val != initial_default and db_val != env_path:
+        return db_val
     return get_default_db_path()
 
 
@@ -401,6 +411,19 @@ def _deduplicate_ast_and_routes(engine: Engine) -> None:
                 )
                 """,
             ]
+            cleanup_queries = [
+                "DELETE FROM ast_symbols WHERE name = 'anonymous'",
+                "DELETE FROM indexed_files WHERE filepath LIKE '%://www/assets/%' OR filepath LIKE '%://wwwroot/_framework/%' OR filepath LIKE '%://wwwroot/lib/%' OR filepath LIKE '%.min.js' OR filepath LIKE '%.min.css'",
+                "DELETE FROM ast_symbols WHERE filepath LIKE '%://www/assets/%' OR filepath LIKE '%://wwwroot/_framework/%' OR filepath LIKE '%://wwwroot/lib/%' OR filepath LIKE '%.min.js' OR filepath LIKE '%.min.css'",
+                "DELETE FROM ast_relationships WHERE source_filepath LIKE '%://www/assets/%' OR source_filepath LIKE '%://wwwroot/_framework/%' OR source_filepath LIKE '%://wwwroot/lib/%' OR source_filepath LIKE '%.min.js' OR source_filepath LIKE '%.min.css'",
+                "DELETE FROM file_summaries WHERE filepath LIKE '%://www/assets/%' OR filepath LIKE '%://wwwroot/_framework/%' OR filepath LIKE '%://wwwroot/lib/%' OR filepath LIKE '%.min.js' OR filepath LIKE '%.min.css'",
+            ]
+            for cq in cleanup_queries:
+                try:
+                    conn.execute(text(cq))
+                except Exception:
+                    pass
+
             for q in dedup_queries:
                 try:
                     conn.execute(text(q))

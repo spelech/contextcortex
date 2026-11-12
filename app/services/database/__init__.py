@@ -119,6 +119,7 @@ __all__ = [
     "get_file_settings",
     "set_file_settings",
     "ensure_file_summaries_columns",
+    "check_db_readiness",
     "clear_indexing_metadata",
     "list_git_host_credentials",
     "get_git_host_credential",

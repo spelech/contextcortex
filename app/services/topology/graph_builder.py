@@ -5,6 +5,13 @@ from collections import deque
 from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
 from app.services.topology.helpers import _clean_filepath, _get_permalink
+from app.services.topology.graph_filters import (
+    MAX_TOPOLOGY_NODES,
+    is_compiled_bundle_path,
+    classify_symbol_node_type,
+    cap_topology_edges,
+    resolve_doc_link_target,
+)
 from app.services.chunking import match_route_and_call
 
 logger = logging.getLogger("contextcortex.topology")
@@ -33,7 +40,7 @@ def get_topology_graph(
         v_type = "files"
 
     depth = max(1, min(10, depth))
-    limit = max(1, min(2000, limit))
+    limit = max(1, min(MAX_TOPOLOGY_NODES, limit))
 
     with _get_conn() as conn:
         # 1. Verify repository existence if not __all__
@@ -54,11 +61,26 @@ def get_topology_graph(
         where_repo = "" if repo == "__all__" else " WHERE repo = ?"
         params = [] if repo == "__all__" else [repo]
 
-        file_rows = conn.execute(f"SELECT filepath, repo, doc_type, language, commit_sha FROM indexed_files{where_repo}", params).fetchall()
-        symbol_rows = conn.execute(f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language FROM ast_symbols{where_repo}", params).fetchall()
-        rel_rows = conn.execute(f"SELECT id, repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number FROM ast_relationships{where_repo}", params).fetchall()
-        route_rows = conn.execute(f"SELECT id, repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line FROM api_routes{where_repo}", params).fetchall()
-        call_rows = conn.execute(f"SELECT id, repo, filepath, http_method, url_pattern, caller_symbol, line_number FROM api_client_calls{where_repo}", params).fetchall()
+        file_rows = [
+            r for r in conn.execute(f"SELECT filepath, repo, doc_type, language, commit_sha FROM indexed_files{where_repo}", params).fetchall()
+            if not is_compiled_bundle_path(r["filepath"])
+        ]
+        symbol_rows = [
+            r for r in conn.execute(f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language FROM ast_symbols{where_repo}", params).fetchall()
+            if not is_compiled_bundle_path(r["filepath"])
+        ]
+        rel_rows = [
+            r for r in conn.execute(f"SELECT id, repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number FROM ast_relationships{where_repo}", params).fetchall()
+            if not is_compiled_bundle_path(r["source_filepath"])
+        ]
+        route_rows = [
+            r for r in conn.execute(f"SELECT id, repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line FROM api_routes{where_repo}", params).fetchall()
+            if not is_compiled_bundle_path(r["filepath"])
+        ]
+        call_rows = [
+            r for r in conn.execute(f"SELECT id, repo, filepath, http_method, url_pattern, caller_symbol, line_number FROM api_client_calls{where_repo}", params).fetchall()
+            if not is_compiled_bundle_path(r["filepath"])
+        ]
 
     # 3. Build Node Catalog
     all_nodes: Dict[str, Dict[str, Any]] = {}
@@ -101,11 +123,7 @@ def get_topology_graph(
         key_file = (r["repo"], clean_fp)
         symbols_by_file.setdefault(key_file, []).append(s_id)
 
-        kind_lower = (r["kind"] or "").lower()
-        if kind_lower in ("class", "interface", "struct", "enum", "trait", "type"):
-            node_type = "class"
-        else:
-            node_type = "function"
+        node_type = classify_symbol_node_type(r["kind"])
 
         all_nodes[s_id] = {
             "id": s_id,
@@ -120,7 +138,8 @@ def get_topology_graph(
             "language": r["language"],
             "metadata": {
                 "full_symbol": r["full_symbol"],
-                "kind": r["kind"]
+                "kind": r["kind"],
+                "language": r["language"],
             }
         }
 
@@ -257,52 +276,7 @@ def get_topology_graph(
                         src_f_id = f_id
                         break
 
-            tgt_sym = rel["target_symbol"]
-            tgt_f_id = None
-
-            # 1. Exact path match in repo
-            if (rel["repo"], tgt_sym) in file_id_by_path:
-                tgt_f_id = file_id_by_path.get((rel["repo"], tgt_sym))
-
-            # 2. Relative path resolution from source file's directory
-            if not tgt_f_id:
-                src_dir = os.path.dirname(clean_src_fp)
-                norm_tgt = os.path.normpath(os.path.join(src_dir, tgt_sym)).replace("\\", "/")
-                tgt_f_id = file_id_by_path.get((rel["repo"], norm_tgt))
-
-            # 3. With common doc extensions (.md, .txt, .markdown)
-            if not tgt_f_id:
-                for ext in (".md", ".txt", ".markdown"):
-                    cand = tgt_sym + ext
-                    if (rel["repo"], cand) in file_id_by_path:
-                        tgt_f_id = file_id_by_path.get((rel["repo"], cand))
-                        break
-                    src_dir = os.path.dirname(clean_src_fp)
-                    norm_tgt = os.path.normpath(os.path.join(src_dir, cand)).replace("\\", "/")
-                    if (rel["repo"], norm_tgt) in file_id_by_path:
-                        tgt_f_id = file_id_by_path.get((rel["repo"], norm_tgt))
-                        break
-
-            # 4. Basename / Title / Wikilink match across repo files
-            if not tgt_f_id:
-                tgt_base = os.path.splitext(os.path.basename(tgt_sym))[0].lower()
-                tgt_clean = tgt_sym.lower().replace("-", " ").replace("_", " ")
-                for (f_repo, f_path), f_id in file_id_by_path.items():
-                    if f_repo == rel["repo"]:
-                        f_base = os.path.splitext(os.path.basename(f_path))[0].lower()
-                        f_clean = f_base.replace("-", " ").replace("_", " ")
-                        if f_base == tgt_base or f_clean == tgt_clean or f_path.lower().endswith(tgt_sym.lower()):
-                            tgt_f_id = f_id
-                            break
-
-            # 5. Cross-repo fallback
-            if not tgt_f_id:
-                for (f_repo, f_path), f_id in file_id_by_path.items():
-                    f_base = os.path.splitext(os.path.basename(f_path))[0].lower()
-                    if f_base == os.path.splitext(os.path.basename(tgt_sym))[0].lower():
-                        tgt_f_id = f_id
-                        break
-
+            tgt_f_id = resolve_doc_link_target(rel["repo"], clean_src_fp, rel["target_symbol"], file_id_by_path)
             if src_f_id and tgt_f_id and src_f_id != tgt_f_id:
                 add_edge(src_f_id, tgt_f_id, "DOC_LINKS_TO", rel["line_number"], label="LINKS_TO")
             continue
@@ -447,10 +421,10 @@ def get_topology_graph(
         # Filter nodes to visited set
         final_nodes = [filtered_nodes[nid] for nid in visited if nid in filtered_nodes]
         final_node_ids = {n["id"] for n in final_nodes}
-        final_edges = [
-            e for e in all_edges 
+        final_edges = cap_topology_edges([
+            e for e in all_edges
             if e["source"] in final_node_ids and e["target"] in final_node_ids
-        ]
+        ])
         return {
             "nodes": final_nodes,
             "edges": final_edges,
@@ -470,7 +444,9 @@ def get_topology_graph(
         nodes_list = nodes_list[:limit]
 
     retained_ids = {n["id"] for n in nodes_list}
-    final_edges = [e for e in filtered_edges if e["source"] in retained_ids and e["target"] in retained_ids]
+    final_edges = cap_topology_edges([
+        e for e in filtered_edges if e["source"] in retained_ids and e["target"] in retained_ids
+    ])
 
     return {
         "nodes": nodes_list,

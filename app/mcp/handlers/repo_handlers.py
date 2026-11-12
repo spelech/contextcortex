@@ -1,18 +1,18 @@
 import json
 import logging
-from typing import List, Dict, Any, Optional, Annotated
+import sys
+from typing import Dict, Any, Optional, Annotated
 from pydantic import Field
 
-from app.services.database import get_db_connection, extract_host_from_url, get_adr, list_adrs, create_adr, update_adr, supersede_adr, upsert_adr
-from app.services.search import execute_hybrid_search, trace_symbol_path
-from app.services.indexing import get_dynamic_catalog_description, sync_single_git_repo, run_full_indexing
+from app.services.database import get_db_connection
 from app.services.vector_store import get_vector_store_config
-from app.services.git_manager import format_git_permalink, format_git_commit_url
-from app.services.chunking import match_route_and_call, normalize_path_pattern
-from app.models.schemas import SearchRequest, FindSymbolRequest, GetFileOutlineRequest, SyncRequest
+from app.services.git_manager import format_git_commit_url
+from app.mcp.handlers.resource_handlers import handle_catalog_summary
 
 logger = logging.getLogger("contextcortex")
-import sys
+
+MAX_COMMIT_FILES_CHANGED = 25
+
 
 def _get_tools_attr(name, default):
     t_mod = sys.modules.get("app.mcp.tools")
@@ -20,19 +20,22 @@ def _get_tools_attr(name, default):
 
 
 async def handle_list_repositories() -> str:
-    """Lists all indexed local paths and remote Git repositories, including active branches, commit SHAs, and file counts."""
+    """List all registered Git repositories and monitored local directory paths with branches, commit SHAs, sync status, and file counts."""
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
-            git_repos = conn.execute("SELECT id, name, url, branch, commit_sha, provider, auth_user, status, last_synced FROM git_repositories").fetchall()
-            local_paths = conn.execute("SELECT path, repo, category FROM indexed_paths WHERE enabled = 1").fetchall()
+            git_repos = conn.execute(
+                "SELECT id, name, url, branch, commit_sha, provider, auth_user, status, last_synced FROM git_repositories"
+            ).fetchall()
+            local_paths = conn.execute(
+                "SELECT path, repo, category FROM indexed_paths WHERE enabled = 1"
+            ).fetchall()
             counts = conn.execute("SELECT repo, count(*) as cnt FROM indexed_files GROUP BY repo").fetchall()
             file_count_map = {c["repo"]: c["cnt"] for c in counts}
 
-        repos_list = []
-        for gr in git_repos:
-            repos_list.append({
+        repos_list = [
+            {
                 "id": gr["id"],
                 "name": gr["name"],
                 "url": gr["url"],
@@ -42,16 +45,19 @@ async def handle_list_repositories() -> str:
                 "status": gr["status"],
                 "files": file_count_map.get(gr["name"], 0),
                 "last_synced": gr["last_synced"],
-            })
+            }
+            for gr in git_repos
+        ]
 
-        monitored_list = []
-        for lp in local_paths:
-            monitored_list.append({
+        monitored_list = [
+            {
                 "repo": lp["repo"],
                 "path": lp["path"],
                 "category": lp["category"],
                 "files": file_count_map.get(lp["repo"], 0),
-            })
+            }
+            for lp in local_paths
+        ]
 
         return json.dumps({
             "git_repositories": repos_list,
@@ -65,9 +71,9 @@ async def handle_list_repositories() -> str:
 
 
 async def handle_sync_repository(
-    repo: Annotated[Optional[str], Field(description="Repository name to sync (or omit to sync all).")] = None
+    repo: Annotated[Optional[str], Field(description="Optional registered Git repository name to re-fetch and delta-index. Omit to trigger a full background re-indexing run across all sources (requires editor role).")] = None,
 ) -> str:
-    """Trigger an immediate re-fetch and re-indexing of a registered Git repo or local path."""
+    """Trigger an asynchronous background Git delta fetch or full repository re-indexing run."""
     target_repo = repo
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
@@ -78,9 +84,8 @@ async def handle_sync_repository(
             with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
                 row = conn.execute("SELECT id FROM git_repositories WHERE name = ?", (target_repo,)).fetchone()
             if row:
-                sync_fn = idx_mod.sync_single_git_repo
                 threading.Thread(
-                    target=sync_fn,
+                    target=idx_mod.sync_single_git_repo,
                     args=(row["id"],),
                     kwargs={"force": True},
                     daemon=True,
@@ -92,8 +97,7 @@ async def handle_sync_repository(
                     "message": f"Triggered background sync for repo: '{target_repo}'",
                 })
 
-        full_fn = idx_mod.run_full_indexing
-        threading.Thread(target=full_fn, daemon=True).start()
+        threading.Thread(target=idx_mod.run_full_indexing, daemon=True).start()
         return json.dumps({
             "status": "triggered",
             "scope": "full",
@@ -108,7 +112,7 @@ async def handle_sync_repository(
 
 
 async def handle_index_status() -> str:
-    """Get global index health, vector counts, Git provider auth sources, and active embedding models."""
+    """Inspect global vector store health, point counts, active dense/sparse embedding models, and Git provider auth status."""
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
@@ -127,8 +131,7 @@ async def handle_index_status() -> str:
         mode_str = "Remote" if mode_val == "remote" else "Embedded Disk"
         storage_loc = vs_cfg.get("url") if mode_val == "remote" else vs_cfg.get("storage_path")
         collection_name = vs_cfg.get("collection", "knowledge_rag_v1")
-        stats = vs_cfg.get("stats", {})
-        points_count = stats.get("points_count", 0)
+        points_count = vs_cfg.get("stats", {}).get("points_count", 0)
 
         emb_cfg = get_embedding_config()
         effective_sparse = (
@@ -190,74 +193,10 @@ async def handle_index_status() -> str:
         return json.dumps({"error": f"Failed to get status: {str(e)}"})
 
 
-async def handle_catalog_summary() -> str:
-    """Catalog of indexed repositories, documentation files, and AST symbol distributions."""
-    try:
-        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
-        enforce_tool_permission(Role.VIEWER)
-        with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
-            git_repos = conn.execute("SELECT name, url, branch, commit_sha, status, last_synced FROM git_repositories").fetchall()
-            files = conn.execute("SELECT filepath, repo, doc_type, language FROM indexed_files").fetchall()
-            symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
-            try:
-                sym_by_repo_rows = conn.execute("SELECT repo, count(*) as cnt FROM ast_symbols GROUP BY repo").fetchall()
-                sym_by_repo = {r["repo"]: r["cnt"] for r in sym_by_repo_rows}
-            except Exception:
-                sym_by_repo = {}
-
-        repo_file_counts: Dict[str, int] = {}
-        repo_lang_counts: Dict[str, Dict[str, int]] = {}
-        for f in files:
-            r_name = f["repo"] or "unknown"
-            lang = f["language"] or "text"
-            repo_file_counts[r_name] = repo_file_counts.get(r_name, 0) + 1
-            lang_map = repo_lang_counts.setdefault(r_name, {})
-            lang_map[lang] = lang_map.get(lang, 0) + 1
-
-        repos_data = []
-        for gr in git_repos:
-            r_name = gr["name"]
-            repos_data.append({
-                "name": r_name,
-                "url": gr["url"],
-                "branch": gr["branch"],
-                "commit_sha": gr["commit_sha"],
-                "status": gr["status"],
-                "last_synced": gr["last_synced"],
-                "files": repo_file_counts.get(r_name, 0),
-                "symbols": sym_by_repo.get(r_name, 0),
-                "languages": repo_lang_counts.get(r_name, {}),
-            })
-
-        files_data = []
-        for f in files[:40]:
-            fp = f["filepath"]
-            clean_fp = (fp.split("://", 1)[1] if "://" in fp else fp).replace("\\", "/")
-            files_data.append({
-                "repo": f["repo"],
-                "file": clean_fp,
-                "doc_type": f["doc_type"],
-                "language": f["language"],
-            })
-
-        return json.dumps({
-            "total_files": len(files),
-            "total_symbols": symbols_count,
-            "git_repositories": repos_data,
-            "files": files_data,
-            "truncated_files": max(0, len(files) - 40),
-        }, default=str)
-    except ForbiddenError as fe:
-        logger.warning(f"Forbidden error in handle_catalog_summary: {fe}")
-        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
-    except Exception as e:
-        return json.dumps({"error": f"Error generating catalog resource: {str(e)}"})
-
-
 def handle_search_infrastructure_docs(
-    topic: Annotated[str, Field(description="The specific infrastructure topic to search for")]
+    topic: Annotated[str, Field(description="Infrastructure topic, network route, or deployment subsystem to investigate.")],
 ) -> str:
-    """Workflow to search system infrastructure documentation, container mappings, or network routes."""
+    """Workflow prompt to search infrastructure documentation, ADRs, container mappings, and network routes."""
     from app.services.auth import enforce_tool_permission, Role
     enforce_tool_permission(Role.VIEWER)
     return json.dumps({
@@ -265,7 +204,7 @@ def handle_search_infrastructure_docs(
         "topic": topic,
         "recommended_tools": ["search_docs", "manage_adr", "read_file", "grep_code"],
         "instructions": (
-            f"1. Call search_docs(query='{topic}', search_mode='hybrid') to locate relevant architecture notes, runbooks, and container configs.\n"
+            f"1. Call search_docs(query='{topic}', mode='hybrid') to locate relevant architecture notes, runbooks, and container configs.\n"
             f"2. Call manage_adr(action='search', query='{topic}') to check if any Architectural Decision Records govern '{topic}'.\n"
             f"3. For the top matching files, call read_file(path=..., repo=..., start_line=..., end_line=...) to verify exact port mappings, environment variables, or reverse proxy routes before summarizing."
         ),
@@ -273,9 +212,9 @@ def handle_search_infrastructure_docs(
 
 
 def handle_onboard_repository(
-    repo: Annotated[str, Field(description="Repository name to onboard and map out")]
+    repo: Annotated[str, Field(description="Repository name to map out and onboard.")],
 ) -> str:
-    """Structured workflow to rapidly understand a repository's architecture, entry points, API routes, and recent activity."""
+    """Structured workflow prompt to map a repository's architecture, routes, outlines, and recent commits."""
     from app.services.auth import enforce_tool_permission, Role
     enforce_tool_permission(Role.VIEWER)
     return json.dumps({
@@ -292,10 +231,10 @@ def handle_onboard_repository(
 
 
 def handle_triage_error(
-    issue_text: Annotated[str, Field(description="Stack trace, exception message, or failing HTTP route")],
-    repo: Annotated[Optional[str], Field(description="Optional target repository name")] = None
+    issue_text: Annotated[str, Field(description="Stack trace, exception message, or failing HTTP endpoint.")],
+    repo: Annotated[Optional[str], Field(description="Optional target repository name.")] = None,
 ) -> str:
-    """Forensic workflow to diagnose an error, stack trace, or failing endpoint down to root-cause lines and recent commits."""
+    """Forensic workflow prompt to diagnose stack traces or failing endpoints down to root-cause lines and recent commits."""
     from app.services.auth import enforce_tool_permission, Role
     enforce_tool_permission(Role.VIEWER)
     return json.dumps({
@@ -313,10 +252,10 @@ def handle_triage_error(
 
 
 def handle_investigate_change_impact(
-    symbol: Annotated[str, Field(description="Function, method, or class name being modified")],
-    repo: Annotated[Optional[str], Field(description="Optional repository name")] = None
+    symbol: Annotated[str, Field(description="Function, method, or class name being modified.")],
+    repo: Annotated[Optional[str], Field(description="Optional repository name.")] = None,
 ) -> str:
-    """Blast-radius workflow to identify all internal callers, cross-repo API consumers, and tests affected by changing a symbol."""
+    """Blast-radius workflow prompt to identify callers, cross-repo API consumers, and tests affected by modifying a symbol."""
     from app.services.auth import enforce_tool_permission, Role
     enforce_tool_permission(Role.VIEWER)
     return json.dumps({
@@ -334,22 +273,24 @@ def handle_investigate_change_impact(
 
 
 async def handle_get_recent_changes(
-    repo: Annotated[str, Field(description="Repository name to inspect recent commits for.")],
-    filepath: Annotated[Optional[str], Field(description="Optional relative file path filter to only return commits touching this file.")] = None,
-    symbol: Annotated[Optional[str], Field(description="Optional AST symbol name; resolves symbol's file path and filters commits touching that file.")] = None,
-    limit: Annotated[int, Field(description="Max commits to return (default 10, max 50).")] = 10,
+    repo: Annotated[str, Field(description="Registered Git repository name to inspect retained commit history for.")],
+    filepath: Annotated[Optional[str], Field(description="Optional relative file path filter returning only commits touching that file.")] = None,
+    symbol: Annotated[Optional[str], Field(description="Optional AST symbol name (Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++); resolves its file path and filters commits touching it.")] = None,
+    limit: Annotated[int, Field(description="Maximum commits returned per page, clamped to 1..50 (default 10). Each commit caps files_changed to 25 entries.")] = 10,
+    offset: Annotated[int, Field(description="0-based commit offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
 ) -> str:
-    """Returns recent commit history for a repository, optionally filtered by file path or symbol name."""
+    """Inspect retained Git commit history filtered by file path or AST symbol with bounded file-change lists and pagination."""
     try:
         from app.services.auth import enforce_tool_permission, Role
         enforce_tool_permission(Role.VIEWER)
 
-        safe_limit = max(1, min(limit if limit is not None else 10, 50))
+        safe_limit = max(1, min(int(limit if limit is not None else 10), 50))
+        safe_offset = max(0, int(offset if offset is not None else 0))
 
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             repo_row = conn.execute(
                 "SELECT id, name, url, provider, retain_commits_count FROM git_repositories WHERE name = ?",
-                (repo,)
+                (repo,),
             ).fetchone()
 
             retained_limit = (
@@ -358,50 +299,51 @@ async def handle_get_recent_changes(
                 else 20
             )
 
-            # Check if repository has commits in git_commits
             stored_count = 0
             if repo_row:
                 count_row = conn.execute("SELECT count(*) as c FROM git_commits WHERE repo = ?", (repo,)).fetchone()
                 stored_count = count_row["c"] if count_row else 0
 
-            # If retain_commits_count == 0 or no commits are stored
             if not repo_row or retained_limit == 0 or stored_count == 0:
                 fallback_resp = {
                     "repo": repo,
                     "retained": False,
                     "retained_limit": retained_limit if repo_row else 0,
+                    "total": 0,
+                    "offset": safe_offset,
+                    "limit": safe_limit,
+                    "has_more": False,
+                    "next_offset": None,
                     "commits": [],
-                    "message": f"Commit history is not retained for repository '{repo}' (retain_commits_count={retained_limit if repo_row else 0}). Retrieve commit history directly from the Git repository."
+                    "message": (
+                        f"Commit history is not retained for repository '{repo}' "
+                        f"(retain_commits_count={retained_limit if repo_row else 0}). "
+                        "Retrieve commit history directly from the Git repository."
+                    ),
                 }
                 return json.dumps(fallback_resp, separators=(",", ":"), default=str)
 
             git_url = repo_row["url"]
             provider = repo_row["provider"]
 
-            # Resolve filter filepath
             target_filepath = None
             if filepath and filepath.strip():
-                clean_fp = filepath.strip().replace("\\", "/").lstrip("/")
-                target_filepath = clean_fp
+                target_filepath = filepath.strip().replace("\\", "/").lstrip("/")
             elif symbol and symbol.strip():
                 sym_row = conn.execute(
                     "SELECT filepath FROM ast_symbols WHERE repo = ? AND (name = ? OR full_symbol = ?) LIMIT 1",
-                    (repo, symbol.strip(), symbol.strip())
+                    (repo, symbol.strip(), symbol.strip()),
                 ).fetchone()
                 if sym_row:
                     raw_fp = sym_row["filepath"]
-                    if "://" in raw_fp:
-                        target_filepath = raw_fp.split("://", 1)[1].replace("\\", "/")
-                    else:
-                        target_filepath = raw_fp.replace("\\", "/")
+                    target_filepath = (raw_fp.split("://", 1)[1] if "://" in raw_fp else raw_fp).replace("\\", "/")
 
-            # Query commits from git_commits
             rows = conn.execute(
                 "SELECT commit_sha, author, committed_at, message, files_changed FROM git_commits WHERE repo = ? ORDER BY committed_at DESC, id DESC",
-                (repo,)
+                (repo,),
             ).fetchall()
 
-            matched_commits = []
+            all_matched = []
             for r in rows:
                 files_raw = r["files_changed"]
                 try:
@@ -411,33 +353,44 @@ async def handle_get_recent_changes(
 
                 if target_filepath:
                     norm_target = target_filepath.replace("\\", "/").lstrip("/")
-                    matched = False
-                    for f in files_list:
-                        norm_f = f.replace("\\", "/").lstrip("/")
-                        if norm_f == norm_target or norm_f.endswith("/" + norm_target) or norm_target.endswith("/" + norm_f):
-                            matched = True
-                            break
+                    matched = any(
+                        (nf := f.replace("\\", "/").lstrip("/")) == norm_target
+                        or nf.endswith("/" + norm_target)
+                        or norm_target.endswith("/" + nf)
+                        for f in files_list
+                    )
                     if not matched:
                         continue
 
+                files_total = len(files_list)
+                files_truncated = files_total > MAX_COMMIT_FILES_CHANGED
                 commit_url = format_git_commit_url(git_url, r["commit_sha"], provider=provider)
-                matched_commits.append({
+                all_matched.append({
                     "sha": r["commit_sha"],
                     "short_sha": r["commit_sha"][:7],
                     "author": r["author"],
                     "date": r["committed_at"],
                     "message": r["message"],
-                    "files_changed": files_list,
+                    "files_changed": files_list[:MAX_COMMIT_FILES_CHANGED],
+                    "files_changed_total": files_total,
+                    "files_changed_truncated": files_truncated,
                     "commit_url": commit_url,
                 })
 
-                if len(matched_commits) >= safe_limit:
-                    break
+            total = len(all_matched)
+            paged_commits = all_matched[safe_offset : safe_offset + safe_limit]
+            has_more = (safe_offset + safe_limit) < total
+            next_offset = (safe_offset + safe_limit) if has_more else None
 
-            result = {
+            result: Dict[str, Any] = {
                 "repo": repo,
                 "retained_limit": retained_limit,
-                "commits": matched_commits,
+                "total": total,
+                "offset": safe_offset,
+                "limit": safe_limit,
+                "has_more": has_more,
+                "next_offset": next_offset,
+                "commits": paged_commits,
             }
             if target_filepath:
                 result["filter_filepath"] = target_filepath

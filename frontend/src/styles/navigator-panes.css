@@ -1,0 +1,379 @@
+/* ==========================================================================
+   2. Error Banner
+   ========================================================================== */
+.nav-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: rgba(239, 68, 68, 0.15);
+  border-bottom: 1px solid var(--danger, #ef4444);
+  color: #fca5a5;
+  font-size: 0.84rem;
+}
+
+.nav-error-banner span {
+  flex: 1;
+}
+
+.error-close-btn {
+  background: transparent;
+  border: none;
+  color: #fca5a5;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+/* ==========================================================================
+   3. 3-Pane Layout
+   ========================================================================== */
+.nav-panes-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg-base, #07181b);
+}
+
+.nav-pane-column {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+  border-right: 1px solid var(--border-card, #15474d);
+}
+
+.nav-pane-column:last-child {
+  border-right: none;
+}
+
+.nav-pane-tree {
+  flex: 0 0 320px;
+  min-width: 250px;
+  max-width: 420px;
+  background: rgba(7, 24, 27, 0.95);
+}
+
+.nav-pane-outline {
+  flex: 0 0 360px;
+  min-width: 280px;
+  max-width: 480px;
+  background: rgba(10, 32, 36, 0.95);
+}
+
+.nav-pane-inspector {
+  flex: 1 1 400px;
+  min-width: 320px;
+  background: var(--bg-base, #07181b);
+}
+
+/* ==========================================================================
+   4. Pane Common Headers & Content
+   ========================================================================== */
+.nav-tree-header,
+.nav-outline-header,
+.nav-inspector-header {
+  padding: var(--nav-header-padding);
+  background: var(--bg-card, #0d2c2f);
+  border-bottom: 1px solid var(--border-card, #15474d);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nav-inspector-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.nav-tree-title-row,
+.nav-outline-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nav-tree-title,
+.nav-outline-title,
+.nav-inspector-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text, #f8fafc);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.nav-tree-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted, #94a3b8);
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-icon-btn:hover {
+  color: var(--text, #f8fafc);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border-card, #15474d);
+}
+
+.nav-file-badge {
+  font-size: 0.74rem;
+  padding: 2px 8px;
+  background: rgba(20, 184, 166, 0.15);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+  border-radius: 12px;
+  color: var(--accent-light, #2dd4bf);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.nav-tree-search-bar,
+.nav-outline-search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-card, #15474d);
+  border-radius: 5px;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.nav-tree-search-bar:focus-within,
+.nav-outline-search-bar:focus-within {
+  border-color: var(--primary, #0891b2);
+}
+
+.nav-tree-search-bar .search-icon-wrapper,
+.nav-outline-search-bar .search-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  color: var(--text-muted, #94a3b8);
+  pointer-events: none;
+}
+
+.nav-tree-search-input,
+.nav-outline-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  color: var(--text, #f8fafc);
+  font-size: var(--nav-font-size);
+  outline: none;
+  min-width: 0;
+}
+
+.nav-tree-clear-btn,
+.nav-outline-clear-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+/* Category Chips in Outline */
+.nav-category-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  overflow-x: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.nav-category-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.category-chip {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-card, #15474d);
+  border-radius: 12px;
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+
+.category-chip:hover {
+  color: var(--text, #f8fafc);
+  border-color: rgba(20, 184, 166, 0.4);
+}
+
+.category-chip.active {
+  background: rgba(8, 145, 178, 0.25);
+  border-color: var(--primary, #0891b2);
+  color: var(--accent-light, #2dd4bf);
+  font-weight: 600;
+}
+
+.chip-count {
+  font-size: 0.68rem;
+  opacity: 0.8;
+}
+
+/* Scrollable Content Panes */
+.nav-tree-content,
+.nav-outline-content,
+.nav-inspector-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 0;
+}
+
+.nav-inspector-content {
+  padding: 14px;
+}
+
+/* ==========================================================================
+   5. Tree View Nodes
+   ========================================================================== */
+.nav-tree-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  outline: none;
+}
+
+.nav-tree-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--nav-item-height);
+  padding: var(--nav-item-padding);
+  font-size: var(--nav-font-size);
+  color: var(--text, #f8fafc);
+  cursor: pointer;
+  user-select: none;
+  border-left: 2px solid transparent;
+  transition: background-color 0.1s, border-color 0.1s;
+}
+
+.nav-tree-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-tree-item.selected {
+  background: rgba(8, 145, 178, 0.2);
+  border-left-color: var(--accent, #14b8a6);
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.nav-tree-item.focused {
+  outline: 1px dotted var(--accent, #14b8a6);
+  outline-offset: -1px;
+}
+
+.tree-chevron {
+  width: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.64rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.chevron-arrow {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.chevron-arrow.open {
+  transform: rotate(90deg);
+}
+
+.chevron-spacer {
+  width: 14px;
+}
+
+.tree-icon {
+  font-size: var(--nav-icon-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+}
+
+.tree-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-right: 6px;
+}
+
+.badge-symbols {
+  font-size: var(--nav-badge-font-size);
+  background: rgba(8, 145, 178, 0.15);
+  border: 1px solid rgba(8, 145, 178, 0.3);
+  color: #67e8f9;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-family: var(--font-family-mono, monospace);
+}
+
+.badge-routes {
+  font-size: var(--nav-badge-font-size);
+  background: rgba(20, 184, 166, 0.18);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  color: #5eead4;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-family: var(--font-family-mono, monospace);
+  font-weight: 600;
+}
+
