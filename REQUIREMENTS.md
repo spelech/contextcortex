@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1199 Automated Tests** (835 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1207 Automated Tests** (843 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1376,6 +1376,16 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_viewer_role_permissions` - _Viewer key can read resources but is denied content mutations & administrative settings (403)._
 - `test_editor_role_permissions` - _Editor key can perform content mutations and syncs, but is denied administrative settings (403)._
 - `test_admin_role_permissions` - _Admin key has full permissions across configuration, editor, and viewer endpoints._
+
+#### `tests/test_route_specificity.py` (8 tests)
+- `test_literal_segment_beats_parameter`
+- `test_match_route_and_call_still_matches_the_general_route`
+- `test_call_goes_to_most_specific_route`
+- `test_method_and_repository_are_resolved_separately`
+- `test_find_api_callers_general_route_skips_calls_of_specific_routes`
+- `test_find_api_callers_specific_route_keeps_its_calls`
+- `test_find_api_callers_without_known_route_keeps_every_match`
+- `test_trace_path_external_callers_and_handlers_use_most_specific_route`
 
 #### `tests/test_storage_api_routes.py` (4 tests)
 - `test_storage_upload_and_get_file`
