@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import app.services.database as db_service
 import app.services.indexing.processor as proc_service
+from app.services.text_decoding import read_source_text
 
 logger = logging.getLogger("contextcortex.indexer")
 
@@ -91,8 +92,7 @@ def compute_git_repo_delta(
                 found_filepaths.add(db_filepath)
 
                 try:
-                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                        content = f.read()
+                    content = read_source_text(full_path)
                     file_hash = active_proc.compute_text_hash(content)
                 except Exception as e:
                     logger.warning(f"Failed to read/hash file {full_path}: {e}")

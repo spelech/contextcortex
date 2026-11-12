@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1155 Automated Tests** (791 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1164 Automated Tests** (800 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1369,6 +1369,17 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_get_or_create_summary_vector_store_failure_resilience`
 - `test_get_or_create_summary_reads_via_file_reader`
 - `test_generate_file_summary_truncates_huge_content`
+
+#### `tests/test_text_decoding_and_nul_safety.py` (9 tests)
+- `test_decode_source_bytes_returns_the_text_for_each_encoding`
+- `test_decode_source_bytes_removes_stray_nul_from_utf8_text`
+- `test_decode_source_bytes_keeps_very_short_input_as_utf8`
+- `test_read_source_text_reads_a_powershell_style_utf16_file`
+- `test_strip_nul_cleans_nested_structures_and_keeps_other_values`
+- `test_upsert_removes_nul_from_content_payload_and_metadata`
+- `test_upsert_skips_only_the_rejected_record_and_keeps_the_rest`
+- `test_upsert_reports_failure_when_every_record_is_rejected`
+- `test_rejected_record_warnings_do_not_log_the_chunk_text`
 
 #### `tests/test_webhooks.py` (12 tests)
 - `test_github_webhook_no_secret`
