@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.21.3](https://github.com/spelech/contextcortex/compare/v2.21.2...v2.21.3) (2026-11-12)
+
+
+### Bug Fixes
+
+* **database,docker:** add FK cascade indexes for fast startup deduplication and upgrade Dockerfile to Python 3.12 ([6c6beaa](https://github.com/spelech/contextcortex/commit/6c6beaa23dc18f62fbc3eb135fd68e92d2dc03dd))
+* **git:** remove read-only .git packfiles on Windows when falling back to fresh clone ([#112](https://github.com/spelech/contextcortex/issues/112)) ([162c2b0](https://github.com/spelech/contextcortex/commit/162c2b0692a7ca505f48ba4344cab308843048a6))
+
 ## [2.21.2](https://github.com/spelech/contextcortex/compare/v2.21.1...v2.21.2) (2026-11-11)
 
 
