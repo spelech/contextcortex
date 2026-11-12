@@ -1,4 +1,4 @@
-# Developer Documentation: ContextCortex (v2.23.3) <!-- x-release-please-version -->
+# Developer Documentation: ContextCortex (v2.24.0) <!-- x-release-please-version -->
 
 This document provides instructions for developing, testing, configuring, and running ContextCortex locally.
 

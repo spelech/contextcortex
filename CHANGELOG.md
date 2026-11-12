@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.24.0](https://github.com/spelech/contextcortex/compare/v2.23.3...v2.24.0) (2026-11-12)
+
+
+### Features
+
+* **mcp:** add Code Mode (execute_script) with a sandboxed V8 engine ([#136](https://github.com/spelech/contextcortex/issues/136)) ([1f60139](https://github.com/spelech/contextcortex/commit/1f60139e184b3a4b405f4b09c5635102fe1071be))
+
+
+### Bug Fixes
+
+* **api-callers:** give each client call to its most specific route ([#134](https://github.com/spelech/contextcortex/issues/134)) ([b975619](https://github.com/spelech/contextcortex/commit/b975619e2779401767317d4292199ce842361746))
+* **diagnose:** respect the repo filter and rank candidates from the matched route ([#132](https://github.com/spelech/contextcortex/issues/132)) ([79aecc8](https://github.com/spelech/contextcortex/commit/79aecc8fe1888513c9186198b23c2014f64c6730))
+* **grep-code:** give each context line its own line number ([#135](https://github.com/spelech/contextcortex/issues/135)) ([6bbd20d](https://github.com/spelech/contextcortex/commit/6bbd20dc85bfe501c9a90a390b2bb35e315a86e8))
+* **paths:** return repository-relative paths for local sources ([#133](https://github.com/spelech/contextcortex/issues/133)) ([5a58141](https://github.com/spelech/contextcortex/commit/5a581418ac74d22bd6db93f387bc8de5713d2e1f))
+
 ## [2.23.3](https://github.com/spelech/contextcortex/compare/v2.23.2...v2.23.3) (2026-11-12)
 
 
