@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.22.0](https://github.com/spelech/contextcortex/compare/v2.21.4...v2.22.0) (2026-11-12)
+
+
+### Features
+
+* **ast,cobol:** add multi-language AST extraction and cross-file linking for COBOL, C#, TS/TSX, and Python ([66f374d](https://github.com/spelech/contextcortex/commit/66f374dd63a58e3bf0dc3249361f1b536f27f8df))
+* **core,ast,mcp:** multi-language AST linking, first-class COBOL support, and modular &lt;= 500 LOC architecture ([386babf](https://github.com/spelech/contextcortex/commit/386babfa4ea8c6971717693b297ffd4abc19db1b))
+* **mcp:** add bounded pagination, complete parameter docs, and modular knowledge resources ([3231cf6](https://github.com/spelech/contextcortex/commit/3231cf69d12da279a191f7c4daab8f5eca9e8736))
+* **ui:** add multi-language badges, syntax rendering, modular styling, and layout stability ([8e17484](https://github.com/spelech/contextcortex/commit/8e17484b854174dfa3d96ba7f885e2346c996576))
+
+
+### Bug Fixes
+
+* **security:** resolve CodeQL path injection alerts with explicit startswith barriers ([d759063](https://github.com/spelech/contextcortex/commit/d7590634a47f18029943a14cddc1d2a6ee510741))
+* **security:** sanitize path resolver barriers and settings exception exposure for CodeQL ([bf9206b](https://github.com/spelech/contextcortex/commit/bf9206b063a16a30c13ecb59e6f3f749b1b6af05))
+* **storage,diagnostics:** persist multi-language relationships in local storage and enhance stack trace parsing ([c7d6c56](https://github.com/spelech/contextcortex/commit/c7d6c5622a763615bf23b865572accaa47bf482f))
+
 ## [2.21.4](https://github.com/spelech/contextcortex/compare/v2.21.3...v2.21.4) (2026-11-12)
 
 
