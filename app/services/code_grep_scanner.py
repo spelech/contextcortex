@@ -17,6 +17,45 @@ IGNORED_GREP_DIRS = frozenset({
 })
 
 
+_GLOB_CHARS = set("*?[")
+# Regex syntax that is rare in literal search text: alternation, wildcards, classes, anchors, groups.
+_REGEX_HINT = re.compile(r"\||\.\*|\.\+|\\[bdswBDSW]|\[[^\]]+\]|^\^|\$$|\(\?|\{\d+(,\d*)?\}")
+
+
+def path_matches_filter(rel_path: str, path_filter: Optional[str]) -> bool:
+    """
+    True when `rel_path` matches the filter. A filter with wildcards is an fnmatch glob on the path or the
+    file name ('*.cs', 'app/services/*'). A filter without wildcards is a file or folder: it matches the same
+    path, anything below it, or a path that ends with it ('Services_V2', 'src/app/main.py', 'main.py').
+    """
+    if not path_filter:
+        return True
+    norm_path = rel_path.replace("\\", "/").strip("/")
+    norm_filter = path_filter.replace("\\", "/").strip().strip("/")
+    if not norm_filter:
+        return True
+    if _GLOB_CHARS & set(norm_filter):
+        return fnmatch.fnmatch(norm_path, norm_filter) or fnmatch.fnmatch(os.path.basename(norm_path), norm_filter)
+    path_l, filter_l = norm_path.lower(), norm_filter.lower()
+    return (
+        path_l == filter_l
+        or path_l.startswith(filter_l + "/")
+        or path_l.endswith("/" + filter_l)
+        or f"/{filter_l}/" in f"/{path_l}/"
+    )
+
+
+def looks_like_regex(pattern: str) -> bool:
+    """True when a pattern uses regex syntax (for example `A|B` or `foo.*bar`) and compiles as a regex."""
+    if not pattern or not _REGEX_HINT.search(pattern):
+        return False
+    try:
+        re.compile(pattern)
+    except re.error:
+        return False
+    return True
+
+
 def execute_code_grep(
     pattern: str,
     storage_root: str,
@@ -97,14 +136,7 @@ def execute_code_grep(
                 rel_p = os.path.relpath(full_p, storage_root).replace("\\", "/")
                 disk_files.append((full_p, "local_storage", rel_p))
 
-    def _matches_glob(path_str: str) -> bool:
-        if not path_glob:
-            return True
-        norm_path = path_str.replace("\\", "/")
-        norm_glob = path_glob.replace("\\", "/")
-        return fnmatch.fnmatch(norm_path, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_path), norm_glob)
-
-    disk_files = [item for item in disk_files if _matches_glob(item[2])]
+    disk_files = [item for item in disk_files if path_matches_filter(item[2], path_glob)]
 
     matches: List[Dict[str, Any]] = []
     seen_keys = set()
