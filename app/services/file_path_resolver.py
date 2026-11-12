@@ -92,49 +92,6 @@ def parse_repo_uri(path: str, repo: Optional[str] = None) -> Tuple[str, Optional
     return clean_path, effective_repo, False
 
 
-def _find_case_insensitive_child(root_dir: str, rel_path: str) -> Optional[str]:
-    """Resolves a relative path case-insensitively inside root_dir when exact case is absent on POSIX."""
-    if not root_dir or not rel_path:
-        return None
-    root_abs = os.path.normpath(os.path.abspath(root_dir))
-    root_prefix = root_abs if root_abs.endswith(os.sep) else root_abs + os.sep
-    if not os.path.isdir(root_abs):
-        return None
-    parts = [p for p in rel_path.replace("\\", "/").split("/") if p and p != "."]
-    if not parts or any(p == ".." for p in parts):
-        return None
-    curr = root_abs
-    for seg in parts:
-        if not (curr.startswith(root_prefix) or curr == root_abs):
-            return None
-        exact = os.path.normpath(os.path.abspath(os.path.join(curr, seg)))
-        if not (exact.startswith(root_prefix) or exact == root_abs):
-            return None
-        if os.path.lexists(exact):
-            curr = exact
-            continue
-        if not os.path.isdir(curr):
-            return None
-        seg_low = seg.lower()
-        matched_entry = None
-        try:
-            for entry in os.listdir(curr):
-                if entry.lower() == seg_low:
-                    cand_entry = os.path.normpath(os.path.abspath(os.path.join(curr, entry)))
-                    if cand_entry.startswith(root_prefix) or cand_entry == root_abs:
-                        matched_entry = cand_entry
-                    break
-        except OSError:
-            return None
-        if matched_entry is None:
-            return None
-        curr = matched_entry
-    final_res = os.path.normpath(os.path.abspath(curr))
-    if not (final_res.startswith(root_prefix) or final_res == root_abs):
-        return None
-    return final_res
-
-
 class FilePathResolver:
     """Resolves and validates file paths across local storage, monitored paths, and persistent Git clones."""
 
@@ -144,17 +101,10 @@ class FilePathResolver:
     def is_within_root(self, target: str, root: str) -> bool:
         root_abs = os.path.normpath(os.path.abspath(root))
         root_prefix = root_abs if root_abs.endswith(os.sep) else root_abs + os.sep
-
         target_abs = os.path.normpath(os.path.abspath(target))
 
-        # 1. Structural prefix barrier check FIRST before any filesystem probes
-        if not (target_abs.startswith(root_prefix) or target_abs == root_abs):
-            return False
-
-        if os.path.isfile(root_abs):
-            target_real = os.path.realpath(target_abs)
-            root_real = os.path.realpath(root_abs)
-            return target_abs == root_abs and target_real == root_real
+        if not target_abs.startswith(root_prefix):
+            return target_abs == root_abs
 
         try:
             if os.path.commonpath([target_abs, root_abs]) != root_abs:
@@ -165,8 +115,8 @@ class FilePathResolver:
         target_real = os.path.realpath(target_abs)
         root_real = os.path.realpath(root_abs)
         root_real_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
-        if not (target_real.startswith(root_real_prefix) or target_real == root_real):
-            return False
+        if not target_real.startswith(root_real_prefix):
+            return target_real == root_real
 
         try:
             if os.path.commonpath([target_real, root_real]) != root_real:
@@ -205,30 +155,28 @@ class FilePathResolver:
             return {}
 
     def resolve_persistent_repo_clone_dir(self, repo_name: str, persistent_repos: Dict[str, str]) -> Optional[str]:
-        if repo_name in persistent_repos:
-            return persistent_repos[repo_name]
-        try:
-            from app.services.git_manager import get_persistent_repo_dir
-            cand_dir = get_persistent_repo_dir(repo_name)
-            if os.path.isdir(cand_dir):
-                return cand_dir
-        except Exception:
-            pass
-        return None
+        return persistent_repos.get(repo_name)
 
     def is_ephemeral_git_repo_absent(self, repo_name: Optional[str]) -> bool:
         """Returns True if repo_name is a registered Git repo whose local persistent clone directory is absent."""
         if not repo_name or repo_name in ("local_storage", "__all__", "all", "unknown"):
             return False
         try:
-            from app.services.git_manager import get_persistent_repo_dir
+            from app.services.git_manager import PERSISTENT_REPOS_DIR
             with self._get_db_connection() as conn:
                 row = conn.execute("SELECT name FROM git_repositories WHERE name = ?", (repo_name,)).fetchone()
                 if not row:
                     row = conn.execute("SELECT repo FROM indexed_files WHERE repo = ? LIMIT 1", (repo_name,)).fetchone()
             if not row:
                 return False
-            repo_dir = get_persistent_repo_dir(repo_name)
+            safe_name = os.path.basename(str(repo_name).strip())
+            if not safe_name or safe_name in (".", ".."):
+                return False
+            base_dir = os.path.normpath(os.path.abspath(PERSISTENT_REPOS_DIR))
+            base_prefix = base_dir if base_dir.endswith(os.sep) else base_dir + os.sep
+            repo_dir = os.path.normpath(os.path.abspath(os.path.join(base_dir, safe_name)))
+            if not repo_dir.startswith(base_prefix):
+                return False
             return not os.path.isdir(repo_dir)
         except Exception:
             return False
@@ -261,7 +209,7 @@ class FilePathResolver:
                 if is_abs
                 else os.path.normpath(os.path.abspath(os.path.join(storage_abs, clean_path)))
             )
-            if not (target.startswith(storage_prefix) or target == storage_abs):
+            if not target.startswith(storage_prefix):
                 raise ValueError("Path outside authorized roots")
             if not self.is_within_root(target, storage_abs):
                 raise ValueError("Path outside authorized roots")
@@ -277,22 +225,17 @@ class FilePathResolver:
                 repo_prefix = repo_abs if repo_abs.endswith(os.sep) else repo_abs + os.sep
                 if is_abs:
                     target_p = os.path.normpath(os.path.abspath(clean_path))
-                    if (target_p.startswith(repo_prefix) or target_p == repo_abs) and self.is_within_root(target_p, repo_abs):
-                        if os.path.lexists(target_p):
+                    if target_p.startswith(repo_prefix):
+                        if self.is_within_root(target_p, repo_abs) and os.path.lexists(target_p):
                             return target_p, "persistent_repo"
                 else:
                     cand_repo = os.path.normpath(os.path.abspath(os.path.join(repo_abs, clean_path)))
-                    if (cand_repo.startswith(repo_prefix) or cand_repo == repo_abs):
-                        if os.path.lexists(cand_repo):
-                            if not self.is_within_root(cand_repo, repo_abs):
-                                raise ValueError("Path outside authorized roots")
-                            return cand_repo, "persistent_repo"
-                    ci_cand = _find_case_insensitive_child(repo_abs, clean_path)
-                    if ci_cand and (ci_cand.startswith(repo_prefix) or ci_cand == repo_abs):
-                        if os.path.lexists(ci_cand):
-                            if not self.is_within_root(ci_cand, repo_abs):
-                                raise ValueError("Path outside authorized roots")
-                            return ci_cand, "persistent_repo"
+                    if not cand_repo.startswith(repo_prefix):
+                        raise ValueError("Path outside authorized roots")
+                    if os.path.lexists(cand_repo):
+                        if not self.is_within_root(cand_repo, repo_abs):
+                            raise ValueError("Path outside authorized roots")
+                        return cand_repo, "persistent_repo"
 
             matching_paths = [ip for ip in indexed_paths if ip.get("repo") == effective_repo]
 
@@ -301,9 +244,9 @@ class FilePathResolver:
                 for ip in matching_paths:
                     root = os.path.normpath(os.path.abspath(ip["path"]))
                     root_prefix = root if root.endswith(os.sep) else root + os.sep
-                    if (target.startswith(root_prefix) or target == root) and self.is_within_root(target, root):
+                    if target.startswith(root_prefix) and self.is_within_root(target, root):
                         return target, "indexed_path"
-                if (target.startswith(proj_prefix) or target == proj_abs) and self.is_within_root(target, proj_abs):
+                if target.startswith(proj_prefix) and self.is_within_root(target, proj_abs):
                     return target, "workspace"
                 raise ValueError("Path outside authorized roots")
 
@@ -311,41 +254,43 @@ class FilePathResolver:
                 root = os.path.normpath(os.path.abspath(ip["path"]))
                 root_prefix = root if root.endswith(os.sep) else root + os.sep
                 candidate = os.path.normpath(os.path.abspath(os.path.join(root, clean_path)))
-                if (candidate.startswith(root_prefix) or candidate == root):
-                    if os.path.lexists(candidate):
-                        if not self.is_within_root(candidate, root):
-                            raise ValueError("Path outside authorized roots")
-                        return candidate, "indexed_path"
-                ci_ip = _find_case_insensitive_child(root, clean_path)
-                if ci_ip and (ci_ip.startswith(root_prefix) or ci_ip == root):
-                    if os.path.lexists(ci_ip):
-                        if not self.is_within_root(ci_ip, root):
-                            raise ValueError("Path outside authorized roots")
-                        return ci_ip, "indexed_path"
+                if not candidate.startswith(root_prefix):
+                    raise ValueError("Path outside authorized roots")
+                if os.path.lexists(candidate):
+                    if not self.is_within_root(candidate, root):
+                        raise ValueError("Path outside authorized roots")
+                    return candidate, "indexed_path"
 
             if not had_uri:
                 cand_proj = os.path.normpath(os.path.abspath(os.path.join(proj_abs, clean_path)))
-                if (cand_proj.startswith(proj_prefix) or cand_proj == proj_abs):
-                    if os.path.lexists(cand_proj) and self.is_within_root(cand_proj, proj_abs):
-                        return cand_proj, "workspace"
+                if not cand_proj.startswith(proj_prefix):
+                    raise ValueError("Path outside authorized roots")
+                if os.path.lexists(cand_proj) and self.is_within_root(cand_proj, proj_abs):
+                    return cand_proj, "workspace"
 
             if repo_disk_dir and os.path.isdir(repo_disk_dir):
                 repo_abs = os.path.normpath(os.path.abspath(repo_disk_dir))
                 repo_prefix = repo_abs if repo_abs.endswith(os.sep) else repo_abs + os.sep
                 cand_repo = os.path.normpath(os.path.abspath(os.path.join(repo_abs, clean_path)))
-                if (cand_repo.startswith(repo_prefix) or cand_repo == repo_abs) and self.is_within_root(cand_repo, repo_abs):
+                if not cand_repo.startswith(repo_prefix):
+                    raise ValueError("Path outside authorized roots")
+                if self.is_within_root(cand_repo, repo_abs):
                     return cand_repo, "persistent_repo"
 
             for ip in matching_paths:
                 root = os.path.normpath(os.path.abspath(ip["path"]))
                 root_prefix = root if root.endswith(os.sep) else root + os.sep
                 candidate = os.path.normpath(os.path.abspath(os.path.join(root, clean_path)))
-                if (candidate.startswith(root_prefix) or candidate == root) and self.is_within_root(candidate, root):
+                if not candidate.startswith(root_prefix):
+                    raise ValueError("Path outside authorized roots")
+                if self.is_within_root(candidate, root):
                     return candidate, "indexed_path"
 
             if not matching_paths:
                 cand_proj = os.path.normpath(os.path.abspath(os.path.join(proj_abs, clean_path)))
-                if not had_uri and (cand_proj.startswith(proj_prefix) or cand_proj == proj_abs) and self.is_within_root(cand_proj, proj_abs):
+                if not cand_proj.startswith(proj_prefix):
+                    raise ValueError("Path outside authorized roots")
+                if not had_uri and self.is_within_root(cand_proj, proj_abs):
                     return cand_proj, "workspace"
                 raise FileNotFoundError(
                     f"Repository '{effective_repo}' has no local clone on disk for '{clean_path}'"
@@ -355,68 +300,74 @@ class FilePathResolver:
         # 3. No repository specified
         if is_abs:
             target = os.path.normpath(os.path.abspath(clean_path))
-            if (target.startswith(storage_prefix) or target == storage_abs) and self.is_within_root(target, storage_abs):
+            if target.startswith(storage_prefix) and self.is_within_root(target, storage_abs):
                 return target, "local_storage"
             for ip in indexed_paths:
                 root = os.path.normpath(os.path.abspath(ip["path"]))
                 root_prefix = root if root.endswith(os.sep) else root + os.sep
-                if (target.startswith(root_prefix) or target == root) and self.is_within_root(target, root):
+                if target.startswith(root_prefix) and self.is_within_root(target, root):
                     return target, "indexed_path"
             for r_dir in self.get_authorized_persistent_repos().values():
                 r_abs = os.path.normpath(os.path.abspath(r_dir))
                 r_prefix = r_abs if r_abs.endswith(os.sep) else r_abs + os.sep
-                if os.path.isdir(r_abs) and (target.startswith(r_prefix) or target == r_abs) and self.is_within_root(target, r_abs):
+                if os.path.isdir(r_abs) and target.startswith(r_prefix) and self.is_within_root(target, r_abs):
                     return target, "persistent_repo"
-            if (target.startswith(proj_prefix) or target == proj_abs) and self.is_within_root(target, proj_abs):
+            if target.startswith(proj_prefix) and self.is_within_root(target, proj_abs):
                 return target, "workspace"
             raise ValueError("Path outside authorized roots")
 
         cand_storage = os.path.normpath(os.path.abspath(os.path.join(storage_abs, clean_path)))
-        if (cand_storage.startswith(storage_prefix) or cand_storage == storage_abs):
-            if os.path.lexists(cand_storage):
-                if not self.is_within_root(cand_storage, storage_abs):
-                    raise ValueError("Path outside authorized roots")
-                return cand_storage, "local_storage"
-
-        for ip in indexed_paths:
-            root = os.path.normpath(os.path.abspath(ip["path"]))
-            root_prefix = root if root.endswith(os.sep) else root + os.sep
-            cand_ip = os.path.normpath(os.path.abspath(os.path.join(root, clean_path)))
-            if (cand_ip.startswith(root_prefix) or cand_ip == root):
-                if os.path.lexists(cand_ip):
-                    if not self.is_within_root(cand_ip, root):
-                        raise ValueError("Path outside authorized roots")
-                    return cand_ip, "indexed_path"
-
-        for r_dir in self.get_authorized_persistent_repos().values():
-            r_abs = os.path.normpath(os.path.abspath(r_dir))
-            r_prefix = r_abs if r_abs.endswith(os.sep) else r_abs + os.sep
-            if os.path.isdir(r_abs):
-                cand_pr = os.path.normpath(os.path.abspath(os.path.join(r_abs, clean_path)))
-                if (cand_pr.startswith(r_prefix) or cand_pr == r_abs):
-                    if os.path.lexists(cand_pr):
-                        if not self.is_within_root(cand_pr, r_abs):
-                            raise ValueError("Path outside authorized roots")
-                        return cand_pr, "persistent_repo"
-
-        cand_proj = os.path.normpath(os.path.abspath(os.path.join(proj_abs, clean_path)))
-        if (cand_proj.startswith(proj_prefix) or cand_proj == proj_abs):
-            if os.path.lexists(cand_proj):
-                if not self.is_within_root(cand_proj, proj_abs):
-                    raise ValueError("Path outside authorized roots")
-                return cand_proj, "workspace"
-
-        if (cand_storage.startswith(storage_prefix) or cand_storage == storage_abs) and self.is_within_root(cand_storage, storage_abs):
+        if not cand_storage.startswith(storage_prefix):
+            raise ValueError("Path outside authorized roots")
+        if os.path.lexists(cand_storage):
+            if not self.is_within_root(cand_storage, storage_abs):
+                raise ValueError("Path outside authorized roots")
             return cand_storage, "local_storage"
 
         for ip in indexed_paths:
             root = os.path.normpath(os.path.abspath(ip["path"]))
             root_prefix = root if root.endswith(os.sep) else root + os.sep
             cand_ip = os.path.normpath(os.path.abspath(os.path.join(root, clean_path)))
-            if (cand_ip.startswith(root_prefix) or cand_ip == root) and self.is_within_root(cand_ip, root):
+            if not cand_ip.startswith(root_prefix):
+                raise ValueError("Path outside authorized roots")
+            if os.path.lexists(cand_ip):
+                if not self.is_within_root(cand_ip, root):
+                    raise ValueError("Path outside authorized roots")
                 return cand_ip, "indexed_path"
 
-        if (cand_proj.startswith(proj_prefix) or cand_proj == proj_abs) and self.is_within_root(cand_proj, proj_abs):
+        for r_dir in self.get_authorized_persistent_repos().values():
+            r_abs = os.path.normpath(os.path.abspath(r_dir))
+            r_prefix = r_abs if r_abs.endswith(os.sep) else r_abs + os.sep
+            if os.path.isdir(r_abs):
+                cand_pr = os.path.normpath(os.path.abspath(os.path.join(r_abs, clean_path)))
+                if not cand_pr.startswith(r_prefix):
+                    raise ValueError("Path outside authorized roots")
+                if os.path.lexists(cand_pr):
+                    if not self.is_within_root(cand_pr, r_abs):
+                        raise ValueError("Path outside authorized roots")
+                    return cand_pr, "persistent_repo"
+
+        cand_proj = os.path.normpath(os.path.abspath(os.path.join(proj_abs, clean_path)))
+        if not cand_proj.startswith(proj_prefix):
+            raise ValueError("Path outside authorized roots")
+        if os.path.lexists(cand_proj):
+            if not self.is_within_root(cand_proj, proj_abs):
+                raise ValueError("Path outside authorized roots")
+            return cand_proj, "workspace"
+
+        if self.is_within_root(cand_storage, storage_abs):
+            return cand_storage, "local_storage"
+
+        for ip in indexed_paths:
+            root = os.path.normpath(os.path.abspath(ip["path"]))
+            root_prefix = root if root.endswith(os.sep) else root + os.sep
+            cand_ip = os.path.normpath(os.path.abspath(os.path.join(root, clean_path)))
+            if not cand_ip.startswith(root_prefix):
+                raise ValueError("Path outside authorized roots")
+            if self.is_within_root(cand_ip, root):
+                return cand_ip, "indexed_path"
+
+        if self.is_within_root(cand_proj, proj_abs):
             return cand_proj, "workspace"
 
         raise ValueError("Path outside authorized roots")
