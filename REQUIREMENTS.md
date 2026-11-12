@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1185 Automated Tests** (821 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1187 Automated Tests** (823 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1398,6 +1398,10 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_upsert_skips_only_the_rejected_record_and_keeps_the_rest`
 - `test_upsert_reports_failure_when_every_record_is_rejected`
 - `test_rejected_record_warnings_do_not_log_the_chunk_text`
+
+#### `tests/test_trace_path_case_insensitive.py` (2 tests)
+- `test_lowercase_symbol_resolves_to_the_indexed_symbol`
+- `test_graph_traversal_sql_has_no_sqlite_only_collation`
 
 #### `tests/test_trace_path_compact.py` (3 tests)
 - `test_trace_nodes_have_no_permalinks_by_default_but_the_target_keeps_one`

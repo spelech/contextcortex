@@ -83,7 +83,7 @@ def trace_symbol_path(
         if not symbols_found:
             nc_query = (
                 "SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature "
-                "FROM ast_symbols WHERE (name = ? COLLATE NOCASE OR full_symbol = ? COLLATE NOCASE OR full_symbol LIKE ? COLLATE NOCASE)"
+                "FROM ast_symbols WHERE (LOWER(name) = LOWER(?) OR LOWER(full_symbol) = LOWER(?) OR LOWER(full_symbol) LIKE LOWER(?))"
                 + repo_sql
             )
             symbols_found = conn.execute(nc_query, [target_sym, target_sym, f"%.{target_sym}"] + repo_arg).fetchall()
@@ -107,7 +107,7 @@ def trace_symbol_path(
             if not rel_hit:
                 rel_hit = conn.execute(
                     "SELECT source_symbol, target_symbol FROM ast_relationships "
-                    "WHERE (source_symbol = ? COLLATE NOCASE OR target_symbol = ? COLLATE NOCASE)"
+                    "WHERE (LOWER(source_symbol) = LOWER(?) OR LOWER(target_symbol) = LOWER(?))"
                     + repo_sql + " LIMIT 1",
                     [target_sym, target_sym] + repo_arg,
                 ).fetchone()
