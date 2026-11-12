@@ -1,4 +1,3 @@
-import fnmatch
 import json
 import logging
 import os
@@ -9,6 +8,7 @@ from pydantic import Field
 
 from app.services.auth import enforce_tool_permission, Role, ForbiddenError
 from app.services.database.connection import get_db_connection
+from app.services.code_grep_scanner import looks_like_regex, path_matches_filter
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
 
@@ -115,10 +115,9 @@ def _scan_extended_matches(
     matches: List[Dict[str, Any]] = []
     seen_files = set()
     seen_keys = set()
-    norm_glob = path_glob.replace("\\", "/") if path_glob else None
 
     for abs_p, r_name, rel_p in disk_files:
-        if norm_glob and not (fnmatch.fnmatch(rel_p, norm_glob) or fnmatch.fnmatch(os.path.basename(rel_p), norm_glob)):
+        if not path_matches_filter(rel_p, path_glob):
             continue
         if (r_name, rel_p) in seen_files:
             continue
@@ -171,13 +170,14 @@ def _scan_extended_matches(
 async def handle_grep_code(
     pattern: Annotated[str, Field(description="Exact literal string or regular expression to match across source files (Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, configs).")],
     repo: Annotated[Optional[str], Field(description="Optional repository name or 'local_storage' to scope search. Omit to scan all indexed sources.")] = None,
-    path_glob: Annotated[Optional[str], Field(description="Optional fnmatch path filter (e.g. '*.py', '*.cs', or 'app/services/*').")] = None,
-    is_regex: Annotated[bool, Field(description="Set True to evaluate pattern as a Python regular expression; False (default) matches literal text.")] = False,
+    path_glob: Annotated[Optional[str], Field(description="Optional path filter. With wildcards it is an fnmatch glob ('*.cs', 'app/services/*'); without wildcards it is a file or folder ('Services_V2', 'src/app/main.py').")] = None,
+    is_regex: Annotated[bool, Field(description="Set True to evaluate pattern as a Python regular expression; False (default) matches literal text. If a literal search finds nothing and the pattern looks like a regex (for example 'A|B'), the search runs again as a regex and pattern_mode says so.")] = False,
     case_sensitive: Annotated[bool, Field(description="Set True for case-sensitive matching; False (default) ignores case.")] = False,
     context_lines: Annotated[int, Field(description="Surrounding context lines per match, clamped to 0..10 (default 2). Lines > 400 chars are truncated.")] = 2,
     limit: Annotated[int, Field(description="Alias for max_results: maximum matches per page, clamped to 1..100 (default 30).")] = 30,
     max_results: Annotated[Optional[int], Field(description="Maximum matched lines per page, clamped to 1..100 (default 30). Overrides limit when specified.")] = None,
     offset: Annotated[int, Field(description="0-based match offset for pagination (default 0). Advance by next_offset when has_more is True.")] = 0,
+    path: Annotated[Optional[str], Field(description="Alias for path_glob (a file, folder, or glob). path_glob wins when both are given.")] = None,
 ) -> str:
     """Deterministic literal and regex pattern search across indexed repositories with bounded line lengths and pagination."""
     try:
@@ -190,29 +190,36 @@ async def handle_grep_code(
         safe_offset = max(0, int(offset if offset is not None else 0))
         safe_context = max(0, min(int(context_lines if context_lines is not None else 2), 10))
         needed = safe_offset + safe_limit + 1
+        path_filter = path_glob or path
 
-        if needed <= 100:
-            raw_result = reader.grep_code(
-                pattern=pattern,
-                repo=repo,
-                path_glob=path_glob,
-                is_regex=is_regex,
-                case_sensitive=case_sensitive,
-                context_lines=safe_context,
-                limit=100,
-            )
-            all_matches = raw_result.get("matches", [])
-        else:
-            all_matches = _scan_extended_matches(
+        def _search(as_regex: bool) -> List[Dict[str, Any]]:
+            if needed <= 100:
+                raw_result = reader.grep_code(
+                    pattern=pattern,
+                    repo=repo,
+                    path_glob=path_filter,
+                    is_regex=as_regex,
+                    case_sensitive=case_sensitive,
+                    context_lines=safe_context,
+                    limit=100,
+                )
+                return raw_result.get("matches", [])
+            return _scan_extended_matches(
                 reader=reader,
                 pattern=pattern,
                 repo=repo,
-                path_glob=path_glob,
-                is_regex=is_regex,
+                path_glob=path_filter,
+                is_regex=as_regex,
                 case_sensitive=case_sensitive,
                 context_lines=safe_context,
                 max_needed=needed,
             )
+
+        pattern_mode = "regex" if is_regex else "literal"
+        all_matches = _search(is_regex)
+        if not all_matches and not is_regex and looks_like_regex(pattern):
+            all_matches = _search(True)
+            pattern_mode = "regex (the literal text had no matches, so the pattern ran as a regex)"
 
         has_more = len(all_matches) > (safe_offset + safe_limit)
         page_slice = all_matches[safe_offset : safe_offset + safe_limit]
@@ -221,6 +228,8 @@ async def handle_grep_code(
 
         payload = {
             "pattern": pattern,
+            "pattern_mode": pattern_mode,
+            "path_filter": path_filter,
             "total_matches": len(all_matches),
             "offset": safe_offset,
             "limit": safe_limit,
