@@ -49,9 +49,10 @@ def is_test_route_file(rel_path: str) -> bool:
     path_parts = [p.lower() for p in (rel_path or "").replace("\\", "/").strip("/").split("/") if p]
     bname = path_parts[-1] if path_parts else ""
     return (
-        any(p in ("tests", "test", "__tests__") for p in path_parts[:-1])
+        # test folders, including .NET test projects (`App.Tests`) and folders such as `Unit Tests`
+        any(p in ("tests", "test", "__tests__") or p.endswith((".tests", ".test", " tests")) for p in path_parts[:-1])
         or bname.startswith("test_")
-        or bname.endswith(("_test.py", ".test.ts", ".spec.ts", "tests.cs"))
+        or bname.endswith(("_test.py", ".test.ts", ".spec.ts", "tests.cs", "test.cs"))
     )
 
 

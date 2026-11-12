@@ -139,7 +139,7 @@ def trace_symbol_path(
             ).fetchall()
         ]
         impl_rows = conn.execute(
-            "SELECT source_symbol, target_symbol FROM ast_relationships WHERE relationship_type = 'IMPLEMENTS'" + (" AND repo = ?" if bfs_repo else ""),
+            "SELECT source_symbol, source_filepath, target_symbol FROM ast_relationships WHERE relationship_type = 'IMPLEMENTS'" + (" AND repo = ?" if bfs_repo else ""),
             bfs_args,
         ).fetchall()
 
@@ -154,6 +154,7 @@ def trace_symbol_path(
 
     for s in repo_symbols:
         s["_clean_fp"] = _rel_path(s.get("filepath"))
+        s["_test"] = is_test_route_file(s["_clean_fp"])
         full_s, name_s = s.get("full_symbol"), s.get("name")
         if full_s:
             syms_by_full.setdefault(full_s, []).append(s)
@@ -178,7 +179,9 @@ def trace_symbol_path(
         tgt_iface = (ir["target_symbol"] or "").split(".")[-1]
         if src_cls and tgt_iface:
             concrete_to_ifaces.setdefault(src_cls, set()).add(tgt_iface)
-            iface_to_concretes.setdefault(tgt_iface, set()).add(src_cls)
+            # Test doubles do not count as implementations: one real class plus fakes is still one implementation.
+            if not is_test_route_file(_rel_path(ir["source_filepath"])):
+                iface_to_concretes.setdefault(tgt_iface, set()).add(src_cls)
 
     def _resolve_symbol_candidates(sym_str: str) -> List[dict]:
         if not sym_str:
@@ -204,7 +207,13 @@ def trace_symbol_path(
                 return impl_cands[0]["full_symbol"]
         return full
 
-    def _resolve_di_callee(raw_target: str, caller_sym: str, candidates: List[dict]) -> str:
+    def _resolve_di_callee(raw_target: str, caller_sym: str, candidates: List[dict], caller_file: Optional[str] = None) -> str:
+        if caller_file and candidates and not is_test_route_file(_rel_path(caller_file)):
+            # Production code never calls into test code: drop test candidates, and keep the call unresolved
+            # when only test candidates match (for example `transaction.Commit()` and a fake transaction class).
+            candidates = [c for c in candidates if not c.get("_test")]
+            if not candidates:
+                return raw_target
         if not candidates:
             if "." in raw_target:
                 owner, member = raw_target.rsplit(".", 1)
@@ -461,7 +470,7 @@ def trace_symbol_path(
                             continue
                     raw_target = r["target_symbol"]
                     callee_cands = [c for c in _resolve_symbol_candidates(raw_target) if c.get("full_symbol") != curr_sym]
-                    callee_sym = _resolve_di_callee(raw_target, caller_sym, callee_cands)
+                    callee_sym = _resolve_di_callee(raw_target, caller_sym, callee_cands, r["source_filepath"])
                     edge_key = (curr_sym, callee_sym, r["relationship_type"], "callee", r["line_number"])
                     if edge_key in visited_edges:
                         continue
