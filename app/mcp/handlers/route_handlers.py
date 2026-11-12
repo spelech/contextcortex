@@ -7,6 +7,7 @@ from pydantic import Field
 from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
 from app.services.chunking import match_route_and_call
+from app.services.source_paths import LocalSourceRoots
 
 logger = logging.getLogger("contextcortex")
 
@@ -64,11 +65,12 @@ async def handle_find_routes(
 
             sql += " ORDER BY r.repo ASC, r.path_pattern ASC, r.http_method ASC, r.start_line ASC"
             rows = conn.execute(sql, params).fetchall()
+            local_roots = LocalSourceRoots.load(conn)
 
         all_routes = []
         seen_routes = set()
         for r in rows:
-            rel_path = (r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]).replace("\\", "/")
+            rel_path = local_roots.relative(r["filepath"], r["repo"])
             if _is_test_route_file(rel_path):
                 continue
             dedup_key = (r["repo"], r["http_method"], r["path_pattern"], rel_path, r["start_line"])
@@ -146,6 +148,7 @@ async def handle_find_api_callers(
 
             sql += " ORDER BY c.repo ASC, c.filepath ASC, c.line_number ASC"
             rows = conn.execute(sql, params).fetchall()
+            local_roots = LocalSourceRoots.load(conn)
 
         target_method_clean = method.strip().upper() if method and method.strip() else None
         all_callers = []
@@ -159,7 +162,7 @@ async def handle_find_api_callers(
             if not match_route_and_call(target_path, c["url_pattern"]):
                 continue
 
-            rel_path = (c["filepath"].split("://", 1)[1] if "://" in c["filepath"] else c["filepath"]).replace("\\", "/")
+            rel_path = local_roots.relative(c["filepath"], c["repo"])
             dedup_key = (c["repo"], rel_path, c["http_method"], c["url_pattern"], c["caller_symbol"], c["line_number"])
             if dedup_key in seen_callers:
                 continue
