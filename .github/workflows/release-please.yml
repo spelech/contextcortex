@@ -24,7 +24,9 @@ jobs:
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         run: |
           echo "Release created for tag: ${{ steps.release.outputs.tag_name }}"
+          # No checkout in this job: tell gh which repository to use.
           gh workflow run build-portable-windows.yml \
+            --repo "${{ github.repository }}" \
             --ref "${{ steps.release.outputs.tag_name }}" \
             -f tag_name="${{ steps.release.outputs.tag_name }}"
         env:
