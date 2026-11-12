@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.23.2](https://github.com/spelech/contextcortex/compare/v2.23.1...v2.23.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **trace-path:** store C# call targets with the receiver's declared type ([#126](https://github.com/spelech/contextcortex/issues/126)) ([b2a7e52](https://github.com/spelech/contextcortex/commit/b2a7e523e5ccc86b42fd7edc316995561f905c14))
+* **trace-path:** use portable case-insensitive symbol lookup ([#127](https://github.com/spelech/contextcortex/issues/127)) ([f64252e](https://github.com/spelech/contextcortex/commit/f64252e3faff22ca4c100ec8875e59b3f19b0ec5))
+
 ## [2.23.1](https://github.com/spelech/contextcortex/compare/v2.23.0...v2.23.1) (2026-11-12)
 
 
