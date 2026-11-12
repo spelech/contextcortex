@@ -4,6 +4,7 @@ import os
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.services.code_grep_chunks import grep_chunk_matches
 from app.services.git_manager import format_git_permalink
 from app.services.text_decoding import read_source_text
 
@@ -196,45 +197,18 @@ def execute_code_grep(
                     case_sensitive=case_sensitive,
                     limit=max(10, remaining_limit),
                 )
-                for ch in chunks:
-                    ch_repo = ch.get("repo") or "unknown"
-                    raw_ch_file = (ch.get("rel_path") or ch.get("path") or "").replace("\\", "/")
-                    ch_file = raw_ch_file.split("://", 1)[1] if "://" in raw_ch_file else raw_ch_file
-                    if ch_file.startswith(f"{ch_repo}/"):
-                        ch_file = ch_file[len(ch_repo) + 1:]
-
-                    if (ch_repo, ch_file) in disk_scanned_keys:
-                        continue
-
-                    text_content = ch.get("content") or ch.get("text") or ""
-                    start_line = int(ch.get("start_line") or 1)
-                    ch_lines = text_content.splitlines()
-
-                    for c_idx, line_str in enumerate(ch_lines):
-                        curr_line = start_line + c_idx
-                        if compiled.search(line_str):
-                            key = (ch_repo, ch_file, curr_line)
-                            if key in seen_keys:
-                                continue
-                            seen_keys.add(key)
-
-                            start_ctx = max(0, c_idx - clamped_context)
-                            end_ctx = min(len(ch_lines), c_idx + clamped_context + 1)
-                            context_items = [
-                                {"line": start_line + idx, "text": ch_lines[idx]}
-                                for idx in range(start_ctx, end_ctx)
-                            ]
-                            matches.append({
-                                "repo": ch_repo,
-                                "file": ch_file,
-                                "line": curr_line,
-                                "match_text": line_str,
-                                "context": context_items,
-                            })
-                            if len(matches) >= clamped_limit:
-                                break
-                    if len(matches) >= clamped_limit:
-                        break
+                load_fn = None
+                if hasattr(store, "get_file_chunks"):
+                    load_fn = lambda r_name, r_file: store.get_file_chunks(path=r_file, repo=r_name)
+                matches.extend(grep_chunk_matches(
+                    chunks=chunks,
+                    compiled=compiled,
+                    context_lines=clamped_context,
+                    limit=clamped_limit - len(matches),
+                    skip_files=disk_scanned_keys,
+                    seen_keys=seen_keys,
+                    load_file_chunks=load_fn,
+                ))
         except Exception as e:
             logger.warning(f"grep_chunks fallback in grep_code encountered error: {e}")
 

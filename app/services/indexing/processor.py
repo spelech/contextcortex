@@ -33,6 +33,21 @@ MAX_FILE_SIZE_BYTES = 500 * 1024  # 500 KB limit for binary/minified files
 from app.services.pdf_extractor import MAX_PDF_SIZE_BYTES
 
 
+def frontmatter_line_offset(text: str, body: str) -> int:
+    """
+    Number of file lines before `body`, the text that frontmatter.loads keeps. It removes the frontmatter and the
+    blank lines around the body, so chunk line numbers that count from the body must move down by this number.
+    """
+    body_lines = [line.rstrip() for line in body.splitlines()[:5]]
+    if not body_lines:
+        return 0
+    file_lines = [line.rstrip() for line in text.splitlines()]
+    for offset in range(len(file_lines) - len(body_lines) + 1):
+        if file_lines[offset:offset + len(body_lines)] == body_lines:
+            return offset
+    return 0
+
+
 def compute_text_hash(text: str) -> str:
     """Computes SHA256 hash of utf-8 text."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -240,6 +255,7 @@ def process_file_content(
         return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
 
     if doc_type in ("doc", "pdf"):
+        body_line_offset = 0
         if filepath.endswith((".md", ".txt")):
             # Check if file is in standard ADR directories or follows ADR naming
             norm_rel = rel_path.replace("\\", "/").lower()
@@ -252,6 +268,7 @@ def process_file_content(
 
             try:
                 post = frontmatter.loads(content)
+                body_line_offset = frontmatter_line_offset(content, post.content)
                 content = post.content
                 meta = post.metadata or {}
                 if "category" in meta:
@@ -267,6 +284,12 @@ def process_file_content(
 
         chunks_models = chunk_markdown(content, max_chars=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
         chunks = [c.model_dump() for c in chunks_models]
+        if body_line_offset:
+            # Chunk lines count from the body; shift them so they are file line numbers.
+            for item in chunks + ast_relationships:
+                for line_key in ("start_line", "end_line", "line_number"):
+                    if isinstance(item.get(line_key), int):
+                        item[line_key] += body_line_offset
         valid_chunks = [c for c in chunks if c.get("content", "").strip()]
         headings = [c["heading"] for c in valid_chunks if c.get("heading") and c["heading"] != "Root"]
         keywords = extract_keywords_from_text(content, title, headings, tags)
