@@ -8,6 +8,7 @@ from app.services.diagnostic_route_path import collect_route_path_symbols, keep_
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
 from app.services.search import execute_hybrid_search
+from app.services.source_paths import LocalSourceRoots
 from app.services.stack_trace_parser import (
     RE_COBOL_ABEND_FRAME, RE_COBOL_DIAG_FRAME, RE_COBOL_PARAGRAPH_FRAME,
     RE_CSHARP_FRAME, RE_EXCEPTION_NAME, RE_GENERIC_FRAME, RE_HTTP_ROUTE,
@@ -24,6 +25,11 @@ MAX_SNIPPET_CHARS = 4000
 MAX_CANDIDATE_CHARS = 3000
 MAX_MATCHED_ROUTES = 15
 MAX_MATCHED_SYMBOLS = 20
+
+
+def _diag_file(roots: LocalSourceRoots, filepath: Optional[str]) -> str:
+    """Output path for a stored filepath: relative to its local-source root, else the cleaned diagnostic path."""
+    return _clean_diag_path(roots.strip_root(filepath) or filepath)
 
 
 def _cobol_alt_filenames(filename: str) -> List[str]:
@@ -61,10 +67,11 @@ def _get_callers_and_callees(
         c_sql += " AND repo = ?"
         c_params.append(effective_repo)
     c_rows = conn.execute(c_sql + " LIMIT 80", c_params).fetchall()
+    roots = LocalSourceRoots.load(conn)
 
     scored_callers, seen_callers = [], set()
     for r in c_rows:
-        clean_fp = _clean_diag_path(r["source_filepath"])
+        clean_fp = _diag_file(roots, r["source_filepath"])
         dedup_k = (r["repo"], r["source_symbol"], clean_fp, r["line_number"])
         if dedup_k in seen_callers:
             continue
@@ -100,7 +107,7 @@ def _get_callers_and_callees(
 
     callees, seen_callees = [], set()
     for r in ce_rows:
-        clean_fp = _clean_diag_path(r["source_filepath"])
+        clean_fp = _diag_file(roots, r["source_filepath"])
         dedup_k = (r["target_symbol"], r["line_number"])
         if dedup_k in seen_callees:
             continue
@@ -195,11 +202,12 @@ def resolve_stack_frames(
             r["name"]: dict(r)
             for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall()
         }
+        roots = LocalSourceRoots.load(conn)
         for frame in frames[:MAX_RESOLVED_FRAMES]:
             raw_path, line_no = frame["path"], int(frame["line"])
             matched_file = _find_matching_indexed_file(conn, repo, raw_path)
             file_path = matched_file["filepath"] if matched_file else raw_path
-            clean_file_path = _clean_diag_path(file_path)
+            clean_file_path = _diag_file(roots, file_path)
             target_repo = matched_file["repo"] if matched_file else (repo or "unknown")
 
             enclosing = _find_symbol_enclosing(conn, target_repo, file_path, line_no)
@@ -270,6 +278,7 @@ def match_routes_and_callers(
             + (" WHERE repo = ?" if repo else ""),
             ([repo] if repo else []),
         ).fetchall()
+        roots = LocalSourceRoots.load(conn)
 
         for method, path in extracted_routes:
             norm_target = normalize_path_pattern(path)
@@ -282,7 +291,7 @@ def match_routes_and_callers(
                         continue
                     seen.add(route_key)
                     raw_ext_callers = [
-                        {"repo": c["repo"], "symbol": c["caller_symbol"], "file": _clean_diag_path(c["filepath"]), "line": c["line_number"]}
+                        {"repo": c["repo"], "symbol": c["caller_symbol"], "file": _diag_file(roots, c["filepath"]), "line": c["line_number"]}
                         for c in all_calls
                         if match_route_and_call(r["path_pattern"], c["url_pattern"])
                     ]
@@ -292,7 +301,7 @@ def match_routes_and_callers(
                         "path": r["path_pattern"],
                         "handler": {
                             "repo": r["repo"], "symbol": r["handler_symbol"],
-                            "file": _clean_diag_path(r["filepath"]), "line": r["start_line"],
+                            "file": _diag_file(roots, r["filepath"]), "line": r["start_line"],
                         },
                         "external_callers": raw_ext_callers[:10],
                     })
@@ -315,6 +324,7 @@ def match_symbols_and_exceptions(
         return matched
 
     with get_db_connection() as conn:
+        roots = LocalSourceRoots.load(conn)
         for term in terms:
             short_term = term.split(".")[-1] if "." in term else term
             sql = (
@@ -334,7 +344,7 @@ def match_symbols_and_exceptions(
                 ),
             )
             for r in rows_sorted[:5]:
-                clean_fp = _clean_diag_path(r["filepath"])
+                clean_fp = _diag_file(roots, r["filepath"])
                 if _is_test_path(clean_fp):
                     continue
                 key = (r["repo"], r["name"], clean_fp, r["start_line"])

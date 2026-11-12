@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1207 Automated Tests** (843 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1216 Automated Tests** (852 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1177,6 +1177,17 @@ and leaves the prior indexed state intact without data loss._
 - `test_vision_ocr_client_uses_saved_settings_and_extra_headers` - _Verifies that PDF vision OCR reads persisted SQLite gateway settings and attaches extra headers._
 - `test_summarizer_client_sends_extra_headers` - _Verifies that SummarizerService builds its real OpenAI client from SQLite settings and refreshes on rotation._
 - `test_embeddings_api_client_sends_extra_headers` - _Verifies that API embedding initialization configures OpenAI with persisted settings and extra headers._
+
+#### `tests/test_local_source_relative_paths.py` (9 tests)
+- `test_relative_maps_stored_paths`
+- `test_nested_roots_use_the_longest_root_and_file_roots_use_the_file_name`
+- `test_clean_stored_path_keeps_the_git_form`
+- `test_find_symbol_returns_relative_paths`
+- `test_get_file_outline_returns_the_relative_path`
+- `test_find_routes_and_api_callers_return_relative_paths`
+- `test_trace_path_returns_relative_paths`
+- `test_diagnose_issue_parts_return_relative_paths`
+- `test_resolved_stack_frames_return_relative_paths`
 
 #### `tests/test_local_storage_indexing.py` (4 tests)
 - `test_incremental_indexing_on_save`

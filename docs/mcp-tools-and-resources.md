@@ -11,6 +11,7 @@ ContextCortex extracts AST symbols, call relationships, HTTP routes, and semanti
 - **Primary AST & Code Languages**: Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.
 - **Documentation & Configuration**: Markdown (`.md`), Architecture Decision Records (MADR / Nygard), PDFs (with optional Vision OCR), SQL, YAML, TOML, and JSON.
 - **Ingested Source Types**: Remote Git repositories (`git_repositories`), monitored local directories (`indexed_paths`), and managed local file storage (`local_storage`).
+- **File Paths in Tool Output**: `find_symbol`, `get_file_outline`, `trace_path`, `find_routes`, `find_api_callers`, `search_code`, and `diagnose_issue` give each file as a path relative to the root of its source (for example `server/Controllers/ToolsController.cs`), for Git repositories and for monitored local directories. This is the same form that `read_file` and `grep_code` accept with the `repo` argument. The index keeps absolute disk paths for local directories; the tools remove the `indexed_paths` root when they make the output, so no re-index is necessary.
 
 ---
 

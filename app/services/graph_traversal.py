@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from app.services.chunking import match_route_and_call
 from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
+from app.services.source_paths import LocalSourceRoots
 
 _DIRECTION_ALIASES = {
     "inbound": "callers",
@@ -120,10 +121,11 @@ def trace_symbol_path(
         git_repos = {r["name"]: dict(r) for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall()}
         all_routes = [dict(r) for r in conn.execute("SELECT id, repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line FROM api_routes").fetchall()]
         all_calls = [dict(c) for c in conn.execute("SELECT id, repo, filepath, http_method, url_pattern, caller_symbol, line_number FROM api_client_calls").fetchall()]
+        _rel_path = LocalSourceRoots.load(conn).relative
 
     def get_permalink(r_repo: str, r_filepath: str, start_l: Optional[int], end_l: Optional[int]) -> Optional[str]:
         g_info = git_repos.get(r_repo)
-        return _fmt_permalink(g_info["url"], g_info["commit_sha"], _clean_path(r_filepath), start_l, end_l, provider=g_info.get("provider")) if g_info else None
+        return _fmt_permalink(g_info["url"], g_info["commit_sha"], _rel_path(r_filepath), start_l, end_l, provider=g_info.get("provider")) if g_info else None
 
     bfs_repo = repo or (symbols_found[0]["repo"] if symbols_found else None)
     bfs_clause = " WHERE repo = ?" if bfs_repo else ""
@@ -151,7 +153,7 @@ def trace_symbol_path(
     class_signatures: Dict[str, str] = {}
 
     for s in repo_symbols:
-        s["_clean_fp"] = _clean_path(s.get("filepath"))
+        s["_clean_fp"] = _rel_path(s.get("filepath"))
         full_s, name_s = s.get("full_symbol"), s.get("name")
         if full_s:
             syms_by_full.setdefault(full_s, []).append(s)
@@ -255,7 +257,7 @@ def trace_symbol_path(
         if source_symbol_id and source_symbol_id in sym_by_id:
             s_obj = sym_by_id[source_symbol_id]
             return (s_obj.get("full_symbol") or s_obj.get("name") or fallback_sym), s_obj
-        file_syms = syms_by_file.get((r_repo, _clean_path(r_filepath)), [])
+        file_syms = syms_by_file.get((r_repo, _rel_path(r_filepath)), [])
         if line_num is not None and file_syms:
             enclosing = [
                 s for s in file_syms
@@ -283,7 +285,7 @@ def trace_symbol_path(
             for r_item in matched_routes:
                 for c in all_calls:
                     if c["repo"] != sym_repo and _methods_compatible(r_item["http_method"], c.get("http_method")) and match_route_and_call(r_item["path_pattern"], c.get("url_pattern", "")):
-                        entry = {"repo": c["repo"], "symbol": c.get("caller_symbol") or "", "file": _clean_path(c["filepath"]), "line": c.get("line_number"), "method": c.get("http_method", "").upper(), "url": c.get("url_pattern", "")}
+                        entry = {"repo": c["repo"], "symbol": c.get("caller_symbol") or "", "file": _rel_path(c["filepath"]), "line": c.get("line_number"), "method": c.get("http_method", "").upper(), "url": c.get("url_pattern", "")}
                         if entry not in ext_callers:
                             ext_callers.append(entry)
 
@@ -297,7 +299,7 @@ def trace_symbol_path(
             ext_handlers = []
             for r in all_routes:
                 if r["repo"] != sym_repo and _methods_compatible(r.get("http_method"), c_method) and match_route_and_call(r.get("path_pattern", ""), c_url):
-                    h_entry = {"repo": r["repo"], "symbol": r.get("handler_symbol") or "", "file": _clean_path(r["filepath"]), "line": r.get("start_line"), "path": r.get("path_pattern")}
+                    h_entry = {"repo": r["repo"], "symbol": r.get("handler_symbol") or "", "file": _rel_path(r["filepath"]), "line": r.get("start_line"), "path": r.get("path_pattern")}
                     if h_entry not in ext_handlers:
                         ext_handlers.append(h_entry)
             http_calls.append({"method": c_method, "url": c_url, "line": c.get("line_number"), "external_handlers": ext_handlers})
@@ -305,7 +307,7 @@ def trace_symbol_path(
 
     if symbols_found:
         s0 = symbols_found[0]
-        s_file = _clean_path(s0["filepath"])
+        s_file = _rel_path(s0["filepath"])
         target_info = {
             "symbol": s0["full_symbol"] or s0["name"], "name": s0["name"], "kind": s0["kind"],
             "repo": s0["repo"], "file": s_file,
@@ -320,7 +322,7 @@ def trace_symbol_path(
             if not row:
                 row = conn.execute(f"SELECT repo, source_filepath, line_number FROM ast_relationships WHERE target_symbol = ? {r_filter}LIMIT 1", r_args).fetchone()
         t_repo = row["repo"] if row else (bfs_repo or "")
-        t_file = _clean_path(row["source_filepath"]) if row else ""
+        t_file = _rel_path(row["source_filepath"]) if row else ""
         t_line = row["line_number"] if row else 1
         target_info = {
             "symbol": target_sym, "name": target_sym.split(".")[-1], "kind": "function",
@@ -337,7 +339,7 @@ def trace_symbol_path(
         target_info["http_calls"] = t_http_calls
 
     def _make_edge_node(display_sym: str, row_obj: object, child_key: str) -> dict:
-        clean_fp = _clean_path(row_obj["source_filepath"])
+        clean_fp = _rel_path(row_obj["source_filepath"])
         r_route, r_ext_callers, r_http_calls = resolve_http_boundaries(display_sym, row_obj["repo"])
         node = {
             "symbol": display_sym,

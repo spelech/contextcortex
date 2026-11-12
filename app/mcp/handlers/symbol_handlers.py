@@ -6,6 +6,7 @@ from pydantic import Field
 
 from app.services.database import get_db_connection
 from app.services.search import trace_symbol_path
+from app.services.source_paths import LocalSourceRoots
 
 logger = logging.getLogger("contextcortex")
 
@@ -107,11 +108,12 @@ async def handle_find_symbol(
 
             query += " ORDER BY repo ASC, filepath ASC, start_line ASC, name ASC"
             rows = conn.execute(query, params).fetchall()
+            local_roots = LocalSourceRoots.load(conn)
 
         all_symbols = []
         seen_syms = set()
         for r in rows:
-            rel_file = _strip_repo_prefix(r["filepath"])
+            rel_file = local_roots.relative(r["filepath"], r["repo"])
             sym_full = r["full_symbol"] or r["name"]
             dedup_key = (r["repo"], rel_file, r["name"], sym_full, r["kind"], r["start_line"], r["end_line"])
             if dedup_key in seen_syms:
@@ -266,6 +268,11 @@ async def handle_get_file_outline(
         candidates: List[str] = []
         matched_file = _strip_repo_prefix(fp)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
+            local_roots = LocalSourceRoots.load(conn)
+
+            def _rel(row) -> str:
+                return local_roots.relative(row["filepath"], row["repo"])
+
             def _query_outline_rows(target_clean: str):
                 if repo:
                     return conn.execute(
@@ -298,11 +305,11 @@ async def handle_get_file_outline(
             rows = _query_outline_rows(clean_fp)
             if rows:
                 distinct_files = sorted({
-                    _strip_repo_prefix(r["filepath"]) for r in rows if r["filepath"]
+                    _rel(r) for r in rows if r["filepath"]
                 })
                 if len(distinct_files) > 1:
                     chosen_file = clean_fp if clean_fp in distinct_files else distinct_files[0]
-                    rows = [r for r in rows if _strip_repo_prefix(r["filepath"]) == chosen_file]
+                    rows = [r for r in rows if _rel(r) == chosen_file]
                     matched_file = chosen_file
                     candidates = distinct_files
 
@@ -313,14 +320,14 @@ async def handle_get_file_outline(
                     cand_rows = _query_outline_rows(suffix)
                     if cand_rows:
                         distinct_files = sorted({
-                            _strip_repo_prefix(r["filepath"]) for r in cand_rows if r["filepath"]
+                            _rel(r) for r in cand_rows if r["filepath"]
                         })
                         if len(distinct_files) == 1:
                             rows = cand_rows
                             matched_file = distinct_files[0]
                             break
                         if suffix in distinct_files:
-                            rows = [r for r in cand_rows if _strip_repo_prefix(r["filepath"]) == suffix]
+                            rows = [r for r in cand_rows if _rel(r) == suffix]
                             matched_file = suffix
                             candidates = distinct_files
                             break
@@ -329,7 +336,7 @@ async def handle_get_file_outline(
 
         resolved_repo = repo or (rows[0]["repo"] if rows and "repo" in rows[0].keys() else None)
         if rows and rows[0]["filepath"]:
-            matched_file = _strip_repo_prefix(rows[0]["filepath"])
+            matched_file = _rel(rows[0])
 
         all_symbols = []
         seen_syms = set()
