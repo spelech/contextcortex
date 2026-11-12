@@ -8,12 +8,24 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      - name: Trigger Windows Portable Bundle Build
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        run: |
+          echo "Release created for tag: ${{ steps.release.outputs.tag_name }}"
+          gh workflow run build-portable-windows.yml \
+            --ref "${{ steps.release.outputs.tag_name }}" \
+            -f tag_name="${{ steps.release.outputs.tag_name }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
