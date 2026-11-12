@@ -12,7 +12,8 @@ ENTRY_POINT_PATTERNS = [
     r"(^|/)Dockerfile$",
     r"(^|/)docker-compose\.ya?ml$",
     r"(^|/)cmd/.+/main\.go$",
-    r"(^|/)src/(index|main|app|server)\.(ts|js|jsx|tsx)$"
+    r"(^|/)src/(index|main|app|server)\.(ts|js|jsx|tsx)$",
+    r"\.(cbl|cob)$",
 ]
 
 MANIFEST_FILENAMES = {
@@ -111,7 +112,12 @@ def synthesize_architecture(repo: Optional[str] = None) -> str:
 
         for r in file_rows:
             raw_lang = (r["language"] or "text").strip()
-            lang_map = {"python": "Python", "typescript": "TypeScript", "javascript": "JavaScript", "go": "Go", "csharp": "C#", "c_sharp": "C#", "cpp": "C++", "rust": "Rust", "ruby": "Ruby", "markdown": "Markdown", "toml": "TOML"}
+            lang_map = {
+                "python": "Python", "typescript": "TypeScript", "tsx": "TypeScript (TSX)",
+                "javascript": "JavaScript", "go": "Go", "csharp": "C#", "c_sharp": "C#",
+                "cobol": "COBOL", "cpp": "C++", "rust": "Rust", "ruby": "Ruby",
+                "markdown": "Markdown", "toml": "TOML",
+            }
             lang = lang_map.get(raw_lang.lower(), raw_lang.capitalize())
             lang_counts[lang] = lang_counts.get(lang, 0) + 1
 
@@ -195,7 +201,11 @@ def synthesize_architecture(repo: Optional[str] = None) -> str:
             sym_id = sr["id"] if "id" in sr.keys() else None
             in_deg = inbound_counts.get(full_sym, 0) + (inbound_counts.get(name, 0) if full_sym != name else 0)
             out_deg = outbound_counts.get(sym_id, 0) if sym_id else 0
-            kind_bonus = 2 if kind in ("class", "interface", "struct", "class_declaration", "class_definition", "interface_declaration", "struct_declaration") else 1
+            kind_bonus = 2 if kind in (
+                "class", "interface", "struct", "class_declaration", "class_definition",
+                "interface_declaration", "struct_declaration", "record_declaration",
+                "record_struct_declaration", "program_definition", "record_definition",
+            ) else 1
             score = (in_deg * 3) + out_deg + kind_bonus
             item_tuple = (score, in_deg + out_deg, full_sym, name, sr["kind"], fp)
             all_scored_symbols.append(item_tuple)

@@ -1,12 +1,8 @@
-import os
-import json
 import logging
-import gc
-import sys
-import hashlib
-import time
+import os
 import threading
-from typing import List, Dict, Any, Tuple, Optional
+import time
+from typing import Dict, Tuple
 
 _repo_sync_locks: Dict[Tuple[str, int], threading.Lock] = {}
 _repo_sync_locks_guard = threading.Lock()
@@ -24,90 +20,48 @@ def _get_repo_lock(repo_id: int) -> threading.Lock:
             _repo_sync_locks[key] = threading.Lock()
         return _repo_sync_locks[key]
 
-from app.services.memory_utils import trim_memory
-import app.services.indexing.local_syncer as local_syncer
-import app.services.indexing.state as idx_state
-import app.services.indexing.processor as proc_service
+
 import app.services.database as db_service
-from app.services.database import *
-from app.services.chunking import *
-from app.services.embeddings import *
 import app.services.git_manager as gm_service
-from app.services.git_manager import *
+import app.services.indexing.local_syncer as local_syncer
+import app.services.indexing.processor as proc_service
+import app.services.indexing.state as idx_state
 import app.services.vector_store as vs_service
-from app.services.vector_store import VectorStoreManager
+from app.services.chunking import *
+from app.services.database import *
+from app.services.embeddings import *
+from app.services.git_manager import *
+from app.services.indexing.git_delta_scanner import (
+    DEFAULT_SUPPORTED_EXTENSIONS,
+    _BUNDLED_REL_PREFIXES,
+    _IGNORED_DIR_NAMES,
+    _should_skip_indexed_file,
+    compute_git_repo_delta,
+    persist_recent_commits,
+    persist_sync_batch,
+)
 from app.services.indexing.git_progress import progress_tracker
-from app.services.indexing.state import (
-    VAULT_PATH, CHUNK_SIZE, CHUNK_OVERLAP,
-    indexing_lock, is_indexing,
-    trigger_list_changed_notification, ensure_collection
-)
-from app.services.indexing.processor import (
-    process_file_content, get_chunk_uuid, extract_keywords_from_text, get_dynamic_catalog_description,
-    compute_text_hash
-)
 from app.services.indexing.local_syncer import sync_local_paths
-
-logger = logging.getLogger('contextcortex.indexer')
-
-DEFAULT_SUPPORTED_EXTENSIONS = (
-    ".md", ".txt", ".yaml", ".yml", ".json", ".py", ".js", ".jsx", 
-    ".ts", ".tsx", ".go", ".rs", ".cs", ".cpp", ".c", ".h", ".java", 
-    ".rb", ".php", ".sh", ".sql", ".html", ".css"
+from app.services.indexing.processor import (
+    compute_text_hash,
+    extract_keywords_from_text,
+    get_chunk_uuid,
+    get_dynamic_catalog_description,
+    process_file_content,
 )
+from app.services.indexing.state import (
+    CHUNK_OVERLAP,
+    CHUNK_SIZE,
+    VAULT_PATH,
+    ensure_collection,
+    indexing_lock,
+    is_indexing,
+    trigger_list_changed_notification,
+)
+from app.services.memory_utils import trim_memory
+from app.services.vector_store import VectorStoreManager
 
-
-def compute_git_repo_delta(
-    temp_dir: str, 
-    repo_name: str, 
-    supported_extensions: Optional[Tuple[str, ...]] = None
-) -> Tuple[List[str], List[str], List[str], List[str]]:
-    """
-    Computes delta between local cloned repository and indexed_files table in DB.
-    Returns: (added_files, modified_files, deleted_filepaths, unchanged_files)
-      - added_files: List of full file paths on disk that do not exist in DB
-      - modified_files: List of full file paths on disk whose content SHA256 hash != DB hash
-      - deleted_filepaths: List of db_filepath strings ('repo://rel_path') in DB that no longer exist on disk
-      - unchanged_files: List of full file paths on disk whose content SHA256 hash == DB hash
-    """
-    exts = supported_extensions if supported_extensions is not None else DEFAULT_SUPPORTED_EXTENSIONS
-    
-    with db_service.get_db_connection() as conn:
-        rows = conn.execute("SELECT filepath, hash FROM indexed_files WHERE repo = ?", (repo_name,)).fetchall()
-        db_files = {r["filepath"].replace("\\", "/"): r["hash"] for r in rows}
-    
-    found_filepaths = set()
-    added_files = []
-    modified_files = []
-    unchanged_files = []
-
-    for root, dirs, files in os.walk(temp_dir):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "vendor", "__pycache__", "venv", ".git", "dist", "build")]
-        for file in files:
-            if not file.startswith(".") and file.endswith(exts):
-                full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
-                db_filepath = f"{repo_name}://{rel_path}"
-                found_filepaths.add(db_filepath)
-                
-                try:
-                    with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                        content = f.read()
-                    file_hash = proc_service.compute_text_hash(content)
-                except Exception as e:
-                    logger.warning(f"Failed to read/hash file {full_path}: {e}")
-                    continue
-
-                if db_filepath not in db_files:
-                    added_files.append(full_path)
-                elif db_files[db_filepath] != file_hash:
-                    modified_files.append(full_path)
-                else:
-                    unchanged_files.append(full_path)
-
-    deleted_filepaths = [fp for fp in db_files.keys() if fp not in found_filepaths]
-
-    return added_files, modified_files, deleted_filepaths, unchanged_files
+logger = logging.getLogger("contextcortex.indexer")
 
 
 def sync_single_git_repo(repo_id: int, force: bool = False):
@@ -140,10 +94,10 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         progress_tracker.get_or_create_job(repo_id, repo_name)
 
         effective_token, effective_user, token_source = db_service.get_effective_git_token(
-            git_url, 
-            override_token=per_repo_token, 
-            override_user=per_repo_user, 
-            provider=provider
+            git_url,
+            override_token=per_repo_token,
+            override_user=per_repo_user,
+            provider=provider,
         )
         safe_url = gm_service.sanitize_url_for_logging(git_url)
 
@@ -151,10 +105,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         persistent_dir_valid = True
         if keep_shallow and target_dir:
             is_valid_fn = getattr(gm_service, "is_valid_git_repo", None)
-            if callable(is_valid_fn):
-                persistent_dir_valid = is_valid_fn(target_dir)
-            else:
-                persistent_dir_valid = os.path.isdir(os.path.join(target_dir, ".git"))
+            persistent_dir_valid = is_valid_fn(target_dir) if callable(is_valid_fn) else os.path.isdir(os.path.join(target_dir, ".git"))
 
         # Stage 1: Connecting & Remote Check
         progress_tracker.update_step(repo_id, 1, "Checking Remote Repository Ref", pct=10)
@@ -187,7 +138,6 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             conn.execute("UPDATE git_repositories SET status = 'syncing' WHERE id = ?", (repo_id,))
             conn.commit()
 
-        target_dir = gm_service.get_persistent_repo_dir(repo_name) if keep_shallow else None
         clone_mode_label = f"persistent storage ({target_dir})" if keep_shallow else "ephemeral directory"
         clone_depth = max(1, retain_commits_count) if retain_commits_count > 0 else 1
         progress_tracker.update_step(repo_id, 2, "Shallow Cloning Repository", pct=25)
@@ -195,19 +145,19 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
         clone_start = time.time()
         clone_res = gm_service.shallow_clone_repo(
-            git_url, 
-            branch, 
-            token=effective_token, 
-            username=effective_user, 
-            provider=provider, 
+            git_url,
+            branch,
+            token=effective_token,
+            username=effective_user,
+            provider=provider,
             repo_id=str(repo_id),
             target_dir=target_dir,
-            depth=clone_depth
+            depth=clone_depth,
         )
         temp_dir = clone_res.temp_dir
         commit_sha = clone_res.commit_sha
         err = clone_res.error
-        
+
         if err or not temp_dir:
             err_msg = f"Failed to clone repo '{repo_name}': {err}"
             logger.error(err_msg)
@@ -226,56 +176,19 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
             return
 
-        # Commit history extraction and pruning
         try:
             with db_service.get_db_connection() as conn:
-                if retain_commits_count > 0:
-                    recent_commits = gm_service.extract_recent_commits(temp_dir, limit=retain_commits_count)
-                    if recent_commits:
-                        commit_tuples = [
-                            (
-                                repo_name,
-                                c["commit_sha"],
-                                c.get("author"),
-                                c.get("committed_at"),
-                                c.get("message"),
-                                json.dumps(c.get("files_changed", []))
-                            )
-                            for c in recent_commits
-                        ]
-                        conn.executemany(
-                            """INSERT INTO git_commits (repo, commit_sha, author, committed_at, message, files_changed)
-                               VALUES (?, ?, ?, ?, ?, ?)
-                               ON CONFLICT(repo, commit_sha) DO UPDATE SET
-                                   author = EXCLUDED.author,
-                                   committed_at = EXCLUDED.committed_at,
-                                   message = EXCLUDED.message,
-                                   files_changed = EXCLUDED.files_changed""",
-                            commit_tuples
-                        )
-                        # Prune older rows beyond retain_commits_count for this repo
-                        # We keep the top retain_commits_count commits ordered by committed_at DESC, id DESC
-                        conn.execute(
-                            """DELETE FROM git_commits
-                               WHERE repo = ? AND id NOT IN (
-                                   SELECT id FROM git_commits
-                                   WHERE repo = ?
-                                   ORDER BY committed_at DESC, id DESC
-                                   LIMIT ?
-                               )""",
-                            (repo_name, repo_name, retain_commits_count)
-                        )
-                        conn.commit()
-                else:
-                    # retain_commits_count <= 0: delete all stored commits for this repo
-                    conn.execute("DELETE FROM git_commits WHERE repo = ?", (repo_name,))
-                    conn.commit()
+                recent_commits = gm_service.extract_recent_commits(temp_dir, limit=retain_commits_count) if retain_commits_count > 0 else []
+                persist_recent_commits(conn, repo_name, recent_commits, retain_commits_count)
         except Exception as ce:
             logger.error(f"Error extracting/pruning commits for repo '{repo_name}': {ce}")
 
         # Stage 3: Computing File Delta & Scanning
         progress_tracker.update_step(repo_id, 3, "Computing File Delta & Scanning", pct=40)
-        added_files, modified_files, deleted_filepaths, unchanged_files = compute_git_repo_delta(temp_dir, repo_name)
+        try:
+            added_files, modified_files, deleted_filepaths, unchanged_files = compute_git_repo_delta(temp_dir, repo_name, force=force)
+        except TypeError:
+            added_files, modified_files, deleted_filepaths, unchanged_files = compute_git_repo_delta(temp_dir, repo_name)
         total_delta = len(added_files) + len(modified_files) + len(deleted_filepaths)
         delta_msg = (
             f"Delta computed: +{len(added_files)} added, ~{len(modified_files)} modified, "
@@ -294,7 +207,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             with db_service.get_db_connection() as conn:
                 conn.execute(
                     "UPDATE git_repositories SET status = 'synced', last_error = NULL, commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
-                    (commit_sha, repo_id)
+                    (commit_sha, repo_id),
                 )
                 conn.commit()
             progress_tracker.finish_job(repo_id, "synced")
@@ -306,16 +219,9 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
             return
 
-        # Delete old vector points for modified and deleted files, and clean relational rows for all files being synced/deleted
         store = vs_service.get_vector_store()
-        added_db_filepaths = [
-            f"{repo_name}://" + os.path.relpath(f, temp_dir).replace("\\", "/")
-            for f in added_files
-        ]
-        modified_db_filepaths = [
-            f"{repo_name}://" + os.path.relpath(f, temp_dir).replace("\\", "/")
-            for f in modified_files
-        ]
+        added_db_filepaths = [f"{repo_name}://" + os.path.relpath(f, temp_dir).replace("\\", "/") for f in added_files]
+        modified_db_filepaths = [f"{repo_name}://" + os.path.relpath(f, temp_dir).replace("\\", "/") for f in modified_files]
         paths_to_delete = modified_db_filepaths + deleted_filepaths
         db_paths_to_clean = list(dict.fromkeys(added_db_filepaths + modified_db_filepaths + deleted_filepaths))
 
@@ -337,7 +243,6 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     conn.execute("DELETE FROM indexed_files WHERE filepath = ?", (fpath,))
                 conn.commit()
 
-        # Ingest added and modified files in batches
         files_to_sync = added_files + modified_files
         total_files = len(files_to_sync)
         logger.info(f"Ingesting {total_files} added/modified files for repo '{repo_name}'...")
@@ -357,14 +262,14 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         # Stage 4: Parsing AST & Routes
         for idx, full_path in enumerate(files_to_sync):
             if progress_tracker.is_cancelled(repo_id):
-                logger.info(f"Sync cancelled for repo '{repo_name}' during file ingestion at file {idx+1}/{total_files}")
-                progress_tracker.log(repo_id, "WARN", f"Sync cancelled by user at file {idx+1}/{total_files}")
+                logger.info(f"Sync cancelled for repo '{repo_name}' during file ingestion at file {idx + 1}/{total_files}")
+                progress_tracker.log(repo_id, "WARN", f"Sync cancelled by user at file {idx + 1}/{total_files}")
                 return
 
             rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
             progress_tracker.update_step(
-                repo_id, 4, f"Parsing Files ({idx+1}/{total_files})",
-                current_file=rel_path, processed=idx+1, total=total_files
+                repo_id, 4, f"Parsing Files ({idx + 1}/{total_files})",
+                current_file=rel_path, processed=idx + 1, total=total_files,
             )
             doc_type = "code" if is_code_file(full_path) else "doc"
             lang = detect_language(full_path)
@@ -373,7 +278,6 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             try:
                 with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
-
                 file_hash = proc_service.compute_text_hash(content)
 
                 points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
@@ -384,7 +288,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     doc_type=doc_type,
                     git_url=git_url,
                     commit_sha=commit_sha,
-                    provider=provider
+                    provider=provider,
                 )
                 batch_points.extend(points)
                 batch_symbols.extend(symbols)
@@ -394,20 +298,14 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                 batch_relationships.extend(rels)
                 batch_indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash))
 
-                progress_tracker.log(
-                    repo_id, "INFO",
-                    f"[{idx+1}/{total_files}] Ingested {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)"
-                )
-
+                progress_tracker.log(repo_id, "INFO", f"[{idx + 1}/{total_files}] Ingested {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
                 if (idx + 1) % 10 == 0 or (idx + 1) == total_files:
                     pct = int(((idx + 1) / total_files) * 100)
-                    logger.info(f"[{idx+1}/{total_files}] ({pct}%) Ingesting {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
-
+                    logger.info(f"[{idx + 1}/{total_files}] ({pct}%) Ingesting {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
             except Exception as fe:
                 logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
                 progress_tracker.log(repo_id, "ERROR", f"Error parsing {rel_path}: {fe}")
 
-            # Flush batch every BATCH_SIZE files or on the last file
             if (idx + 1) % BATCH_SIZE == 0 or (idx + 1) == total_files:
                 if batch_points:
                     upsert_ok = store.upsert_documents(batch_points)
@@ -418,110 +316,15 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     batch_points.clear()
 
                 with db_service.get_db_connection() as conn:
-                    if batch_indexed_files:
-                        conn.executemany(
-                            """INSERT INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime, hash)
-                               VALUES (?, ?, ?, ?, ?, ?, ?)
-                               ON CONFLICT(filepath) DO UPDATE SET
-                                   repo = EXCLUDED.repo,
-                                   doc_type = EXCLUDED.doc_type,
-                                   language = EXCLUDED.language,
-                                   commit_sha = EXCLUDED.commit_sha,
-                                   mtime = EXCLUDED.mtime,
-                                   hash = EXCLUDED.hash""",
-                            batch_indexed_files
-                        )
-                        batch_indexed_files.clear()
-                    if batch_summaries:
-                        conn.executemany(
-                            """INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                               ON CONFLICT(filepath) DO UPDATE SET
-                                   repo = EXCLUDED.repo,
-                                   title = EXCLUDED.title,
-                                   folder = EXCLUDED.folder,
-                                   category = EXCLUDED.category,
-                                   tags = EXCLUDED.tags,
-                                   headings = EXCLUDED.headings,
-                                   keywords = EXCLUDED.keywords,
-                                   summary_text = EXCLUDED.summary_text,
-                                   mtime = EXCLUDED.mtime""",
-                            batch_summaries
-                        )
-                        batch_summaries.clear()
-                    if batch_symbols:
-                        for s in batch_symbols:
-                            cursor = conn.execute(
-                                "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
-                            )
-                            s["inserted_id"] = cursor.lastrowid
-                        total_symbols_count += len(batch_symbols)
-                    if batch_relationships:
-                        sym_map = {}
-                        syms_by_file = {}
-                        for s in batch_symbols:
-                            if "inserted_id" in s:
-                                sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
-                                if s.get("full_symbol"):
-                                    sym_map[(s["repo"], s["filepath"], s["full_symbol"])] = s["inserted_id"]
-                                syms_by_file.setdefault((s["repo"], s["filepath"]), []).append(s)
-
-                        rel_tuples = []
-                        for r in batch_relationships:
-                            src_id = None
-                            r_line = r.get("line_number")
-                            if r_line is not None:
-                                candidates = [
-                                    s for s in syms_by_file.get((r["repo"], r["source_filepath"]), [])
-                                    if (s.get("start_line") or 0) <= r_line <= (s.get("end_line") or 0)
-                                    and (s.get("name") == r["source_symbol"] or s.get("full_symbol") == r["source_symbol"])
-                                ]
-                                if candidates:
-                                    candidates.sort(key=lambda s: (s.get("end_line") or 0) - (s.get("start_line") or 0))
-                                    src_id = candidates[0].get("inserted_id")
-                            if src_id is None:
-                                src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
-                            rel_tuples.append((
-                                r["repo"],
-                                src_id,
-                                r["source_filepath"],
-                                r["source_symbol"],
-                                r["target_symbol"],
-                                r["relationship_type"],
-                                r["line_number"]
-                            ))
-
-                        conn.executemany(
-                            """INSERT INTO ast_relationships
-                               (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
-                               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                            rel_tuples
-                        )
-                        batch_relationships.clear()
-                    if batch_routes:
-                        route_tuples = [
-                            (r["repo"], r["filepath"], r["framework"], r["http_method"], r["path_pattern"], r.get("handler_symbol"), r["start_line"], r["end_line"])
-                            for r in batch_routes
-                        ]
-                        conn.executemany(
-                            "INSERT INTO api_routes (repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            route_tuples
-                        )
-                        batch_routes.clear()
-                    if batch_calls:
-                        call_tuples = [
-                            (c["repo"], c["filepath"], c.get("http_method"), c["url_pattern"], c.get("caller_symbol"), c["line_number"])
-                            for c in batch_calls
-                        ]
-                        conn.executemany(
-                            "INSERT INTO api_client_calls (repo, filepath, http_method, url_pattern, caller_symbol, line_number) VALUES (?, ?, ?, ?, ?, ?)",
-                            call_tuples
-                        )
-                        batch_calls.clear()
-                    batch_symbols.clear()
-                    conn.commit()
-
+                    total_symbols_count += persist_sync_batch(
+                        conn,
+                        batch_indexed_files,
+                        batch_summaries,
+                        batch_symbols,
+                        batch_relationships,
+                        batch_routes,
+                        batch_calls,
+                    )
                 trim_memory()
 
         # Stage 5: Vector Indexing & Cleanup
@@ -529,7 +332,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         with db_service.get_db_connection() as conn:
             conn.execute(
                 "UPDATE git_repositories SET status = 'synced', last_error = NULL, commit_sha = ?, last_synced = CURRENT_TIMESTAMP WHERE id = ?",
-                (commit_sha, repo_id)
+                (commit_sha, repo_id),
             )
             conn.commit()
 
@@ -550,7 +353,6 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         except Exception:
             pass
     finally:
-        # Clean up ephemeral clone, or retain persistent shallow copy
         if not keep_shallow and temp_dir:
             gm_service.cleanup_repo_dir(temp_dir)
         elif keep_shallow and temp_dir:
@@ -568,8 +370,7 @@ def run_full_indexing():
     try:
         idx_state.ensure_collection()
         local_syncer.sync_local_paths()
-        
-        # Sync all registered git repos
+
         with db_service.get_db_connection() as conn:
             git_repos = conn.execute("SELECT id FROM git_repositories WHERE enabled = 1").fetchall()
         for gr in git_repos:
@@ -588,5 +389,4 @@ def run_full_indexing():
         trim_memory()
 
 
-# Register re-index callback with VectorStoreManager
 VectorStoreManager.register_reindex_callback(run_full_indexing)
