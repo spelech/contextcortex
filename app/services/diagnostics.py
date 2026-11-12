@@ -34,7 +34,33 @@ RE_GENERIC_FRAME = re.compile(
 
 RE_QUOTED_ERROR = re.compile(r'["\']([^"\'\r\n]{6,120})["\']')
 RE_EXCEPTION_NAME = re.compile(r'\b[A-Z][A-Za-z0-9_]*(?:Error|Exception|Fault|Panic)\b')
+RE_SYMBOL_CANDIDATE = re.compile(
+    r'\b(?:[A-Z][A-Za-z0-9_]{2,}(?:\.[A-Za-z_][A-Za-z0-9_]{2,})+|[a-z][a-z0-9_]{1,}_[a-z0-9_]{2,}|[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]+)\b'
+)
 RE_HTTP_ROUTE = re.compile(r'(?:(GET|POST|PUT|DELETE|PATCH)\s+)?(/[\w\-/{}:]+(?:/[\w\-/{}:]*)*)', re.IGNORECASE)
+
+_STOP_IDENTIFIERS = {
+    "RuntimeError", "ValueError", "TypeError", "KeyError", "AttributeError", "IndexError",
+    "OperationalError", "DatabaseError", "IntegrityError", "HTTPException",
+    "InvalidOperationException", "ArgumentException", "NullReferenceException",
+    "Exception", "Error", "Traceback",
+}
+
+
+def _is_test_path(filepath: str) -> bool:
+    norm = _clean_diag_path(filepath).lower()
+    parts = [p for p in norm.split("/") if p]
+    if any(p in ("tests", "test", "__tests__", "e2e", "spec", "specs") or p.endswith(".tests") or p.endswith("_tests") for p in parts):
+        return True
+    fname = parts[-1] if parts else ""
+    return (
+        fname.startswith("test_")
+        or fname.endswith("_test.py")
+        or fname.endswith(".test.ts")
+        or fname.endswith(".test.tsx")
+        or fname.endswith(".spec.ts")
+        or fname.endswith("tests.cs")
+    )
 
 
 def parse_stack_frames(text: str) -> List[Dict[str, Any]]:
@@ -89,9 +115,9 @@ def parse_stack_frames(text: str) -> List[Dict[str, Any]]:
 
 
 def extract_diagnostic_signals(text: str) -> Dict[str, Any]:
-    """Extracts quoted error strings, exception identifiers, and HTTP routes."""
-    errors, exceptions, routes = [], [], []
-    seen_err, seen_exc, seen_routes = set(), set(), set()
+    """Extracts quoted error strings, exception identifiers, code symbols, and HTTP routes."""
+    errors, exceptions, symbols, routes = [], [], [], []
+    seen_err, seen_exc, seen_sym, seen_routes = set(), set(), set(), set()
     for m in RE_QUOTED_ERROR.finditer(text):
         c = m.group(1).strip()
         if c and c not in seen_err:
@@ -102,6 +128,11 @@ def extract_diagnostic_signals(text: str) -> Dict[str, Any]:
         if c and c not in seen_exc:
             seen_exc.add(c)
             exceptions.append(c)
+    for m in RE_SYMBOL_CANDIDATE.finditer(text):
+        c = m.group(0).strip()
+        if c and c not in _STOP_IDENTIFIERS and c not in seen_exc and c not in seen_sym:
+            seen_sym.add(c)
+            symbols.append(c)
     for m in RE_HTTP_ROUTE.finditer(text):
         meth, p = (m.group(1).upper() if m.group(1) else None), m.group(2).strip()
         if len(p) > 1 and not p.endswith("//") and not p.startswith("//"):
@@ -109,7 +140,7 @@ def extract_diagnostic_signals(text: str) -> Dict[str, Any]:
             if key not in seen_routes:
                 seen_routes.add(key)
                 routes.append(key)
-    return {"quoted_errors": errors, "exceptions": exceptions, "routes": routes}
+    return {"quoted_errors": errors, "exceptions": exceptions, "symbols": symbols, "routes": routes}
 
 
 def _clean_diag_path(p: Optional[str]) -> str:
@@ -121,36 +152,81 @@ def _clean_diag_path(p: Optional[str]) -> str:
     return norm
 
 
-def _get_callers_and_callees(conn, repo: Optional[str], symbol_name: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Fetches immediate 1-hop callers and callees from ast_relationships for a given symbol."""
+def _get_callers_and_callees(
+    conn,
+    repo: Optional[str],
+    symbol_name: str,
+    enclosing_filepath: Optional[str] = None,
+    enclosing_start_line: Optional[int] = None,
+    enclosing_end_line: Optional[int] = None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Fetches immediate 1-hop callers (prioritizing production code over tests) and file/line-scoped callees."""
     if not symbol_name:
         return [], []
     short_sym = symbol_name.split(".")[-1] if "." in symbol_name else symbol_name
     effective_repo = repo if (repo and repo != "unknown") else None
 
-    c_sql = "SELECT repo, source_symbol, source_filepath, line_number FROM ast_relationships WHERE (target_symbol = ? OR target_symbol = ?)"
+    c_sql = (
+        "SELECT repo, source_symbol, target_symbol, source_filepath, line_number "
+        "FROM ast_relationships WHERE (target_symbol = ? OR target_symbol = ?)"
+    )
     c_params: List[Any] = [symbol_name, short_sym]
     if effective_repo:
         c_sql += " AND repo = ?"
         c_params.append(effective_repo)
-    c_sql += " LIMIT 10"
-    c_rows = conn.execute(c_sql, c_params).fetchall()
-    callers = [
-        {"repo": r["repo"], "symbol": r["source_symbol"], "file": _clean_diag_path(r["source_filepath"]), "line": r["line_number"]}
-        for r in c_rows
-    ]
+    c_rows = conn.execute(c_sql + " LIMIT 80", c_params).fetchall()
 
+    # Sort callers: exact full symbol match first, production files before test files
+    scored_callers = []
+    seen_callers = set()
+    for r in c_rows:
+        clean_fp = _clean_diag_path(r["source_filepath"])
+        dedup_k = (r["repo"], r["source_symbol"], clean_fp, r["line_number"])
+        if dedup_k in seen_callers:
+            continue
+        seen_callers.add(dedup_k)
+        is_test = _is_test_path(clean_fp)
+        exact_target = 0 if r["target_symbol"] == symbol_name else 1
+        scored_callers.append((
+            (1 if is_test else 0, exact_target, clean_fp, r["line_number"]),
+            {"repo": r["repo"], "symbol": r["source_symbol"], "file": clean_fp, "line": r["line_number"]},
+        ))
+    scored_callers.sort(key=lambda x: x[0])
+    callers = [item[1] for item in scored_callers[:10]]
+
+    # Scope callees to the enclosing file and line range when known so generic method names (e.g. ExecuteAsync)
+    # do not pull callees from unrelated classes with the same method name.
     ce_sql = "SELECT repo, target_symbol, source_filepath, line_number FROM ast_relationships WHERE (source_symbol = ? OR source_symbol = ?)"
     ce_params: List[Any] = [symbol_name, short_sym]
     if effective_repo:
         ce_sql += " AND repo = ?"
         ce_params.append(effective_repo)
-    ce_sql += " LIMIT 10"
+    if enclosing_filepath:
+        clean_enc = _clean_diag_path(enclosing_filepath)
+        ce_sql += " AND (REPLACE(source_filepath, '\\', '/') = ? OR REPLACE(source_filepath, '\\', '/') LIKE ?)"
+        ce_params.extend([clean_enc, f"%://{clean_enc}"])
+    if enclosing_start_line is not None and enclosing_end_line is not None:
+        ce_sql += " AND line_number >= ? AND line_number <= ?"
+        ce_params.extend([enclosing_start_line, enclosing_end_line])
+    ce_sql += " ORDER BY line_number ASC LIMIT 25"
     ce_rows = conn.execute(ce_sql, ce_params).fetchall()
-    callees = [
-        {"repo": r["repo"], "symbol": r["target_symbol"], "file": _clean_diag_path(r["source_filepath"]), "line": r["line_number"]}
-        for r in ce_rows
-    ]
+
+    callees = []
+    seen_callees = set()
+    for r in ce_rows:
+        clean_fp = _clean_diag_path(r["source_filepath"])
+        dedup_k = (r["target_symbol"], r["line_number"])
+        if dedup_k in seen_callees:
+            continue
+        seen_callees.add(dedup_k)
+        callees.append({
+            "repo": r["repo"],
+            "symbol": r["target_symbol"],
+            "file": clean_fp,
+            "line": r["line_number"],
+        })
+        if len(callees) >= 10:
+            break
     return callers, callees
 
 
@@ -183,9 +259,14 @@ def _find_matching_indexed_file(conn, repo: Optional[str], parsed_path: str) -> 
     if repo:
         sql += " AND repo = ?"
         params.append(repo)
-    row = conn.execute(sql + " LIMIT 1", params).fetchone()
-    if row:
-        return dict(row)
+    rows = conn.execute(sql + " LIMIT 20", params).fetchall()
+    if rows:
+        # Prefer exact suffix match on norm_path over basename-only match
+        for r in rows:
+            clean_fp = _clean_diag_path(r["filepath"])
+            if clean_fp == norm_path or clean_fp.endswith(f"/{norm_path}"):
+                return dict(r)
+        return dict(rows[0])
     if not repo:
         row2 = conn.execute(
             "SELECT filepath, repo, doc_type, language, commit_sha FROM indexed_files WHERE REPLACE(filepath, '\\', '/') LIKE ? LIMIT 1",
@@ -225,7 +306,18 @@ def resolve_stack_frames(frames: List[Dict[str, Any]], repo: Optional[str] = Non
                 g_info = git_repos[target_repo]
                 permalink = format_git_permalink(g_info["url"], g_info["commit_sha"], clean_file_path, line_no, line_no, provider=g_info.get("provider"))
 
-            callers, callees = _get_callers_and_callees(conn, target_repo, symbol_name) if symbol_name else ([], [])
+            callers, callees = (
+                _get_callers_and_callees(
+                    conn,
+                    target_repo,
+                    symbol_name,
+                    enclosing_filepath=clean_file_path,
+                    enclosing_start_line=enclosing.get("start_line") if enclosing else None,
+                    enclosing_end_line=enclosing.get("end_line") if enclosing else None,
+                )
+                if symbol_name
+                else ([], [])
+            )
             resolved.append({
                 "repo": target_repo, "file": clean_file_path, "line": line_no, "symbol": symbol_name,
                 "kind": kind, "signature": signature, "code": code_snippet, "permalink": permalink,
@@ -244,6 +336,8 @@ def match_routes_and_callers(extracted_routes: List[Tuple[Optional[str], str]], 
         for method, path in extracted_routes:
             norm_target = normalize_path_pattern(path)
             for r in all_routes:
+                if _is_test_path(r["filepath"]):
+                    continue
                 if method and r["http_method"] not in ("ALL", method):
                     continue
                 if match_route_and_call(r["path_pattern"], norm_target) or match_route_and_call(norm_target, r["path_pattern"]):
@@ -251,34 +345,52 @@ def match_routes_and_callers(extracted_routes: List[Tuple[Optional[str], str]], 
                     if route_key in seen:
                         continue
                     seen.add(route_key)
-                    ext_callers = [
+                    raw_ext_callers = [
                         {"repo": c["repo"], "symbol": c["caller_symbol"], "file": _clean_diag_path(c["filepath"]), "line": c["line_number"]}
                         for c in all_calls if match_route_and_call(r["path_pattern"], c["url_pattern"])
                     ]
+                    raw_ext_callers.sort(key=lambda c: (1 if _is_test_path(c["file"]) else 0, c["file"], c["line"]))
                     matched_results.append({
                         "method": r["http_method"], "path": r["path_pattern"],
                         "handler": {"repo": r["repo"], "symbol": r["handler_symbol"], "file": _clean_diag_path(r["filepath"]), "line": r["start_line"]},
-                        "external_callers": ext_callers
+                        "external_callers": raw_ext_callers[:10]
                     })
     return matched_results
 
 
-def match_symbols_and_exceptions(exceptions: List[str], quoted_errors: List[str], repo: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Matches extracted exception class names and quoted error identifiers against ast_symbols."""
+def match_symbols_and_exceptions(
+    exceptions: List[str],
+    quoted_errors: List[str],
+     repo: Optional[str] = None,
+    candidate_symbols: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Matches extracted exception class names, symbol identifiers, and quoted error identifiers against ast_symbols."""
     matched, seen = [], set()
-    terms = list(OrderedDict.fromkeys(exceptions + [q for q in quoted_errors if len(q.split()) <= 3]))
+    extra_syms = candidate_symbols or []
+    terms = list(OrderedDict.fromkeys(exceptions + extra_syms + [q for q in quoted_errors if len(q.split()) <= 3]))
     if not terms:
         return matched
 
     with get_db_connection() as conn:
         for term in terms:
-            sql = "SELECT repo, name, full_symbol, kind, filepath, start_line, end_line FROM ast_symbols WHERE (name = ? OR full_symbol = ?)"
-            params: List[Any] = [term, term]
+            short_term = term.split(".")[-1] if "." in term else term
+            sql = "SELECT repo, name, full_symbol, kind, filepath, start_line, end_line FROM ast_symbols WHERE (name = ? OR full_symbol = ? OR full_symbol = ?)"
+            params: List[Any] = [term, term, short_term]
             if repo:
                 sql += " AND repo = ?"
                 params.append(repo)
-            for r in conn.execute(sql + " LIMIT 5", params).fetchall():
+            rows = conn.execute(sql + " LIMIT 10", params).fetchall()
+            rows_sorted = sorted(
+                rows,
+                key=lambda r: (
+                    1 if _is_test_path(r["filepath"]) else 0,
+                    0 if (r["full_symbol"] == term or r["name"] == term) else 1,
+                ),
+            )
+            for r in rows_sorted[:5]:
                 clean_fp = _clean_diag_path(r["filepath"])
+                if _is_test_path(clean_fp):
+                    continue
                 key = (r["repo"], r["name"], clean_fp, r["start_line"])
                 if key not in seen:
                     seen.add(key)
@@ -286,13 +398,49 @@ def match_symbols_and_exceptions(exceptions: List[str], quoted_errors: List[str]
     return matched
 
 
-def find_semantic_candidates(issue_text: str, repo: Optional[str] = None, limit: int = 5) -> List[Dict[str, Any]]:
+def _build_semantic_query(issue_text: str, signals: Dict[str, Any], frames: List[Dict[str, Any]]) -> str:
+    """Strips boilerplate stack-trace file/line formatting so dense+BM25 hybrid search focuses on symbols and error messages."""
+    parts: List[str] = []
+    for f in frames:
+        if f.get("function"):
+            parts.append(str(f["function"]))
+        if f.get("path"):
+            parts.append(_clean_diag_path(str(f["path"])).split("/")[-1])
+    parts.extend(signals.get("symbols", []))
+    parts.extend(signals.get("exceptions", []))
+    parts.extend(signals.get("quoted_errors", []))
+    for _, route_path in signals.get("routes", []):
+        parts.append(route_path)
+
+    cleaned_lines = []
+    for line in issue_text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("Traceback (most recent call last)"):
+            continue
+        if RE_PYTHON_FRAME.search(s) or RE_CSHARP_FRAME.search(s) or RE_JAVA_FRAME.search(s):
+            continue
+        cleaned_lines.append(s)
+    if cleaned_lines:
+        parts.append(" ".join(cleaned_lines))
+
+    dedup_tokens = list(OrderedDict.fromkeys(p for p in parts if p))
+    return " ".join(dedup_tokens) if dedup_tokens else issue_text
+
+
+def find_semantic_candidates(
+    issue_text: str,
+    repo: Optional[str] = None,
+    limit: int = 5,
+    signals: Optional[Dict[str, Any]] = None,
+    frames: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     """Executes hybrid semantic+lexical search and enriches candidates with 1-hop callers/callees."""
     candidates = []
     if not issue_text.strip():
         return candidates
+    query_str = _build_semantic_query(issue_text, signals or {}, frames or []) if (signals or frames) else issue_text
     try:
-        hits = execute_hybrid_search(query_text=issue_text, doc_type="code", repo=repo, limit=limit)
+        hits = execute_hybrid_search(query_text=query_str, doc_type="code", repo=repo, limit=limit)
     except Exception as e:
         logger.warning(f"Hybrid search failed in diagnostics: {e}")
         hits = []
@@ -315,7 +463,14 @@ def find_semantic_candidates(issue_text: str, repo: Optional[str] = None, limit:
 
             callers, callees = [], []
             if sym:
-                c_list, ce_list = _get_callers_and_callees(conn, target_repo, sym)
+                c_list, ce_list = _get_callers_and_callees(
+                    conn,
+                    target_repo,
+                    sym,
+                    enclosing_filepath=file_path,
+                    enclosing_start_line=start_l,
+                    enclosing_end_line=end_l,
+                )
                 callers = [c["symbol"] for c in c_list if c.get("symbol")]
                 callees = [ce["symbol"] for ce in ce_list if ce.get("symbol")]
 
@@ -338,8 +493,19 @@ def diagnose_issue(issue_text: str, repo: Optional[str] = None, context_lines: i
 
     resolved_frames = resolve_stack_frames(parsed_frames, repo=repo, context_lines=clamped_context)
     matched_routes = match_routes_and_callers(signals["routes"], repo=repo)
-    matched_symbols = match_symbols_and_exceptions(signals["exceptions"], signals["quoted_errors"], repo=repo)
-    semantic_candidates = find_semantic_candidates(issue_text=issue_text, repo=repo, limit=clamped_limit)
+    matched_symbols = match_symbols_and_exceptions(
+        signals["exceptions"],
+        signals["quoted_errors"],
+        repo=repo,
+        candidate_symbols=signals.get("symbols", []),
+    )
+    semantic_candidates = find_semantic_candidates(
+        issue_text=issue_text,
+        repo=repo,
+        limit=clamped_limit,
+        signals=signals,
+        frames=parsed_frames,
+    )
 
     return {
         "resolved_frames": resolved_frames,
