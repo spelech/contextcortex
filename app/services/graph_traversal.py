@@ -220,6 +220,25 @@ def trace_symbol_path(
                 return matched[0].get("full_symbol") or matched[0].get("name") or raw_target
         return raw_target
 
+    def _call_reaches(r_target: str, caller_sym: str, curr_sym: str) -> bool:
+        """
+        Call targets are stored as bare method names (`_toolService.PublishInstance(...)` -> `PublishInstance`).
+        For a qualified target, resolve the call from the caller's class with the same DI rules as callees:
+        when it resolves to a different concrete method, the row is not a caller of `curr_sym`.
+        Calls from the target's own class, and undecidable calls, are kept.
+        """
+        if "." not in curr_sym or not r_target or "." in r_target:
+            return True
+        curr_cls = curr_sym.rsplit(".", 1)[0]
+        caller_cls = caller_sym.rsplit(".", 1)[0] if "." in caller_sym else caller_sym
+        if caller_cls == curr_cls or caller_cls.endswith(f".{curr_cls}"):
+            return True
+        candidates = _resolve_symbol_candidates(r_target)
+        if len(candidates) < 2:
+            return True
+        resolved = _resolve_di_callee(r_target, caller_sym, candidates)
+        return resolved == r_target or resolved == curr_sym or resolved.endswith(f".{curr_sym}")
+
     def _resolve_enclosing_symbol(r_repo: str, r_filepath: str, line_num: Optional[int], fallback_sym: str, source_symbol_id: Optional[int] = None) -> Tuple[str, Optional[dict]]:
         if source_symbol_id and source_symbol_id in sym_by_id:
             s_obj = sym_by_id[source_symbol_id]
@@ -360,6 +379,8 @@ def trace_symbol_path(
                             continue
                     caller_sym, caller_obj = _resolve_enclosing_symbol(r["repo"], r["source_filepath"], r["line_number"], r["source_symbol"], r["source_symbol_id"])
                     if (caller_obj and caller_obj.get("id") in curr_ids and "." in curr_sym) or caller_sym == curr_sym:
+                        continue
+                    if not _call_reaches(r_target, caller_sym, curr_sym):
                         continue
                     edge_key = (caller_sym, curr_sym, r["relationship_type"], "caller", r["line_number"])
                     if edge_key in visited_edges:
