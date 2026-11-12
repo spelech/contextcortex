@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.21.4](https://github.com/spelech/contextcortex/compare/v2.21.3...v2.21.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **diagnostics:** scope stack-frame callees to enclosing file/lines and prioritize production callers ([c947374](https://github.com/spelech/contextcortex/commit/c9473741f150c91b50e6f41fb7806f6b3ea99c62))
+
 ## [2.21.3](https://github.com/spelech/contextcortex/compare/v2.21.2...v2.21.3) (2026-11-12)
 
 
