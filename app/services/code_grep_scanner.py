@@ -5,6 +5,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.services.git_manager import format_git_permalink
+from app.services.text_decoding import read_source_text
 
 logger = logging.getLogger("contextcortex.file_reader")
 
@@ -117,8 +118,7 @@ def execute_code_grep(
         try:
             if not os.path.isfile(abs_p) or is_binary_fn(abs_p):
                 continue
-            with open(abs_p, "r", encoding="utf-8", errors="replace") as f:
-                file_text = f.read()
+            file_text = read_source_text(abs_p)
         except Exception:
             continue
 
