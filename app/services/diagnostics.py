@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.chunking import match_route_and_call, normalize_path_pattern
 from app.services.database import get_db_connection
+from app.services.diagnostic_route_path import collect_route_path_symbols, keep_semantic_hit, language_family
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
 from app.services.search import execute_hybrid_search
@@ -164,7 +165,8 @@ def _find_matching_indexed_file(conn, repo: Optional[str], parsed_path: str) -> 
             q_params.append(repo_filter)
         return conn.execute(q_sql + " LIMIT 30", q_params).fetchall()
 
-    rows = _query_candidates(repo) or (_query_candidates(None) if repo else [])
+    # With an explicit repo, never fall back to files from other repos.
+    rows = _query_candidates(repo)
     if not rows:
         return None
 
@@ -265,6 +267,8 @@ def match_routes_and_callers(
         ).fetchall()
         all_calls = conn.execute(
             "SELECT id, repo, filepath, http_method, url_pattern, caller_symbol, line_number FROM api_client_calls"
+            + (" WHERE repo = ?" if repo else ""),
+            ([repo] if repo else []),
         ).fetchall()
 
         for method, path in extracted_routes:
@@ -345,60 +349,95 @@ def match_symbols_and_exceptions(
     return matched
 
 
+def _build_candidate(conn, git_repos, item: Dict[str, Any]) -> Dict[str, Any]:
+    """Adds a permalink and 1-hop callers/callees to a candidate (route-path or semantic)."""
+    target_repo, file_path, sym = item["repo"], item["file"], item["symbol"]
+    start_l, end_l = item["lines"]
+    permalink = item.pop("permalink", None)
+    if permalink and "\\" in permalink:
+        permalink = permalink.replace("\\", "/")
+    if not permalink and target_repo in git_repos:
+        g_info = git_repos[target_repo]
+        permalink = format_git_permalink(
+            g_info["url"], g_info["commit_sha"], file_path, start_l, end_l, provider=g_info.get("provider")
+        )
+    callers, callees = [], []
+    if sym:
+        c_list, ce_list = _get_callers_and_callees(
+            conn, target_repo, sym, enclosing_filepath=file_path, enclosing_start_line=start_l, enclosing_end_line=end_l
+        )
+        callers = [c["symbol"] for c in c_list if c.get("symbol")]
+        callees = [ce["symbol"] for ce in ce_list if ce.get("symbol")]
+    return {**item, "permalink": permalink, "callers": callers, "callees": callees}
+
+
+def _read_symbol_code(raw_path: str, repo: str, start_l: int, end_l: int) -> str:
+    try:
+        res = get_file_reader_service().read_file(path=raw_path, repo=repo, start_line=start_l, end_line=end_l)
+        return (res.get("content") or "")[:MAX_CANDIDATE_CHARS]
+    except Exception as e:
+        logger.debug(f"Could not read route-path candidate code for {raw_path}:{start_l}: {e}")
+        return ""
+
+
 def find_semantic_candidates(
     issue_text: str,
     repo: Optional[str] = None,
     limit: int = 5,
     signals: Optional[Dict[str, Any]] = None,
     frames: Optional[List[Dict[str, Any]]] = None,
+    matched_routes: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Executes hybrid semantic+lexical search and enriches candidates with 1-hop callers/callees."""
-    candidates = []
+    """Returns ranked code candidates: the matched route's call path first, then filtered hybrid search hits."""
+    candidates: List[Dict[str, Any]] = []
     if not issue_text or not issue_text.strip():
         return candidates
-    query_str = _build_semantic_query(issue_text, signals or {}, frames or []) if (signals or frames) else issue_text[:2000]
-    try:
-        hits = execute_hybrid_search(query_text=query_str, doc_type="code", repo=repo, limit=limit)
-    except Exception as e:
-        logger.warning(f"Hybrid search failed in diagnostics: {e}")
-        hits = []
 
     with get_db_connection() as conn:
         git_repos = {
             r["name"]: dict(r)
             for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall()
         }
-        for h in hits[:limit]:
+        route_syms = collect_route_path_symbols(conn, matched_routes or [], repo=repo, limit=limit)
+        route_languages = {lang for s in route_syms if (lang := language_family(s.get("language"), s["filepath"]))}
+        seen = set()
+        for s in route_syms:
+            file_path = _clean_diag_path(s["filepath"])
+            sym = s["full_symbol"] or s["name"]
+            seen.add((s["repo"], file_path, sym))
+            candidates.append(_build_candidate(conn, git_repos, {
+                "score": None, "source": s["source"], "depth": s["depth"], "repo": s["repo"], "file": file_path,
+                "lines": [s["start_line"], s["end_line"]], "symbol": sym, "kind": s["kind"], "signature": s["signature"],
+                "content": _read_symbol_code(s["filepath"], s["repo"], s["start_line"], s["end_line"]),
+            }))
+
+        remaining = limit - len(candidates)
+        hits = []
+        if remaining > 0:
+            query_str = _build_semantic_query(issue_text, signals or {}, frames or []) if (signals or frames) else issue_text[:2000]
+            try:
+                hits = execute_hybrid_search(query_text=query_str, doc_type="code", repo=repo, limit=limit)
+            except Exception as e:
+                logger.warning(f"Hybrid search failed in diagnostics: {e}")
+        for h in hits:
+            if len(candidates) >= limit:
+                break
             p = h.payload
-            target_repo = p.get("repo") or repo or "unknown"
+            if not keep_semantic_hit(p, repo, route_languages):
+                continue
             file_path = _clean_diag_path(p.get("rel_path") or p.get("path") or "")
-            start_l, end_l = p.get("start_line", 1), p.get("end_line", 1)
             sym = p.get("full_symbol") or p.get("symbol")
-
-            permalink = p.get("permalink_url") or p.get("github_url")
-            if permalink and "\\" in permalink:
-                permalink = permalink.replace("\\", "/")
-            if not permalink and target_repo in git_repos:
-                g_info = git_repos[target_repo]
-                permalink = format_git_permalink(
-                    g_info["url"], g_info["commit_sha"], file_path, start_l, end_l, provider=g_info.get("provider")
-                )
-
-            callers, callees = [], []
-            if sym:
-                c_list, ce_list = _get_callers_and_callees(
-                    conn, target_repo, sym, enclosing_filepath=file_path, enclosing_start_line=start_l, enclosing_end_line=end_l
-                )
-                callers = [c["symbol"] for c in c_list if c.get("symbol")]
-                callees = [ce["symbol"] for ce in ce_list if ce.get("symbol")]
-
+            target_repo = p.get("repo") or repo or "unknown"
+            if (target_repo, file_path, sym) in seen:
+                continue
             score_val = float(h.score) if isinstance(getattr(h, "score", None), (int, float)) else 0.0
-            candidates.append({
-                "score": round(score_val, 4), "repo": target_repo, "file": file_path,
-                "lines": [start_l, end_l], "symbol": sym, "kind": p.get("kind"),
-                "signature": p.get("signature"), "content": (p.get("content") or "")[:MAX_CANDIDATE_CHARS],
-                "permalink": permalink, "callers": callers, "callees": callees,
-            })
+            candidates.append(_build_candidate(conn, git_repos, {
+                "score": round(score_val, 4), "source": "semantic", "depth": None, "repo": target_repo,
+                "file": file_path, "lines": [p.get("start_line", 1), p.get("end_line", 1)], "symbol": sym,
+                "kind": p.get("kind"), "signature": p.get("signature"),
+                "content": (p.get("content") or "")[:MAX_CANDIDATE_CHARS],
+                "permalink": p.get("permalink_url") or p.get("github_url"),
+            }))
     return candidates
 
 
@@ -424,14 +463,16 @@ def diagnose_issue(
             frame_symbols.append(f["program"])
     merged_candidate_symbols = list(OrderedDict.fromkeys(signals.get("symbols", []) + frame_symbols))
 
+    matched_routes = match_routes_and_callers(signals["routes"], repo=repo)
     return {
         "resolved_frames": resolve_stack_frames(parsed_frames, repo=repo, context_lines=clamped_context),
-        "matched_routes": match_routes_and_callers(signals["routes"], repo=repo),
+        "matched_routes": matched_routes,
         "matched_symbols": match_symbols_and_exceptions(
             signals["exceptions"], signals["quoted_errors"], repo=repo, candidate_symbols=merged_candidate_symbols
         ),
         "semantic_candidates": find_semantic_candidates(
-            issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames
+            issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
+            matched_routes=matched_routes,
         ),
     }
 

@@ -103,7 +103,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 
 - **`manage_local_file`**: Supports `upload`, `replace`, `delete` (`editor` role) and `read`, `preview` (`viewer` role) inside `LOCAL_STORAGE_PATH` with immediate vector and AST indexing.
 - **`what_is_ingested`**: Inspects `all`, `git`, `monitored_path`, or `local_storage` sources. Set `include_files=True` (or `detail_level='detailed'`) with `limit` (`1..500`, default `100`) and `offset` (`>= 0`) to paginate file paths per source (`total_files`, `offset`, `limit`, `has_more`, `next_offset`) without dumping thousands of paths.
-- **`diagnose_issue`**: Resolves stack traces, error string literals, HTTP routes, and semantic code candidates across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Clamps `context_lines` (`1..15`, default `5`) and `limit` (`1..20`, default `5`).
+- **`diagnose_issue`**: Resolves stack traces, error string literals, HTTP routes, and semantic code candidates across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Clamps `context_lines` (`1..15`, default `5`) and `limit` (`1..20`, default `5`). When `repo` is set, every result section (stack frames, route handlers, external callers, symbols, and candidates) stays in that repo. When an HTTP route matches, `semantic_candidates` starts with the route handler and its callees (`source`: `route_handler` / `route_callee`, `depth` from the handler, `score`: `null`). Search hits (`source`: `semantic`) fill the remaining slots; hits from test files or from a different language than the route handler are dropped.
 
 ---
 
