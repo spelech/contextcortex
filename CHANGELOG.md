@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.23.3](https://github.com/spelech/contextcortex/compare/v2.23.2...v2.23.3) (2026-11-12)
+
+
+### Bug Fixes
+
+* **api-callers:** resolve URL constants, URL variables, and unresolved bases ([#130](https://github.com/spelech/contextcortex/issues/130)) ([1f811d8](https://github.com/spelech/contextcortex/commit/1f811d83bc53fbc6b7fb4f67a8fdb0e9421f1532))
+* **grep-code:** accept folder paths and retry regex-like patterns ([#129](https://github.com/spelech/contextcortex/issues/129)) ([c576f22](https://github.com/spelech/contextcortex/commit/c576f22b14723d4be6fc2955fec467ef54c09839))
+
 ## [2.23.2](https://github.com/spelech/contextcortex/compare/v2.23.1...v2.23.2) (2026-11-12)
 
 
