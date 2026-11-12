@@ -58,6 +58,22 @@ def _guess_utf16_without_bom(sample: bytes) -> Optional[str]:
     return None
 
 
+def is_binary_sample(sample: bytes) -> bool:
+    """True for binary data: the sample has NUL bytes and is not UTF-16/UTF-32 text (with or without a BOM)."""
+    if b"\x00" not in sample:
+        return False
+    bom_match = _detect_bom(sample)
+    if bom_match and bom_match[1] != "utf-8":
+        return False
+    return _guess_utf16_without_bom(sample) is None
+
+
+def is_binary_file(path: str, sample_size: int = 8192) -> bool:
+    """Reads the first bytes of a file and applies `is_binary_sample`."""
+    with open(path, "rb") as handle:
+        return is_binary_sample(handle.read(sample_size))
+
+
 def decode_source_bytes(raw: bytes) -> str:
     """Decodes file bytes as UTF-8, UTF-16, or UTF-32 (BOM or UTF-16 without BOM) and removes NUL characters."""
     bom_match = _detect_bom(raw)

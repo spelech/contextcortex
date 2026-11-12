@@ -3,6 +3,7 @@ import re
 import logging
 from typing import Dict, Any, Optional
 import frontmatter
+from app.services.text_decoding import read_source_text
 
 from app.services.database import upsert_adr
 
@@ -158,8 +159,7 @@ def sync_adr_file(filepath: str, repo: str, content: Optional[str] = None) -> Op
             norm_fp = os.path.normpath(os.path.abspath(filepath))
             if not os.path.exists(norm_fp):
                 return None
-            with open(norm_fp, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
+            content = read_source_text(norm_fp)
 
         parsed = parse_adr_markdown(content, filepath, repo)
         res = upsert_adr(

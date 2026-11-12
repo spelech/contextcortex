@@ -3,6 +3,7 @@ import re
 import logging
 from typing import Optional, Dict, Any
 from app.services.git_manager import format_git_permalink
+from app.services.text_decoding import read_source_text
 
 logger = logging.getLogger("contextcortex.topology")
 
@@ -57,8 +58,7 @@ def _read_code_snippet(
         return None
 
     try:
-        with open(found_path, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
+        lines = read_source_text(found_path).splitlines(keepends=True)
             
         s_line = max(1, start_line or 1)
         e_line = min(len(lines), end_line or len(lines))

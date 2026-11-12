@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1174 Automated Tests** (810 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1178 Automated Tests** (814 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1396,6 +1396,12 @@ over the PostgresConnectionAdapter using an initialized test engine._
 #### `tests/test_trace_path_di_callers.py` (2 tests)
 - `test_same_named_methods_get_only_their_injected_callers`
 - `test_undecidable_calls_are_kept`
+
+#### `tests/test_utf16_file_reads.py` (4 tests)
+- `test_text_samples_are_not_binary`
+- `test_real_binary_sample_is_binary`
+- `test_read_file_returns_the_text_of_a_utf16_file`
+- `test_read_file_still_refuses_real_binary_files`
 
 #### `tests/test_webhooks.py` (12 tests)
 - `test_github_webhook_no_secret`
