@@ -1,12 +1,18 @@
 import json
 import logging
 import sys
-from typing import List, Dict, Any, Optional, Annotated
+from typing import List, Dict, Any, Optional, Annotated, Callable
 from pydantic import Field
 
 from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
 from app.services.chunking import match_route_and_call
+from app.services.chunking.route_specificity import (
+    is_test_route_file as _is_test_route_file,
+    most_specific_routes,
+    route_key,
+)
+from app.services.source_paths import LocalSourceRoots
 
 logger = logging.getLogger("contextcortex")
 
@@ -16,14 +22,32 @@ def _get_tools_attr(name, default):
     return getattr(t_mod, name, default) if t_mod else default
 
 
-def _is_test_route_file(rel_path: str) -> bool:
-    path_parts = [p.lower() for p in rel_path.strip("/").split("/") if p]
-    bname = path_parts[-1] if path_parts else ""
-    return (
-        any(p in ("tests", "test", "__tests__") for p in path_parts[:-1])
-        or bname.startswith("test_")
-        or bname.endswith(("_test.py", ".test.ts", ".spec.ts", "tests.cs"))
-    )
+def _target_ownership(target_path: str, target_method: Optional[str], route_rows) -> Callable[[str, str], bool]:
+    """
+    Builds a check that tells if a client call belongs to the target path, or to a more specific known route.
+    The target path is resolved to its own route(s) first: in each repository, the most specific route that matches
+    it. A call that matches the target is then kept only when one of those routes is also the most specific route
+    for the call in its repository (so `assistants/{id}` does not take the calls of `assistants/details`).
+    When no known route matches the target, every matching call is kept.
+    """
+    routes = []
+    for r in route_rows:
+        rel_path = (r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]).replace("\\", "/")
+        if not _is_test_route_file(rel_path):
+            routes.append({"repo": r["repo"], "http_method": r["http_method"], "path_pattern": r["path_pattern"]})
+
+    target_routes = most_specific_routes(target_path, target_method, routes)
+    if not target_routes:
+        return lambda _url, _method: True
+    target_keys = {route_key(r) for r in target_routes}
+    target_repos = {r["repo"] for r in target_routes}
+    competing = [r for r in routes if r["repo"] in target_repos]
+
+    def belongs(call_url: str, call_method: str) -> bool:
+        owners = most_specific_routes(call_url, call_method or None, competing)
+        return not owners or any(route_key(o) in target_keys for o in owners)
+
+    return belongs
 
 
 async def handle_find_routes(
@@ -64,11 +88,12 @@ async def handle_find_routes(
 
             sql += " ORDER BY r.repo ASC, r.path_pattern ASC, r.http_method ASC, r.start_line ASC"
             rows = conn.execute(sql, params).fetchall()
+            local_roots = LocalSourceRoots.load(conn)
 
         all_routes = []
         seen_routes = set()
         for r in rows:
-            rel_path = (r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]).replace("\\", "/")
+            rel_path = local_roots.relative(r["filepath"], r["repo"])
             if _is_test_route_file(rel_path):
                 continue
             dedup_key = (r["repo"], r["http_method"], r["path_pattern"], rel_path, r["start_line"])
@@ -146,8 +171,11 @@ async def handle_find_api_callers(
 
             sql += " ORDER BY c.repo ASC, c.filepath ASC, c.line_number ASC"
             rows = conn.execute(sql, params).fetchall()
+            route_rows = conn.execute("SELECT repo, filepath, http_method, path_pattern FROM api_routes").fetchall()
+            local_roots = LocalSourceRoots.load(conn)
 
         target_method_clean = method.strip().upper() if method and method.strip() else None
+        belongs_to_target = _target_ownership(target_path, target_method_clean, route_rows)
         all_callers = []
         seen_callers = set()
 
@@ -158,8 +186,10 @@ async def handle_find_api_callers(
 
             if not match_route_and_call(target_path, c["url_pattern"]):
                 continue
+            if not belongs_to_target(c["url_pattern"], call_method):
+                continue
 
-            rel_path = (c["filepath"].split("://", 1)[1] if "://" in c["filepath"] else c["filepath"]).replace("\\", "/")
+            rel_path = local_roots.relative(c["filepath"], c["repo"])
             dedup_key = (c["repo"], rel_path, c["http_method"], c["url_pattern"], c["caller_symbol"], c["line_number"])
             if dedup_key in seen_callers:
                 continue

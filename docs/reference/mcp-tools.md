@@ -82,7 +82,7 @@ Forensic triage tool that accepts stack traces, error logs, or user bug reports 
   - `repo` (*string, optional*): Optional repository identifier to scope diagnostics and resolution.
   - `context_lines` (*integer, default: 5*): Number of surrounding code lines to include for resolved stack frames (`1` to `15`).
   - `limit` (*integer, default: 5*): Maximum number of semantic code candidate blocks to retrieve (`1` to `20`).
-- **Returns**: Structured JSON payload containing `resolved_frames` (stack frames mapped to indexed files, line numbers, enclosing AST symbols, and code context), `matched_routes` (HTTP routes referenced in the error log), `matched_symbols`, `literal_matches` (exact error strings found in source code), and `semantic_candidates`.
+- **Returns**: Structured JSON payload containing `resolved_frames` (stack frames mapped to indexed files, line numbers, enclosing AST symbols, and code context), `matched_routes` (HTTP routes referenced in the error log), `matched_symbols`, `literal_matches` (exact error strings found in source code), and `semantic_candidates`. With `repo` set, all sections stay in that repo. When an HTTP route matches, `semantic_candidates` lists the route handler and its callees first (`source`: `route_handler` or `route_callee`, `depth`, `score`: `null`), then search hits (`source`: `semantic`) that are not test code and use the same language as the handler.
 
 ---
 
