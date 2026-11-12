@@ -25,7 +25,7 @@ _METHOD_OPTION = re.compile(r'method\s*:\s*["\'](GET|POST|PUT|DELETE|PATCH|OPTIO
 
 # JS/TS helper call whose first argument is a URL literal: name(<T>)?( '/path' | `/path/${x}` | "https://..." )
 _JS_HELPER_CALL = re.compile(
-    r'\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:<[^<>()]*>)?\(\s*(["\'`])((?:/|https?://)[^"\'`]*)\2'
+    r'\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:<[^<>()]*>)?\(\s*(["\'`])((?:/|https?://|\$\{)[^"\'`]*)\2'
 )
 _HTTP_LIKE_NAME = re.compile(r'get|post|put|patch|delete|fetch|request|json|http|api', re.IGNORECASE)
 _NON_HTTP_NAME = re.compile(
@@ -34,6 +34,8 @@ _NON_HTTP_NAME = re.compile(
     re.IGNORECASE,
 )
 _NAME_METHODS = ("get", "post", "put", "patch", "delete")
+# JS/TS call whose first argument is a variable: sendHttpRequest(url, { method: "POST" }) or fetch(url).
+_JS_VARIABLE_CALL = re.compile(r'\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*(?:<[^<>()]*>)?\(\s*([A-Za-z_$][\w$]*)\s*[,)]')
 
 
 def _call_arguments(tail: str, lines: List[str], line_no: int) -> str:
@@ -77,6 +79,17 @@ def _js_helper_call(line: str):
     return None
 
 
+def _js_variable_call(line: str):
+    """Returns (callee, variable, match) for an HTTP-like JS/TS call whose first argument is a variable, else None."""
+    for m in _JS_VARIABLE_CALL.finditer(line):
+        callee, variable = m.group(1), m.group(2)
+        last = callee.rsplit(".", 1)[-1]
+        if last != "fetch" and (_NON_HTTP_NAME.search(last) or not _HTTP_LIKE_NAME.search(last)):
+            continue
+        return callee, variable, m
+    return None
+
+
 def extract_client_calls(
     lines: List[str],
     repo: str,
@@ -86,14 +99,16 @@ def extract_client_calls(
 ) -> List[ApiClientCallRecord]:
     """Extracts HTTP client call sites line by line."""
     from app.services.chunking.api_route_extractor import find_enclosing_symbol, normalize_path_pattern
+    from app.services.chunking.client_url_resolution import expand_constants, js_variable_urls, string_constants
     from app.services.chunking.csharp_client_calls import extract_csharp_client_calls
 
     calls: List[ApiClientCallRecord] = []
+    consts = string_constants(lines, language)
 
     def add(method: Optional[str], url_raw: str, line_no: int) -> None:
         calls.append(ApiClientCallRecord(
             repo=repo, filepath=filepath, http_method=method,
-            url_pattern=normalize_path_pattern(url_raw), caller_symbol=find_enclosing_symbol(line_no, symbols),
+            url_pattern=normalize_path_pattern(expand_constants(url_raw, consts, language)), caller_symbol=find_enclosing_symbol(line_no, symbols),
             line_number=line_no,
         ))
 
@@ -126,7 +141,7 @@ def extract_client_calls(
             continue
 
         if language in _CS_LANGUAGES:
-            for method, url in extract_csharp_client_calls(line, lines, i):
+            for method, url in extract_csharp_client_calls(line, lines, i, consts):
                 add(method, url, i)
             continue
 
@@ -136,5 +151,13 @@ def extract_client_calls(
                 callee, url, m_helper = helper
                 default = _method_from_helper_name(callee) or "GET"
                 add(_method_from_window(line[m_helper.end():], lines, i, default), url, i)
+                continue
+            var_call = _js_variable_call(line)
+            if var_call:
+                callee, variable, m_var = var_call
+                default = _method_from_helper_name(callee) or "GET"
+                method = _method_from_window(line[m_var.end():], lines, i, default)
+                for url in js_variable_urls(variable, lines, i):
+                    add(method, url, i)
 
     return calls

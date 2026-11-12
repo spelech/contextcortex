@@ -46,14 +46,50 @@ def route_pattern_to_regex(pattern: str) -> re.Pattern:
     pattern_str = '^' + ''.join(regex_parts) + r'(?:/|\?.*|#.*)?$'
     return re.compile(pattern_str, re.IGNORECASE)
 
+_PARAM_SEGMENT = re.compile(r'^\{[^{}/]+\}$')
+_MIN_LITERAL_SEGMENTS_FOR_SUFFIX = 2
+
+
+def _segment_regex(segment: str) -> re.Pattern:
+    parts = re.split(r'(\{[^{}]+\})', segment)
+    return re.compile('^' + ''.join('[^/]+' if p.startswith('{') else re.escape(p) for p in parts) + '$', re.IGNORECASE)
+
+
+def _match_base_relative_call(norm_route: str, norm_call: str) -> bool:
+    """
+    A client URL that starts with a base it could not resolve (`{baseUrl}/api/v2/items/{id}`, `{API_HOST}/v2/items`)
+    matches when the rest of its path matches the end of the route, segment by segment, with at least two literal
+    segments (so `{base}/{id}` alone matches nothing).
+    """
+    call_segs = [s for s in norm_call.split("?", 1)[0].strip("/").split("/") if s]
+    lead = 0
+    while lead < len(call_segs) and _PARAM_SEGMENT.match(call_segs[lead]):
+        lead += 1
+    tail = call_segs[lead:]
+    if lead == 0 or sum(1 for s in tail if not _PARAM_SEGMENT.match(s)) < _MIN_LITERAL_SEGMENTS_FOR_SUFFIX:
+        return False
+    route_segs = [s for s in norm_route.strip("/").split("/") if s]
+    if len(tail) > len(route_segs):
+        return False
+    for call_seg, route_seg in zip(tail, route_segs[len(route_segs) - len(tail):]):
+        if _PARAM_SEGMENT.match(route_seg):
+            continue
+        # A client parameter ({eid}) only fills a route parameter, never a literal segment such as `publish`.
+        if _PARAM_SEGMENT.match(call_seg) or not _segment_regex(route_seg).match(call_seg):
+            return False
+    return True
+
+
 def match_route_and_call(route_path: str, call_url: str) -> bool:
-    """Checks if a client call URL matches a server route pattern."""
+    """Checks if a client call URL matches a server route pattern (an absolute URL's host is ignored)."""
     norm_route = normalize_path_pattern(route_path)
-    norm_call = normalize_path_pattern(call_url)
+    norm_call = normalize_path_pattern(re.sub(r'^https?://[^/]+', '', (call_url or '').strip("'\"` ")) or "/")
     if norm_route == norm_call:
         return True
     rx = route_pattern_to_regex(norm_route)
-    return bool(rx.match(norm_call))
+    if rx.match(norm_call):
+        return True
+    return _match_base_relative_call(norm_route, norm_call)
 
 def find_enclosing_symbol(line_no: int, symbols: List[CodeSymbol]) -> Optional[str]:
     """Finds the most specific AST symbol enclosing a given line number."""

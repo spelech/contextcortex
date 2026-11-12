@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1193 Automated Tests** (829 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1199 Automated Tests** (835 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -945,6 +945,14 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_db_migration_and_auto_sync_helpers`
 - `test_repo_auto_sync_and_list`
 - `test_auto_sync_interval_edge_cases`
+
+#### `tests/test_client_url_resolution.py` (6 tests)
+- `test_constants_are_collected_and_expanded`
+- `test_js_url_variable_is_resolved_and_ignores_content_types`
+- `test_ts_service_call_through_a_url_variable_and_an_imported_base`
+- `test_fetch_with_a_url_variable_and_a_base_parameter`
+- `test_csharp_wrapper_with_http_method_and_a_const_base`
+- `test_base_relative_matching`
 
 #### `tests/test_cobol_ast_and_linking.py` (5 tests)
 - `test_cobol_language_registration_and_parser`

@@ -2,7 +2,8 @@
 C# HTTP client call sites whose URL is not a literal in the call.
 
 Recognizes:
-- `new HttpRequestMessage(HttpMethod.Post, url)` and `new HttpRequestMessage(new HttpMethod("PATCH"), "api/x")`
+- `new HttpRequestMessage(HttpMethod.Post, url)`, `new HttpRequestMessage(new HttpMethod("PATCH"), "api/x")`, and
+  wrappers such as `_core.SendAsync<T>(HttpMethod.Post, $"{Base}/{id}/publish", body)`
 - `_apiClient.GetAsync(url)` / `PostAsJsonAsync(url, body)` with a variable or an interpolated string (`$"api/items/{id}"`)
 
 A variable is resolved from its nearest assignment in the lines before the call (`string url = cond ? $"a" : $"b";`).
@@ -10,7 +11,7 @@ Each string literal in that statement gives one call (both branches of a conditi
 """
 
 import re
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 _LOOKBACK_LINES = 40
 _STATEMENT_LINES = 6
@@ -18,12 +19,14 @@ _VERBS = ("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
 
 # A C# string literal: "x", $"x/{id}", @"x", $@"x". Group 1 is the content.
 _CS_LITERAL = r'(?:\$@|@\$|\$|@)?"((?:[^"\\\n]|\\.)*)"'
-_LITERAL_RE = re.compile(_CS_LITERAL + r'(\s*\+\s*[A-Za-z_][\w.]*(?:\(\))?)?')
+# `"api/items/" + id` adds a path segment; `+ Http.BuildQuery(args)` (a call with arguments) does not.
+_LITERAL_RE = re.compile(_CS_LITERAL + r'(\s*\+\s*[A-Za-z_][\w.]*(?:\(\))?(?![\w.(]))?')
 _IDENTIFIER = r'[A-Za-z_][\w.]*'
 _ARGUMENT = r'(' + _CS_LITERAL + r'(?:\s*\+\s*' + _IDENTIFIER + r'(?:\(\))?)?|' + _IDENTIFIER + r')'
 
+# `new HttpRequestMessage(HttpMethod.Post, url)` or a wrapper such as `_core.SendAsync<T>(HttpMethod.Post, url, body)`.
 _REQUEST_MESSAGE = re.compile(
-    r'new\s+HttpRequestMessage\s*\(\s*(?:HttpMethod\.(\w+)|new\s+HttpMethod\s*\(\s*"(\w+)"\s*\))\s*,\s*'
+    r'\b\w+\s*(?:<[^()]*>)?\s*\(\s*(?:HttpMethod\.(\w+)|new\s+HttpMethod\s*\(\s*"(\w+)"\s*\))\s*,\s*'
     + _ARGUMENT,
 )
 _CLIENT_METHOD = re.compile(
@@ -63,21 +66,25 @@ def _resolve_variable(name: str, lines: List[str], line_no: int) -> List[str]:
     return []
 
 
-def _urls_for_argument(arg: str, lines: List[str], line_no: int) -> List[str]:
+def _urls_for_argument(arg: str, lines: List[str], line_no: int, consts: Optional[Dict[str, str]] = None) -> List[str]:
     if '"' in arg:
         return _literal_urls(arg)
+    if consts and arg in consts:
+        return [consts[arg]] if _looks_like_path(consts[arg]) else []
     return _resolve_variable(arg, lines, line_no)
 
 
-def extract_csharp_client_calls(line: str, lines: List[str], line_no: int) -> List[Tuple[Optional[str], str]]:
+def extract_csharp_client_calls(
+    line: str, lines: List[str], line_no: int, consts: Optional[Dict[str, str]] = None,
+) -> List[Tuple[Optional[str], str]]:
     """(http_method, url) pairs for a C# line with an HttpRequestMessage or `*Client.<Verb>*Async(...)` call."""
     m_req = _REQUEST_MESSAGE.search(line)
     if m_req:
         verb = (m_req.group(1) or m_req.group(2) or "").upper()
         method = verb if verb in _VERBS else None
-        return [(method, url) for url in _urls_for_argument(m_req.group(3), lines, line_no)]
+        return [(method, url) for url in _urls_for_argument(m_req.group(3), lines, line_no, consts)]
     m_client = _CLIENT_METHOD.search(line)
     if m_client:
         method = m_client.group(1).upper()
-        return [(method, url) for url in _urls_for_argument(m_client.group(2), lines, line_no)]
+        return [(method, url) for url in _urls_for_argument(m_client.group(2), lines, line_no, consts)]
     return []
