@@ -19,6 +19,7 @@ from app.services.chunking.text_chunker import (
     extract_inheritance_relationships
 )
 from app.services.chunking.cobol_extractor import extract_cobol_symbols_and_chunks
+from app.services.chunking.csharp_receiver_types import qualify_csharp_call
 from app.services.chunking.api_route_extractor import (
     normalize_path_pattern,
     match_route_and_call,
@@ -90,6 +91,8 @@ def extract_symbols_and_chunks(
     
     target_types = CODE_CONTAINER_TYPES.get(language, set())
     file_symbol = os.path.basename(filepath)
+    is_csharp = language in ("c_sharp", "csharp")
+    receiver_type_cache: Dict[Any, Dict[str, str]] = {}
 
     def traverse(node, parent_symbol: Optional[str] = None):
         line_num = node.start_point[0] + 1
@@ -216,6 +219,8 @@ def extract_symbols_and_chunks(
                 else extract_target_from_call_node(node, source_bytes)
             )
             if target and target not in ("self", "this", "super", "new", "var"):
+                if is_csharp:
+                    target = qualify_csharp_call(node, source_bytes, target, receiver_type_cache)
                 active_src = parent_symbol if parent_symbol else file_symbol
                 active_src_name = parent_symbol.split(".")[-1] if (parent_symbol and "." in parent_symbol) else active_src
                 relationships.append({
