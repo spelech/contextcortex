@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Dict, Any, List, Set
 from app.services.database import get_db_connection
 from app.services.topology.helpers import _clean_filepath, _get_permalink, _read_code_snippet
+from app.services.topology.graph_filters import classify_symbol_node_type
 
 logger = logging.getLogger("contextcortex.topology")
 import sys
@@ -46,7 +47,7 @@ def get_node_details(node_id: str) -> Optional[Dict[str, Any]]:
                 return None
 
             clean_fp = _clean_filepath(sym_row["filepath"])
-            s_type = "class" if (sym_row["kind"] or "").lower() in ("class", "interface", "struct", "enum") else "function"
+            s_type = classify_symbol_node_type(sym_row["kind"])
             plink = _get_permalink(git_repos, sym_row["repo"], clean_fp, sym_row["start_line"], sym_row["end_line"])
             code_prev = _read_code_snippet(clean_fp, sym_row["start_line"], sym_row["end_line"]) or sym_row["signature"]
 

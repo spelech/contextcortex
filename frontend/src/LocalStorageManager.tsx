@@ -3,12 +3,14 @@ import type { FormEvent, DragEvent, ChangeEvent } from 'react';
 import type {
   StorageTreeData,
   StorageFileItem,
-  StorageDirectoryItem,
   StorageFileContent,
-  PdfPreviewData
+  PdfPreviewData,
 } from './types';
 import { useToast } from './ToastContext';
 import PdfPreviewModal from './PdfPreviewModal';
+import { StorageBrowserPanel } from './components/storage/StorageBrowserPanel';
+import { StorageUploadModal } from './components/storage/StorageUploadModal';
+import { StoragePreviewDialog, StorageReplaceDialog } from './components/storage/StorageFileDialogs';
 
 interface LocalStorageManagerProps {
   refreshStats?: () => void;
@@ -20,7 +22,6 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
   const [currentFolder, setCurrentFolder] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Upload modal state
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadPath, setUploadPath] = useState('');
   const [uploadCategory, setUploadCategory] = useState('');
@@ -30,19 +31,16 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Preview modal state
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewData, setPreviewData] = useState<StorageFileContent | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
-  // Replace modal state
   const [isReplaceModalOpen, setIsReplaceModalOpen] = useState(false);
   const [replaceTargetFile, setReplaceTargetFile] = useState<StorageFileItem | null>(null);
   const [replaceContent, setReplaceContent] = useState('');
   const [replaceCategory, setReplaceCategory] = useState('');
   const [isReplacing, setIsReplacing] = useState(false);
 
-  // PDF Preview modal state
   const [isPdfPreviewModalOpen, setIsPdfPreviewModalOpen] = useState(false);
   const [isPdfPreviewLoading, setIsPdfPreviewLoading] = useState(false);
   const [pdfPreviewData, setPdfPreviewData] = useState<PdfPreviewData | null>(null);
@@ -51,21 +49,6 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
   const [pendingPdfRepo, setPendingPdfRepo] = useState('local_storage');
   const [pendingPdfCategory, setPendingPdfCategory] = useState('');
   const [isPdfIngesting, setIsPdfIngesting] = useState(false);
-
-  const formatBytes = (bytes: number) => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
-
-  const formatDate = (timestamp: number) => {
-    if (!timestamp) return '-';
-    // If timestamp is in seconds, convert to ms
-    const timeMs = timestamp < 1e11 ? timestamp * 1000 : timestamp;
-    return new Date(timeMs).toLocaleString();
-  };
 
   const loadTree = useCallback(async (folder: string = currentFolder) => {
     setLoading(true);
@@ -114,41 +97,16 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
     setIsUploadModalOpen(true);
   };
 
-  const handleFileDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      handleSelectedFile(file);
-    }
-  };
-
-  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      handleSelectedFile(e.target.files[0]);
-    }
-  };
-
-  const previewPdfUpload = async (
-    file: File,
-    targetPath?: string,
-    repo?: string,
-    category?: string
-  ) => {
+  const previewPdfUpload = async (file: File, targetPath?: string, repo?: string, category?: string) => {
     setIsPdfPreviewLoading(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('ocr_fallback', 'true');
 
-      const res = await fetch('/admin/api/storage/pdf/preview', {
-        method: 'POST',
-        body: formData
-      });
+      const res = await fetch('/admin/api/storage/pdf/preview', { method: 'POST', body: formData });
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate PDF preview');
-      }
+      if (!res.ok) throw new Error(data.error || 'Failed to generate PDF preview');
 
       setPendingPdfFile(file);
       setPendingPdfPath(targetPath || (currentFolder ? `${currentFolder}/${file.name}` : file.name));
@@ -166,31 +124,22 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
 
   const handleConfirmPdfIngest = async () => {
     if (!pendingPdfFile) return;
-
     setIsPdfIngesting(true);
     try {
       const formData = new FormData();
       formData.append('file', pendingPdfFile);
       formData.append('path', pendingPdfPath || pendingPdfFile.name);
       formData.append('repo', pendingPdfRepo || 'local_storage');
-      if (pendingPdfCategory) {
-        formData.append('category', pendingPdfCategory);
-      }
+      if (pendingPdfCategory) formData.append('category', pendingPdfCategory);
 
-      const res = await fetch('/admin/api/storage/upload', {
-        method: 'POST',
-        body: formData
-      });
+      const res = await fetch('/admin/api/storage/upload', { method: 'POST', body: formData });
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to ingest PDF');
-      }
+      if (!res.ok) throw new Error(data.error || 'Failed to ingest PDF');
 
       setIsPdfPreviewModalOpen(false);
       setPendingPdfFile(null);
       setPdfPreviewData(null);
-      const chunks = data.chunks_indexed ?? 0;
-      toast.success(`PDF uploaded and indexed (${chunks} chunks)`);
+      toast.success(`PDF uploaded and indexed (${data.chunks_indexed ?? 0} chunks)`);
       loadTree(currentFolder);
       if (refreshStats) refreshStats();
     } catch (err: any) {
@@ -198,12 +147,6 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
     } finally {
       setIsPdfIngesting(false);
     }
-  };
-
-  const handleCancelPdfPreview = () => {
-    setIsPdfPreviewModalOpen(false);
-    setPendingPdfFile(null);
-    setPdfPreviewData(null);
   };
 
   const handleSelectedFile = (file: File) => {
@@ -217,14 +160,25 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
       return;
     }
 
-    // Read text preview into uploadContent if file is text/readable
     const reader = new FileReader();
     reader.onload = (event) => {
-      if (typeof event.target?.result === 'string') {
-        setUploadContent(event.target.result);
-      }
+      if (typeof event.target?.result === 'string') setUploadContent(event.target.result);
     };
     reader.readAsText(file);
+  };
+
+  const handleFileDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleSelectedFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleSelectedFile(e.target.files[0]);
+    }
   };
 
   const handleSaveUpload = async (e: FormEvent) => {
@@ -233,7 +187,6 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
       toast.error('File path is required');
       return;
     }
-
     if (selectedFileObj && selectedFileObj.name.toLowerCase().endsWith('.pdf')) {
       await previewPdfUpload(selectedFileObj, uploadPath.trim(), uploadRepo.trim(), uploadCategory.trim());
       return;
@@ -247,13 +200,8 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
         formData.append('file', selectedFileObj);
         formData.append('path', uploadPath.trim());
         formData.append('repo', uploadRepo.trim() || 'local_storage');
-        if (uploadCategory.trim()) {
-          formData.append('category', uploadCategory.trim());
-        }
-        res = await fetch('/admin/api/storage/upload', {
-          method: 'POST',
-          body: formData
-        });
+        if (uploadCategory.trim()) formData.append('category', uploadCategory.trim());
+        res = await fetch('/admin/api/storage/upload', { method: 'POST', body: formData });
       } else {
         res = await fetch('/admin/api/storage/upload', {
           method: 'POST',
@@ -262,19 +210,16 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
             path: uploadPath.trim(),
             content: uploadContent,
             repo: uploadRepo.trim() || 'local_storage',
-            category: uploadCategory.trim() || null
-          })
+            category: uploadCategory.trim() || null,
+          }),
         });
       }
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to upload file');
-      }
+      if (!res.ok) throw new Error(data.error || 'Failed to upload file');
 
       setIsUploadModalOpen(false);
-      const chunksIndexed = data.chunks_indexed ?? 0;
-      toast.success(`File uploaded and indexed (${chunksIndexed} chunks)`);
+      toast.success(`File uploaded and indexed (${data.chunks_indexed ?? 0} chunks)`);
       loadTree(currentFolder);
       if (refreshStats) refreshStats();
     } catch (err: any) {
@@ -311,11 +256,7 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
     try {
       const res = await fetch(`/admin/api/storage/file?path=${encodeURIComponent(file.rel_path)}`);
       const data = await res.json();
-      if (res.ok && data.content !== undefined) {
-        setReplaceContent(data.content);
-      } else {
-        setReplaceContent('');
-      }
+      setReplaceContent(res.ok && data.content !== undefined ? data.content : '');
     } catch {
       setReplaceContent('');
     }
@@ -324,7 +265,6 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
   const handleSaveReplace = async (e: FormEvent) => {
     e.preventDefault();
     if (!replaceTargetFile) return;
-
     if (replaceTargetFile.rel_path.toLowerCase().endsWith('.pdf')) {
       toast.error('PDF files cannot be edited directly via text editor. Upload a new PDF file instead.');
       return;
@@ -339,15 +279,14 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
           path: replaceTargetFile.rel_path,
           content: replaceContent,
           repo: 'local_storage',
-          category: replaceCategory.trim() || ''
-        })
+          category: replaceCategory.trim() || '',
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update file');
 
       setIsReplaceModalOpen(false);
-      const chunks = data.chunks_indexed ?? 0;
-      toast.success(`File updated and indexed (${chunks} chunks)`);
+      toast.success(`File updated and indexed (${data.chunks_indexed ?? 0} chunks)`);
       loadTree(currentFolder);
       if (refreshStats) refreshStats();
     } catch (err: any) {
@@ -361,11 +300,8 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
     if (!window.confirm(`Are you sure you want to delete '${file.name}' from local storage and purge its vector embeddings?`)) {
       return;
     }
-
     try {
-      const res = await fetch(`/admin/api/storage/file?path=${encodeURIComponent(file.rel_path)}`, {
-        method: 'DELETE'
-      });
+      const res = await fetch(`/admin/api/storage/file?path=${encodeURIComponent(file.rel_path)}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete file');
 
@@ -376,9 +312,6 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
       toast.error(`Delete error: ${err.message}`);
     }
   };
-
-  // Breadcrumb segment helper
-  const folderSegments = currentFolder ? currentFolder.split('/').filter(Boolean) : [];
 
   return (
     <div className="tab-content active">
@@ -400,441 +333,64 @@ export default function LocalStorageManager({ refreshStats }: LocalStorageManage
           </div>
         </div>
 
-        {/* Breadcrumb path toolbar */}
-        <div className="browser-breadcrumbs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <span className="label" style={{ fontWeight: 600 }}>Location:</span>
-            <button
-              className="btn-icon"
-              style={{ padding: '2px 6px', fontSize: '0.85rem', color: currentFolder === '' ? 'var(--primary)' : 'var(--text)' }}
-              onClick={() => navigateToFolder('')}
-            >
-              <i className="fa-solid fa-house"></i> root
-            </button>
-            {folderSegments.map((seg, idx) => {
-              const subPath = folderSegments.slice(0, idx + 1).join('/');
-              const isLast = idx === folderSegments.length - 1;
-              return (
-                <span key={subPath} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <span className="text-muted">/</span>
-                  <button
-                    className="btn-icon"
-                    style={{ padding: '2px 6px', fontSize: '0.85rem', fontWeight: isLast ? 'bold' : 'normal', color: isLast ? 'var(--primary)' : 'var(--text)' }}
-                    onClick={() => navigateToFolder(subPath)}
-                  >
-                    {seg}
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            <span>Directories: <strong>{treeData?.directories.length || 0}</strong></span>
-            <span>&bull;</span>
-            <span>Files: <strong>{treeData?.files.length || 0}</strong></span>
-          </div>
-        </div>
-
-        {/* Parent Directory Link */}
-        {currentFolder !== '' && (
-          <div style={{ marginTop: '8px', marginBottom: '8px' }}>
-            <button
-              className="btn btn-secondary"
-              style={{ padding: '4px 10px', fontSize: '0.82rem' }}
-              onClick={navigateToParent}
-            >
-              <i className="fa-solid fa-level-up-alt"></i> .. (Parent Directory)
-            </button>
-          </div>
-        )}
-
-        {/* Desktop Table View */}
-        <div className="table-container desktop-table-view">
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: '40%' }}>Name</th>
-                <th>Path</th>
-                <th>Size</th>
-                <th>Modified</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!treeData || (treeData.directories.length === 0 && treeData.files.length === 0) ? (
-                <tr>
-                  <td colSpan={5} className="empty-state">
-                    No files or subdirectories found in this storage directory. Click "Upload File" to add documents.
-                  </td>
-                </tr>
-              ) : (
-                <>
-                  {/* Directories */}
-                  {treeData.directories.map((d: StorageDirectoryItem) => (
-                    <tr key={d.rel_path}>
-                      <td>
-                        <button
-                          className="btn-icon"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', textAlign: 'left', color: 'var(--text)' }}
-                          onClick={() => navigateToFolder(d.rel_path)}
-                          aria-label={`open ${d.name}`}
-                        >
-                          <i className="fa-solid fa-folder" style={{ color: '#fbbf24', fontSize: '1.05rem' }}></i>
-                          <strong>{d.name}</strong>
-                        </button>
-                      </td>
-                      <td><code>{d.rel_path}</code></td>
-                      <td><span className="text-muted">-</span></td>
-                      <td><span className="text-muted">-</span></td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button
-                          className="btn btn-secondary"
-                          style={{ padding: '3px 8px', fontSize: '0.8rem' }}
-                          onClick={() => navigateToFolder(d.rel_path)}
-                          title={`Open ${d.name}`}
-                          aria-label={`open ${d.name}`}
-                        >
-                          <i className="fa-solid fa-folder-open"></i> Open
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {/* Files */}
-                  {treeData.files.map((f: StorageFileItem) => {
-                    const isPdf = f.name.toLowerCase().endsWith('.pdf');
-                    return (
-                      <tr key={f.rel_path}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            {isPdf ? (
-                              <i className="fa-solid fa-file-pdf text-red-500 mr-2" style={{ color: '#ef4444', fontSize: '1.05rem' }}></i>
-                            ) : (
-                              <i className="fa-solid fa-file-lines" style={{ color: 'var(--primary)', fontSize: '1.05rem' }}></i>
-                            )}
-                            <span>{f.name}</span>
-                          </div>
-                        </td>
-                        <td><code>{f.rel_path}</code></td>
-                        <td><span className="badge badge-primary">{formatBytes(f.size_bytes)}</span></td>
-                        <td style={{ fontSize: '0.85rem' }}>{formatDate(f.mtime)}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '6px' }}>
-                            <button
-                              className="btn-icon"
-                              onClick={() => openPreviewModal(f)}
-                              title="Preview File"
-                              aria-label="Preview File"
-                            >
-                              <i className="fa-solid fa-eye"></i>
-                            </button>
-                            <button
-                              className="btn-icon"
-                              onClick={() => openReplaceModal(f)}
-                              title="Replace File"
-                              aria-label="Replace File"
-                            >
-                              <i className="fa-solid fa-file-pen"></i>
-                            </button>
-                            <button
-                              className="btn-icon btn-delete"
-                              onClick={() => handleDeleteFile(f)}
-                              title="Delete File"
-                              aria-label="Delete File"
-                            >
-                              <i className="fa-solid fa-trash-can"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile Card List */}
-        <div className="mobile-card-list">
-          {!treeData || (treeData.directories.length === 0 && treeData.files.length === 0) ? (
-            <div className="empty-state">No files or subdirectories found.</div>
-          ) : (
-            <>
-              {treeData.directories.map((d: StorageDirectoryItem) => (
-                <div key={`m-${d.rel_path}`} className="data-mobile-card">
-                  <div className="data-mobile-card-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <i className="fa-solid fa-folder" style={{ color: '#fbbf24' }}></i>
-                      <strong>{d.name}</strong>
-                    </div>
-                    <span className="badge badge-warning">Directory</span>
-                  </div>
-                  <div className="data-mobile-card-body">
-                    <div>
-                      <span className="text-muted">Path: </span>
-                      <code>{d.rel_path}</code>
-                    </div>
-                  </div>
-                  <div className="data-mobile-card-actions">
-                    <button className="btn btn-secondary" onClick={() => navigateToFolder(d.rel_path)} aria-label={`open ${d.name}`}>
-                      <i className="fa-solid fa-folder-open"></i> Open Folder
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              {treeData.files.map((f: StorageFileItem) => {
-                const isPdf = f.name.toLowerCase().endsWith('.pdf');
-                return (
-                  <div key={`m-${f.rel_path}`} className="data-mobile-card">
-                    <div className="data-mobile-card-header">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {isPdf ? (
-                          <i className="fa-solid fa-file-pdf text-red-500 mr-2" style={{ color: '#ef4444' }}></i>
-                        ) : (
-                          <i className="fa-solid fa-file-lines" style={{ color: 'var(--primary)' }}></i>
-                        )}
-                        <strong>{f.name}</strong>
-                      </div>
-                      <span className="badge badge-primary">{formatBytes(f.size_bytes)}</span>
-                    </div>
-                    <div className="data-mobile-card-body">
-                      <div>
-                        <span className="text-muted">Path: </span>
-                        <code>{f.rel_path}</code>
-                      </div>
-                      <div>
-                        <span className="text-muted">Modified: </span>
-                        <span>{formatDate(f.mtime)}</span>
-                      </div>
-                    </div>
-                    <div className="data-mobile-card-actions">
-                      <button className="btn btn-secondary" onClick={() => openPreviewModal(f)} title="Preview File">
-                        <i className="fa-solid fa-eye"></i> Preview
-                      </button>
-                      <button className="btn btn-secondary" onClick={() => openReplaceModal(f)} title="Replace File">
-                        <i className="fa-solid fa-file-pen"></i> Replace
-                      </button>
-                      <button className="btn btn-secondary btn-delete" onClick={() => handleDeleteFile(f)} title="Delete File">
-                        <i className="fa-solid fa-trash-can"></i> Delete
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </>
-          )}
-        </div>
+        <StorageBrowserPanel
+          treeData={treeData}
+          currentFolder={currentFolder}
+          onNavigateFolder={navigateToFolder}
+          onNavigateParent={navigateToParent}
+          onPreviewFile={openPreviewModal}
+          onReplaceFile={openReplaceModal}
+          onDeleteFile={handleDeleteFile}
+        />
       </div>
 
-      {/* Upload File Modal */}
-      {isUploadModalOpen && (
-        <div className="modal-backdrop">
-          <div className="glass-card modal-card" style={{ maxWidth: '640px' }}>
-            <div className="modal-header">
-              <h2><i className="fa-solid fa-cloud-arrow-up"></i> Upload to Local Storage</h2>
-              <button className="btn-close" onClick={() => setIsUploadModalOpen(false)}>&times;</button>
-            </div>
+      <StorageUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onSubmit={handleSaveUpload}
+        uploadPath={uploadPath}
+        setUploadPath={setUploadPath}
+        uploadCategory={uploadCategory}
+        setUploadCategory={setUploadCategory}
+        uploadContent={uploadContent}
+        setUploadContent={setUploadContent}
+        selectedFileObj={selectedFileObj}
+        isDragging={isDragging}
+        setIsDragging={setIsDragging}
+        isUploading={isUploading}
+        isPdfPreviewLoading={isPdfPreviewLoading}
+        onFileDrop={handleFileDrop}
+        onFileInputChange={handleFileInputChange}
+      />
 
-            <form onSubmit={handleSaveUpload}>
-              {/* Drag & Drop area */}
-              <div
-                style={{
-                  border: isDragging ? '2px dashed var(--primary)' : '2px dashed rgba(255, 255, 255, 0.15)',
-                  borderRadius: '8px',
-                  padding: '20px',
-                  textAlign: 'center',
-                  background: isDragging ? 'rgba(59, 130, 246, 0.08)' : 'rgba(0, 0, 0, 0.15)',
-                  marginBottom: '16px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleFileDrop}
-                onClick={() => document.getElementById('storage-file-input')?.click()}
-              >
-                <i className="fa-solid fa-file-arrow-up" style={{ fontSize: '2rem', color: 'var(--primary)', marginBottom: '8px' }}></i>
-                <p style={{ margin: '4px 0', fontSize: '0.9rem' }}>
-                  {selectedFileObj ? `Selected: ${selectedFileObj.name} (${formatBytes(selectedFileObj.size)})` : 'Drag & drop a file here, or click to browse'}
-                </p>
-                <span className="text-muted" style={{ fontSize: '0.75rem' }}>Supports Markdown, code, JSON, YAML, plain text, PDF (up to 50MB)</span>
-                {isPdfPreviewLoading && (
-                  <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--primary)' }}>
-                    <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '6px' }}></i>
-                    Extracting and analyzing PDF preview...
-                  </div>
-                )}
-                <input
-                  id="storage-file-input"
-                  type="file"
-                  accept=".md,.markdown,.txt,.json,.yaml,.yml,.sql,.html,.css,.pdf"
-                  style={{ display: 'none' }}
-                  onChange={handleFileInputChange}
-                />
-              </div>
+      <StoragePreviewDialog
+        isOpen={isPreviewModalOpen}
+        isLoading={isPreviewLoading}
+        previewData={previewData}
+        onClose={() => setIsPreviewModalOpen(false)}
+      />
 
-              <div className="form-row">
-                <div className="form-group" style={{ flex: 2 }}>
-                  <label htmlFor="upload-path">Relative File Path (e.g. docs/guide.md)</label>
-                  <input
-                    id="upload-path"
-                    type="text"
-                    required
-                    placeholder="folder/document.md"
-                    value={uploadPath}
-                    onChange={(e) => setUploadPath(e.target.value)}
-                  />
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label htmlFor="upload-category">Category Override</label>
-                  <input
-                    id="upload-category"
-                    type="text"
-                    placeholder="Optional category"
-                    value={uploadCategory}
-                    onChange={(e) => setUploadCategory(e.target.value)}
-                  />
-                </div>
-              </div>
+      <StorageReplaceDialog
+        isOpen={isReplaceModalOpen}
+        targetFile={replaceTargetFile}
+        replaceCategory={replaceCategory}
+        setReplaceCategory={setReplaceCategory}
+        replaceContent={replaceContent}
+        setReplaceContent={setReplaceContent}
+        isReplacing={isReplacing}
+        onClose={() => setIsReplaceModalOpen(false)}
+        onSubmit={handleSaveReplace}
+      />
 
-              {(selectedFileObj?.name.toLowerCase().endsWith('.pdf') || selectedFileObj?.type === 'application/pdf' || uploadPath.trim().toLowerCase().endsWith('.pdf')) ? (
-                <div className="alert alert-info" style={{ margin: '12px 0', padding: '12px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid var(--primary)', borderRadius: '6px', fontSize: '0.85rem' }}>
-                  <i className="fa-solid fa-file-pdf" style={{ color: '#ef4444', marginRight: '8px' }}></i>
-                  <strong>PDF Document Selected:</strong> Binary PDF content cannot be edited manually as text. Extracted text, page segmentation, and vector chunks will be previewed in the extraction modal before ingestion.
-                </div>
-              ) : (
-                <div className="form-group">
-                  <label htmlFor="upload-content">File Content (Optional if file uploaded directly)</label>
-                  <textarea
-                    id="upload-content"
-                    rows={8}
-                    placeholder="# Enter or paste text content here..."
-                    value={uploadContent}
-                    onChange={(e) => setUploadContent(e.target.value)}
-                    style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem' }}
-                  />
-                </div>
-              )}
-
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsUploadModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isUploading}>
-                  <i className={`fa-solid ${isUploading ? 'fa-spinner fa-spin' : 'fa-upload'}`}></i> Upload & Index
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* File Preview Modal */}
-      {isPreviewModalOpen && (
-        <div className="modal-backdrop">
-          <div className="glass-card modal-card" style={{ maxWidth: '750px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-            <div className="modal-header">
-              <div>
-                <h2><i className="fa-solid fa-file-code"></i> File Preview: {previewData?.rel_path || 'Loading...'}</h2>
-                {previewData && (
-                  <span className="text-muted" style={{ fontSize: '0.8rem' }}>
-                    Size: {formatBytes(previewData.size_bytes)} &bull; Modified: {formatDate(previewData.mtime)}
-                  </span>
-                )}
-              </div>
-              <button className="btn-close" onClick={() => setIsPreviewModalOpen(false)}>&times;</button>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', margin: '10px 0' }}>
-              {isPreviewLoading ? (
-                <div className="empty-state"><i className="fa-solid fa-spinner fa-spin"></i> Loading content...</div>
-              ) : (
-                <pre
-                  className="search-hit-code"
-                  style={{ maxHeight: '420px', overflowY: 'auto', margin: 0, whiteSpace: 'pre-wrap' }}
-                >
-                  {previewData?.content || 'Empty file.'}
-                </pre>
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={() => setIsPreviewModalOpen(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Replace File Modal */}
-      {isReplaceModalOpen && replaceTargetFile && (
-        <div className="modal-backdrop">
-          <div className="glass-card modal-card" style={{ maxWidth: '680px' }}>
-            <div className="modal-header">
-              <h2><i className="fa-solid fa-file-pen"></i> Replace File: {replaceTargetFile.name}</h2>
-              <button className="btn-close" onClick={() => setIsReplaceModalOpen(false)}>&times;</button>
-            </div>
-
-            <form onSubmit={handleSaveReplace}>
-              <div className="form-group">
-                <label>Target File Path</label>
-                <input type="text" readOnly value={replaceTargetFile.rel_path} />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="replace-category">Category Override</label>
-                <input
-                  id="replace-category"
-                  type="text"
-                  placeholder="Optional category"
-                  value={replaceCategory}
-                  onChange={(e) => setReplaceCategory(e.target.value)}
-                />
-              </div>
-
-              {replaceTargetFile.rel_path.toLowerCase().endsWith('.pdf') ? (
-                <div className="alert alert-warning" style={{ margin: '14px 0', padding: '12px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '6px', fontSize: '0.85rem' }}>
-                  <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '8px', color: '#f59e0b' }}></i>
-                  <strong>PDF Replacement:</strong> PDF documents contain binary page streams and cannot be edited as plain text. To replace this document, please upload a new <code>.pdf</code> file using the "Upload File" tool.
-                </div>
-              ) : (
-                <div className="form-group">
-                  <label htmlFor="replace-content">File Content</label>
-                  <textarea
-                    id="replace-content"
-                    rows={10}
-                    required
-                    placeholder="Updated file text..."
-                    value={replaceContent}
-                    onChange={(e) => setReplaceContent(e.target.value)}
-                    style={{ fontFamily: 'var(--font-family-mono)', fontSize: '0.85rem' }}
-                  />
-                </div>
-              )}
-
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setIsReplaceModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={isReplacing || replaceTargetFile.rel_path.toLowerCase().endsWith('.pdf')}>
-                  <i className={`fa-solid ${isReplacing ? 'fa-spinner fa-spin' : 'fa-save'}`}></i> Save & Re-Index
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* PDF Extraction Preview Modal */}
       {isPdfPreviewModalOpen && pdfPreviewData && (
         <PdfPreviewModal
           data={pdfPreviewData}
           onConfirm={handleConfirmPdfIngest}
-          onCancel={handleCancelPdfPreview}
+          onCancel={() => {
+            setIsPdfPreviewModalOpen(false);
+            setPendingPdfFile(null);
+            setPdfPreviewData(null);
+          }}
           isIngesting={isPdfIngesting}
         />
       )}

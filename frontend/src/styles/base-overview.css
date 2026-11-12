@@ -1,0 +1,201 @@
+/* Glass Card */
+.glass-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    backdrop-filter: blur(16px);
+    width: 100%;
+    min-width: 0;
+}
+
+.glass-card h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Tabs visibility */
+.tab-content {
+    display: none;
+    width: 100%;
+    min-width: 0;
+}
+
+.tab-content.active {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    min-width: 0;
+}
+
+/* Overview Layout */
+.overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    gap: 12px;
+}
+
+.stat-metric {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+}
+
+.metric-icon {
+    font-size: 1.4rem;
+    color: var(--accent-light);
+    width: 40px;
+    height: 40px;
+    background: rgba(20, 184, 166, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+}
+
+.metric-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.metric-info .stat-number {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-extrabold);
+    font-family: var(--font-family-mono);
+    color: var(--text);
+    line-height: 1.1;
+}
+
+.metric-info .stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.two-col-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 900px) {
+    .two-col-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.specs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.spec-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.9rem;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-card);
+}
+
+.spec-row span:first-child {
+    color: var(--text-muted);
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+code, .code {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    display: inline-block;
+    vertical-align: baseline;
+    line-height: 1.25;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+.spec-row span:last-child,
+.spec-row code {
+    text-align: right;
+    word-break: break-word;
+    max-width: 100%;
+}
+
+@media (max-width: 576px) {
+    .spec-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    .spec-row span:last-child,
+    .spec-row code {
+        text-align: left;
+    }
+    .stat-metric {
+        padding: 16px;
+    }
+    .path-input-row {
+        flex-direction: column;
+    }
+    .browser-breadcrumbs {
+        word-break: break-all;
+    }
+}
+
+.tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.topic-tag {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    color: var(--accent);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-family-mono);
+}
+
+/* Badges & Code */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    max-width: 100%;
+}
+
+.badge-primary {
+    background: color-mix(in srgb, var(--primary) 15%, transparent);
+    color: var(--primary);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.badge-accent {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+

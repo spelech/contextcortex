@@ -1,0 +1,194 @@
+/* ==========================================================================
+   6. Outline View Items
+   ========================================================================== */
+.nav-outline-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.nav-symbol-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+}
+
+.nav-symbol-item {
+  background: rgba(13, 44, 47, 0.4);
+  border: 1px solid var(--border-card, #15474d);
+  border-radius: 6px;
+  padding: var(--nav-card-padding);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nav-symbol-item:hover {
+  background: rgba(21, 71, 77, 0.4);
+  border-color: rgba(20, 184, 166, 0.4);
+}
+
+.nav-symbol-item.active {
+  background: rgba(8, 145, 178, 0.22);
+  border-color: var(--accent, #14b8a6);
+  box-shadow: 0 0 10px rgba(20, 184, 166, 0.15);
+}
+
+.symbol-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.symbol-name-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.symbol-name-text {
+  font-weight: 600;
+  font-size: var(--nav-font-size);
+  color: var(--text, #f8fafc);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbol-meta-col {
+  flex-shrink: 0;
+}
+
+.symbol-line-badge {
+  font-size: var(--nav-badge-font-size);
+  color: var(--text-muted, #94a3b8);
+  font-family: var(--font-family-mono, monospace);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* Kind Badges */
+.symbol-kind-badge {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+
+.kind-class {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.kind-function {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.kind-variable {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.kind-type {
+  background: rgba(20, 184, 166, 0.2);
+  color: #2dd4bf;
+  border: 1px solid rgba(20, 184, 166, 0.4);
+}
+
+.kind-default {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+/* Route Badges */
+.symbol-route-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 3px 6px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.route-method-badge {
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.method-get {
+  background: #065f46;
+  color: #a7f3d0;
+}
+
+.method-post {
+  background: #1e40af;
+  color: #bfdbfe;
+}
+
+.method-put {
+  background: #92400e;
+  color: #fde68a;
+}
+
+.method-delete {
+  background: #991b1b;
+  color: #fecaca;
+}
+
+.method-patch {
+  background: #5b21b6;
+  color: #ddd6fe;
+}
+
+.method-other {
+  background: #374151;
+  color: #e5e7eb;
+}
+
+.route-path-text {
+  font-family: var(--font-family-mono, monospace);
+  color: #67e8f9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-framework-tag {
+  font-size: 0.62rem;
+  color: var(--text-muted, #94a3b8);
+  margin-left: auto;
+  padding-left: 4px;
+}
+
+.symbol-signature-snippet {
+  background: var(--code-bg, rgba(0, 0, 0, 0.35));
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-family: var(--font-family-mono, monospace);
+  font-size: 0.72rem;
+  color: #cbd5e1;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

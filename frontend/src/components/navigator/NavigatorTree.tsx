@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { NavigatorTreeNode, DensityMode } from './types';
+import { resolveLanguageDescriptor } from './syntaxSemantics';
 
 interface NavigatorTreeProps {
   nodes: NavigatorTreeNode[];
@@ -16,21 +17,22 @@ interface NavigatorTreeProps {
 // File icon helper — returns FA icon class strings (no emoji)
 export function getFileIcon(filename: string, language?: string | null): { faClass: string; className: string } {
   const lower = filename.toLowerCase();
-  if (lower.endsWith('.py') || language === 'python') return { faClass: 'fa-brands fa-python', className: 'icon-py' };
-  if (lower.endsWith('.tsx') || lower.endsWith('.ts') || language === 'typescript') return { faClass: 'fa-brands fa-js', className: 'icon-ts' };
-  if (lower.endsWith('.jsx') || lower.endsWith('.js') || lower.endsWith('.mjs') || language === 'javascript') return { faClass: 'fa-brands fa-square-js', className: 'icon-js' };
-  if (lower.endsWith('.go') || language === 'go') return { faClass: 'fa-solid fa-g', className: 'icon-go' };
-  if (lower.endsWith('.rs') || language === 'rust') return { faClass: 'fa-solid fa-gear', className: 'icon-rs' };
-  if (lower.endsWith('.cs') || language === 'csharp') return { faClass: 'fa-brands fa-microsoft', className: 'icon-cs' };
+  const normLang = (language || '').trim().toLowerCase();
+  if (lower.endsWith('.py') || normLang === 'python') return { faClass: 'fa-brands fa-python', className: 'icon-py' };
+  if (lower.endsWith('.tsx') || lower.endsWith('.ts') || normLang === 'typescript' || normLang === 'tsx') return { faClass: 'fa-brands fa-js', className: 'icon-ts' };
+  if (lower.endsWith('.jsx') || lower.endsWith('.js') || lower.endsWith('.mjs') || normLang === 'javascript' || normLang === 'jsx') return { faClass: 'fa-brands fa-square-js', className: 'icon-js' };
+  if (lower.endsWith('.go') || normLang === 'go') return { faClass: 'fa-solid fa-g', className: 'icon-go' };
+  if (lower.endsWith('.rs') || normLang === 'rust') return { faClass: 'fa-solid fa-gear', className: 'icon-rs' };
+  if (lower.endsWith('.cs') || normLang === 'csharp' || normLang === 'c_sharp') return { faClass: 'fa-brands fa-microsoft', className: 'icon-cs' };
   if (lower.endsWith('.json')) return { faClass: 'fa-solid fa-brackets-curly', className: 'icon-json' };
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) return { faClass: 'fa-solid fa-file-lines', className: 'icon-md' };
   if (lower.endsWith('.css') || lower.endsWith('.scss')) return { faClass: 'fa-brands fa-css3-alt', className: 'icon-css' };
   if (lower.endsWith('.html') || lower.endsWith('.htm')) return { faClass: 'fa-brands fa-html5', className: 'icon-html' };
-  if (lower.endsWith('.sql') || lower.endsWith('.psql') || lower.endsWith('.pls') || lower.endsWith('.plsql') || lower.endsWith('.ddl') || lower.endsWith('.dml') || lower.endsWith('.cql') || language === 'sql') return { faClass: 'fa-solid fa-database', className: 'icon-sql' };
+  if (lower.endsWith('.sql') || lower.endsWith('.psql') || lower.endsWith('.pls') || lower.endsWith('.plsql') || lower.endsWith('.ddl') || lower.endsWith('.dml') || lower.endsWith('.cql') || normLang === 'sql') return { faClass: 'fa-solid fa-database', className: 'icon-sql' };
   if (lower.endsWith('.yaml') || lower.endsWith('.yml') || lower.endsWith('.toml')) return { faClass: 'fa-solid fa-sliders', className: 'icon-yaml' };
   if (lower.endsWith('.sh') || lower.endsWith('.bash') || lower.endsWith('.zsh')) return { faClass: 'fa-solid fa-terminal', className: 'icon-sh' };
   if (lower.endsWith('.dockerfile') || lower === 'dockerfile') return { faClass: 'fa-brands fa-docker', className: 'icon-docker' };
-  if (lower.endsWith('.cbl') || lower.endsWith('.cob') || lower.endsWith('.cpy') || lower.endsWith('.cobol') || language === 'cobol') return { faClass: 'fa-solid fa-server', className: 'icon-cobol' };
+  if (lower.endsWith('.cbl') || lower.endsWith('.cob') || lower.endsWith('.cpy') || lower.endsWith('.cobol') || normLang === 'cobol') return { faClass: 'fa-solid fa-server', className: 'icon-cobol' };
   return { faClass: 'fa-solid fa-file-code', className: 'icon-file' };
 }
 
@@ -397,6 +399,7 @@ export const NavigatorTree: React.FC<NavigatorTreeProps> = ({
               const { faClass: fileFaClass, className: iconClass } = node.is_dir
                 ? { faClass: dirFaClass, className: 'icon-dir' }
                 : getFileIcon(node.name, node.language);
+              const langDesc = !node.is_dir ? resolveLanguageDescriptor(node.language, node.name) : null;
 
               return (
                 <div
@@ -432,6 +435,14 @@ export const NavigatorTree: React.FC<NavigatorTreeProps> = ({
                   </span>
 
                   <div className="tree-badges">
+                    {langDesc && (
+                      <span
+                        className={`badge-symbols ${langDesc.badgeClass}`}
+                        title={`Language: ${langDesc.label}`}
+                      >
+                        {langDesc.shortCode}
+                      </span>
+                    )}
                     {node.symbol_count > 0 && (
                       <span className="badge-symbols" title={`${node.symbol_count} AST Symbols`}>
                         {node.symbol_count} sym
