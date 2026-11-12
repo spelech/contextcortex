@@ -125,10 +125,16 @@ async def api_save_embedding_settings(payload: EmbeddingSettingsRequest):
             "config": updated_cfg,
         }
     except ValueError as ve:
-        logger.warning(f"Rejected embedding settings update: {ve}")
+        err_str = str(ve)
+        logger.warning(f"Rejected embedding settings update: {err_str}")
+        safe_msg = (
+            "Explicit rebuild confirmation is required when changing embedding model dimensions."
+            if "rebuild confirmation" in err_str.lower()
+            else "Invalid embedding settings provided."
+        )
         return JSONResponse(
             status_code=400,
-            content={"status": "error", "error": str(ve), "message": str(ve)},
+            content={"status": "error", "error": safe_msg, "message": safe_msg},
         )
     except Exception as e:
         logger.error(f"Error updating embedding settings: {e}")
