@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1199 Automated Tests** (835 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1212 Automated Tests** (848 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1069,6 +1069,21 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_all_frontend_and_script_files_under_500_loc` - _Verify every TypeScript, TSX, CSS, shell, and PowerShell file in source/tests/scripts stays <= 500 LOC._
 - `test_semantic_naming_bans_junk_drawer_modules_and_classes` - _Verify case-insensitively that no new *Manager, *Helper, *Util, *Utils, or *Data modules/classes exist._
 
+#### `tests/test_execute_script.py` (13 tests)
+- `test_script_calls_tools_and_returns_a_small_result`
+- `test_gateway_form_and_call_tool_work`
+- `test_tool_errors_throw_and_can_be_caught`
+- `test_script_errors_report_script_line_numbers`
+- `test_no_return_gives_null`
+- `test_limits_stop_loops_memory_and_tool_fan_out`
+- `test_host_is_not_reachable_from_the_script`
+- `test_dispatch_checks_tool_names_and_arguments`
+- `test_execute_script_runs_real_tools_end_to_end`
+- `test_execute_script_reports_failures_with_logs`
+- `test_execute_script_rejects_empty_input`
+- `test_limits_come_from_the_environment`
+- `test_sdk_declarations_from_tool_schemas`
+
 #### `tests/test_field_workup_regressions.py` (9 tests)
 - `test_finding_1_git_env_strips_ambient_git_vars`
 - `test_finding_1_shallow_clone_stages_fresh_clone_on_fetch_failure`
@@ -1184,7 +1199,7 @@ and leaves the prior indexed state intact without data loss._
 - `test_get_local_storage_service_singleton`
 
 #### `tests/test_mcp_pagination_and_resources.py` (4 tests)
-- `test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports` - _Verifies all 19 tools expose rich descriptions, parameter Field docs, and backward-compatible imports._
+- `test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports` - _Verifies all 20 tools expose rich descriptions, parameter Field docs, and backward-compatible imports._
 - `test_symbol_outline_trace_and_route_pagination` - _Verifies limit clamping and offset pagination across find_symbol, get_file_outline, trace_path, find_routes, and find_api_callers._
 - `test_grep_search_recent_changes_adr_ingested_and_read_file_bounds` - _Verifies line/snippet truncation and pagination for grep_code, search_code/docs, get_recent_changes, manage_adr, what_is_ingested, and read_file._
 - `test_granular_mcp_resources_and_paginated_templates` - _Verifies compact catalog summary and all 5 per-repository MCP resource templates end-to-end._

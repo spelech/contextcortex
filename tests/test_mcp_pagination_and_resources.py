@@ -175,7 +175,7 @@ def mcp_paginated_env(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports(mcp_paginated_env):
-    """Verifies all 19 tools expose rich descriptions, parameter Field docs, and backward-compatible imports."""
+    """Verifies all 20 tools expose rich descriptions, parameter Field docs, and backward-compatible imports."""
     from app.mcp.handlers.file_handlers import handle_grep_code as grep_from_files
     from app.mcp.handlers.grep_handlers import handle_grep_code as grep_direct
     from app.mcp.handlers.repo_handlers import handle_catalog_summary as cat_from_repo
@@ -186,7 +186,7 @@ async def test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports(mcp_pagina
 
     server = mcp_paginated_env["server"]
     tools = await server.list_tools()
-    assert len(tools) == 19
+    assert len(tools) == 20
 
     for tool in tools:
         assert tool.description and len(tool.description.strip()) >= 40, f"Weak description on {tool.name}"

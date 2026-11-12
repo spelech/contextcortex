@@ -53,6 +53,7 @@ loguru==0.7.3
 markdown-it-py==4.2.0
 mcp==1.30.0
 mdurl==0.1.2
+mini-racer==0.14.1
 mmh3==5.3.1
 multidict==7.2.1
 networkx==3.7

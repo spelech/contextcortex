@@ -1,6 +1,6 @@
 # MCP Tools and Resources Reference
 
-This document provides complete reference specifications for all **19 Model Context Protocol (MCP) tools**, dynamic resources, and guided prompts exposed by ContextCortex (`app/mcp/tools.py`).
+This document provides complete reference specifications for all **20 Model Context Protocol (MCP) tools**, dynamic resources, and guided prompts exposed by ContextCortex (`app/mcp/tools.py`).
 
 ---
 
@@ -27,6 +27,7 @@ This document provides complete reference specifications for all **19 Model Cont
 | [`manage_local_file`](#17-manage-local-file) | `editor` / `viewer` | Storage & File Access | `action`, `file_path`, `content`, `repo`, `category` | Uploads, replaces, reads, previews, or deletes files in managed local storage with immediate indexing. |
 | [`read_file`](#18-read-file) | `viewer` | Storage & File Access | `path`, `repo`, `start_line`, `end_line` | Reads full file content or bounded 1-indexed line ranges from disk or reconstructed from vector chunks. |
 | [`summarize_file`](#19-summarize-file) | `viewer` | Storage & File Access | `path`, `repo`, `force_refresh` | Retrieves a cached summary or generates a structured LLM executive summary for a large file. |
+| [`execute_script`](#20-execute-script) | `viewer` | Code Mode | `script`, `arguments` | Runs one sandboxed JavaScript script that chains several tool calls and returns only the final result. |
 
 ---
 
@@ -254,6 +255,39 @@ Retrieves a cached executive summary or generates a structured LLM summary for a
 
 ---
 
+### 20. `execute_script`
+Code Mode. Runs one async JavaScript body that calls other ContextCortex tools and returns only the final result. Use it when a question needs several dependent calls (for example: find a route, trace its handler, read each callee). The design is the same as Code Mode (`execute_script`) in model-context-gateway, so a script also runs there unchanged.
+
+- **Minimum Role**: `viewer`. Each tool call in the script goes through the normal handler and its own role check.
+- **Parameters**:
+  - `script` (*string, required*; alias `code`): async JavaScript body. Top-level `await` and `return` work.
+  - `arguments` (*object, optional*; alias `args`): input object, available in the script as `args` and `arguments`.
+- **In the script**:
+  - `await tools.<tool>(args)` or `await cc.callTool("<tool>", args)` calls a tool. `tools.contextcortex.<tool>(args)` and `mcg.callTool(...)` also work.
+  - Tool results are parsed JSON. A tool error (an unknown tool or argument, or a result with an `error` field) throws an `Error`; catch it with `try`/`catch`.
+  - `console.log`, `console.warn`, and `console.error` add entries to `logs` (at most `100`).
+  - The script cannot call `execute_script`, and it has no file, network, or process access.
+- **Limits** (environment settings): `CODE_MODE_TIMEOUT_SECONDS` (`30`, `1..300`), `CODE_MODE_MAX_TOOL_CALLS` (`50`, `1..500`), `CODE_MODE_MAX_MEMORY_MB` (`64`, `8..512`). `CODE_MODE_ENABLED=false` turns Code Mode off. Scripts are at most `50,000` characters; results larger than `100,000` characters are cut and marked `truncated`.
+- **Returns**: `{"result", "logs", "executionTimeMs", "toolCallsCount"}`. On a failure: `{"error": "script_failed", "message", "logs", "executionTimeMs", "toolCallsCount"}`. Line numbers in error messages count from the first line of the script.
+- **Types**: read the resource `contextcortex://code-mode/sdk.d.ts` for one typed function per tool.
+
+```javascript
+// Which classes call each repository method that a route handler reaches?
+const routes = await tools.find_routes({ query: args.route, repo: args.repo });
+const handler = routes.routes[0].handler;
+const down = await tools.trace_path({ symbol: handler, repo: args.repo, direction: "callees", depth: 3 });
+const repoCalls = down.callees.flatMap(function walk(n) { return [n, ...(n.callees || []).flatMap(walk)]; })
+  .filter(n => n.symbol.includes("Repository."));
+const out = {};
+for (const c of repoCalls.slice(0, 10)) {
+  const up = await tools.trace_path({ symbol: c.symbol, repo: args.repo, direction: "callers", depth: 1 });
+  out[c.symbol] = up.callers.map(x => x.symbol);
+}
+return { handler, repositoryCallers: out };
+```
+
+---
+
 ## Bounded Payload & Pagination Conventions
 
 All list- and search-oriented MCP tools enforce safe upper bounds and return standardized pagination metadata:
@@ -269,6 +303,7 @@ All list- and search-oriented MCP tools enforce safe upper bounds and return sta
 
 | Resource URI / Template | MIME Type | Description |
 | :--- | :--- | :--- |
+| `contextcortex://code-mode/sdk.d.ts` | `text/plain` | TypeScript declarations of every tool that an `execute_script` script can call. |
 | `knowledge://catalog/summary` | `application/json` | Compact global catalog (`≤ 40` sample files) listing repositories, status, language/symbol totals, and sub-resource templates. |
 | `knowledge://repo/{repo}/summary` | `application/json` | Single-repository overview with commit SHA, sync status, language distribution, symbol/route/ADR counts, and sub-resource URIs. |
 | `knowledge://repo/{repo}/architecture` | `application/json` | Synthesized entry points, hub symbols, directory breakdown, API surface summary, and active ADRs for `{repo}`. |
