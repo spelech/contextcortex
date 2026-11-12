@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1207 Automated Tests** (843 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1224 Automated Tests** (860 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -985,6 +985,16 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_wait_for_db_retries_and_success`
 - `test_wait_for_db_exhausts_retries`
 
+#### `tests/test_diagnose_repo_filter_route_candidates.py` (8 tests)
+- `test_external_callers_respect_repo`
+- `test_external_callers_cross_repo_without_filter`
+- `test_stack_frame_does_not_fall_back_to_other_repo`
+- `test_route_call_path_ranks_first_and_noise_is_filtered`
+- `test_route_call_path_fills_limit_and_skips_search`
+- `test_semantic_hits_without_route_still_filter_repo`
+- `test_language_family`
+- `test_keep_semantic_hit_rules`
+
 #### `tests/test_diagnostics_and_services_multilang.py` (7 tests)
 - `test_parse_csharp_posix_and_windows_frames`
 - `test_parse_ts_react_vite_and_bundler_frames`
@@ -1167,6 +1177,17 @@ and leaves the prior indexed state intact without data loss._
 - `test_vision_ocr_client_uses_saved_settings_and_extra_headers` - _Verifies that PDF vision OCR reads persisted SQLite gateway settings and attaches extra headers._
 - `test_summarizer_client_sends_extra_headers` - _Verifies that SummarizerService builds its real OpenAI client from SQLite settings and refreshes on rotation._
 - `test_embeddings_api_client_sends_extra_headers` - _Verifies that API embedding initialization configures OpenAI with persisted settings and extra headers._
+
+#### `tests/test_local_source_relative_paths.py` (9 tests)
+- `test_relative_maps_stored_paths`
+- `test_nested_roots_use_the_longest_root_and_file_roots_use_the_file_name`
+- `test_clean_stored_path_keeps_the_git_form`
+- `test_find_symbol_returns_relative_paths`
+- `test_get_file_outline_returns_the_relative_path`
+- `test_find_routes_and_api_callers_return_relative_paths`
+- `test_trace_path_returns_relative_paths`
+- `test_diagnose_issue_parts_return_relative_paths`
+- `test_resolved_stack_frames_return_relative_paths`
 
 #### `tests/test_local_storage_indexing.py` (4 tests)
 - `test_incremental_indexing_on_save`

@@ -12,6 +12,7 @@ from app.services.chunking.route_specificity import (
     most_specific_routes,
     route_key,
 )
+from app.services.source_paths import LocalSourceRoots
 
 logger = logging.getLogger("contextcortex")
 
@@ -87,11 +88,12 @@ async def handle_find_routes(
 
             sql += " ORDER BY r.repo ASC, r.path_pattern ASC, r.http_method ASC, r.start_line ASC"
             rows = conn.execute(sql, params).fetchall()
+            local_roots = LocalSourceRoots.load(conn)
 
         all_routes = []
         seen_routes = set()
         for r in rows:
-            rel_path = (r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]).replace("\\", "/")
+            rel_path = local_roots.relative(r["filepath"], r["repo"])
             if _is_test_route_file(rel_path):
                 continue
             dedup_key = (r["repo"], r["http_method"], r["path_pattern"], rel_path, r["start_line"])
@@ -170,6 +172,7 @@ async def handle_find_api_callers(
             sql += " ORDER BY c.repo ASC, c.filepath ASC, c.line_number ASC"
             rows = conn.execute(sql, params).fetchall()
             route_rows = conn.execute("SELECT repo, filepath, http_method, path_pattern FROM api_routes").fetchall()
+            local_roots = LocalSourceRoots.load(conn)
 
         target_method_clean = method.strip().upper() if method and method.strip() else None
         belongs_to_target = _target_ownership(target_path, target_method_clean, route_rows)
@@ -186,7 +189,7 @@ async def handle_find_api_callers(
             if not belongs_to_target(c["url_pattern"], call_method):
                 continue
 
-            rel_path = (c["filepath"].split("://", 1)[1] if "://" in c["filepath"] else c["filepath"]).replace("\\", "/")
+            rel_path = local_roots.relative(c["filepath"], c["repo"])
             dedup_key = (c["repo"], rel_path, c["http_method"], c["url_pattern"], c["caller_symbol"], c["line_number"])
             if dedup_key in seen_callers:
                 continue
