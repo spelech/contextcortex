@@ -3,6 +3,10 @@ name: Build Portable Windows x64 Bundle
 on:
   workflow_dispatch:
     inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v2.22.0) to attach to if running manually'
+        required: false
+        default: ''
       postgres_version:
         description: 'PostgreSQL Windows x64 Binary Version'
         required: false
@@ -11,6 +15,8 @@ on:
         description: 'pgvector Extension Version'
         required: false
         default: '0.8.0'
+  release:
+    types: [published]
   push:
     tags:
       - 'v*.*.*'
@@ -123,7 +129,8 @@ jobs:
           retention-days: 30
 
       - name: Attach Portable Bundle to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || github.event.inputs.tag_name != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag_name || '' }}
           files: dist/contextcortex-windows-x64-portable.zip
