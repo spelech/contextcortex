@@ -58,6 +58,7 @@ for pkg in (
     "mcp",
     "pymupdf",
     "fitz",
+    "py_mini_racer",  # Code Mode: V8 library (mini_racer.dll) and ICU data, loaded from _MEIPASS/py_mini_racer
 ):
     try:
         tmp_ret = collect_all(pkg)

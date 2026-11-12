@@ -66,7 +66,7 @@ ContextCortex is a multi-repository Model Context Protocol (MCP) server providin
 
 See the full **[MCP Tools, Resources, and Pagination Reference](docs/mcp-tools-and-resources.md)** for complete schemas, [pagination conventions](docs/mcp-tools-and-resources.md#pagination-conventions), [tool parameter bounds](docs/mcp-tools-and-resources.md#mcp-tools-reference), [resource templates](docs/mcp-tools-and-resources.md#mcp-resources-and-templates), and [workflow prompts](docs/mcp-tools-and-resources.md#mcp-workflow-prompts).
 
-### Tools & RBAC Permissions (19 Tools)
+### Tools & RBAC Permissions (20 Tools)
 
 | Tool | Role | Key Parameters & Bounds | Description |
 | :--- | :---: | :--- | :--- |
@@ -89,12 +89,14 @@ See the full **[MCP Tools, Resources, and Pagination Reference](docs/mcp-tools-a
 | `summarize_file` | `viewer` | `path`, `repo`, `force_refresh` (`False`) | Retrieves a cached summary or generates a structured LLM executive file summary. |
 | `grep_code` | `viewer` | `pattern`, `repo`, `path_glob`, `is_regex`, `case_sensitive`, `context_lines` (`0..10`), `max_results`/`limit` (`1..100`), `offset` | Literal/regex search with AST attribution; truncates lines `> 400` chars cleanly. |
 | `diagnose_issue` | `viewer` | `issue_text`, `repo`, `context_lines` (`1..15`), `limit` (`1..20`) | Forensic triage resolving stack traces, error literals, routes, and semantic candidates. |
+| `execute_script` | `viewer` (each tool call keeps its own role check) | `script`/`code`, `arguments`/`args` | Code Mode: one sandboxed JavaScript script chains several tool calls and returns only the final result (limits: `30` s, `50` tool calls, `64` MB). |
 
 ### Resources & Paginated Resource Templates
 
 | Resource URI / Template | MIME Type | Pagination / Scope | Description |
 | :--- | :---: | :---: | :--- |
 | `knowledge://catalog/summary` | `application/json` | Compact (`<= 40` sample files) | Global catalog summary plus `resource_templates` discovery metadata. |
+| `contextcortex://code-mode/sdk.d.ts` | `text/plain` | Single | TypeScript declarations of every tool that an `execute_script` script can call. |
 | `knowledge://repo/{repo}/summary` | `application/json` | Per-repo | Status, commit SHA, language breakdown, symbol/route/ADR counts, and sub-resource URIs. |
 | `knowledge://repo/{repo}/architecture` | `application/json` | Per-repo | Synthesized architecture overview (manifests, entry points, modules, hub symbols). |
 | `knowledge://repo/{repo}/files/{page}` | `application/json` | `100` files / page | 1-indexed paginated file inventory (`total_files`, `total_pages`, `has_more`, `next_uri`). |

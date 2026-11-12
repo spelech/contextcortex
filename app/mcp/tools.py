@@ -49,6 +49,8 @@ from app.mcp.handlers import (
     handle_summarize_file,
     handle_grep_code,
     handle_diagnose_issue,
+    handle_execute_script,
+    handle_code_mode_sdk_resource,
 )
 
 logger = logging.getLogger("contextcortex.mcp")
@@ -168,6 +170,15 @@ _TOOL_DEFINITIONS = [
         f"Use for forensic triage of stack traces, error logs, or failing HTTP routes across {_SUPPORTED_LANGS}. "
         "Resolves stack frames (context_lines 1..15), error literals, API routes, and semantic candidates (limit 1..20).",
     ),
+    (
+        "execute_script",
+        handle_execute_script,
+        "Code Mode: use to chain several ContextCortex tool calls in ONE call. Send an async JavaScript body; it calls tools with "
+        "`await tools.<tool>(args)` (results are parsed JSON, a tool error throws) and returns only what you need. "
+        "Example: `const r = await tools.find_routes({query: 'publish'}); const t = await tools.trace_path({symbol: r.routes[0].handler, "
+        "direction: 'callees', depth: 3}); return t.callees.map(c => c.symbol);`. Typed signatures: resource contextcortex://code-mode/sdk.d.ts. "
+        "Limits: 30 s, 50 tool calls, 64 MB (CODE_MODE_* settings). Returns {result, logs, executionTimeMs, toolCallsCount}.",
+    ),
 ]
 
 _RESOURCE_TEMPLATE_DEFINITIONS = [
@@ -205,7 +216,7 @@ _RESOURCE_TEMPLATE_DEFINITIONS = [
 
 
 def register_mcp_tools_and_resources(server=None):
-    """Register all 19 tools, compact catalog resource, 5 per-repo resource templates, and 5 prompts."""
+    """Register all 20 tools, the catalog and Code Mode SDK resources, 5 per-repo resource templates, and 5 prompts."""
     if server is None:
         from app.mcp.mcp_server import mcp_server
         server = mcp_server
@@ -223,6 +234,13 @@ def register_mcp_tools_and_resources(server=None):
             description="Compact catalog of indexed repositories, symbol totals, sample files, and granular per-repo resource template URIs.",
             mime_type="application/json",
         )(handle_catalog_summary)
+    if "contextcortex://code-mode/sdk.d.ts" not in existing_resources:
+        server.resource(
+            "contextcortex://code-mode/sdk.d.ts",
+            name="code_mode_sdk",
+            description="TypeScript declarations of every tool that an execute_script (Code Mode) script can call, with argument docs.",
+            mime_type="text/plain",
+        )(handle_code_mode_sdk_resource)
 
     try:
         existing_templates = {str(t.uri_template) for t in server._resource_manager.list_templates()}

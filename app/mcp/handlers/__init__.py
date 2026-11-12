@@ -48,6 +48,10 @@ from app.mcp.handlers.grep_handlers import (
 from app.mcp.handlers.diagnostic_handlers import (
     handle_diagnose_issue,
 )
+from app.mcp.handlers.script_handlers import (
+    handle_execute_script,
+    handle_code_mode_sdk_resource,
+)
 
 __all__ = [
     "handle_search_code",
@@ -80,4 +84,6 @@ __all__ = [
     "handle_summarize_file",
     "handle_grep_code",
     "handle_diagnose_issue",
+    "handle_execute_script",
+    "handle_code_mode_sdk_resource",
 ]

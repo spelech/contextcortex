@@ -1,6 +1,6 @@
 # MCP Tools, Resources, and Pagination Reference
 
-ContextCortex exposes 19 MCP tools, 1 catalog resource, 5 repository resource templates, and 5 guided workflow prompts over SSE (`/sse`) and Streamable HTTP (`/mcp`). Every response emits bounded, deterministic JSON to protect AI agent context windows.
+ContextCortex exposes 20 MCP tools, 2 resources (the catalog and the Code Mode SDK types), 5 repository resource templates, and 5 guided workflow prompts over SSE (`/sse`) and Streamable HTTP (`/mcp`). Every response emits bounded, deterministic JSON to protect AI agent context windows.
 
 ---
 
@@ -43,7 +43,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 
 ## MCP Tools Reference
 
-### Summary Matrix (19 Tools)
+### Summary Matrix (20 Tools)
 
 | Tool | Role | Default / Clamped Bounds | Pagination Keys |
 | :--- | :---: | :--- | :--- |
@@ -66,6 +66,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 | `list_repositories` | `viewer` | Registered repos & monitored paths | Compact repository metadata list |
 | `sync_repository` | `editor` | Asynchronous background job | Immediate trigger confirmation |
 | `index_status` | `viewer` | Global health & vector metrics | Single status payload |
+| `execute_script` | `viewer` | One sandboxed script (`30` s, `50` tool calls, `64` MB) | The value the script returns (`< 100,000` chars) |
 
 ---
 
@@ -104,6 +105,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 
 - **`manage_local_file`**: Supports `upload`, `replace`, `delete` (`editor` role) and `read`, `preview` (`viewer` role) inside `LOCAL_STORAGE_PATH` with immediate vector and AST indexing.
 - **`what_is_ingested`**: Inspects `all`, `git`, `monitored_path`, or `local_storage` sources. Set `include_files=True` (or `detail_level='detailed'`) with `limit` (`1..500`, default `100`) and `offset` (`>= 0`) to paginate file paths per source (`total_files`, `offset`, `limit`, `has_more`, `next_offset`) without dumping thousands of paths.
+- **`execute_script`** (Code Mode): runs one async JavaScript body that calls other tools with `await tools.<tool>(args)` and returns only the final result, so several dependent calls take one round trip. Tool results are parsed JSON, and a tool error throws. Limits: `CODE_MODE_TIMEOUT_SECONDS` (`30`), `CODE_MODE_MAX_TOOL_CALLS` (`50`), `CODE_MODE_MAX_MEMORY_MB` (`64`). Types: resource `contextcortex://code-mode/sdk.d.ts`. Same pattern as Code Mode in model-context-gateway. See [the reference](reference/mcp-tools.md#20-execute-script).
 - **`diagnose_issue`**: Resolves stack traces, error string literals, HTTP routes, and semantic code candidates across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Clamps `context_lines` (`1..15`, default `5`) and `limit` (`1..20`, default `5`). When `repo` is set, every result section (stack frames, route handlers, external callers, symbols, and candidates) stays in that repo. When an HTTP route matches, `semantic_candidates` starts with the route handler and its callees (`source`: `route_handler` / `route_callee`, `depth` from the handler, `score`: `null`). Search hits (`source`: `semantic`) fill the remaining slots; hits from test files or from a different language than the route handler are dropped.
 
 ---
@@ -114,6 +116,7 @@ ContextCortex splits repository metadata into granular, bounded JSON resources (
 
 | Resource URI / Template | Page Size | Key Response Fields | Purpose |
 | :--- | :---: | :--- | :--- |
+| `contextcortex://code-mode/sdk.d.ts` | Single | One `tools.<tool>(args)` declaration per tool, with JSDoc | TypeScript types for `execute_script` (Code Mode) scripts. |
 | `knowledge://catalog/summary` | Sample `<= 40` | `total_files`, `total_symbols`, `git_repositories`, `resource_templates` | Compact global catalog and discovery index for per-repo URIs. |
 | `knowledge://repo/{repo}/summary` | Single | `status`, `commit_sha`, `file_count`, `languages`, `symbol_count`, `route_count`, `adr_count`, `sub_resources` | Lightweight per-repository health, counts, and sub-resource links. |
 | `knowledge://repo/{repo}/architecture` | Single | `languages`, `manifests`, `entry_points`, `modules`, `hub_symbols`, `routes_count`, `active_adrs` | Synthesized repository architecture overview. |
