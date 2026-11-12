@@ -17,17 +17,18 @@ Windows Portable + PostgreSQL field work-up (contextcortex-mcp-workup.md):
 13. P3: MCP `serverInfo.version` matching the ContextCortex application version instead of the `mcp` SDK version.
 """
 
-import os
-import json
-import stat
 import datetime
-from unittest.mock import patch, MagicMock
+import json
+import os
+import stat
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from app.services.database import get_db_engine, init_db, get_db_connection
 import app.services.database as db_mod
 import app.services.database.connection as conn_mod
-from app.services.auth import set_current_auth_context, AuthContext, Role
+from app.services.auth import AuthContext, Role, set_current_auth_context
+from app.services.database import get_db_connection, get_db_engine, init_db
 
 
 @pytest.fixture
@@ -46,9 +47,7 @@ def isolated_db(tmp_path, monkeypatch):
     get_db_engine(reset=True)
 
 
-# ---------------------------------------------------------------------------
 # Finding 1 (P1): Windows Git Re-sync Resilience & Read-Only Packfile Cleanup
-# ---------------------------------------------------------------------------
 def test_finding_1_git_env_strips_ambient_git_vars(monkeypatch):
     from app.services.git_manager import _get_git_env
 
@@ -63,7 +62,7 @@ def test_finding_1_git_env_strips_ambient_git_vars(monkeypatch):
 
 
 def test_finding_1_shallow_clone_stages_fresh_clone_on_fetch_failure(tmp_path):
-    from app.services.git_manager import shallow_clone_repo, cleanup_repo_dir
+    from app.services.git_manager import cleanup_repo_dir, shallow_clone_repo
 
     target_dir = tmp_path / "repos" / "my-repo"
     git_dir = target_dir / ".git" / "objects" / "pack"
@@ -77,31 +76,19 @@ def test_finding_1_shallow_clone_stages_fresh_clone_on_fetch_failure(tmp_path):
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
-        proc = MagicMock()
+        proc = MagicMock(returncode=0, stdout="", stderr="")
         if "rev-parse" in cmd and "--git-dir" in cmd:
-            proc.returncode = 0
             proc.stdout = ".git\n"
-            proc.stderr = ""
         elif "fetch" in cmd:
             proc.returncode = 128
-            proc.stdout = ""
             proc.stderr = "fatal: not a git repository (or any of the parent directories): .git"
         elif "clone" in cmd:
             dest = cmd[-1]
             os.makedirs(os.path.join(dest, ".git"), exist_ok=True)
             with open(os.path.join(dest, ".git", "HEAD"), "w") as f:
                 f.write("ref: refs/heads/develop\n")
-            proc.returncode = 0
-            proc.stdout = ""
-            proc.stderr = ""
         elif "rev-parse" in cmd and "HEAD" in cmd:
-            proc.returncode = 0
             proc.stdout = "abcdef1234567890abcdef1234567890abcdef12\n"
-            proc.stderr = ""
-        else:
-            proc.returncode = 0
-            proc.stdout = ""
-            proc.stderr = ""
         return proc
 
     with patch("subprocess.run", side_effect=fake_run):
@@ -119,15 +106,10 @@ def test_finding_1_shallow_clone_stages_fresh_clone_on_fetch_failure(tmp_path):
     assert not os.path.exists(str(target_dir))
 
 
-# ---------------------------------------------------------------------------
 # Finding 2 (P1): PostgreSQL datetime JSON serialization in MCP handlers
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_finding_2_list_repositories_serializes_postgres_datetime(isolated_db):
-    from app.mcp.handlers.repo_handlers import (
-        handle_list_repositories,
-        handle_catalog_summary,
-    )
+    from app.mcp.handlers.repo_handlers import handle_catalog_summary, handle_list_repositories
     from app.mcp.handlers.storage_handlers import handle_what_is_ingested
 
     fake_dt = datetime.datetime(2026, 11, 11, 14, 30, 0, tzinfo=datetime.timezone.utc)
@@ -136,33 +118,23 @@ async def test_finding_2_list_repositories_serializes_postgres_datetime(isolated
     def execute_side_effect(sql, params=None):
         cursor = MagicMock()
         if "FROM git_repositories" in sql:
-            cursor.fetchall.return_value = [
-                {
-                    "id": 1,
-                    "name": "corp-service",
-                    "url": "ssh://git@gitlab.corp:2222/team/corp-service.git",
-                    "branch": "develop",
-                    "commit_sha": "1234567890abcdef",
-                    "provider": "gitlab",
-                    "auth_user": None,
-                    "status": "synced",
-                    "last_synced": fake_dt,
-                }
-            ]
+            cursor.fetchall.return_value = [{
+                "id": 1, "name": "corp-service",
+                "url": "ssh://git@gitlab.corp:2222/team/corp-service.git",
+                "branch": "develop", "commit_sha": "1234567890abcdef",
+                "provider": "gitlab", "auth_user": None,
+                "status": "synced", "last_synced": fake_dt,
+            }]
         elif "FROM indexed_paths" in sql:
             cursor.fetchall.return_value = []
         elif "GROUP BY repo" in sql:
             cursor.fetchall.return_value = [{"repo": "corp-service", "cnt": 42}]
         elif "FROM indexed_files" in sql:
-            cursor.fetchall.return_value = [
-                {
-                    "filepath": "corp-service://server\\Product.Worker\\UnitOfWork.cs",
-                    "repo": "corp-service",
-                    "doc_type": "code",
-                    "language": "csharp",
-                    "mtime": fake_dt,
-                }
-            ]
+            cursor.fetchall.return_value = [{
+                "filepath": "corp-service://server\\Product.Worker\\UnitOfWork.cs",
+                "repo": "corp-service", "doc_type": "code",
+                "language": "csharp", "mtime": fake_dt,
+            }]
         elif "count(*)" in sql.lower():
             cursor.fetchone.return_value = [10]
         else:
@@ -193,9 +165,7 @@ async def test_finding_2_list_repositories_serializes_postgres_datetime(isolated
         assert parsed_ingested["files"][0]["file"] == "server/Product.Worker/UnitOfWork.cs"
 
 
-# ---------------------------------------------------------------------------
 # Finding 3 (P1): diagnose_issue PostgreSQL IndeterminateDatatype parameter fix
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_finding_3_diagnose_issue_no_untyped_null_params(isolated_db):
     from app.mcp.handlers.diagnostic_handlers import handle_diagnose_issue
@@ -228,8 +198,8 @@ async def test_finding_3_diagnose_issue_no_untyped_null_params(isolated_db):
                 return self._real.execute(sql, params)
 
         spy_conn = _SpyConn(conn)
-        callers_with_repo, callees_with_repo = _get_callers_and_callees(spy_conn, "my-repo", "UnitOfWork.Run")
-        callers_no_repo, callees_no_repo = _get_callers_and_callees(spy_conn, None, "Engine.Run")
+        _, callees_with_repo = _get_callers_and_callees(spy_conn, "my-repo", "UnitOfWork.Run")
+        callers_no_repo, _ = _get_callers_and_callees(spy_conn, None, "Engine.Run")
 
         for sql_text, params in executed_queries:
             assert "IS NULL" not in sql_text.upper()
@@ -249,13 +219,11 @@ async def test_finding_3_diagnose_issue_no_untyped_null_params(isolated_db):
         assert diag["matched_symbols"][0]["file"] == "server/Product.Worker/UnitOfWork.cs"
 
 
-# ---------------------------------------------------------------------------
 # Finding 4 (P2): C# AST Call Graph Extraction & trace_path Resolution
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_finding_4_csharp_call_graph_extraction_and_trace_path(isolated_db):
-    from app.services.chunking import extract_symbols_and_chunks
     from app.mcp.handlers.symbol_handlers import handle_trace_path
+    from app.services.chunking import extract_symbols_and_chunks
 
     uow_code = """
 using System.Threading.Tasks;
@@ -314,28 +282,23 @@ namespace Product.Worker
             )
         conn.commit()
 
-    # Trace outbound & inbound from UnitOfWork.Run
     uow_trace = json.loads(await handle_trace_path(symbol="UnitOfWork.Run", repo="my-repo", direction="both", depth=2))
     callee_symbols = {c["symbol"] for c in uow_trace["callees"]}
     assert "Engine.Run" in callee_symbols
     assert any("LoadAsync" in s for s in callee_symbols)
 
-    # Trace inbound callers of Engine.Run
     eng_trace = json.loads(await handle_trace_path(symbol="Engine.Run", repo="my-repo", direction="both", depth=2))
     caller_symbols = {c["symbol"] for c in eng_trace["callers"]}
     assert "UnitOfWork.Run" in caller_symbols
 
 
-# ---------------------------------------------------------------------------
 # Finding 5, 6, 7 (P2): get_file_outline, Permalinks, and POSIX Path Normalization
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_findings_5_6_7_file_outline_permalinks_and_path_normalization(isolated_db):
-    from app.mcp.handlers.symbol_handlers import handle_get_file_outline, handle_find_symbol
+    from app.mcp.handlers.symbol_handlers import handle_find_symbol, handle_get_file_outline
+    from app.services.git_manager import detect_git_provider, format_git_permalink
     from app.services.navigator import get_file_outline as nav_get_file_outline
-    from app.services.git_manager import format_git_permalink, detect_git_provider
 
-    # Seed a row that originally had Windows backslashes in filepath
     with get_db_connection() as conn:
         conn.execute(
             """INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language)
@@ -347,45 +310,34 @@ async def test_findings_5_6_7_file_outline_permalinks_and_path_normalization(iso
         )
         conn.commit()
 
-    # Both forward slashes and backslashes must return the symbols in get_file_outline
     outline_posix = json.loads(await handle_get_file_outline(filepath="server/Product.Worker/UnitOfWork.cs", repo="win-repo"))
     outline_win = json.loads(await handle_get_file_outline(filepath="server\\Product.Worker\\UnitOfWork.cs", repo="win-repo"))
     assert outline_posix["file"] == "server/Product.Worker/UnitOfWork.cs"
     assert len(outline_posix["symbols"]) == 2
     assert len(outline_win["symbols"]) == 2
 
-    # Navigator service also resolves both
     nav_res = nav_get_file_outline("win-repo", "server/Product.Worker/UnitOfWork.cs")
     assert len(nav_res["symbols"]) == 2
     assert nav_res["filepath"] == "server/Product.Worker/UnitOfWork.cs"
 
-    # find_symbol returns normalized POSIX file path
     found = json.loads(await handle_find_symbol(name="UnitOfWork", repo="win-repo"))
     assert found["symbols"][0]["file"] == "server/Product.Worker/UnitOfWork.cs"
 
-    # GitLab ssh:// URL and Windows rel_path permalink normalization
     gl_ssh = "ssh://git@gitlab.company.internal:2222/group/project.git"
     assert detect_git_provider(gl_ssh, explicit_provider="github") == "gitlab"
     permalink = format_git_permalink(
-        gl_ssh,
-        "a1b2c3d4",
-        "server\\Product.Worker\\UnitOfWork.cs",
-        108,
-        131,
-        provider="github",
+        gl_ssh, "a1b2c3d4", "server\\Product.Worker\\UnitOfWork.cs", 108, 131, provider="github"
     )
     assert permalink == "https://gitlab.company.internal/group/project/-/blob/a1b2c3d4/server/Product.Worker/UnitOfWork.cs#L108-131"
     assert "\\" not in permalink
 
 
-# ---------------------------------------------------------------------------
 # Finding 8 & 9 (P3): Search Mode Aliases ('keyword', 'bm25') & Natural-Language FTS
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_findings_8_and_9_search_mode_aliases_and_or_tsquery():
-    from app.services.search import normalize_search_mode
-    from app.services.vector_store.pgvector_store import _build_or_tsquery, PgVectorStore
     from app.mcp.handlers.search_handlers import handle_search_code
+    from app.services.search import normalize_search_mode
+    from app.services.vector_store.pgvector_store import PgVectorStore, _build_or_tsquery
 
     assert normalize_search_mode("keyword") == "lexical"
     assert normalize_search_mode("bm25") == "lexical"
@@ -396,7 +348,6 @@ async def test_findings_8_and_9_search_mode_aliases_and_or_tsquery():
     or_query = _build_or_tsquery("how does the worker decide that a record needs action")
     assert or_query == "worker | decide | record | needs | action"
 
-    # Verify PgVectorStore accepts mode='keyword' without raising ValueError
     mock_engine = MagicMock()
     mock_conn = MagicMock()
     mock_engine.connect.return_value.__enter__.return_value = mock_conn
@@ -417,21 +368,14 @@ async def test_findings_8_and_9_search_mode_aliases_and_or_tsquery():
         assert mock_search.call_args.kwargs["search_mode"] == "lexical"
 
 
-# ---------------------------------------------------------------------------
 # Finding 10 (P3): get_architecture hub_symbols ranking & noise filtering
-# ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_finding_10_get_architecture_hub_symbols_excludes_boilerplate(isolated_db):
     from app.mcp.handlers.architecture_handlers import handle_get_architecture
 
     with get_db_connection() as conn:
-        conn.execute(
-            "INSERT INTO indexed_files (filepath, repo, doc_type, language, hash) VALUES ('arch-repo://server\\Engine.cs', 'arch-repo', 'code', 'csharp', 'h1')"
-        )
-        conn.execute(
-            "INSERT INTO indexed_files (filepath, repo, doc_type, language, hash) VALUES ('arch-repo://web\\App.tsx', 'arch-repo', 'code', 'typescript', 'h2')"
-        )
-        # Noisy symbols (start x3, constructor)
+        conn.execute("INSERT INTO indexed_files (filepath, repo, doc_type, language, hash) VALUES ('arch-repo://server\\Engine.cs', 'arch-repo', 'code', 'csharp', 'h1')")
+        conn.execute("INSERT INTO indexed_files (filepath, repo, doc_type, language, hash) VALUES ('arch-repo://web\\App.tsx', 'arch-repo', 'code', 'typescript', 'h2')")
         for idx in range(3):
             conn.execute(
                 """INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language)
@@ -442,7 +386,6 @@ async def test_finding_10_get_architecture_hub_symbols_excludes_boilerplate(isol
             """INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language)
                VALUES ('arch-repo', 'arch-repo://web\\App.tsx', 'constructor', 'App.constructor', 'method', 40, 50, 'constructor()', 'typescript')"""
         )
-        # Meaningful hub symbols
         cur1 = conn.execute(
             """INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language)
                VALUES ('arch-repo', 'arch-repo://server\\Engine.cs', 'Engine', 'Engine', 'class', 1, 100, 'public class Engine', 'csharp')"""
@@ -475,25 +418,20 @@ async def test_finding_10_get_architecture_hub_symbols_excludes_boilerplate(isol
     assert arch["api_surface"]["estimated_routes"] >= 1
 
 
-# ---------------------------------------------------------------------------
 # Finding 11, 12, 13 (P3): Tool List, Effective Sparse Model, and MCP Server Version
-# ---------------------------------------------------------------------------
 def test_findings_11_12_13_version_sparse_model_and_readme_tools(monkeypatch):
-    from app.mcp.mcp_server import mcp_server, MCP_SERVER_VERSION
-    from app.services.embeddings import get_embedding_config
     import main
+    from app.mcp.mcp_server import MCP_SERVER_VERSION, mcp_server
+    from app.services.embeddings import get_embedding_config
 
-    # Finding 13: MCP serverInfo.version matches main.py app.version
     assert mcp_server._mcp_server.version == MCP_SERVER_VERSION
     assert MCP_SERVER_VERSION == main.app.version
 
-    # Finding 12: When VECTOR_STORE_PROVIDER=pgvector, sparse_model reports PostgreSQL FTS
     monkeypatch.setenv("VECTOR_STORE_PROVIDER", "pgvector")
     cfg = get_embedding_config()
     assert "PostgreSQL Full-Text Search" in cfg["sparse_model"]
     assert "PostgreSQL Full-Text Search" in cfg["effective_sparse_model"]
 
-    # Finding 11: README.md lists all 19 registered MCP tools including grep_code, diagnose_issue, get_recent_changes
     readme_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "README.md")
     with open(readme_path, "r", encoding="utf-8") as f:
         readme_text = f.read()
