@@ -204,15 +204,29 @@ def _sync_local_paths_internal():
             if all_relationships:
                 # Map symbol (repo, filepath, name) to inserted_id
                 sym_map = {}
+                syms_by_file = {}
                 for s in all_symbols:
                     if "inserted_id" in s:
                         sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
                         if s.get("full_symbol"):
                             sym_map[(s["repo"], s["filepath"], s["full_symbol"])] = s["inserted_id"]
+                        syms_by_file.setdefault((s["repo"], s["filepath"]), []).append(s)
 
                 rel_tuples = []
                 for r in all_relationships:
-                    src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
+                    src_id = None
+                    r_line = r.get("line_number")
+                    if r_line is not None:
+                        candidates = [
+                            s for s in syms_by_file.get((r["repo"], r["source_filepath"]), [])
+                            if (s.get("start_line") or 0) <= r_line <= (s.get("end_line") or 0)
+                            and (s.get("name") == r["source_symbol"] or s.get("full_symbol") == r["source_symbol"])
+                        ]
+                        if candidates:
+                            candidates.sort(key=lambda s: (s.get("end_line") or 0) - (s.get("start_line") or 0))
+                            src_id = candidates[0].get("inserted_id")
+                    if src_id is None:
+                        src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
                     rel_tuples.append((
                         r["repo"],
                         src_id,

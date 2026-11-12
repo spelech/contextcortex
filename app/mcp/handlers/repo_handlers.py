@@ -199,16 +199,34 @@ async def handle_catalog_summary() -> str:
             git_repos = conn.execute("SELECT name, url, branch, commit_sha, status, last_synced FROM git_repositories").fetchall()
             files = conn.execute("SELECT filepath, repo, doc_type, language FROM indexed_files").fetchall()
             symbols_count = conn.execute("SELECT count(*) FROM ast_symbols").fetchone()[0]
+            try:
+                sym_by_repo_rows = conn.execute("SELECT repo, count(*) as cnt FROM ast_symbols GROUP BY repo").fetchall()
+                sym_by_repo = {r["repo"]: r["cnt"] for r in sym_by_repo_rows}
+            except Exception:
+                sym_by_repo = {}
+
+        repo_file_counts: Dict[str, int] = {}
+        repo_lang_counts: Dict[str, Dict[str, int]] = {}
+        for f in files:
+            r_name = f["repo"] or "unknown"
+            lang = f["language"] or "text"
+            repo_file_counts[r_name] = repo_file_counts.get(r_name, 0) + 1
+            lang_map = repo_lang_counts.setdefault(r_name, {})
+            lang_map[lang] = lang_map.get(lang, 0) + 1
 
         repos_data = []
         for gr in git_repos:
+            r_name = gr["name"]
             repos_data.append({
-                "name": gr["name"],
+                "name": r_name,
                 "url": gr["url"],
                 "branch": gr["branch"],
                 "commit_sha": gr["commit_sha"],
                 "status": gr["status"],
                 "last_synced": gr["last_synced"],
+                "files": repo_file_counts.get(r_name, 0),
+                "symbols": sym_by_repo.get(r_name, 0),
+                "languages": repo_lang_counts.get(r_name, {}),
             })
 
         files_data = []
@@ -245,7 +263,73 @@ def handle_search_infrastructure_docs(
     return json.dumps({
         "prompt": "search_infrastructure_docs",
         "topic": topic,
-        "instructions": f"Perform a search using the search_docs tool for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions.",
+        "recommended_tools": ["search_docs", "manage_adr", "read_file", "grep_code"],
+        "instructions": (
+            f"1. Call search_docs(query='{topic}', search_mode='hybrid') to locate relevant architecture notes, runbooks, and container configs.\n"
+            f"2. Call manage_adr(action='search', query='{topic}') to check if any Architectural Decision Records govern '{topic}'.\n"
+            f"3. For the top matching files, call read_file(path=..., repo=..., start_line=..., end_line=...) to verify exact port mappings, environment variables, or reverse proxy routes before summarizing."
+        ),
+    })
+
+
+def handle_onboard_repository(
+    repo: Annotated[str, Field(description="Repository name to onboard and map out")]
+) -> str:
+    """Structured workflow to rapidly understand a repository's architecture, entry points, API routes, and recent activity."""
+    from app.services.auth import enforce_tool_permission, Role
+    enforce_tool_permission(Role.VIEWER)
+    return json.dumps({
+        "prompt": "onboard_repository",
+        "repo": repo,
+        "recommended_tools": ["get_architecture", "find_routes", "get_file_outline", "get_recent_changes"],
+        "instructions": (
+            f"1. Call get_architecture(repo='{repo}') to inspect language distribution, manifests, entry points, primary modules, hub symbols, and active ADRs.\n"
+            f"2. Call find_routes(repo='{repo}') to enumerate exposed HTTP/API endpoints and their handler symbols.\n"
+            f"3. For each entry point or hub symbol file, call get_file_outline(filepath=..., repo='{repo}') to map its classes and functions without reading entire files.\n"
+            f"4. Call get_recent_changes(repo='{repo}', limit=10) to review recent commits and active development areas."
+        ),
+    })
+
+
+def handle_triage_error(
+    issue_text: Annotated[str, Field(description="Stack trace, exception message, or failing HTTP route")],
+    repo: Annotated[Optional[str], Field(description="Optional target repository name")] = None
+) -> str:
+    """Forensic workflow to diagnose an error, stack trace, or failing endpoint down to root-cause lines and recent commits."""
+    from app.services.auth import enforce_tool_permission, Role
+    enforce_tool_permission(Role.VIEWER)
+    return json.dumps({
+        "prompt": "triage_error",
+        "issue_text": issue_text,
+        "repo": repo,
+        "recommended_tools": ["diagnose_issue", "trace_path", "read_file", "get_recent_changes"],
+        "instructions": (
+            f"1. Call diagnose_issue(issue_text={json.dumps(issue_text)}, repo={json.dumps(repo)}) to resolve stack frames, error string literals, matching routes, and semantic candidates.\n"
+            f"2. For the primary resolved symbol, call trace_path(symbol=..., repo={json.dumps(repo)}, direction='both', depth=2) to inspect upstream callers and downstream callees.\n"
+            f"3. Call read_file(path=..., repo=..., start_line=..., end_line=...) around the suspect lines to inspect error handling and state mutations.\n"
+            f"4. Call get_recent_changes(repo=..., filepath=...) on the suspect file to check for recent regressions."
+        ),
+    })
+
+
+def handle_investigate_change_impact(
+    symbol: Annotated[str, Field(description="Function, method, or class name being modified")],
+    repo: Annotated[Optional[str], Field(description="Optional repository name")] = None
+) -> str:
+    """Blast-radius workflow to identify all internal callers, cross-repo API consumers, and tests affected by changing a symbol."""
+    from app.services.auth import enforce_tool_permission, Role
+    enforce_tool_permission(Role.VIEWER)
+    return json.dumps({
+        "prompt": "investigate_change_impact",
+        "symbol": symbol,
+        "repo": repo,
+        "recommended_tools": ["find_symbol", "trace_path", "find_api_callers", "grep_code"],
+        "instructions": (
+            f"1. Call find_symbol(name='{symbol}', repo={json.dumps(repo)}, exact=True) to locate the symbol's exact file and line range.\n"
+            f"2. Call trace_path(symbol='{symbol}', repo={json.dumps(repo)}, direction='callers', depth=3) to map all direct and transitive callers.\n"
+            f"3. If the symbol handles or invokes an API route, call find_api_callers(path=...) to discover cross-repository client callers.\n"
+            f"4. Call grep_code(pattern='{symbol}', repo={json.dumps(repo)}) to catch dynamic references, configuration bindings, and unit tests."
+        ),
     })
 
 

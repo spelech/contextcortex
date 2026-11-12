@@ -333,6 +333,54 @@ def _normalize_stored_paths(engine: Engine) -> None:
         logger.debug(f"Path normalization check skipped: {e}")
 
 
+def _deduplicate_ast_and_routes(engine: Engine) -> None:
+    """Purges duplicate rows in ast_symbols, ast_relationships, api_routes, and api_client_calls caused by prior re-indexing."""
+    try:
+        with engine.connect() as conn:
+            dedup_queries = [
+                """
+                DELETE FROM ast_symbols
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM ast_symbols
+                    GROUP BY COALESCE(repo, ''), COALESCE(filepath, ''), COALESCE(name, ''), COALESCE(full_symbol, ''), COALESCE(kind, ''), COALESCE(start_line, 0), COALESCE(end_line, 0)
+                )
+                """,
+                """
+                DELETE FROM ast_relationships
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM ast_relationships
+                    GROUP BY COALESCE(repo, ''), COALESCE(source_filepath, ''), COALESCE(source_symbol, ''), COALESCE(target_symbol, ''), COALESCE(relationship_type, ''), COALESCE(line_number, 0)
+                )
+                """,
+                """
+                DELETE FROM api_routes
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM api_routes
+                    GROUP BY COALESCE(repo, ''), COALESCE(filepath, ''), COALESCE(framework, ''), COALESCE(http_method, ''), COALESCE(path_pattern, ''), COALESCE(handler_symbol, ''), COALESCE(start_line, 0)
+                )
+                """,
+                """
+                DELETE FROM api_client_calls
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM api_client_calls
+                    GROUP BY COALESCE(repo, ''), COALESCE(filepath, ''), COALESCE(http_method, ''), COALESCE(url_pattern, ''), COALESCE(caller_symbol, ''), COALESCE(line_number, 0)
+                )
+                """,
+            ]
+            for q in dedup_queries:
+                try:
+                    conn.execute(text(q))
+                except Exception:
+                    pass
+            conn.commit()
+    except Exception as e:
+        logger.debug(f"Deduplication check skipped: {e}")
+
+
 def init_db(vault_path: str = "/docs", engine: Optional[Engine] = None) -> Engine:
     """
     Initializes database schema and default seeds.
@@ -361,6 +409,7 @@ def init_db(vault_path: str = "/docs", engine: Optional[Engine] = None) -> Engin
         logger.debug(f"Column migration check: {me}")
 
     _normalize_stored_paths(eng)
+    _deduplicate_ast_and_routes(eng)
 
     # Seed default data
     _seed_defaults(eng, vault_path=vault_path)

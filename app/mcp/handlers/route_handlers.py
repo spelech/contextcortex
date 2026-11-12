@@ -50,8 +50,17 @@ async def handle_find_routes(
             rows = conn.execute(sql, params).fetchall()
 
         routes = []
+        seen_routes = set()
         for r in rows:
             rel_path = (r["filepath"].split("://", 1)[1] if "://" in r["filepath"] else r["filepath"]).replace("\\", "/")
+            path_parts = [p.lower() for p in rel_path.strip("/").split("/") if p]
+            bname = path_parts[-1] if path_parts else ""
+            if any(p in ("tests", "test", "__tests__") for p in path_parts[:-1]) or bname.startswith("test_") or bname.endswith(("_test.py", ".test.ts", ".spec.ts", "tests.cs")):
+                continue
+            dedup_key = (r["repo"], r["http_method"], r["path_pattern"], rel_path, r["start_line"])
+            if dedup_key in seen_routes:
+                continue
+            seen_routes.add(dedup_key)
             permalink = format_git_permalink(r["git_url"], r["commit_sha"], rel_path, r["start_line"], r["end_line"], provider=r["provider"])
             routes.append({
                 "repo": r["repo"],

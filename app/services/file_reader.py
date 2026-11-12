@@ -512,6 +512,13 @@ class FileReaderService:
 
         disk_files: List[Tuple[str, str, str]] = []  # (abs_path, repo_name, rel_path)
 
+        _ignored_grep_dirs = frozenset({
+            ".git", ".hg", ".svn", ".venv", "venv", "env",
+            "node_modules", "vendor", "__pycache__", ".pytest_cache",
+            ".mypy_cache", ".ruff_cache", ".tox", "dist", "build",
+            "target", "bin", "obj", ".next", ".nuxt", "coverage",
+        })
+
         # 1. Monitored indexed_paths
         for ip in indexed_paths:
             r_name = ip.get("repo") or "local"
@@ -519,7 +526,8 @@ class FileReaderService:
                 continue
             root_p = os.path.abspath(ip["path"])
             if os.path.isdir(root_p):
-                for dirpath, _, filenames in os.walk(root_p):
+                for dirpath, dirnames, filenames in os.walk(root_p):
+                    dirnames[:] = [d for d in dirnames if d not in _ignored_grep_dirs]
                     for fname in filenames:
                         full_p = os.path.join(dirpath, fname)
                         rel_p = os.path.relpath(full_p, root_p).replace("\\", "/")
@@ -532,7 +540,8 @@ class FileReaderService:
             if effective_repo and r_name != effective_repo:
                 continue
             if os.path.isdir(r_dir):
-                for dirpath, _, filenames in os.walk(r_dir):
+                for dirpath, dirnames, filenames in os.walk(r_dir):
+                    dirnames[:] = [d for d in dirnames if d not in _ignored_grep_dirs]
                     if "/.git" in dirpath.replace("\\", "/") or dirpath.replace("\\", "/").endswith("/.git"):
                         continue
                     for fname in filenames:
@@ -544,7 +553,8 @@ class FileReaderService:
         if effective_repo in (None, "local_storage"):
             s_root = self.storage_root
             if os.path.isdir(s_root):
-                for dirpath, _, filenames in os.walk(s_root):
+                for dirpath, dirnames, filenames in os.walk(s_root):
+                    dirnames[:] = [d for d in dirnames if d not in _ignored_grep_dirs]
                     for fname in filenames:
                         full_p = os.path.join(dirpath, fname)
                         rel_p = os.path.relpath(full_p, s_root).replace("\\", "/")
@@ -569,10 +579,9 @@ class FileReaderService:
                 continue
             disk_scanned_keys.add((r_name, rel_p))
 
-            if self.is_binary_file(abs_p):
-                continue
-
             try:
+                if not os.path.isfile(abs_p) or self.is_binary_file(abs_p):
+                    continue
                 with open(abs_p, "r", encoding="utf-8", errors="replace") as f:
                     file_text = f.read()
             except Exception:

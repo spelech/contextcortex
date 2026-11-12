@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1193 Automated Tests** (833 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1200 Automated Tests** (840 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1160,6 +1160,15 @@ and leaves the prior indexed state intact without data loss._
 - `test_mcp_post_ping_messages_endpoint` - _Verify POST /messages with JSON-RPC ping returns immediate JSON._
 - `test_mcp_post_ping_with_session_id_bypasses_middleware` - _Verify POST /messages/?session_id=... is not intercepted by McpPingMiddleware, allowing SSE dispatch._
 - `test_health_endpoints_enhanced_metadata` - _Verify GET /health and /healthz return server metadata and protocol version._
+
+#### `tests/test_mcp_real_e2e_workflows.py` (7 tests)
+- `test_e2e_grep_code_survives_broken_venv_symlink_and_enriches_ast` - _Verifies `grep_code` does not crash on broken `.venv/lib64` symlinks and returns AST symbol metadata._
+- `test_e2e_find_routes_excludes_test_files_and_links_api_callers` - _Verifies `find_routes` extracts real FastAPI routes, ignores `/etc/shadow` in `tests/test_security.py`, and links `find_api_callers`._
+- `test_e2e_get_architecture_excludes_tests_and_anonymous_arrows` - _Verifies `get_architecture` excludes `tests`, `www/assets`, `setup_test_db`, and `anonymous` arrow functions._
+- `test_e2e_get_file_outline_resolves_guessed_subpaths_and_deduplicates` - _Verifies `get_file_outline` resolves `src/Platform.Core/Program.cs` to `Program.cs` and never returns duplicate symbols._
+- `test_e2e_startup_deduplication_cleans_duplicate_ast_and_routes` - _Verifies `init_db()` automatically purges duplicate `ast_symbols`, `ast_relationships`, and `api_routes` rows._
+- `test_e2e_trace_path_and_diagnose_issue_end_to_end` - _Verifies `trace_path` across C# classes and `diagnose_issue` on a real stack trace._
+- `test_e2e_hybrid_search_and_mcp_resources_and_prompts` - _Verifies hybrid/lexical/keyword search, MCP resources, resource templates, and all 5 workflow prompts._
 
 #### `tests/test_mcp_storage_tools.py` (7 tests)
 - `test_manage_local_file_upload_and_read`

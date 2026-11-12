@@ -192,7 +192,12 @@ def get_file_outline(repo: str, filepath: str) -> Optional[Dict[str, Any]]:
     route_by_line = {r["start_line"]: dict(r) for r in routes}
 
     formatted_symbols = []
+    seen_syms = set()
     for s in symbols:
+        dedup_key = (s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"])
+        if dedup_key in seen_syms:
+            continue
+        seen_syms.add(dedup_key)
         route_meta = route_by_handler.get(s["name"]) or route_by_line.get(s["start_line"])
         formatted_symbols.append({
             "id": s["id"],

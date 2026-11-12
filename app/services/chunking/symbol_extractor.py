@@ -197,14 +197,30 @@ def extract_symbols_and_chunks(
             c["symbol"] = None
             c["kind"] = "module"
 
-    parsed_symbols = [CodeSymbol(**s) for s in symbols]
+    dedup_symbols = []
+    seen_syms = set()
+    for s in symbols:
+        s_key = (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"])
+        if s_key not in seen_syms:
+            seen_syms.add(s_key)
+            dedup_symbols.append(s)
+
+    dedup_relationships = []
+    seen_rels = set()
+    for r in relationships:
+        r_key = (r["repo"], r["source_filepath"], r["source_symbol"], r["target_symbol"], r["relationship_type"], r["line_number"])
+        if r_key not in seen_rels:
+            seen_rels.add(r_key)
+            dedup_relationships.append(r)
+
+    parsed_symbols = [CodeSymbol(**s) for s in dedup_symbols]
     routes, client_calls = extract_api_routes_and_calls(code, filepath, repo=repo, symbols=parsed_symbols)
 
     return ExtractionResult(
         chunks=[CodeChunk(**c) for c in chunks],
         symbols=parsed_symbols,
         outline=[f"{o['name']} ({o['kind']}) lines {o['start_line']}-{o['end_line']}" for o in outline],
-        relationships=[CodeRelationship(**r) for r in relationships],
+        relationships=[CodeRelationship(**r) for r in dedup_relationships],
         api_routes=routes,
         api_client_calls=client_calls
     )

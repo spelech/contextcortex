@@ -306,10 +306,12 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
             return
 
-        # Delete old vector points & SQLite rows ONLY for modified and deleted files
+        # Delete old vector points for modified and deleted files, and clean relational rows for all files being synced/deleted
         store = vs_service.get_vector_store()
+        added_db_filepaths = [f"{repo_name}://{os.path.relpath(f, temp_dir).replace('\\', '/')}" for f in added_files]
         modified_db_filepaths = [f"{repo_name}://{os.path.relpath(f, temp_dir).replace('\\', '/')}" for f in modified_files]
-        paths_to_delete = modified_db_filepaths + deleted_filepaths
+        paths_to_delete = list(dict.fromkeys(added_db_filepaths + modified_db_filepaths + deleted_filepaths)) if not existing_files else (modified_db_filepaths + deleted_filepaths)
+        db_paths_to_clean = list(dict.fromkeys(added_db_filepaths + modified_db_filepaths + deleted_filepaths))
 
         for fpath in paths_to_delete:
             try:
@@ -317,9 +319,9 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             except Exception as qe:
                 logger.error(f"Error deleting vector for {fpath}: {qe}")
 
-        if paths_to_delete:
+        if db_paths_to_clean:
             with db_service.get_db_connection() as conn:
-                for fpath in paths_to_delete:
+                for fpath in db_paths_to_clean:
                     conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
                     conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
                     conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
@@ -451,15 +453,29 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                         total_symbols_count += len(batch_symbols)
                     if batch_relationships:
                         sym_map = {}
+                        syms_by_file = {}
                         for s in batch_symbols:
                             if "inserted_id" in s:
                                 sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
                                 if s.get("full_symbol"):
                                     sym_map[(s["repo"], s["filepath"], s["full_symbol"])] = s["inserted_id"]
+                                syms_by_file.setdefault((s["repo"], s["filepath"]), []).append(s)
 
                         rel_tuples = []
                         for r in batch_relationships:
-                            src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
+                            src_id = None
+                            r_line = r.get("line_number")
+                            if r_line is not None:
+                                candidates = [
+                                    s for s in syms_by_file.get((r["repo"], r["source_filepath"]), [])
+                                    if (s.get("start_line") or 0) <= r_line <= (s.get("end_line") or 0)
+                                    and (s.get("name") == r["source_symbol"] or s.get("full_symbol") == r["source_symbol"])
+                                ]
+                                if candidates:
+                                    candidates.sort(key=lambda s: (s.get("end_line") or 0) - (s.get("start_line") or 0))
+                                    src_id = candidates[0].get("inserted_id")
+                            if src_id is None:
+                                src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
                             rel_tuples.append((
                                 r["repo"],
                                 src_id,

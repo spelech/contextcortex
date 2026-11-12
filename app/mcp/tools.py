@@ -24,6 +24,9 @@ from app.mcp.handlers import (
     handle_index_status,
     handle_catalog_summary,
     handle_search_infrastructure_docs,
+    handle_onboard_repository,
+    handle_triage_error,
+    handle_investigate_change_impact,
     handle_get_recent_changes,
     handle_get_architecture,
     handle_manage_adr,
@@ -36,6 +39,12 @@ from app.mcp.handlers import (
 )
 
 logger = logging.getLogger("contextcortex.mcp")
+
+
+async def handle_repo_architecture_resource(repo: str) -> str:
+    """Dynamic MCP resource template returning the synthesized architecture overview for a repository."""
+    return await handle_get_architecture(repo=repo)
+
 
 def register_mcp_tools_and_resources(server=None):
     """Register all 19 tools, resources, and prompts onto the FastMCP server instance."""
@@ -166,8 +175,23 @@ def register_mcp_tools_and_resources(server=None):
             "knowledge://catalog/summary",
             name="knowledge_catalog_summary",
             description="Catalog of indexed repositories, documentation files, and AST symbol distributions.",
-            mime_type="text/markdown"
+            mime_type="application/json"
         )(handle_catalog_summary)
+
+    try:
+        existing_templates = {str(t.uri_template) for t in server._resource_manager.list_templates()}
+    except Exception:
+        existing_templates = set()
+    if "knowledge://repo/{repo}/architecture" not in existing_templates:
+        try:
+            server.resource(
+                "knowledge://repo/{repo}/architecture",
+                name="repo_architecture_overview",
+                description="Synthesized architecture overview (languages, manifests, entry points, modules, hub symbols, routes, ADRs) for a specific repository.",
+                mime_type="application/json"
+            )(handle_repo_architecture_resource)
+        except Exception:
+            pass
 
     existing_prompts = {p.name for p in server._prompt_manager.list_prompts()}
     if "search_infrastructure_docs" not in existing_prompts:
@@ -181,6 +205,24 @@ def register_mcp_tools_and_resources(server=None):
             name="find_implementation_symbol",
             description="Workflow to locate functions, classes, and logic across registered codebases."
         )(handle_find_implementation_symbol)
+
+    if "onboard_repository" not in existing_prompts:
+        server.prompt(
+            name="onboard_repository",
+            description="Structured workflow to rapidly understand a repository's architecture, entry points, API routes, and recent activity."
+        )(handle_onboard_repository)
+
+    if "triage_error" not in existing_prompts:
+        server.prompt(
+            name="triage_error",
+            description="Forensic workflow to diagnose an error, stack trace, or failing endpoint down to root-cause lines and recent commits."
+        )(handle_triage_error)
+
+    if "investigate_change_impact" not in existing_prompts:
+        server.prompt(
+            name="investigate_change_impact",
+            description="Blast-radius workflow to identify all internal callers, cross-repo API consumers, and tests affected by changing a symbol."
+        )(handle_investigate_change_impact)
 
     return server
 
