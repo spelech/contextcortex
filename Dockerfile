@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 ARG FRONTEND_IMAGE=node:22-alpine
-ARG PYTHON_IMAGE=python:3.11-slim
+ARG PYTHON_IMAGE=python:3.12-slim
 
 # Stage 1: Build Frontend
 FROM ${FRONTEND_IMAGE} AS frontend-builder

@@ -132,6 +132,7 @@ ast_symbols = Table(
     Column("language", Text, nullable=True),
     Index("idx_ast_symbols_name", "name"),
     Index("idx_ast_symbols_repo", "repo"),
+    Index("idx_ast_symbols_filepath", "filepath"),
 )
 
 # 8. AST Relationships
@@ -149,6 +150,8 @@ ast_relationships = Table(
     Index("idx_ast_rel_repo_source", "repo", "source_symbol"),
     Index("idx_ast_rel_repo_target", "repo", "target_symbol"),
     Index("idx_ast_rel_type", "relationship_type"),
+    Index("idx_ast_rel_source_symbol_id", "source_symbol_id"),
+    Index("idx_ast_rel_source_filepath", "source_filepath"),
 )
 
 # 9. API Routes
@@ -167,6 +170,7 @@ api_routes = Table(
     Column("created_at", DateTime, server_default=func.current_timestamp()),
     Index("idx_api_routes_repo_path", "repo", "path_pattern"),
     Index("idx_api_routes_method", "http_method"),
+    Index("idx_api_routes_filepath", "filepath"),
 )
 
 # 10. API Client Calls
@@ -182,6 +186,7 @@ api_client_calls = Table(
     Column("line_number", Integer, nullable=False),
     Column("created_at", DateTime, server_default=func.current_timestamp()),
     Index("idx_api_calls_url", "url_pattern"),
+    Index("idx_api_calls_filepath", "filepath"),
 )
 
 # 11. System Metadata

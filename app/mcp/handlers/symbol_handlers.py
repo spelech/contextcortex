@@ -179,6 +179,15 @@ async def handle_get_file_outline(
                     ).fetchall()
 
             rows = _query_outline_rows(clean_fp)
+            if rows:
+                distinct_files = sorted({
+                    _strip_repo_prefix(r["filepath"]) for r in rows if r["filepath"]
+                })
+                if len(distinct_files) > 1:
+                    chosen_file = clean_fp if clean_fp in distinct_files else distinct_files[0]
+                    rows = [r for r in rows if _strip_repo_prefix(r["filepath"]) == chosen_file]
+                    matched_file = chosen_file
+                    candidates = distinct_files
 
             # If an agent passed a prefixed path like 'src/McpRouter.Server/Program.cs' when the repo root is 'Program.cs',
             # progressively try shorter suffixes down to basename, resolving uniquely or surfacing candidates.

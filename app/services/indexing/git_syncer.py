@@ -308,8 +308,14 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
         # Delete old vector points for modified and deleted files, and clean relational rows for all files being synced/deleted
         store = vs_service.get_vector_store()
-        added_db_filepaths = [f"{repo_name}://{os.path.relpath(f, temp_dir).replace('\\', '/')}" for f in added_files]
-        modified_db_filepaths = [f"{repo_name}://{os.path.relpath(f, temp_dir).replace('\\', '/')}" for f in modified_files]
+        added_db_filepaths = [
+            f"{repo_name}://" + os.path.relpath(f, temp_dir).replace("\\", "/")
+            for f in added_files
+        ]
+        modified_db_filepaths = [
+            f"{repo_name}://" + os.path.relpath(f, temp_dir).replace("\\", "/")
+            for f in modified_files
+        ]
         paths_to_delete = modified_db_filepaths + deleted_filepaths
         db_paths_to_clean = list(dict.fromkeys(added_db_filepaths + modified_db_filepaths + deleted_filepaths))
 
