@@ -3,6 +3,7 @@ import app.services.vector_store as vs_service
 import app.services.indexing.state as idx_state
 import app.services.indexing.processor as proc_service
 from app.services.memory_utils import trim_memory
+from app.services.text_decoding import read_source_text
 import os
 import json
 import logging
@@ -117,8 +118,7 @@ def _sync_local_paths_internal():
             doc_type = "code" if is_code_file(filepath) else "doc"
             lang = detect_language(filepath)
 
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
+            content = read_source_text(filepath)
 
             points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
                 filepath=filepath,

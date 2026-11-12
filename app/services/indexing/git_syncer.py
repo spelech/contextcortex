@@ -27,6 +27,7 @@ import app.services.indexing.local_syncer as local_syncer
 import app.services.indexing.processor as proc_service
 import app.services.indexing.state as idx_state
 import app.services.vector_store as vs_service
+from app.services.text_decoding import read_source_text
 from app.services.chunking import *
 from app.services.database import *
 from app.services.embeddings import *
@@ -276,8 +277,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             db_filepath = f"{repo_name}://{rel_path}"
 
             try:
-                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
+                content = read_source_text(full_path)
                 file_hash = proc_service.compute_text_hash(content)
 
                 points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(

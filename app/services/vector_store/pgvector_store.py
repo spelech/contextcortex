@@ -12,6 +12,7 @@ from sqlalchemy import Engine, text
 
 from app.services.database.engine import get_db_engine, is_postgres
 from app.services.embeddings import get_dense_dim, get_dense_embedding
+from app.services.text_decoding import strip_nul
 from app.services.vector_store.base import VectorDocument, VectorSearchResult, VectorStore
 from app.services.vector_store.pgvector_queries import (
     _FTS_STOPWORDS,
@@ -25,6 +26,15 @@ from app.services.vector_store.pgvector_queries import (
 )
 
 logger = logging.getLogger("contextcortex.vector_store.pgvector")
+
+_MAX_LOGGED_ERROR_CHARS = 300
+
+
+def _short_error(err: Exception) -> str:
+    """First line of a database error, bounded: SQLAlchemy errors embed the full SQL and all parameters (chunk text)."""
+    lines = str(getattr(err, "orig", None) or err).splitlines()
+    first_line = lines[0] if lines else type(err).__name__
+    return first_line[:_MAX_LOGGED_ERROR_CHARS]
 
 
 class PgVectorStore(VectorStore):
@@ -222,7 +232,10 @@ class PgVectorStore(VectorStore):
                 payload["content"] = text_content
 
             embedding_str = (json.dumps(dense_vec) if is_sqlite else str(dense_vec)) if dense_vec is not None else None
-            records.append({
+            # PostgreSQL rejects NUL in text and jsonb: sanitize the payload before json.dumps
+            # (json.dumps writes NUL as \u0000) and every other string column.
+            payload = strip_nul(payload)
+            records.append(strip_nul({
                 "id": doc_id,
                 "collection_name": self.collection_name,
                 "repo": repo,
@@ -243,7 +256,7 @@ class PgVectorStore(VectorStore):
                 "content": text_content,
                 "embedding": embedding_str,
                 "payload": json.dumps(payload),
-            })
+            }))
 
         upsert_sql = text(f"""
         INSERT INTO {self.table_name} (
@@ -266,15 +279,48 @@ class PgVectorStore(VectorStore):
         """)
 
         effective_batch_size = max(1, batch_size)
+        failed_ids: List[str] = []
         try:
             with self.engine.connect() as conn:
                 for i in range(0, len(records), effective_batch_size):
-                    conn.execute(upsert_sql, records[i : i + effective_batch_size])
-                conn.commit()
-            return True
+                    batch = records[i : i + effective_batch_size]
+                    try:
+                        conn.execute(upsert_sql, batch)
+                        conn.commit()
+                    except Exception as batch_err:
+                        # One bad record must not fail the batch, the file set, or the repository:
+                        # retry the records one by one and skip only the ones that fail.
+                        conn.rollback()
+                        logger.warning(
+                            f"Batch upsert into '{self.table_name}' failed ({_short_error(batch_err)}); "
+                            f"retrying {len(batch)} records one by one."
+                        )
+                        failed_ids.extend(self._upsert_records_individually(conn, upsert_sql, batch))
         except Exception as e:
             logger.error(f"Error upserting documents into PgVectorStore table '{self.table_name}': {e}", exc_info=True)
             return False
+
+        if failed_ids:
+            logger.error(
+                f"Skipped {len(failed_ids)} of {len(records)} documents that PgVectorStore table '{self.table_name}' "
+                f"rejected (first ids: {[str(i)[:80] for i in failed_ids[:5]]})."
+            )
+        return len(failed_ids) < len(records)
+
+    def _upsert_records_individually(self, conn, upsert_sql, batch: List[Dict[str, Any]]) -> List[str]:
+        """Upserts records one at a time after a failed batch; returns the ids of the records that still fail."""
+        failed: List[str] = []
+        for record in batch:
+            try:
+                conn.execute(upsert_sql, record)
+                conn.commit()
+            except Exception as record_err:
+                conn.rollback()
+                failed.append(record["id"])
+                logger.warning(
+                    f"PgVectorStore rejected document {str(record['id'])[:80]} ({record.get('path')}): {_short_error(record_err)}"
+                )
+        return failed
 
     def delete_by_path(self, filepath: str) -> bool:
         """Purges vectors associated with a specific file path."""
