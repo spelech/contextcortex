@@ -419,3 +419,81 @@ async def test_e2e_hybrid_search_and_mcp_resources_and_prompts(real_e2e_env):
         "investigate_change_impact", {"symbol": "validate_token", "repo": "platform-core"}
     )
     assert "trace_path" in p_impact.messages[0].content.text
+
+
+@pytest.mark.asyncio
+async def test_e2e_real_git_repo_clone_and_resync_without_mocks(real_e2e_env, tmp_path):
+    """
+    Real end-to-end git repository sync using an actual local git repository (`git init` + commits),
+    `sync_single_git_repo` (un-mocked git clone + delta + AST + vector indexing), followed by a second
+    commit and re-sync, verifying zero duplicate symbols/routes/relationships and accurate `get_recent_changes`.
+    """
+    import subprocess
+    from app.services.indexing.git_syncer import sync_single_git_repo
+
+    origin_repo = tmp_path / "real_origin_repo"
+    origin_repo.mkdir(parents=True)
+    subprocess.run(["git", "init", "-b", "main"], cwd=str(origin_repo), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Real E2E"], cwd=str(origin_repo), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "e2e@example.com"], cwd=str(origin_repo), check=True, capture_output=True)
+
+    (origin_repo / "service.py").write_text(
+        "from fastapi import FastAPI\n"
+        "app = FastAPI()\n\n"
+        "@app.get('/api/orders')\n"
+        "def list_orders():\n"
+        "    return fetch_orders_from_db()\n\n"
+        "def fetch_orders_from_db():\n"
+        "    return []\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=str(origin_repo), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "feat: initial orders service"], cwd=str(origin_repo), check=True, capture_output=True)
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO git_repositories (name, url, branch, provider, status, keep_shallow, retain_commits_count)
+               VALUES ('orders-svc', ?, 'main', 'generic', 'pending', 1, 10)""",
+            (str(origin_repo),),
+        )
+        conn.commit()
+        repo_id = cur.lastrowid
+
+    # 1st real git sync (clones real git repo on disk)
+    sync_single_git_repo(repo_id)
+
+    with get_db_connection() as conn:
+        row = conn.execute("SELECT status, commit_sha, last_error FROM git_repositories WHERE id = ?", (repo_id,)).fetchone()
+        assert row["status"] == "synced", f"Expected synced, got {row['status']} ({row['last_error']})"
+        sym_count_1 = conn.execute("SELECT count(*) FROM ast_symbols WHERE repo = 'orders-svc'").fetchone()[0]
+        route_count_1 = conn.execute("SELECT count(*) FROM api_routes WHERE repo = 'orders-svc'").fetchone()[0]
+        assert sym_count_1 == 2
+        assert route_count_1 == 1
+
+    # Make a 2nd commit modifying service.py and force a full re-sync
+    (origin_repo / "service.py").write_text(
+        "from fastapi import FastAPI\n"
+        "app = FastAPI()\n\n"
+        "@app.get('/api/orders')\n"
+        "def list_orders():\n"
+        "    return fetch_orders_from_db()\n\n"
+        "def fetch_orders_from_db():\n"
+        "    return ['order-1']\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "."], cwd=str(origin_repo), check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "fix: return default order"], cwd=str(origin_repo), check=True, capture_output=True)
+
+    sync_single_git_repo(repo_id)
+
+    with get_db_connection() as conn:
+        sym_count_2 = conn.execute("SELECT count(*) FROM ast_symbols WHERE repo = 'orders-svc'").fetchone()[0]
+        route_count_2 = conn.execute("SELECT count(*) FROM api_routes WHERE repo = 'orders-svc'").fetchone()[0]
+        assert sym_count_2 == 2
+        assert route_count_2 == 1
+
+    recent = json.loads(await handle_get_recent_changes(repo="orders-svc", symbol="list_orders"))
+    assert len(recent["commits"]) == 2
+    assert "fix: return default order" in recent["commits"][0]["message"]
+
