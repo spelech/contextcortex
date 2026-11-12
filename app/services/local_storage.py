@@ -14,6 +14,7 @@ from app.services.indexing.git_delta_scanner import persist_sync_batch
 from app.services.indexing.processor import MAX_FILE_SIZE_BYTES, process_file_content
 from app.services.indexing.state import trigger_list_changed_notification
 from app.services.pdf_extractor import MAX_PDF_SIZE_BYTES, extract_pdf_pages
+from app.services.text_decoding import read_source_text
 
 logger = logging.getLogger("contextcortex.storage")
 
@@ -153,8 +154,7 @@ class LocalStorageService:
             doc_type = "pdf"
             pdf_errors = pdf_res.errors
         else:
-            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
+            content = read_source_text(abs_path)
             doc_type = "doc" if lower_abs.endswith(DOC_TEXT_EXTENSIONS) else "code"
 
         points, ast_symbols, summary_tuple, ast_rel, api_routes, api_calls = process_file_content(
@@ -395,8 +395,7 @@ class LocalStorageService:
             return res
 
         try:
-            with open(target_path, "r", encoding="utf-8", errors="replace") as f:
-                text = f.read()
+            text = read_source_text(target_path)
         except Exception:
             text = ""
 
