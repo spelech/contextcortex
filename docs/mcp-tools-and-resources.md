@@ -82,7 +82,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 ### HTTP Route and Client Discovery Tools
 
 - **`find_routes`**: Searches declared backend endpoints (`api_routes`) by `query`, `method`, and `repo` while excluding unit test fixtures. Clamps `limit` to `1..200` (default `50`) with `offset`.
-- **`find_api_callers`**: Matches frontend and service HTTP client calls (`api_client_calls`) against `path` (including `{id}` / `:id` parameter templates), `method`, and `repo`. Client calls are recognized for `fetch`, `axios`, Python `requests`/`httpx`, Go `http`, C# `HttpClient`, and JS/TS request helpers whose name suggests HTTP (for example ``getJson(`/api/items/${id}`)`` or `apiClient.post('/api/items', ...)`); the method comes from the helper name or a `method:` option. Clamps `limit` to `1..200` (default `50`) with `offset`.
+- **`find_api_callers`**: Matches frontend and service HTTP client calls (`api_client_calls`) against `path` (including `{id}` / `:id` parameter templates), `method`, and `repo`. Client calls are recognized for `fetch`, `axios`, Python `requests`/`httpx`, Go `http`, C# `HttpClient` (also `new HttpRequestMessage(HttpMethod.Post, url)` and a URL in a variable that an earlier line sets, for example `string url = cond ? $"api/a/{id}" : $"api/b/{id}";`; each branch is one call), and JS/TS request helpers whose name suggests HTTP (for example ``getJson(`/api/items/${id}`)`` or `apiClient.post('/api/items', ...)`); the method comes from the helper name or a `method:` option. Clamps `limit` to `1..200` (default `50`) with `offset`.
 
 ### File Inspection and Pattern Matching Tools
 

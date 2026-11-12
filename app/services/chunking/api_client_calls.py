@@ -1,8 +1,8 @@
 """
 HTTP client call-site extraction (frontend and service code) for find_api_callers and cross-repo trace_path.
 
-Recognizes fetch/axios/requests/httpx/Go http/C# HttpClient calls, and project-specific JS/TS request
-helpers (for example getJson(`/api/accounts/${id}`) or apiClient.post('/api/items', ...)).
+Recognizes fetch/axios/requests/httpx/Go http/C# HttpClient calls (also HttpRequestMessage and URL
+variables, see csharp_client_calls), and project-specific JS/TS request helpers (for example getJson(`/api/accounts/${id}`) or apiClient.post('/api/items', ...)).
 """
 
 import re
@@ -11,7 +11,9 @@ from typing import List, Optional
 from app.models.schemas import ApiClientCallRecord, CodeSymbol
 
 _JS_LANGUAGES = ("javascript", "typescript", "tsx")
-_FETCH_CALL = re.compile(r'\b(?:fetch|apiRequest|httpRequest|requestJson)\b[\s\S]*?\(\s*(["\'`]([^"\'`]+)["\'`])')
+_CS_LANGUAGES = ("c_sharp", "csharp")
+# The call itself only: `httpRequest.Headers.Add("x")` is not a request (optional generic: requestJson<T>(...)).
+_FETCH_CALL = re.compile(r'\b(?:fetch|apiRequest|httpRequest|requestJson)\s*(?:<[^<>()]*>)?\s*\(\s*(["\'`]([^"\'`]+)["\'`])')
 _AXIOS_CALL = re.compile(r'\baxios\.(get|post|put|delete|patch|options|head)\s*\(\s*(["\'`]([^"\'`]+)["\'`])', re.IGNORECASE)
 _PY_CALL = re.compile(r'\b(?:requests|httpx|client)\.(get|post|put|delete|patch|options|head)\s*\(\s*f?["\']([^"\']+)["\']', re.IGNORECASE)
 _GO_CALL = re.compile(r'\bhttp\.(Get|Post|Head)\s*\(\s*["\']([^"\']+)["\']')
@@ -84,6 +86,7 @@ def extract_client_calls(
 ) -> List[ApiClientCallRecord]:
     """Extracts HTTP client call sites line by line."""
     from app.services.chunking.api_route_extractor import find_enclosing_symbol, normalize_path_pattern
+    from app.services.chunking.csharp_client_calls import extract_csharp_client_calls
 
     calls: List[ApiClientCallRecord] = []
 
@@ -120,6 +123,11 @@ def extract_client_calls(
             raw = m_cs_client.group(1)
             method = "GET" if "Get" in raw else "POST" if "Post" in raw else "PUT" if "Put" in raw else "DELETE" if "Delete" in raw else None
             add(method, m_cs_client.group(2), i)
+            continue
+
+        if language in _CS_LANGUAGES:
+            for method, url in extract_csharp_client_calls(line, lines, i):
+                add(method, url, i)
             continue
 
         if language in _JS_LANGUAGES:
