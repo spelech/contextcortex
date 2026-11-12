@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1172 Automated Tests** (808 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1176 Automated Tests** (812 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -952,6 +952,12 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_free_format_cobol_and_copybook_line_preservation`
 - `test_cobol_end_to_end_indexing_architecture_and_trace_path`
 - `test_local_storage_cobol_persists_language_and_relationships` - _Uploading COBOL programs via LocalStorageService persists language='cobol' and ast_relationships for trace_path & diagnose_issue._
+
+#### `tests/test_csharp_client_calls.py` (4 tests)
+- `test_url_variable_with_conditional_gives_both_routes`
+- `test_interpolated_literal_and_custom_client_name`
+- `test_variables_without_a_url_are_ignored`
+- `test_csharp_rules_do_not_apply_to_other_languages`
 
 #### `tests/test_database_engine.py` (11 tests)
 - `test_schema_metadata_contains_all_tables`
