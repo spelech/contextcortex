@@ -12,6 +12,7 @@ from app.services.file_path_resolver import (
     validate_path_security,
 )
 from app.services.local_storage import get_default_storage_path
+from app.services.text_decoding import is_binary_file, read_source_text
 
 logger = logging.getLogger("contextcortex.file_reader")
 
@@ -55,10 +56,8 @@ class FileReaderService:
         )
 
     def is_binary_file(self, abs_path: str) -> bool:
-        """Detects binary files by checking for null bytes in the initial sample."""
-        with open(abs_path, "rb") as f:
-            chunk = f.read(8192)
-            return b"\x00" in chunk
+        """Detects binary files: NUL bytes in the initial sample that are not UTF-16/UTF-32 text."""
+        return is_binary_file(abs_path)
 
     def _slice_lines(
         self,
@@ -229,8 +228,7 @@ class FileReaderService:
             raise ValueError(f"Cannot read binary file: {path}")
 
         size_bytes = os.path.getsize(abs_path)
-        with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
-            text = f.read()
+        text = read_source_text(abs_path)
 
         if not text:
             return {
