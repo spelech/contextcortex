@@ -44,13 +44,34 @@ def truncate_grep_line(text: Optional[str], max_chars: int = _MAX_GREP_LINE_CHAR
     return text[:keep] + _LINE_TRUNCATION_SUFFIX
 
 
+def _context_line_numbers(match: Dict[str, Any], raw_ctx: List[Dict[str, Any]]) -> List[Any]:
+    """
+    Line numbers for the context block. Numbers that do not go up line by line (for example the same number on every
+    line) are replaced: the context line with the match text gets the match line, and the other lines count from it.
+    """
+    numbers = [item.get("line") for item in raw_ctx]
+    if all(isinstance(n, int) for n in numbers) and all(b > a for a, b in zip(numbers, numbers[1:])):
+        return numbers
+    match_line = match.get("line")
+    if not isinstance(match_line, int):
+        return numbers
+    texts = [item.get("text") for item in raw_ctx]
+    anchor = next((i for i, (n, t) in enumerate(zip(numbers, texts)) if n == match_line and t == match.get("match_text")), None)
+    if anchor is None:
+        anchor = next((i for i, t in enumerate(texts) if t == match.get("match_text")), None)
+    if anchor is None:
+        return numbers
+    return [match_line - anchor + i for i in range(len(raw_ctx))]
+
+
 def _sanitize_match_lines(match: Dict[str, Any]) -> Dict[str, Any]:
     sanitized = dict(match)
     sanitized["match_text"] = truncate_grep_line(sanitized.get("match_text"))
-    raw_ctx = sanitized.get("context") or []
+    raw_ctx = [item for item in (match.get("context") or []) if isinstance(item, dict)]
+    numbers = _context_line_numbers(match, raw_ctx)
     sanitized["context"] = [
-        {"line": item.get("line"), "text": truncate_grep_line(item.get("text"))}
-        for item in raw_ctx
+        {"line": line_no, "text": truncate_grep_line(item.get("text"))}
+        for line_no, item in zip(numbers, raw_ctx)
     ]
     return sanitized
 

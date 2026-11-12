@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1224 Automated Tests** (860 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1231 Automated Tests** (867 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1130,6 +1130,15 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_grep_code_vector_store_fallback_and_deduplication` - _Verifies grep_code works for ephemeral/vector-backed files and deduplicates overlapping chunks._
 - `test_mcp_grep_code_registration_and_execution`
 - `test_api_search_grep_endpoint`
+
+#### `tests/test_grep_code_context_lines.py` (7 tests)
+- `test_indexed_path_regex_context_lines_are_consecutive`
+- `test_chunk_path_context_lines_have_file_line_numbers`
+- `test_chunk_path_without_file_chunks_gives_consecutive_numbers`
+- `test_chunk_context_continues_past_the_chunk_edge`
+- `test_sanitizer_renumbers_context_lines_that_share_one_number`
+- `test_sanitizer_keeps_correct_context_lines`
+- `test_frontmatter_line_offset`
 
 #### `tests/test_grep_code_filters.py` (6 tests)
 - `test_path_filter`
