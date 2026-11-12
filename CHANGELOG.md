@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.23.1](https://github.com/spelech/contextcortex/compare/v2.23.0...v2.23.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **api-callers:** resolve C# request URLs built in variables ([#124](https://github.com/spelech/contextcortex/issues/124)) ([3115d83](https://github.com/spelech/contextcortex/commit/3115d8323536f547fc7395dc76bc0ce788ac543c))
+* **file-reads:** read UTF-16 text files in read_file, summarize_file, and grep_code ([#122](https://github.com/spelech/contextcortex/issues/122)) ([9426590](https://github.com/spelech/contextcortex/commit/9426590f261598bbc13e67e3e7b26aedba8feb98))
+* **trace-path:** keep only injected callers of same-named methods ([#123](https://github.com/spelech/contextcortex/issues/123)) ([682f1d0](https://github.com/spelech/contextcortex/commit/682f1d06ac04573e16e0dbbb0456b4ad96d4701b))
+
 ## [2.23.0](https://github.com/spelech/contextcortex/compare/v2.22.0...v2.23.0) (2026-11-12)
 
 

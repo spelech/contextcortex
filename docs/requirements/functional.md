@@ -1,6 +1,6 @@
 # Functional Requirements
 
-This section specifies the functional requirements for ContextCortex (`v2.23.0`). <!-- x-release-please-version -->
+This section specifies the functional requirements for ContextCortex (`v2.23.1`). <!-- x-release-please-version -->
 
 ---
 
