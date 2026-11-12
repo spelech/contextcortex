@@ -201,6 +201,16 @@ class QdrantVectorStore(VectorStore):
         if not documents:
             return True
         try:
+            expected_dim: Optional[int] = None
+            try:
+                if self.client.collection_exists(self.collection_name):
+                    info = self.client.get_collection(self.collection_name)
+                    v_cfg = getattr(info.config.params, "vectors", None)
+                    if isinstance(v_cfg, dict) and "dense" in v_cfg:
+                        expected_dim = getattr(v_cfg["dense"], "size", None)
+            except Exception:
+                expected_dim = None
+
             points = []
             for doc in documents:
                 if isinstance(doc, dict):
@@ -232,6 +242,11 @@ class QdrantVectorStore(VectorStore):
 
                 if dense_vec is None and text:
                     dense_vec = get_dense_embedding(text)
+
+                if dense_vec is not None and expected_dim is not None and len(dense_vec) != expected_dim:
+                    raise ValueError(
+                        f"could not broadcast input array from shape ({len(dense_vec)},) into shape ({expected_dim},)"
+                    )
 
                 vectors: Dict[str, Any] = {}
                 if dense_vec is not None:
@@ -353,7 +368,18 @@ class QdrantVectorStore(VectorStore):
 
             query_filter = qmodels.Filter(must=must_conditions) if must_conditions else None
 
-            mode = (search_mode or "hybrid").lower().strip()
+            raw_mode = (search_mode or "hybrid").lower().strip()
+            mode_aliases = {
+                "keyword": "lexical",
+                "keywords": "lexical",
+                "bm25": "lexical",
+                "fulltext": "lexical",
+                "fts": "lexical",
+                "vector": "semantic",
+                "dense": "semantic",
+                "sparse": "lexical",
+            }
+            mode = mode_aliases.get(raw_mode, raw_mode)
             caps = self.get_capabilities()
             supported = caps.get("search_modes", ["hybrid", "semantic", "lexical"])
             if mode not in supported:

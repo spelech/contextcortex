@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1180 Automated Tests** (820 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1122 Automated Tests** (762 Pytest Backend + 310 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -25,7 +25,7 @@ ContextCortex provides high-precision, syntax-aware semantic and lexical retriev
 │  │    FastMCP 2.0.0+ Server Engine         │  │   FastAPI Admin REST Router │  │
 │  │    • SSE Transport (/sse, /messages/)   │  │   • app/api/routers/        │  │
 │  │    • Streamable HTTP (/mcp)             │  │   • repos, storage, catalog │  │
-│  │    • 16 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
+│  │    • 19 Extended Agent Tools & Prompts  │  │   • webhooks, search, logs  │  │
 │  └────────────────────┬────────────────────┘  └──────────────┬──────────────┘  │
 └───────────────────────┼──────────────────────────────────────┼─────────────────┘
                         │                                      │
@@ -270,10 +270,13 @@ classDiagram
 - **FR-2.8 (`get_architecture`)**: MUST synthesize high-level codebase architecture including detected entry points, primary language distributions, core directories, framework components, and architectural decision records.
 - **FR-2.9 (`manage_adr`)**: MUST support querying, listing, creating, updating, and superseding Architectural Decision Records (MADR / Nygard format) with lifecycle status tracking.
 - **FR-2.10 (`find_routes` & `find_api_callers`)**: MUST return API endpoint routes and HTTP client invocations parsed from backend frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET).
-- **FR-2.11 (`trace_path`)**: MUST trace AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections using BFS graph traversal.
+- **FR-2.11 (`trace_path`)**: MUST trace AST symbol calls, imports, inheritance, and cross-repo API client-to-route connections (`external_callers`, `external_handlers`) using BFS graph traversal.
 - **FR-2.12 (`manage_local_file`)**: MUST support uploading, replacing, reading, and deleting files under managed local storage (`LOCAL_STORAGE_PATH`) with real-time vector and symbol indexing.
 - **FR-2.13 (`what_is_ingested`)**: MUST inspect and filter across all ingested Git repositories, monitored local paths, and uploaded local storage files with source type and detail level filtering.
-- **FR-2.14 (`read_file` & `summarize_file`)**: MUST support reading bounded line ranges or full files and generating or retrieving cached LLM executive summaries for large files.
+- **FR-2.14 (`read_file` & `summarize_file`)**: MUST support reading bounded line ranges or full files (including vector chunk reconstruction for ephemeral repositories) and generating or retrieving cached LLM executive summaries for large files.
+- **FR-2.15 (`get_recent_changes`)**: MUST return recent commit history from `git_commits` for a repository, optionally filtered by file path or AST symbol name.
+- **FR-2.16 (`grep_code`)**: MUST perform deterministic literal and regular expression pattern matching across one or all indexed repositories with path glob filtering, context lines, and enclosing AST symbol coordinates.
+- **FR-2.17 (`diagnose_issue`)**: MUST perform forensic triage of stack traces, error logs, and bug descriptions by resolving stack frames to AST symbols, matching routes and error literals, and retrieving semantic code candidates.
 
 ### FR-3: Dynamic Resources & Prompt Templates
 - **FR-3.1 (Dynamic Catalog Resource)**: MUST expose dynamic resource `knowledge://catalog/summary` returning formatted markdown summary of indexed repositories, document distributions, and AST symbol counts.
@@ -369,7 +372,7 @@ classDiagram
 | Requirement ID | Requirement Description | Implementation Files | Backend Pytest Modules | Frontend Vitest & E2E Suites |
 | :--- | :--- | :--- | :--- | :--- |
 | **FR-1** | FastMCP 2.0 Dual Transport Architecture | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_mcp_ping.py`, `test_indexer_sync.py` | E2E Spec 1 |
-| **FR-2** | FastMCP 16 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_file_reader_and_summarizer.py` | E2E Specs 1, 8 |
+| **FR-2** | FastMCP 19 Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_db_and_tools.py`, `test_tools.py`, `test_architecture_adr.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_file_reader_and_summarizer.py`, `test_grep_code.py`, `test_diagnostics.py` | E2E Specs 1, 8 |
 | **FR-3** | Dynamic Resources & Prompt Templates | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_tools.py` | E2E Spec 1 |
 | **FR-4** | Universal Multi-Git Provider Ingestion | `app/services/git_manager.py`, `app/services/indexing/git_syncer.py` | `test_multi_git_providers.py`, `test_git_manager.py`, `test_indexer_edge_cases.py` | `GitRepoManager.test.tsx`, E2E Specs 2, 3, 4, 5, 16, 18 |
 | **FR-5** | Multi-Tier Credential Vault & Hierarchy | `app/services/database/credentials.py`, `app/services/git_manager.py` | `test_multi_git_providers.py`, `test_db_and_tools.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
@@ -465,11 +468,6 @@ classDiagram
 - `test_go_rust_csharp_relationship_extraction`
 - `test_deletion_and_foreign_key_cascades`
 
-#### `tests/backend/test_chunker.py` (3 tests)
-- `test_detect_language`
-- `test_split_by_length`
-- `test_chunk_markdown`
-
 #### `tests/backend/test_chunker_languages.py` (18 tests)
 - `test_language_detection`
 - `test_get_tree_sitter_parser_caching_and_fallbacks`
@@ -490,24 +488,20 @@ classDiagram
 - `test_call_extraction_constructors_and_generics`
 - `test_toplevel_call_source_symbol_preservation`
 
-#### `tests/backend/test_db_and_tools.py` (17 tests)
+#### `tests/backend/test_db_and_tools.py` (13 tests)
 - `test_db_path_and_init`
 - `test_db_init_seeding_vault`
 - `test_db_init_seeding_errors`
 - `test_db_metadata_errors`
 - `test_db_init_and_metadata`
 - `test_token_sources`
-- `test_handle_search_code`
-- `test_handle_search_docs`
 - `test_handle_search_code_and_docs_real_integration` - _Real un-mocked verification of handle_search_code and handle_search_docs MCP tools._
 - `test_handle_find_symbol`
 - `test_handle_get_file_outline`
 - `test_handle_list_repositories`
 - `test_handle_sync_repository`
-- `test_handle_index_status`
 - `test_catalog_summary`
 - `test_custom_prompt_handlers`
-- `test_register_mcp_tools`
 
 #### `tests/backend/test_diagnostic_logger.py` (4 tests)
 - `test_ring_buffer_logging`
@@ -536,7 +530,7 @@ classDiagram
 - `test_get_recent_changes_mcp_tool`
 - `test_rest_api_patch_retain_commits`
 
-#### `tests/backend/test_git_manager.py` (34 tests)
+#### `tests/backend/test_git_manager.py` (38 tests)
 - `TestGitManager::test_get_env_token`
 - `TestGitManager::test_normalize_git_url`
 - `TestGitManager::test_build_authenticated_url`
@@ -551,6 +545,8 @@ classDiagram
 - `TestGitManager::test_shallow_clone_repo_failure`
 - `TestGitManager::test_shallow_clone_repo_exception`
 - `TestGitManager::test_cleanup_repo_dir_exception`
+- `TestGitManager::test_cleanup_repo_dir_removes_readonly_files`
+- `TestGitManager::test_shallow_clone_incremental_fetch_failure_recovers_with_fresh_clone`
 - `TestGitManager::test_check_github_rate_limit_success`
 - `TestGitManager::test_check_github_rate_limit_non_200`
 - `TestGitManager::test_check_github_rate_limit_exception`
@@ -568,6 +564,8 @@ classDiagram
 - `test_shallow_clone_repo_failure`
 - `test_shallow_clone_repo_exception`
 - `test_cleanup_repo_dir_exception`
+- `test_cleanup_repo_dir_removes_readonly_files`
+- `test_shallow_clone_incremental_fetch_failure_recovers_with_fresh_clone`
 - `test_check_github_rate_limit_success`
 - `test_check_github_rate_limit_non_200`
 - `test_check_github_rate_limit_exception`
@@ -594,13 +592,11 @@ classDiagram
 - `test_sse_stream_live_events_and_unsubscription`
 - `test_sse_stream_keep_alive_ping`
 
-#### `tests/backend/test_git_syncer_progress.py` (8 tests)
+#### `tests/backend/test_git_syncer_progress.py` (6 tests)
 - `test_git_syncer_reports_stages_up_to_date`
 - `test_git_syncer_clone_failure`
-- `test_git_syncer_empty_delta`
 - `test_git_syncer_full_5_stage_sync`
 - `test_git_syncer_cancellation_during_stage_4`
-- `test_git_syncer_unexpected_exception`
 - `test_git_syncer_nonexistent_repo`
 - `test_git_progress_tracker_pending_cancellation`
 
@@ -659,16 +655,6 @@ classDiagram
 - `test_catalog_summary_truncation`
 - `test_get_prompt_unknown_error`
 
-#### `tests/backend/test_indexer_sync.py` (8 tests)
-- `TestIndexerSync::test_sync_single_git_repo_success`
-- `TestIndexerSync::test_sync_single_git_repo_failure`
-- `TestIndexerSync::test_sync_single_git_repo_vector_upsert_failure`
-- `TestIndexerSync::test_sync_local_paths_vector_upsert_failure`
-- `test_sync_single_git_repo_success`
-- `test_sync_single_git_repo_failure`
-- `test_sync_single_git_repo_vector_upsert_failure`
-- `test_sync_local_paths_vector_upsert_failure`
-
 #### `tests/backend/test_mcp_v2.py` (9 tests)
 - `test_fastmcp_tools_registered`
 - `test_fastmcp_resources_and_prompts`
@@ -724,22 +710,12 @@ classDiagram
 - `test_search_request_dense_weight_boundaries`
 - `test_search_request_search_mode_boundaries`
 
-#### `tests/backend/test_search.py` (9 tests)
+#### `tests/backend/test_search.py` (2 tests)
 - `test_execute_hybrid_search_empty_query`
-- `test_execute_hybrid_search_delegation`
-- `test_execute_hybrid_search_ast_enrichment`
-- `test_execute_hybrid_search_ast_enrichment_interval_fallback`
-- `test_execute_hybrid_search_ast_enrichment_resilience`
-- `test_execute_hybrid_search_ast_enrichment_skipped_for_docs`
-- `test_execute_hybrid_search_exception`
-- `test_execute_hybrid_search_end_to_end_real` - _Validates REAL hybrid retrieval without mocking get_vector_store or execute_hybrid_search.
-Asserts both Markdown and PDF docs are matched under doc_type='doc'._
-- `test_api_test_search_endpoint`
-
-#### `tests/backend/test_tools.py` (3 tests)
-- `test_dynamic_catalog_description`
-- `test_mcp_server_tools_list`
-- `test_mcp_server_resources_list`
+- `test_execute_hybrid_search_end_to_end_real` - _Validates REAL hybrid retrieval and AST symbol enrichment without mocking
+get_vector_store, get_db_connection, or execute_hybrid_search.
+Asserts both Markdown and PDF docs are matched under doc_type='doc', and
+code results are enriched with signature/kind/ast_symbol_id from SQLite._
 
 #### `tests/backend/test_topology_graph.py` (13 tests)
 - `test_topology_graph_files_view` - _Test topology graph construction for files view._
@@ -1036,6 +1012,17 @@ Asserts both Markdown and PDF docs are matched under doc_type='doc'._
 - `test_restart_clears_relational_metadata_on_collection_recreate` - _Verifies that on app restart, if ensure_collection detects a dimension mismatch and recreates the collection, relational metadata is cleared._
 - `test_rollback_and_complete_rebuild` - _Tests model transition, rollback, and complete rebuild across local paths._
 
+#### `tests/test_field_workup_regressions.py` (9 tests)
+- `test_finding_1_git_env_strips_ambient_git_vars`
+- `test_finding_1_shallow_clone_stages_fresh_clone_on_fetch_failure`
+- `test_finding_2_list_repositories_serializes_postgres_datetime`
+- `test_finding_3_diagnose_issue_no_untyped_null_params`
+- `test_finding_4_csharp_call_graph_extraction_and_trace_path`
+- `test_findings_5_6_7_file_outline_permalinks_and_path_normalization`
+- `test_findings_8_and_9_search_mode_aliases_and_or_tsquery`
+- `test_finding_10_get_architecture_hub_symbols_excludes_boilerplate`
+- `test_findings_11_12_13_version_sparse_model_and_readme_tools`
+
 #### `tests/test_file_mcp_and_api.py` (5 tests)
 - `test_env`
 - `test_mcp_handle_read_file`
@@ -1143,6 +1130,18 @@ and leaves the prior indexed state intact without data loss._
 - `test_mcp_post_ping_with_session_id_bypasses_middleware` - _Verify POST /messages/?session_id=... is not intercepted by McpPingMiddleware, allowing SSE dispatch._
 - `test_health_endpoints_enhanced_metadata` - _Verify GET /health and /healthz return server metadata and protocol version._
 
+#### `tests/test_mcp_real_e2e_workflows.py` (8 tests)
+- `test_e2e_grep_code_survives_broken_venv_symlink_and_enriches_ast` - _Verifies `grep_code` does not crash on broken `.venv/lib64` symlinks and returns AST symbol metadata._
+- `test_e2e_find_routes_excludes_test_files_and_links_api_callers` - _Verifies `find_routes` extracts real FastAPI routes, ignores `/etc/shadow` in `tests/test_security.py`, and links `find_api_callers`._
+- `test_e2e_get_architecture_excludes_tests_and_anonymous_arrows` - _Verifies `get_architecture` excludes `tests`, `www/assets`, `setup_test_db`, and `anonymous` arrow functions._
+- `test_e2e_get_file_outline_resolves_guessed_subpaths_and_deduplicates` - _Verifies `get_file_outline` resolves `src/Platform.Core/Program.cs` to `Program.cs` and never returns duplicate symbols._
+- `test_e2e_startup_deduplication_cleans_duplicate_ast_and_routes` - _Verifies `init_db()` automatically purges duplicate `ast_symbols`, `ast_relationships`, and `api_routes` rows._
+- `test_e2e_trace_path_and_diagnose_issue_end_to_end` - _Verifies `trace_path` across C# classes and `diagnose_issue` on a real stack trace._
+- `test_e2e_hybrid_search_and_mcp_resources_and_prompts` - _Verifies hybrid/lexical/keyword search, MCP resources, resource templates, and all 5 workflow prompts._
+- `test_e2e_real_git_repo_clone_and_resync_without_mocks` - _Real end-to-end git repository sync using an actual local git repository (`git init` + commits),
+`sync_single_git_repo` (un-mocked git clone + delta + AST + vector indexing), followed by a second
+commit and re-sync, verifying zero duplicate symbols/routes/relationships and accurate `get_recent_changes`._
+
 #### `tests/test_mcp_storage_tools.py` (7 tests)
 - `test_manage_local_file_upload_and_read`
 - `test_manage_local_file_replace_and_delete`
@@ -1213,76 +1212,24 @@ and leaves the prior indexed state intact without data loss._
 - `test_native_dimension_mismatch_preserves_populated_table`
 - `test_native_dimension_change_after_explicit_clear`
 
-#### `tests/test_pgvector_store.py` (72 tests)
-- `TestPgVectorStoreImports::test_import_pgvector_store`
-- `TestPgVectorStoreImports::test_manager_supported_providers_includes_postgres_and_pgvector`
-- `TestPgVectorStoreLifecycle::test_initialization_defaults`
-- `TestPgVectorStoreLifecycle::test_ensure_collection_executes_ddl`
-- `TestPgVectorStoreLifecycle::test_ensure_collection_extension_permissions`
-- `TestPgVectorStoreLifecycle::test_ensure_collection_failure`
-- `TestPgVectorStoreLifecycle::test_health_check_success`
-- `TestPgVectorStoreLifecycle::test_health_check_failure`
-- `TestPgVectorStoreLifecycle::test_get_capabilities_and_search_mode_validation`
-- `TestPgVectorStoreLifecycle::test_get_stats_success`
-- `TestPgVectorStoreLifecycle::test_get_stats_failure`
-- `TestPgVectorStoreLifecycle::test_close_method`
-- `TestPgVectorStoreUpsertAndSearch::test_upsert_documents_with_vector_documents`
-- `TestPgVectorStoreUpsertAndSearch::test_upsert_documents_with_dicts`
-- `TestPgVectorStoreUpsertAndSearch::test_upsert_generates_embeddings_when_missing`
-- `TestPgVectorStoreUpsertAndSearch::test_upsert_empty_list_noop`
-- `TestPgVectorStoreUpsertAndSearch::test_upsert_failure_returns_false`
-- `TestPgVectorStoreUpsertAndSearch::test_search_executes_cosine_distance_query`
-- `TestPgVectorStoreUpsertAndSearch::test_search_lexical_executes_fts_without_dense_embedding`
-- `TestPgVectorStoreUpsertAndSearch::test_search_hybrid_executes_weighted_fusion`
-- `TestPgVectorStoreUpsertAndSearch::test_search_empty_query_returns_empty`
-- `TestPgVectorStoreUpsertAndSearch::test_search_error_returns_empty_list`
-- `TestPgVectorStoreUpsertAndSearch::test_delete_by_path`
-- `TestPgVectorStoreUpsertAndSearch::test_delete_by_path_failure`
-- `TestPgVectorStoreUpsertAndSearch::test_delete_by_repo`
-- `TestPgVectorStoreUpsertAndSearch::test_delete_by_repo_failure`
-- `TestVectorStoreManagerPgVectorDispatch::test_create_store_pgvector_provider`
-- `TestVectorStoreManagerPgVectorDispatch::test_create_store_postgres_provider`
-- `TestVectorStoreManagerPgVectorDispatch::test_create_store_postgresql_provider`
-- `TestVectorStoreManagerPgVectorDispatch::test_test_connection_pgvector`
-- `TestPgVectorCollectionIsolation::test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
-- `TestPgVectorCollectionIsolation::test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
-- `TestPgVectorCollectionIsolation::test_dimension_mismatch_requires_explicit_rebuild` - _A populated shared table cannot be silently recreated._
+#### `tests/test_pgvector_store.py` (20 tests)
+- `TestPgVectorStoreRegistration::test_import_and_supported_providers`
+- `TestPgVectorStoreRegistration::test_create_store_provider_aliases`
+- `TestPgVectorStoreRegistration::test_invalid_search_mode_raises`
+- `TestPgVectorStoreSchemaAndSearchContracts::test_ensure_collection_ddl_and_extension_permissions`
+- `TestPgVectorStoreSchemaAndSearchContracts::test_migration_and_dimension_mismatch_guard`
+- `TestPgVectorStoreSchemaAndSearchContracts::test_search_hybrid_and_lexical_fusion`
+- `TestPgVectorCollectionIsolation::test_collection_isolation_reads_writes_deletes`
 - `TestGitSshAndGlabSupport::test_is_ssh_git_url_and_build_authenticated_url_preserves_ssh`
 - `TestGitSshAndGlabSupport::test_get_remote_head_sha_uses_ssh_url_when_no_token`
 - `TestGitSshAndGlabSupport::test_glab_cli_token_fallback_for_gitlab`
-- `test_import_pgvector_store`
-- `test_manager_supported_providers_includes_postgres_and_pgvector`
-- `test_initialization_defaults`
-- `test_ensure_collection_executes_ddl`
-- `test_ensure_collection_extension_permissions`
-- `test_ensure_collection_failure`
-- `test_health_check_success`
-- `test_health_check_failure`
-- `test_get_capabilities_and_search_mode_validation`
-- `test_get_stats_success`
-- `test_get_stats_failure`
-- `test_close_method`
-- `test_upsert_documents_with_vector_documents`
-- `test_upsert_documents_with_dicts`
-- `test_upsert_generates_embeddings_when_missing`
-- `test_upsert_empty_list_noop`
-- `test_upsert_failure_returns_false`
-- `test_search_executes_cosine_distance_query`
-- `test_search_lexical_executes_fts_without_dense_embedding`
-- `test_search_hybrid_executes_weighted_fusion`
-- `test_search_empty_query_returns_empty`
-- `test_search_error_returns_empty_list`
-- `test_delete_by_path`
-- `test_delete_by_path_failure`
-- `test_delete_by_repo`
-- `test_delete_by_repo_failure`
-- `test_create_store_pgvector_provider`
-- `test_create_store_postgres_provider`
-- `test_create_store_postgresql_provider`
-- `test_test_connection_pgvector`
-- `test_collection_isolation_reads_writes_deletes` - _Test that collection_a writes/deletes do not affect collection_b in the same table._
-- `test_migration_and_pk_update` - _Test schema migration for legacy table without collection_name column._
-- `test_dimension_mismatch_requires_explicit_rebuild` - _A populated shared table cannot be silently recreated._
+- `test_import_and_supported_providers`
+- `test_create_store_provider_aliases`
+- `test_invalid_search_mode_raises`
+- `test_ensure_collection_ddl_and_extension_permissions`
+- `test_migration_and_dimension_mismatch_guard`
+- `test_search_hybrid_and_lexical_fusion`
+- `test_collection_isolation_reads_writes_deletes`
 - `test_is_ssh_git_url_and_build_authenticated_url_preserves_ssh`
 - `test_get_remote_head_sha_uses_ssh_url_when_no_token`
 - `test_glab_cli_token_fallback_for_gitlab`

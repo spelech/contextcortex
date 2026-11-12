@@ -63,6 +63,19 @@ def find_enclosing_symbol(line_no: int, symbols: List[CodeSymbol]) -> Optional[s
                 best_symbol = sym.full_symbol or sym.name
     return best_symbol
 
+def _is_test_filepath(filepath: str) -> bool:
+    if not filepath:
+        return False
+    clean = (filepath.split("://", 1)[1] if "://" in filepath else filepath).replace("\\", "/").strip("/")
+    parts = [p.lower() for p in clean.split("/") if p]
+    if any(p in ("tests", "test", "__tests__") for p in parts[:-1]):
+        return True
+    bname = parts[-1] if parts else ""
+    if bname.startswith("test_") or bname.endswith(("_test.py", "_test.go", ".test.ts", ".test.tsx", ".test.js", ".spec.ts", ".spec.tsx", ".spec.js", "tests.cs", "test.cs")):
+        return True
+    return False
+
+
 def extract_api_routes_and_calls(
     code: str,
     filepath: str,
@@ -76,7 +89,7 @@ def extract_api_routes_and_calls(
     lines = code.splitlines()
     routes: List[ApiRouteRecord] = []
     calls: List[ApiClientCallRecord] = []
-    language = detect_language(filepath)
+    language = detect_language(filepath) if not _is_test_filepath(filepath) else None
 
     # ----------------------------------------------------
     # 1. SERVER ROUTE EXTRACTION

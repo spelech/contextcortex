@@ -172,9 +172,12 @@ def process_file_content(
     api_calls = []
     headings = []
     tags = []
+    rel_path = (rel_path or "").replace("\\", "/")
+    if "://" in filepath:
+        filepath = filepath.replace("\\", "/")
     language = detect_language(filepath)
-    title = os.path.basename(filepath)
-    folder = os.path.dirname(rel_path) or "root"
+    title = os.path.basename(filepath.replace("\\", "/"))
+    folder = os.path.dirname(rel_path).replace("\\", "/") or "root"
     category = category_override or folder
 
     file_settings = {}

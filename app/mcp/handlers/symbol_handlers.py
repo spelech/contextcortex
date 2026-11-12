@@ -22,7 +22,8 @@ def _get_tools_attr(name, default):
 def _strip_repo_prefix(filepath: Optional[str]) -> str:
     if not filepath:
         return ""
-    return filepath.split("://", 1)[1] if "://" in filepath else filepath
+    res = filepath.split("://", 1)[1] if "://" in filepath else filepath
+    return res.replace("\\", "/")
 
 
 async def handle_find_symbol(
@@ -53,21 +54,30 @@ async def handle_find_symbol(
                 query += " AND repo = ?"
                 params.append(repo)
 
-            query += f" LIMIT {limit}"
+            query += f" LIMIT {max(limit * 3, limit)}"
             rows = conn.execute(query, params).fetchall()
 
         symbols = []
+        seen_syms = set()
         for r in rows:
+            rel_file = _strip_repo_prefix(r["filepath"])
+            sym_full = r["full_symbol"] or r["name"]
+            dedup_key = (r["repo"], rel_file, r["name"], sym_full, r["kind"], r["start_line"], r["end_line"])
+            if dedup_key in seen_syms:
+                continue
+            seen_syms.add(dedup_key)
             symbols.append({
                 "name": r["name"],
-                "symbol": r["full_symbol"] or r["name"],
+                "symbol": sym_full,
                 "kind": r["kind"],
                 "repo": r["repo"],
-                "file": _strip_repo_prefix(r["filepath"]),
+                "file": rel_file,
                 "lines": [r["start_line"], r["end_line"]],
                 "signature": r["signature"],
                 "language": r["language"],
             })
+            if len(symbols) >= limit:
+                break
 
         return json.dumps({
             "query": sym_name,
@@ -129,38 +139,100 @@ async def handle_get_file_outline(
     repo: Annotated[Optional[str], Field(description="Repository identifier (optional).")] = None
 ) -> str:
     """Get the AST outline (classes, methods, functions, line numbers) of a file without retrieving its entire token body."""
-    fp = filepath.strip() if filepath else ""
+    fp = filepath.strip().replace("\\", "/") if filepath else ""
+    clean_fp = fp.split("://", 1)[1].lstrip("/") if "://" in fp else fp.lstrip("/")
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
+        import os
+        candidates: List[str] = []
+        matched_file = _strip_repo_prefix(fp)
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
-            if repo:
-                rows = conn.execute(
-                    "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature FROM ast_symbols WHERE (filepath = ? OR filepath LIKE ?) AND repo = ? ORDER BY start_line ASC",
-                    (fp, f"%{fp}", repo)
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature FROM ast_symbols WHERE filepath = ? OR filepath LIKE ? ORDER BY start_line ASC",
-                    (fp, f"%{fp}")
-                ).fetchall()
+            def _query_outline_rows(target_clean: str):
+                if repo:
+                    return conn.execute(
+                        """
+                        SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature
+                        FROM ast_symbols
+                        WHERE (
+                            REPLACE(filepath, '\\', '/') = ?
+                            OR REPLACE(filepath, '\\', '/') = ?
+                            OR REPLACE(filepath, '\\', '/') LIKE ?
+                            OR REPLACE(filepath, '\\', '/') LIKE ?
+                        ) AND repo = ?
+                        ORDER BY start_line ASC
+                        """,
+                        (fp, target_clean, f"%/{target_clean}", f"%://{target_clean}", repo)
+                    ).fetchall()
+                else:
+                    return conn.execute(
+                        """
+                        SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature
+                        FROM ast_symbols
+                        WHERE REPLACE(filepath, '\\', '/') = ?
+                           OR REPLACE(filepath, '\\', '/') = ?
+                           OR REPLACE(filepath, '\\', '/') LIKE ?
+                           OR REPLACE(filepath, '\\', '/') LIKE ?
+                        ORDER BY start_line ASC
+                        """,
+                        (fp, target_clean, f"%/{target_clean}", f"%://{target_clean}")
+                    ).fetchall()
+
+            rows = _query_outline_rows(clean_fp)
+
+            # If an agent passed a prefixed path like 'src/McpRouter.Server/Program.cs' when the repo root is 'Program.cs',
+            # progressively try shorter suffixes down to basename, resolving uniquely or surfacing candidates.
+            if not rows and "/" in clean_fp:
+                parts = [p for p in clean_fp.split("/") if p]
+                for idx in range(1, len(parts)):
+                    suffix = "/".join(parts[idx:])
+                    cand_rows = _query_outline_rows(suffix)
+                    if cand_rows:
+                        distinct_files = sorted({
+                            _strip_repo_prefix(r["filepath"]) for r in cand_rows if r["filepath"]
+                        })
+                        if len(distinct_files) == 1:
+                            rows = cand_rows
+                            matched_file = distinct_files[0]
+                            break
+                        else:
+                            # Prefer root-level exact match if basename was at repo root
+                            if suffix in distinct_files:
+                                rows = [r for r in cand_rows if _strip_repo_prefix(r["filepath"]) == suffix]
+                                matched_file = suffix
+                                candidates = distinct_files
+                                break
+                            candidates = distinct_files
+                            break
 
         resolved_repo = repo or (rows[0]["repo"] if rows and "repo" in rows[0].keys() else None)
+        if rows and rows[0]["filepath"]:
+            matched_file = _strip_repo_prefix(rows[0]["filepath"])
+
         symbols = []
+        seen_syms = set()
         for r in rows:
+            sym_full = r["full_symbol"] or r["name"]
+            dedup_key = (r["name"], sym_full, r["kind"], r["start_line"], r["end_line"])
+            if dedup_key in seen_syms:
+                continue
+            seen_syms.add(dedup_key)
             symbols.append({
                 "name": r["name"],
-                "symbol": r["full_symbol"] or r["name"],
+                "symbol": sym_full,
                 "kind": r["kind"],
                 "lines": [r["start_line"], r["end_line"]],
                 "signature": r["signature"],
             })
 
-        return json.dumps({
-            "file": _strip_repo_prefix(fp),
+        result_payload: Dict[str, Any] = {
+            "file": matched_file,
             "repo": resolved_repo,
             "symbols": symbols,
-        })
+        }
+        if candidates:
+            result_payload["candidates"] = candidates
+        return json.dumps(result_payload)
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_get_file_outline: {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
@@ -179,5 +251,10 @@ def handle_find_implementation_symbol(
         "prompt": "find_implementation_symbol",
         "symbol": symbol,
         "repo": repo,
-        "instructions": f"Use find_symbol for '{symbol}' in repo '{repo}' and inspect its declaration, line numbers, and implementation details.",
+        "recommended_tools": ["find_symbol", "get_file_outline", "read_file", "trace_path"],
+        "instructions": (
+            f"1. Call find_symbol(name='{symbol}', repo={json.dumps(repo)}, exact=True) (fall back to exact=False if not found) to get the file path and start/end lines.\n"
+            f"2. Call read_file(path=..., repo=..., start_line=..., end_line=...) using the exact line range returned by find_symbol to read the implementation without loading the whole file.\n"
+            f"3. Call trace_path(symbol='{symbol}', repo={json.dumps(repo)}, direction='both', depth=2) to understand how '{symbol}' is called and what it invokes."
+        ),
     })

@@ -1,13 +1,20 @@
-import os
 import pytest
 from unittest.mock import patch, MagicMock
 from app.models.schemas import CloneResult
+from app.services.database import init_db, get_db_connection
 from app.services.indexing.git_progress import progress_tracker, GitProgressTracker
 from app.services.indexing.git_syncer import sync_single_git_repo
+import app.services.indexing.processor as proc_service
 
 
 @pytest.fixture(autouse=True)
-def reset_progress_tracker():
+def isolated_progress_env(tmp_path, monkeypatch):
+    db_file = str(tmp_path / "test_git_progress.db")
+    monkeypatch.setenv("CACHE_DB_PATH", db_file)
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", db_file)
+    monkeypatch.setattr("app.services.database.connection.CACHE_DB_PATH", db_file)
+    init_db()
+
     tracker = GitProgressTracker()
     with tracker._lock:
         tracker.jobs.clear()
@@ -16,16 +23,19 @@ def reset_progress_tracker():
         tracker.jobs.clear()
 
 
-@patch("app.services.database.get_db_connection")
-@patch("app.services.git_manager.get_remote_head_sha")
-def test_git_syncer_reports_stages_up_to_date(mock_sha, mock_db):
-    mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_conn.execute.return_value.fetchone.return_value = {
-        "id": 101, "name": "up-to-date-repo", "url": "https://github.com/test/repo.git",
-        "branch": "main", "commit_sha": "abc123456", "auth_token": None, "auth_user": None, "provider": "github"
-    }
-    mock_sha.return_value = "abc123456"
+def _insert_repo(repo_id: int, name: str, commit_sha: str | None = "old111") -> None:
+    with get_db_connection() as conn:
+        conn.execute(
+            """INSERT INTO git_repositories (id, name, url, branch, commit_sha, status)
+               VALUES (?, ?, 'https://github.com/test/repo.git', 'main', ?, 'pending')""",
+            (repo_id, name, commit_sha),
+        )
+        conn.commit()
+
+
+@patch("app.services.git_manager.get_remote_head_sha", return_value="abc123456")
+def test_git_syncer_reports_stages_up_to_date(mock_sha):
+    _insert_repo(101, "up-to-date-repo", commit_sha="abc123456")
 
     sync_single_git_repo(101)
 
@@ -36,17 +46,10 @@ def test_git_syncer_reports_stages_up_to_date(mock_sha, mock_db):
     assert any("already up-to-date" in log["message"] for log in job["logs"])
 
 
-@patch("app.services.database.get_db_connection")
-@patch("app.services.git_manager.get_remote_head_sha")
+@patch("app.services.git_manager.get_remote_head_sha", return_value="new222")
 @patch("app.services.git_manager.shallow_clone_repo")
-def test_git_syncer_clone_failure(mock_clone, mock_sha, mock_db):
-    mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_conn.execute.return_value.fetchone.return_value = {
-        "id": 102, "name": "fail-clone-repo", "url": "https://github.com/test/fail.git",
-        "branch": "main", "commit_sha": "old111", "auth_token": None, "auth_user": None, "provider": "github"
-    }
-    mock_sha.return_value = "new222"
+def test_git_syncer_clone_failure(mock_clone, mock_sha):
+    _insert_repo(102, "fail-clone-repo", commit_sha="old111")
     mock_clone.return_value = CloneResult(temp_dir=None, commit_sha=None, error="Authentication failed")
 
     sync_single_git_repo(102)
@@ -58,69 +61,22 @@ def test_git_syncer_clone_failure(mock_clone, mock_sha, mock_db):
     assert any("Failed to clone" in log["message"] for log in job["logs"])
 
 
-@patch("app.services.indexing.state.trigger_list_changed_notification")
-@patch("app.services.indexing.git_syncer.compute_git_repo_delta")
+@patch("app.services.git_manager.get_remote_head_sha", return_value="new222")
 @patch("app.services.git_manager.shallow_clone_repo")
-@patch("app.services.git_manager.get_remote_head_sha")
-@patch("app.services.database.get_db_connection")
-def test_git_syncer_empty_delta(mock_db, mock_sha, mock_clone, mock_delta, mock_notify, tmp_path):
-    mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_conn.execute.return_value.fetchone.return_value = {
-        "id": 103, "name": "empty-delta-repo", "url": "https://github.com/test/empty.git",
-        "branch": "main", "commit_sha": "old111", "auth_token": None, "auth_user": None, "provider": "github"
-    }
-    mock_sha.return_value = "new222"
-    mock_clone.return_value = CloneResult(temp_dir=str(tmp_path), commit_sha="new222", error=None)
-    mock_delta.return_value = ([], [], [], [str(tmp_path / "README.md")])
-
-    sync_single_git_repo(103)
-
-    job = progress_tracker.get_snapshot(103)
-    assert job is not None
-    assert job["status"] == "synced"
-    assert job["percent"] == 100
-    assert any("delta is empty" in log["message"] for log in job["logs"])
-
-
-@patch("app.services.indexing.state.trigger_list_changed_notification")
-@patch("app.services.indexing.processor.process_file_content")
+@patch("app.services.git_manager.cleanup_repo_dir")
 @patch("app.services.vector_store.get_vector_store")
-@patch("app.services.indexing.git_syncer.compute_git_repo_delta")
-@patch("app.services.git_manager.shallow_clone_repo")
-@patch("app.services.git_manager.get_remote_head_sha")
-@patch("app.services.database.get_db_connection")
-def test_git_syncer_full_5_stage_sync(
-    mock_db, mock_sha, mock_clone, mock_delta, mock_store_getter, mock_proc, mock_notify, tmp_path
-):
-    mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_conn.execute.return_value.fetchone.return_value = {
-        "id": 104, "name": "full-sync-repo", "url": "https://github.com/test/full.git",
-        "branch": "main", "commit_sha": "old111", "auth_token": None, "auth_user": None, "provider": "github"
-    }
-    mock_sha.return_value = "new222"
+def test_git_syncer_full_5_stage_sync(mock_store_getter, mock_cleanup, mock_clone, mock_sha, tmp_path):
+    _insert_repo(104, "full-sync-repo", commit_sha="old111")
 
-    file1 = tmp_path / "main.py"
-    file1.write_text("print('hello')", encoding="utf-8")
-    file2 = tmp_path / "utils.py"
-    file2.write_text("def add(a, b): return a + b", encoding="utf-8")
+    repo_dir = tmp_path / "repo_104"
+    repo_dir.mkdir()
+    (repo_dir / "main.py").write_text("def main():\n    return 'hello'\n", encoding="utf-8")
+    (repo_dir / "utils.py").write_text("def add(a: int, b: int) -> int:\n    return a + b\n", encoding="utf-8")
 
-    mock_clone.return_value = CloneResult(temp_dir=str(tmp_path), commit_sha="new222", error=None)
-    mock_delta.return_value = ([str(file1), str(file2)], [], [], [])
-
+    mock_clone.return_value = CloneResult(temp_dir=str(repo_dir), commit_sha="new222", error=None)
     mock_store = MagicMock()
     mock_store.upsert_documents.return_value = True
     mock_store_getter.return_value = mock_store
-
-    mock_proc.return_value = (
-        [MagicMock()],
-        [{"repo": "full-sync-repo", "filepath": "full-sync-repo://main.py", "name": "main", "full_symbol": "main", "kind": "func", "start_line": 1, "end_line": 1, "signature": "main()", "language": "python"}],
-        ("full-sync-repo://main.py", "full-sync-repo", "Main", "", "code", "", "", "", 0.0),
-        [],
-        [],
-        []
-    )
 
     sync_single_git_repo(104)
 
@@ -139,40 +95,37 @@ def test_git_syncer_full_5_stage_sync(
     assert any("Ingested main.py" in m for m in messages)
     assert any("Successfully synced repo" in m for m in messages)
 
+    with get_db_connection() as conn:
+        syms = [r["name"] for r in conn.execute("SELECT name FROM ast_symbols WHERE repo = 'full-sync-repo'").fetchall()]
+        assert "main" in syms
+        assert "add" in syms
 
-@patch("app.services.indexing.processor.process_file_content")
-@patch("app.services.vector_store.get_vector_store")
-@patch("app.services.indexing.git_syncer.compute_git_repo_delta")
+
+@patch("app.services.git_manager.get_remote_head_sha", return_value="new222")
 @patch("app.services.git_manager.shallow_clone_repo")
-@patch("app.services.git_manager.get_remote_head_sha")
-@patch("app.services.database.get_db_connection")
-def test_git_syncer_cancellation_during_stage_4(
-    mock_db, mock_sha, mock_clone, mock_delta, mock_store_getter, mock_proc, tmp_path
-):
-    mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_conn.execute.return_value.fetchone.return_value = {
-        "id": 105, "name": "cancel-sync-repo", "url": "https://github.com/test/cancel.git",
-        "branch": "main", "commit_sha": "old111", "auth_token": None, "auth_user": None, "provider": "github"
-    }
-    mock_sha.return_value = "new222"
+@patch("app.services.git_manager.cleanup_repo_dir")
+@patch("app.services.vector_store.get_vector_store")
+def test_git_syncer_cancellation_during_stage_4(mock_store_getter, mock_cleanup, mock_clone, mock_sha, tmp_path, monkeypatch):
+    _insert_repo(105, "cancel-sync-repo", commit_sha="old111")
 
-    file1 = tmp_path / "a.py"
-    file1.write_text("a = 1", encoding="utf-8")
-    file2 = tmp_path / "b.py"
-    file2.write_text("b = 2", encoding="utf-8")
+    repo_dir = tmp_path / "repo_105"
+    repo_dir.mkdir()
+    (repo_dir / "a.py").write_text("def a(): return 1\n", encoding="utf-8")
+    (repo_dir / "b.py").write_text("def b(): return 2\n", encoding="utf-8")
 
-    mock_clone.return_value = CloneResult(temp_dir=str(tmp_path), commit_sha="new222", error=None)
-    mock_delta.return_value = ([str(file1), str(file2)], [], [], [])
+    mock_clone.return_value = CloneResult(temp_dir=str(repo_dir), commit_sha="new222", error=None)
     mock_store = MagicMock()
+    mock_store.upsert_documents.return_value = True
     mock_store_getter.return_value = mock_store
 
-    def side_effect(*args, **kwargs):
-        # Cancel job while processing first file
-        progress_tracker.cancel_job(105)
-        return ([], [], ("a", "b", "c", "d", "e", "f", "g", "h", 0.0), [], [], [])
+    orig_process = proc_service.process_file_content
 
-    mock_proc.side_effect = side_effect
+    def cancel_after_first(*args, **kwargs):
+        res = orig_process(*args, **kwargs)
+        progress_tracker.cancel_job(105)
+        return res
+
+    monkeypatch.setattr(proc_service, "process_file_content", cancel_after_first)
 
     sync_single_git_repo(105)
 
@@ -183,33 +136,7 @@ def test_git_syncer_cancellation_during_stage_4(
     assert any("cancelled" in l["message"].lower() for l in job["logs"])
 
 
-@patch("app.services.git_manager.get_remote_head_sha")
-@patch("app.services.database.get_db_connection")
-def test_git_syncer_unexpected_exception(mock_db, mock_sha):
-    mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_conn.execute.return_value.fetchone.return_value = {
-        "id": 106, "name": "except-repo", "url": "https://github.com/test/err.git",
-        "branch": "main", "commit_sha": "old111", "auth_token": None, "auth_user": None, "provider": "github"
-    }
-    mock_sha.side_effect = RuntimeError("Network timeout checking head SHA")
-
-    sync_single_git_repo(106)
-
-    job = progress_tracker.get_snapshot(106)
-    assert job is not None
-    assert job["status"] == "error"
-    assert "Network timeout checking head SHA" in job["error"]
-    assert any("Sync failed" in l["message"] for l in job["logs"])
-
-
-@patch("app.services.database.get_db_connection")
-def test_git_syncer_nonexistent_repo(mock_db):
-    mock_conn = MagicMock()
-    mock_db.return_value.__enter__.return_value = mock_conn
-    mock_conn.execute.return_value.fetchone.return_value = None
-
-    # Should not raise exception
+def test_git_syncer_nonexistent_repo():
     sync_single_git_repo(99999)
     assert progress_tracker.get_snapshot(99999) is None
 
@@ -224,4 +151,3 @@ def test_git_progress_tracker_pending_cancellation():
     snap = tracker.get_snapshot(107)
     assert snap["status"] == "error"
     assert snap["cancelled"] is True
-

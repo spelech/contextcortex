@@ -41,11 +41,27 @@ TABLES_WITH_ID = {
 }
 
 
+import re
+
+
 def _convert_sql_placeholders(sql: str, params: Any = None) -> tuple:
     if not isinstance(sql, str):
         return sql, params
 
     clean_sql = sql.strip()
+    if "GROUP_CONCAT" in clean_sql.upper():
+        clean_sql = re.sub(
+            r"GROUP_CONCAT\(\s*DISTINCT\s+([^)]+)\)",
+            r"STRING_AGG(DISTINCT CAST(\1 AS TEXT), ',')",
+            clean_sql,
+            flags=re.IGNORECASE,
+        )
+        clean_sql = re.sub(
+            r"GROUP_CONCAT\(\s*([^)]+)\)",
+            r"STRING_AGG(CAST(\1 AS TEXT), ',')",
+            clean_sql,
+            flags=re.IGNORECASE,
+        )
 
     sql_upper = clean_sql.upper()
     if sql_upper.startswith("INSERT") and "RETURNING" not in sql_upper:

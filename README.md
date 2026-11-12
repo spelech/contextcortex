@@ -64,10 +64,17 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 - **Universal Git Provider Support & Persistent Shallow Retention**:
   - Ingest repositories from **any source where Git lives**: **GitHub**, **GitLab (Cloud, Enterprise & Self-Hosted)**, **Gitea & Forgejo**, **Bitbucket (Cloud & Server)**, **Generic Git HTTP/HTTPS**, and **Native SSH (`git@...` / `ssh://...`)**.
   - **Configurable Shallow Copy Retention (`keep_shallow`)**: Choose between **ephemeral shallow clones** (immediate deletion after indexing to save storage) or **persistent shallow clones** (`--depth 1` retained on disk under `/app/data/repos/{repo_name}` on the cache volume). Persistent copies power instant full source code inspection in Code Navigator and accelerated incremental delta syncing (`git fetch --depth 1` + `git reset --hard`).
+  - **Configurable Commit History Retention (`retain_commits_count`)**: Optionally retain the last `N` commits (`0`–`50`, default `20`) per Git repository in relational storage (`git_commits`), enabling instant commit history inspection filtered by file path or AST symbol via `get_recent_changes`.
   - **Full-Screen React Portals for Modals**: Add Repository modal, Webhook setup modal, and Sync Drawer render cleanly via React Portals (`createPortal(..., document.body)`), eliminating containment clipping from glassmorphism cards.
   - **Provider-Aware Permalinks**: Automatically generates exact deep-links for code results (`/blob/`, `/-/blob/`, `/src/branch/`, `/src/commit/`, `/src/#lines-`).
   - **Custom Git Host Credential Vault**: Register per-host tokens and authentication types for private internal domains (e.g. `gitlab.company.internal` or `http://git.lan:3000`).
 - **AST-Aware Code Chunking (Tree-sitter)**: Understands syntax structures across Python, TypeScript/JavaScript, Go, Rust, C#, C++, Java, Ruby, PHP, and more. Chunks along class, method, and function boundaries with exact line numbers and symbol names.
+- **Forensic Triage, Multi-Repo Grep & Vector File Reconstruction**:
+  - **Multi-Repo Pattern Search (`grep_code`)**: Deterministic literal and regular expression search across one or all indexed repositories (including ephemeral repositories via indexed vector chunks) with `path_glob` filtering, surrounding context lines, and enclosing AST symbol attribution.
+  - **Automated Issue & Stack Trace Triage (`diagnose_issue`)**: Forensic triage engine accepting stack traces, error logs, or bug descriptions across Python, TypeScript/JavaScript, C#/.NET, Go, and Java—automatically resolving stack frames to AST symbols and code context, matching HTTP routes and error literals, and retrieving semantic code candidates.
+  - **Cross-Repo HTTP Boundary Tracing (`trace_path`)**: Bridges outbound HTTP client calls (`api_client_calls`) and inbound route handlers (`api_routes`) across repositories (`external_callers` and `external_handlers`) alongside intra-repo AST call graphs.
+  - **Vector-Store File Reconstruction (`read_file`)**: Reconstructs line-accurate file slices directly from indexed vector chunks when ephemeral Git repositories (`keep_shallow=0`) are not stored on disk.
+  - **Token-Efficient Structured JSON**: All 19 MCP tools emit compact, schema-consistent JSON responses optimized for AI agent context windows.
 - **Multi-Tier Git Authentication Hierarchy**:
   1. Per-repository override token & optional username.
   2. Domain-level Custom Git Host Vault (`git_host_credentials`).
@@ -100,7 +107,7 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
   - **Appearance & Theme Settings**: Instant zero-latency switching between 4 distinct dark and light themes (**Deep Ocean**, **Midnight Blue**, **Lavender Haze**, and **Amber Warmth**) with live palette swatches and browser persistence.
   - **Overview**: Real-time stats, vector counts, AST symbols, model specs, topic tag cloud, and manual full reindexing trigger.
   - **Codebase Navigator**: Hero split layout with Omni-Search palette, folder tree persistence, syntax-highlighted code viewer, Mermaid documentation reader, and instant intelligence inspection.
-  - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, configure shallow copy retention, trigger syncs, inspect commit SHAs, and manage sources.
+  - **Git Repositories**: Register repos across GitHub, GitLab, Gitea, Bitbucket, or Generic Git, configure shallow copy retention and commit history retention, trigger syncs, inspect commit SHAs, and manage sources.
   - **Files & Storage**: Unified explorer managing monitored local directory vaults and managed local file storage with upload modal and file preview.
   - **Ingestion Catalog**: Unified multi-source explorer with source type filters, repository lookup, and file listings.
   - **Search & Inspector**: Interactive live hybrid search tester with RRF score previews, target type toggle (Code vs Docs), and syntax highlighted results.
@@ -111,25 +118,28 @@ A high-performance, multi-repo Model Context Protocol (MCP) server providing **s
 
 ## 🛠️ MCP Tools, Resources & Prompts
 
-### Tools & RBAC Permissions
+### Tools & RBAC Permissions (19 Tools)
 | Tool | Required Role | Parameters | Description |
 | :--- | :---: | :--- | :--- |
 | `search_code` | `viewer` | `query` (str), `repo` (str, opt), `language` (str, opt), `limit` (int, default 5), `dense_weight` (float, opt), `mode` (str, default `hybrid`) | Calibrated hybrid semantic + BM25 code search with AST signatures, decomposed scores, and Git permalinks. |
 | `search_docs` | `viewer` | `query` (str), `repo` (str, opt), `category` (str, opt), `tag` (str, opt), `limit` (int, default 5), `dense_weight` (float, opt), `mode` (str, default `hybrid`) | Calibrated hybrid search across Markdown documentation, system architecture, summaries, and PDFs. |
 | `find_symbol` | `viewer` | `name` (str), `repo` (str, opt), `exact` (bool, default True), `limit` (int, default 10) | Instant exact or prefix AST symbol lookup (functions, classes, structs, interfaces). |
 | `get_file_outline` | `viewer` | `filepath` (str), `repo` (str, opt) | Returns the AST structure (classes, methods, signatures, lines) without full file token costs. |
-| `trace_path` | `viewer` | `symbol` (str), `repo` (str, opt), `direction` (str, default `both`), `depth` (int, default 2), `limit` (int, default 25) | Traces AST symbol calls, imports, and inheritance relationships via BFS. |
+| `trace_path` | `viewer` | `symbol` (str), `repo` (str, opt), `direction` (str, default `both`), `depth` (int, default 2), `limit` (int, default 25) | Traces AST symbol calls, imports, inheritance, and cross-repo HTTP route/caller boundaries (`external_callers`, `external_handlers`) via BFS. |
 | `find_routes` | `viewer` | `query` (str, opt), `method` (str, opt), `repo` (str, opt), `limit` (int, default 20) | Lists or searches declared API endpoint routes across backend frameworks. |
 | `find_api_callers` | `viewer` | `path` (str), `method` (str, opt), `repo` (str, opt) | Finds client call sites and services that invoke a specific HTTP endpoint or URL pattern. |
 | `list_repositories` | `viewer` | *None* | Lists all registered Git repositories and local paths with commit SHAs and indexing status. |
+| `get_recent_changes` | `viewer` | `repo` (str), `filepath` (str, opt), `symbol` (str, opt), `limit` (int, default 10) | Returns recent commits for a Git repository, optionally filtered by file path or AST symbol name. |
 | `sync_repository` | `editor` | `repo` (str, opt) | Triggers background shallow clone or delta sync for a specific repository or all sources. |
 | `index_status` | `viewer` | *None* | Returns vector counts, collection status, embedding models, and GitHub rate limits. |
 | `get_architecture` | `viewer` | `repo` (str, opt) | Synthesizes codebase entry points, language breakdown, core directories, and architectural overview. |
 | `manage_adr` | `editor` / `viewer` | `action` (str: `list`\|`get`\|`create`\|`update`\|`supersede`), `repo` (str), `id` (str, opt), `title` (str, opt), `decision` (str, opt), `status` (str, opt) | Query, create, update, or supersede Architectural Decision Records (MADR / Nygard format). |
 | `manage_local_file` | `editor` / `viewer` | `action` (str: `upload`\|`replace`\|`delete`\|`read`), `file_path` (str), `content` (str, opt), `repo` (str, opt), `category` (str, opt) | Manage files in ContextCortex local storage: upload, replace, read, or delete files with immediate vector indexing. |
 | `what_is_ingested` | `viewer` | `source_type` (str, opt), `repo_name` (str, opt), `path_prefix` (str, opt), `file_extension` (str, opt), `detail_level` (str, opt) | Inspect all ingested Git repositories, monitored local paths, and uploaded local storage files with optional filtering. |
-| `read_file` | `viewer` | `path` (str), `repo` (str, opt), `start_line` (int, opt), `end_line` (int, opt) | Read full file content or bounded 1-indexed line ranges from monitored directories, persistent repos, or storage. |
+| `read_file` | `viewer` | `path` (str), `repo` (str, opt), `start_line` (int, opt), `end_line` (int, opt) | Read full file content or bounded 1-indexed line ranges from disk or reconstructed from vector chunks. |
 | `summarize_file` | `viewer` | `path` (str), `repo` (str, opt), `force_refresh` (bool, default False) | Retrieve a cached summary or generate a structured LLM executive summary for a large file. |
+| `grep_code` | `viewer` | `pattern` (str), `repo` (str, opt), `path_glob` (str, opt), `is_regex` (bool, default False), `case_sensitive` (bool, default False), `context_lines` (int, default 2), `limit` (int, default 30) | Deterministic literal and regex pattern matching across one or all indexed repositories with context lines and AST symbol coordinates. |
+| `diagnose_issue` | `viewer` | `issue_text` (str), `repo` (str, opt), `context_lines` (int, default 5), `limit` (int, default 5) | Forensic triage tool that resolves stack traces, matches error literals and API routes, and retrieves semantic code candidates. |
 
 ### Resources
 | Resource URI | MIME Type | Description |

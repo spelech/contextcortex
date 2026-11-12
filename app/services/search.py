@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from app.services.vector_store import get_vector_store, VectorSearchResult
 
 logger = logging.getLogger('contextcortex.search')
@@ -14,9 +14,10 @@ from app.services.chunking import match_route_and_call
 def _clean_path(filepath: Optional[str]) -> str:
     if not filepath:
         return ""
-    if "://" in filepath:
-        return filepath.split("://", 1)[1]
-    return filepath
+    fp = filepath.replace("\\", "/")
+    if "://" in fp:
+        return fp.split("://", 1)[1]
+    return fp
 
 def _methods_compatible(m1: Optional[str], m2: Optional[str]) -> bool:
     if not m1 or not m2:
@@ -34,7 +35,8 @@ def trace_symbol_path(
     """
     Breadth-First Search (BFS) call graph traversal engine over ast_relationships.
     Supports direction ('callers', 'callees', 'both'), depth clamping (1-5), and total limit pagination.
-    Resolves cross-repository HTTP boundaries (api_routes <-> api_client_calls).
+    Resolves cross-repository HTTP boundaries (api_routes <-> api_client_calls) and both qualified
+    ('Class.Method') and unqualified ('Method') OOP symbols (such as C#, Java, TypeScript, Python).
     Returns deterministic, compact JSON string.
     """
     target_sym = symbol.strip() if symbol else ""
@@ -48,21 +50,30 @@ def trace_symbol_path(
     depth = max(1, min(5, depth))
     limit = max(1, limit)
 
+    short_target = target_sym.split(".")[-1] if "." in target_sym else target_sym
+
     with get_db_connection() as conn:
         # Check if symbol exists in symbols or relationships
-        sym_query = "SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line FROM ast_symbols WHERE name = ? OR full_symbol = ?"
-        sym_params = [target_sym, target_sym]
+        sym_query = """
+            SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line
+            FROM ast_symbols
+            WHERE (name = ? OR full_symbol = ? OR full_symbol LIKE ?)
+        """
+        sym_params = [target_sym, target_sym, f"%.{target_sym}"]
         if repo:
             sym_query += " AND repo = ?"
             sym_params.append(repo)
+        sym_query += " ORDER BY (CASE WHEN full_symbol = ? THEN 1 WHEN name = ? THEN 2 ELSE 3 END)"
+        sym_params.extend([target_sym, target_sym])
 
         symbols_found = conn.execute(sym_query, sym_params).fetchall()
 
         # If no exact symbol found in ast_symbols, check ast_relationships
         if not symbols_found:
             rel_check = conn.execute(
-                "SELECT count(*) FROM ast_relationships WHERE (source_symbol = ? OR target_symbol = ?)" + (" AND repo = ?" if repo else ""),
-                [target_sym, target_sym, repo] if repo else [target_sym, target_sym]
+                "SELECT count(*) FROM ast_relationships WHERE (source_symbol = ? OR target_symbol = ? OR source_symbol = ? OR target_symbol = ?)"
+                + (" AND repo = ?" if repo else ""),
+                [target_sym, target_sym, short_target, short_target, repo] if repo else [target_sym, target_sym, short_target, short_target]
             ).fetchone()[0]
             if rel_check == 0:
                 return json.dumps({"symbol": target_sym, "found": False, "callers": [], "callees": []}, separators=(",", ":"))
@@ -95,6 +106,65 @@ def trace_symbol_path(
     bfs_repo = repo
     if not bfs_repo and symbols_found:
         bfs_repo = symbols_found[0]["repo"]
+
+    # Pre-load symbols in bfs_repo (or all repos if unscoped) for fast qualified/unqualified resolution
+    with get_db_connection() as conn:
+        if bfs_repo:
+            repo_symbols = [dict(r) for r in conn.execute(
+                "SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line FROM ast_symbols WHERE repo = ?",
+                (bfs_repo,)
+            ).fetchall()]
+        else:
+            repo_symbols = [dict(r) for r in conn.execute(
+                "SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line FROM ast_symbols"
+            ).fetchall()]
+
+    sym_by_id = {s["id"]: s for s in repo_symbols if s.get("id") is not None}
+    syms_by_full = {}
+    syms_by_name = {}
+    syms_by_file = {}
+    for s in repo_symbols:
+        s["_clean_fp"] = _clean_path(s.get("filepath"))
+        if s.get("full_symbol"):
+            syms_by_full.setdefault(s["full_symbol"], []).append(s)
+        if s.get("name"):
+            syms_by_name.setdefault(s["name"], []).append(s)
+        syms_by_file.setdefault((s.get("repo"), s["_clean_fp"]), []).append(s)
+
+    def _resolve_symbol_candidates(sym_str: str) -> List[dict]:
+        """Returns matching ast_symbols rows for a qualified ('UnitOfWork.Run') or unqualified ('Run') symbol."""
+        if not sym_str:
+            return []
+        exact_full = syms_by_full.get(sym_str, [])
+        if exact_full:
+            return exact_full
+        exact_name = syms_by_name.get(sym_str, [])
+        if exact_name:
+            return exact_name
+        suffix_matches = [s for full_k, lst in syms_by_full.items() if full_k.endswith(f".{sym_str}") for s in lst]
+        return suffix_matches
+
+    def _resolve_enclosing_symbol(r_repo: str, r_filepath: str, line_num: Optional[int], fallback_sym: str, source_symbol_id: Optional[int] = None) -> Tuple[str, Optional[dict]]:
+        """Finds the best qualified symbol record for a relationship row."""
+        if source_symbol_id and source_symbol_id in sym_by_id:
+            s_obj = sym_by_id[source_symbol_id]
+            return (s_obj.get("full_symbol") or s_obj.get("name") or fallback_sym), s_obj
+        clean_fp = _clean_path(r_filepath)
+        file_syms = syms_by_file.get((r_repo, clean_fp), [])
+        if line_num is not None and file_syms:
+            enclosing = [
+                s for s in file_syms
+                if (s.get("start_line") or 0) <= line_num <= (s.get("end_line") or 0)
+                and s.get("kind") not in ("class_declaration", "class_definition", "interface_declaration", "struct_declaration", "namespace_definition")
+            ]
+            if enclosing:
+                enclosing.sort(key=lambda s: (s.get("end_line") or 0) - (s.get("start_line") or 0))
+                best = enclosing[0]
+                return (best.get("full_symbol") or best.get("name") or fallback_sym), best
+        for s in file_syms:
+            if s.get("name") == fallback_sym or s.get("full_symbol") == fallback_sym:
+                return (s.get("full_symbol") or s.get("name") or fallback_sym), s
+        return fallback_sym, None
 
     # Target info
     target_info = None
@@ -252,13 +322,17 @@ def trace_symbol_path(
                 if curr_depth > depth:
                     continue
 
+                short_curr = curr_sym.split(".")[-1] if "." in curr_sym else curr_sym
+                curr_candidates = _resolve_symbol_candidates(curr_sym)
+                curr_ids = {c["id"] for c in curr_candidates if c.get("id") is not None}
+
                 query = """
-                    SELECT r.repo, r.source_filepath, r.source_symbol, r.target_symbol, r.relationship_type, r.line_number, s.start_line, s.end_line
+                    SELECT r.repo, r.source_symbol_id, r.source_filepath, r.source_symbol, r.target_symbol, r.relationship_type, r.line_number, s.start_line, s.end_line
                     FROM ast_relationships r
                     LEFT JOIN ast_symbols s ON r.source_symbol_id = s.id
-                    WHERE r.target_symbol = ?
+                    WHERE (r.target_symbol = ? OR r.target_symbol = ? OR r.target_symbol LIKE ?)
                 """
-                params = [curr_sym]
+                params = [curr_sym, short_curr, f"%.{short_curr}"]
                 if bfs_repo:
                     query += " AND r.repo = ?"
                     params.append(bfs_repo)
@@ -271,7 +345,25 @@ def trace_symbol_path(
                         truncated = True
                         break
 
-                    edge_key = (r["source_symbol"], curr_sym, r["relationship_type"], "caller")
+                    # If both curr_sym and r.target_symbol are qualified (e.g. 'Engine.Run' vs 'Other.Run'), require matching qualifier
+                    r_target = r["target_symbol"] or ""
+                    if "." in curr_sym and "." in r_target and r_target != curr_sym and not r_target.endswith(f".{curr_sym}") and not curr_sym.endswith(f".{r_target}"):
+                        continue
+
+                    caller_display_sym, caller_sym_obj = _resolve_enclosing_symbol(
+                        r["repo"],
+                        r["source_filepath"],
+                        r["line_number"],
+                        r["source_symbol"],
+                        r["source_symbol_id"]
+                    )
+                    # Avoid self-loop if an unqualified target matched the same method calling another class's method of the same name
+                    if caller_sym_obj and caller_sym_obj.get("id") in curr_ids and "." in curr_sym:
+                        continue
+                    if caller_display_sym == curr_sym:
+                        continue
+
+                    edge_key = (caller_display_sym, curr_sym, r["relationship_type"], "caller", r["line_number"])
                     if edge_key in visited_edges:
                         continue
                     visited_edges.add(edge_key)
@@ -280,12 +372,12 @@ def trace_symbol_path(
                     clean_fp = _clean_path(r["source_filepath"])
                     plink = get_permalink(r["repo"], clean_fp, r["line_number"], r["line_number"])
 
-                    r_route, r_ext_callers, r_http_calls = resolve_http_boundaries(r["source_symbol"], r["repo"])
+                    r_route, r_ext_callers, r_http_calls = resolve_http_boundaries(caller_display_sym, r["repo"])
 
                     rel_label = (r["relationship_type"] or "calls").lower()
 
                     node = {
-                        "symbol": r["source_symbol"],
+                        "symbol": caller_display_sym,
                         "rel": rel_label,
                         "repo": r["repo"],
                         "file": clean_fp,
@@ -302,10 +394,10 @@ def trace_symbol_path(
                     node["callers"] = []
                     parent_list.append(node)
 
-                    if curr_depth < depth and r["source_symbol"] not in visited_nodes:
-                        visited_nodes.add(r["source_symbol"])
+                    if curr_depth < depth and caller_display_sym not in visited_nodes:
+                        visited_nodes.add(caller_display_sym)
                         if total_returned < limit:
-                            queue.append((r["source_symbol"], curr_depth + 1, node["callers"]))
+                            queue.append((caller_display_sym, curr_depth + 1, node["callers"]))
                         else:
                             truncated = True
 
@@ -320,13 +412,22 @@ def trace_symbol_path(
                 if curr_depth > depth:
                     continue
 
+                short_curr = curr_sym.split(".")[-1] if "." in curr_sym else curr_sym
+                curr_candidates = _resolve_symbol_candidates(curr_sym)
+                curr_ids = [c["id"] for c in curr_candidates if c.get("id") is not None]
+
                 query = """
-                    SELECT r.repo, r.source_filepath, r.source_symbol, r.target_symbol, r.relationship_type, r.line_number, s.start_line, s.end_line
+                    SELECT r.repo, r.source_symbol_id, r.source_filepath, r.source_symbol, r.target_symbol, r.relationship_type, r.line_number, s.start_line, s.end_line
                     FROM ast_relationships r
                     LEFT JOIN ast_symbols s ON r.source_symbol_id = s.id
-                    WHERE r.source_symbol = ?
+                    WHERE (r.source_symbol = ? OR r.source_symbol = ?
                 """
-                params = [curr_sym]
+                params = [curr_sym, short_curr]
+                if curr_ids:
+                    placeholders = ",".join("?" for _ in curr_ids)
+                    query += f" OR r.source_symbol_id IN ({placeholders})"
+                    params.extend(curr_ids)
+                query += ")"
                 if bfs_repo:
                     query += " AND r.repo = ?"
                     params.append(bfs_repo)
@@ -339,7 +440,28 @@ def trace_symbol_path(
                         truncated = True
                         break
 
-                    edge_key = (curr_sym, r["target_symbol"], r["relationship_type"], "callee")
+                    # If curr_sym is qualified (e.g., 'UnitOfWork.Run'), ensure the row belongs to one of curr_candidates
+                    if "." in curr_sym and curr_candidates:
+                        caller_display_sym, caller_sym_obj = _resolve_enclosing_symbol(
+                            r["repo"],
+                            r["source_filepath"],
+                            r["line_number"],
+                            r["source_symbol"],
+                            r["source_symbol_id"]
+                        )
+                        if caller_display_sym != curr_sym and not caller_display_sym.endswith(f".{curr_sym}"):
+                            continue
+
+                    raw_target = r["target_symbol"]
+                    callee_display_sym = raw_target
+                    callee_candidates = [
+                        c for c in _resolve_symbol_candidates(raw_target)
+                        if c.get("full_symbol") != curr_sym
+                    ]
+                    if len(callee_candidates) == 1:
+                        callee_display_sym = callee_candidates[0].get("full_symbol") or callee_candidates[0].get("name") or raw_target
+
+                    edge_key = (curr_sym, callee_display_sym, r["relationship_type"], "callee", r["line_number"])
                     if edge_key in visited_edges:
                         continue
                     visited_edges.add(edge_key)
@@ -348,12 +470,12 @@ def trace_symbol_path(
                     clean_fp = _clean_path(r["source_filepath"])
                     plink = get_permalink(r["repo"], clean_fp, r["line_number"], r["line_number"])
 
-                    r_route, r_ext_callers, r_http_calls = resolve_http_boundaries(r["target_symbol"], r["repo"])
+                    r_route, r_ext_callers, r_http_calls = resolve_http_boundaries(callee_display_sym, r["repo"])
 
                     rel_label = (r["relationship_type"] or "calls").lower()
 
                     node = {
-                        "symbol": r["target_symbol"],
+                        "symbol": callee_display_sym,
                         "rel": rel_label,
                         "repo": r["repo"],
                         "file": clean_fp,
@@ -370,10 +492,10 @@ def trace_symbol_path(
                     node["callees"] = []
                     parent_list.append(node)
 
-                    if curr_depth < depth and r["target_symbol"] not in visited_nodes:
-                        visited_nodes.add(r["target_symbol"])
+                    if curr_depth < depth and callee_display_sym not in visited_nodes:
+                        visited_nodes.add(callee_display_sym)
                         if total_returned < limit:
-                            queue.append((r["target_symbol"], curr_depth + 1, node["callees"]))
+                            queue.append((callee_display_sym, curr_depth + 1, node["callees"]))
                         else:
                             truncated = True
 
@@ -420,7 +542,7 @@ def _enrich_code_ast_metadata(results: List[VectorSearchResult]) -> None:
                         FROM ast_symbols
                         WHERE repo = ? 
                           AND (name = ? OR full_symbol = ? OR name = ?)
-                          AND (filepath = ? OR filepath = ? OR filepath LIKE ?)
+                          AND (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ?)
                         ORDER BY (CASE WHEN full_symbol = ? THEN 1 WHEN name = ? THEN 2 ELSE 3 END),
                                  abs(start_line - ?) ASC
                         LIMIT 1
@@ -435,7 +557,7 @@ def _enrich_code_ast_metadata(results: List[VectorSearchResult]) -> None:
                         SELECT id, name, full_symbol, kind, signature, start_line, end_line
                         FROM ast_symbols
                         WHERE repo = ?
-                          AND (filepath = ? OR filepath = ? OR filepath LIKE ?)
+                          AND (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ?)
                           AND start_line <= ? AND end_line >= ?
                         ORDER BY (end_line - start_line) ASC
                         LIMIT 1
@@ -454,6 +576,22 @@ def _enrich_code_ast_metadata(results: List[VectorSearchResult]) -> None:
                         p["ast_symbol_id"] = row["id"]
     except Exception as e:
         logger.debug(f"AST enrichment skipped due to error: {e}")
+
+
+SEARCH_MODE_ALIASES = {
+    "keyword": "lexical",
+    "keywords": "lexical",
+    "bm25": "lexical",
+    "fulltext": "lexical",
+    "fts": "lexical",
+    "dense": "semantic",
+    "vector": "semantic",
+}
+
+
+def normalize_search_mode(search_mode: Optional[str]) -> str:
+    mode = (search_mode or "hybrid").lower().strip()
+    return SEARCH_MODE_ALIASES.get(mode, mode)
 
 
 def execute_hybrid_search(
@@ -482,13 +620,13 @@ def execute_hybrid_search(
         except Exception:
             supported = ["hybrid", "semantic", "lexical"]
 
-        mode = (search_mode or "hybrid").lower().strip()
+        mode = normalize_search_mode(search_mode)
         if mode not in supported:
             if mode == "hybrid" and "semantic" in supported:
                 mode = "semantic"
             else:
                 raise ValueError(
-                    f"Search mode '{search_mode}' is not supported by the active vector store backend ({store.__class__.__name__}). Supported modes: {supported}"
+                    f"Search mode '{search_mode}' is not supported by the active vector store backend ({store.__class__.__name__}). Supported modes: {supported} (aliases: 'keyword', 'bm25')"
                 )
 
         results = store.search(

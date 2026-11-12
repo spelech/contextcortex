@@ -151,39 +151,53 @@ def get_file_outline(repo: str, filepath: str) -> Optional[Dict[str, Any]]:
     with get_db_connection() as conn:
         repo_filter = "" if repo == "__all__" else "repo = ? AND "
         repo_params = [] if repo == "__all__" else [repo]
+        exact_repo_prefix = f"{repo}://{clean_fp}" if repo != "__all__" else clean_fp
 
-        # First attempt exact filepath match (relative or with leading slash)
+        # First attempt exact filepath match (relative, with leading slash, or with repo:// prefix)
         symbols = conn.execute(
             f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language "
-            f"FROM ast_symbols WHERE {repo_filter}(filepath = ? OR filepath = ?) ORDER BY start_line ASC",
-            repo_params + [clean_fp, f"/{clean_fp}"]
+            f"FROM ast_symbols WHERE {repo_filter}("
+            f"REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ?"
+            f") ORDER BY start_line ASC",
+            repo_params + [clean_fp, f"/{clean_fp}", exact_repo_prefix]
         ).fetchall()
 
         # If no exact match, fallback to slash-anchored suffix match to prevent cross-file symbol leakage
         if not symbols:
             symbols = conn.execute(
                 f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language "
-                f"FROM ast_symbols WHERE {repo_filter}(filepath LIKE ? OR filepath LIKE ?) ORDER BY start_line ASC",
-                repo_params + [f"%/{clean_fp}", f"%\\{clean_fp}"]
+                f"FROM ast_symbols WHERE {repo_filter}("
+                f"REPLACE(filepath, '\\', '/') LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?"
+                f") ORDER BY start_line ASC",
+                repo_params + [f"%/{clean_fp}", f"%://{clean_fp}"]
             ).fetchall()
 
         routes = conn.execute(
             f"SELECT id, framework, http_method, path_pattern, handler_symbol, start_line, end_line "
-            f"FROM api_routes WHERE {repo_filter}(filepath = ? OR filepath = ?)",
-            repo_params + [clean_fp, f"/{clean_fp}"]
+            f"FROM api_routes WHERE {repo_filter}("
+            f"REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ?"
+            f")",
+            repo_params + [clean_fp, f"/{clean_fp}", exact_repo_prefix]
         ).fetchall()
         if not routes:
             routes = conn.execute(
                 f"SELECT id, framework, http_method, path_pattern, handler_symbol, start_line, end_line "
-                f"FROM api_routes WHERE {repo_filter}(filepath LIKE ? OR filepath LIKE ?)",
-                repo_params + [f"%/{clean_fp}", f"%\\{clean_fp}"]
+                f"FROM api_routes WHERE {repo_filter}("
+                f"REPLACE(filepath, '\\', '/') LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?"
+                f")",
+                repo_params + [f"%/{clean_fp}", f"%://{clean_fp}"]
             ).fetchall()
 
     route_by_handler = {r["handler_symbol"]: dict(r) for r in routes if r["handler_symbol"]}
     route_by_line = {r["start_line"]: dict(r) for r in routes}
 
     formatted_symbols = []
+    seen_syms = set()
     for s in symbols:
+        dedup_key = (s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"])
+        if dedup_key in seen_syms:
+            continue
+        seen_syms.add(dedup_key)
         route_meta = route_by_handler.get(s["name"]) or route_by_line.get(s["start_line"])
         formatted_symbols.append({
             "id": s["id"],
@@ -226,10 +240,10 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
             SELECT id, name, full_symbol
             FROM ast_symbols
             WHERE repo = ? 
-              AND (filepath = ? OR filepath = ? OR filepath LIKE ?)
+              AND (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ?)
               AND start_line > ? AND end_line <= ? AND id != ?
             """,
-            (sym["repo"], sym["filepath"], f"/{clean_sym_fp}", f"%/{clean_sym_fp}", sym["start_line"], sym["end_line"], sym["id"])
+            (sym["repo"], sym["filepath"].replace("\\", "/"), f"/{clean_sym_fp}", f"%/{clean_sym_fp}", sym["start_line"], sym["end_line"], sym["id"])
         ).fetchall()
 
         target_names = {sym["name"]}
@@ -254,10 +268,10 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
         callers_query = f"""
             SELECT 
                 MIN(r.id) as id,
-                COALESCE(r.source_symbol_id, src_sym.id) as source_symbol_id,
+                MIN(COALESCE(r.source_symbol_id, src_sym.id)) as source_symbol_id,
                 r.source_filepath,
                 r.source_symbol,
-                r.target_symbol,
+                MIN(r.target_symbol) as target_symbol,
                 r.relationship_type,
                 MIN(r.line_number) as line_number,
                 COUNT(*) as call_count,
@@ -269,7 +283,7 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
                 FROM ast_symbols
             ) src_sym ON (
                 r.source_symbol_id = src_sym.id
-                OR ((r.source_symbol = src_sym.name OR r.source_symbol = src_sym.full_symbol) AND (r.source_filepath = src_sym.filepath OR r.source_filepath LIKE '%/' || src_sym.filepath) AND r.repo = src_sym.repo)
+                OR ((r.source_symbol = src_sym.name OR r.source_symbol = src_sym.full_symbol) AND (REPLACE(r.source_filepath, '\\', '/') = REPLACE(src_sym.filepath, '\\', '/') OR REPLACE(r.source_filepath, '\\', '/') LIKE '%/' || REPLACE(src_sym.filepath, '\\', '/')) AND r.repo = src_sym.repo)
             ) AND src_sym.rn = 1
             WHERE r.target_symbol IN ({callers_placeholders})
               AND (r.source_symbol_id IS NULL OR r.source_symbol_id NOT IN ({ex_id_placeholders}))
@@ -287,6 +301,7 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
         callee_source_names = list(target_names)
         src_id_placeholders = ",".join(["?"] * len(callee_source_ids))
         src_name_placeholders = ",".join(["?"] * len(callee_source_names))
+        join_repo_cond = "1=1" if target_repo == "__all__" else "r.repo = tgt_sym.repo"
 
         callees_query = f"""
             SELECT 
@@ -296,8 +311,8 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
                 MIN(r.line_number) as line_number,
                 COUNT(*) as call_count,
                 GROUP_CONCAT(DISTINCT r.line_number) as all_lines,
-                tgt_sym.filepath as target_filepath,
-                tgt_sym.id as target_symbol_id
+                MIN(tgt_sym.filepath) as target_filepath,
+                MIN(tgt_sym.id) as target_symbol_id
             FROM ast_relationships r
             LEFT JOIN (
                 SELECT id, repo, filepath, name, full_symbol,
@@ -305,18 +320,18 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
                 FROM ast_symbols
             ) tgt_sym ON (
                 (r.target_symbol = tgt_sym.name OR r.target_symbol = tgt_sym.full_symbol)
-                AND (r.repo = tgt_sym.repo OR ? = '__all__')
+                AND ({join_repo_cond})
                 AND tgt_sym.rn = 1
             )
             WHERE (r.source_symbol_id IN ({src_id_placeholders}) 
-                   OR (r.source_symbol IN ({src_name_placeholders}) AND (r.source_filepath = ? OR r.source_filepath = ? OR r.source_filepath LIKE ?)))
+                   OR (r.source_symbol IN ({src_name_placeholders}) AND (REPLACE(r.source_filepath, '\\', '/') = ? OR REPLACE(r.source_filepath, '\\', '/') = ? OR REPLACE(r.source_filepath, '\\', '/') LIKE ?)))
               AND r.relationship_type != 'IMPORTS'{repo_filter_clause}
             GROUP BY r.target_symbol, r.relationship_type
             ORDER BY 
-                CASE WHEN tgt_sym.filepath IS NOT NULL THEN 0 ELSE 1 END ASC,
+                CASE WHEN MIN(tgt_sym.filepath) IS NOT NULL THEN 0 ELSE 1 END ASC,
                 MIN(r.line_number) ASC
         """
-        callee_params = [target_repo] + callee_source_ids + callee_source_names + [sym["filepath"], f"/{clean_sym_fp}", f"%/{clean_sym_fp}"] + repo_params
+        callee_params = callee_source_ids + callee_source_names + [sym["filepath"].replace("\\", "/"), f"/{clean_sym_fp}", f"%/{clean_sym_fp}"] + repo_params
         callees = conn.execute(callees_query, callee_params).fetchall()
 
         # 3. Fetch imports:
@@ -330,16 +345,17 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
                 GROUP_CONCAT(DISTINCT r.line_number) as all_lines
             FROM ast_relationships r
             WHERE (r.source_symbol_id = ? 
-                   OR (r.source_symbol = ? AND (r.source_filepath = ? OR r.source_filepath = ? OR r.source_filepath LIKE ?))
-                   OR (r.source_filepath = ? OR r.source_filepath = ? OR r.source_filepath LIKE ?))
+                   OR (r.source_symbol = ? AND (REPLACE(r.source_filepath, '\\', '/') = ? OR REPLACE(r.source_filepath, '\\', '/') = ? OR REPLACE(r.source_filepath, '\\', '/') LIKE ?))
+                   OR (REPLACE(r.source_filepath, '\\', '/') = ? OR REPLACE(r.source_filepath, '\\', '/') = ? OR REPLACE(r.source_filepath, '\\', '/') LIKE ?))
               AND r.relationship_type = 'IMPORTS'{repo_filter_clause}
             GROUP BY r.target_symbol
             ORDER BY MIN(r.line_number) ASC
         """
+        norm_sym_fp = sym["filepath"].replace("\\", "/")
         import_params = [
             sym["id"],
-            sym["name"], sym["filepath"], f"/{clean_sym_fp}", f"%/{clean_sym_fp}",
-            sym["filepath"], f"/{clean_sym_fp}", f"%/{clean_sym_fp}"
+            sym["name"], norm_sym_fp, f"/{clean_sym_fp}", f"%/{clean_sym_fp}",
+            norm_sym_fp, f"/{clean_sym_fp}", f"%/{clean_sym_fp}"
         ] + repo_params
         imports = conn.execute(imports_query, import_params).fetchall()
 
@@ -349,17 +365,33 @@ def get_symbol_impact(repo: str, symbol_id: int) -> Optional[Dict[str, Any]]:
         route_query = f"""
             SELECT framework, http_method, path_pattern 
             FROM api_routes 
-            WHERE (handler_symbol = ? OR (filepath = ? OR filepath = ? OR filepath LIKE ?))
+            WHERE (handler_symbol = ? OR (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ?))
               AND start_line <= ? AND end_line >= ?{route_repo_clause}
         """
         route_params = [sym["name"], clean_sym_fp, f"/{clean_sym_fp}", f"%/{clean_sym_fp}", sym["start_line"], sym["end_line"]] + repo_params
         route = conn.execute(route_query, route_params).fetchone()
 
+    sym_dict = dict(sym)
+    if sym_dict.get("filepath"):
+        sym_dict["filepath"] = _clean_path(sym_dict["filepath"])
+    callers_list = []
+    for c in callers:
+        cd = dict(c)
+        if cd.get("source_filepath"):
+            cd["source_filepath"] = _clean_path(cd["source_filepath"])
+        callers_list.append(cd)
+    callees_list = []
+    for c in callees:
+        cd = dict(c)
+        if cd.get("target_filepath"):
+            cd["target_filepath"] = _clean_path(cd["target_filepath"])
+        callees_list.append(cd)
+
     return {
-        "symbol": dict(sym),
+        "symbol": sym_dict,
         "route": dict(route) if route else None,
-        "callers": [dict(c) for c in callers],
-        "callees": [dict(c) for c in callees],
+        "callers": callers_list,
+        "callees": callees_list,
         "imports": [dict(i) for i in imports]
     }
 

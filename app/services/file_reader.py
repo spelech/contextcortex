@@ -130,7 +130,7 @@ class FileReaderService:
                 persistent_repos = self._get_authorized_persistent_repos()
                 if effective_repo in persistent_repos:
                     repo_disk_dir = persistent_repos[effective_repo]
-                    rel_clean = path.split("://", 1)[1] if "://" in path else path.lstrip("/")
+                    rel_clean = (path.split("://", 1)[1] if "://" in path else path).replace("\\", "/").lstrip("/")
                     cand_repo = os.path.normpath(os.path.abspath(os.path.join(repo_disk_dir, rel_clean)))
                     if cand_repo.startswith(repo_disk_dir):
                         if os.path.lexists(cand_repo):
@@ -371,18 +371,25 @@ class FileReaderService:
         max_lines: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Reads a file with safe path resolution, binary checking, and line slicing."""
+        norm_input_path = (path or "").replace("\\", "/")
         try:
             abs_path, source_type = self.resolve_safe_path(path, repo=repo)
-            if not abs_path.startswith("/"):
+            if not os.path.isabs(abs_path):
                 raise ValueError(f"Target path is not absolute: {path}")
             if not os.path.exists(abs_path):
                 raise FileNotFoundError(f"File not found on disk: {path}")
-        except (ValueError, FileNotFoundError):
+        except (ValueError, FileNotFoundError) as orig_err:
+            if isinstance(orig_err, ValueError) and "traversal" in str(orig_err).lower():
+                raise
+            if isinstance(orig_err, ValueError) and "outside authorized roots" in str(orig_err).lower():
+                raise
             vec_res = self._read_from_vector_store(
-                path=path, repo=repo, start_line=start_line, end_line=end_line, max_lines=max_lines
+                path=norm_input_path, repo=repo, start_line=start_line, end_line=end_line, max_lines=max_lines
             )
             if vec_res:
                 return vec_res
+            if isinstance(orig_err, ValueError):
+                raise
             raise FileNotFoundError(f"File not found: {path}")
 
         if os.path.isdir(abs_path):
@@ -403,7 +410,7 @@ class FileReaderService:
 
         if not text:
             return {
-                "filepath": path,
+                "filepath": norm_input_path,
                 "content": "",
                 "start_line": 1,
                 "end_line": 0,
@@ -426,7 +433,7 @@ class FileReaderService:
 
         if s_line > total_lines:
             return {
-                "filepath": path,
+                "filepath": norm_input_path,
                 "content": "",
                 "start_line": s_line,
                 "end_line": min(e_line, total_lines),
@@ -449,7 +456,7 @@ class FileReaderService:
         sliced_content = "\n".join(lines[start_idx:end_idx])
 
         return {
-            "filepath": path,
+            "filepath": norm_input_path,
             "content": sliced_content,
             "start_line": s_line,
             "end_line": actual_end,
@@ -505,6 +512,13 @@ class FileReaderService:
 
         disk_files: List[Tuple[str, str, str]] = []  # (abs_path, repo_name, rel_path)
 
+        _ignored_grep_dirs = frozenset({
+            ".git", ".hg", ".svn", ".venv", "venv", "env",
+            "node_modules", "vendor", "__pycache__", ".pytest_cache",
+            ".mypy_cache", ".ruff_cache", ".tox", "dist", "build",
+            "target", "bin", "obj", ".next", ".nuxt", "coverage",
+        })
+
         # 1. Monitored indexed_paths
         for ip in indexed_paths:
             r_name = ip.get("repo") or "local"
@@ -512,7 +526,8 @@ class FileReaderService:
                 continue
             root_p = os.path.abspath(ip["path"])
             if os.path.isdir(root_p):
-                for dirpath, _, filenames in os.walk(root_p):
+                for dirpath, dirnames, filenames in os.walk(root_p):
+                    dirnames[:] = [d for d in dirnames if d not in _ignored_grep_dirs]
                     for fname in filenames:
                         full_p = os.path.join(dirpath, fname)
                         rel_p = os.path.relpath(full_p, root_p).replace("\\", "/")
@@ -525,8 +540,9 @@ class FileReaderService:
             if effective_repo and r_name != effective_repo:
                 continue
             if os.path.isdir(r_dir):
-                for dirpath, _, filenames in os.walk(r_dir):
-                    if "/.git" in dirpath.replace("\\", "/") or dirpath.endswith("/.git"):
+                for dirpath, dirnames, filenames in os.walk(r_dir):
+                    dirnames[:] = [d for d in dirnames if d not in _ignored_grep_dirs]
+                    if "/.git" in dirpath.replace("\\", "/") or dirpath.replace("\\", "/").endswith("/.git"):
                         continue
                     for fname in filenames:
                         full_p = os.path.join(dirpath, fname)
@@ -537,7 +553,8 @@ class FileReaderService:
         if effective_repo in (None, "local_storage"):
             s_root = self.storage_root
             if os.path.isdir(s_root):
-                for dirpath, _, filenames in os.walk(s_root):
+                for dirpath, dirnames, filenames in os.walk(s_root):
+                    dirnames[:] = [d for d in dirnames if d not in _ignored_grep_dirs]
                     for fname in filenames:
                         full_p = os.path.join(dirpath, fname)
                         rel_p = os.path.relpath(full_p, s_root).replace("\\", "/")
@@ -562,10 +579,9 @@ class FileReaderService:
                 continue
             disk_scanned_keys.add((r_name, rel_p))
 
-            if self.is_binary_file(abs_p):
-                continue
-
             try:
+                if not os.path.isfile(abs_p) or self.is_binary_file(abs_p):
+                    continue
                 with open(abs_p, "r", encoding="utf-8", errors="replace") as f:
                     file_text = f.read()
             except Exception:
@@ -620,7 +636,8 @@ class FileReaderService:
                     # Group chunks by file to reconstruct full files or chunk lines
                     for ch in chunks:
                         ch_repo = ch.get("repo") or "unknown"
-                        ch_file = ch.get("rel_path") or ch.get("path") or ""
+                        raw_ch_file = (ch.get("rel_path") or ch.get("path") or "").replace("\\", "/")
+                        ch_file = raw_ch_file.split("://", 1)[1] if "://" in raw_ch_file else raw_ch_file
                         if ch_file.startswith(f"{ch_repo}/"):
                             ch_file = ch_file[len(ch_repo) + 1:]
 
@@ -664,7 +681,8 @@ class FileReaderService:
         # AST symbols and permalinks enrichment
         for m in matches:
             m_repo = m["repo"]
-            m_file = m["file"]
+            m_file = m["file"].replace("\\", "/")
+            m["file"] = m_file
             m_line = m["line"]
 
             # Lookup AST symbol
@@ -676,12 +694,12 @@ class FileReaderService:
                         """
                         SELECT name, full_symbol, kind, start_line, end_line
                         FROM ast_symbols
-                        WHERE repo = ? AND (filepath = ? OR filepath LIKE ?)
+                        WHERE repo = ? AND (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)
                           AND start_line <= ? AND end_line >= ?
                         ORDER BY (end_line - start_line) ASC
                         LIMIT 1
                         """,
-                        (m_repo, m_file, f"%/{m_file}", m_line, m_line),
+                        (m_repo, m_file, f"%/{m_file}", f"%://{m_file}", m_line, m_line),
                     ).fetchone()
                     if row:
                         sym_name = row["full_symbol"] or row["name"]

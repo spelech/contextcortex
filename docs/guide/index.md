@@ -55,4 +55,4 @@ ContextCortex natively supports corporate and restricted-network environments:
 - **[Restricted-Network Builds](/guide/enterprise-build)**: Configure private CA certificates, internal package mirrors (`APT_MIRROR`, `PIP_INDEX_URL`, `NPM_REGISTRY`), and verified local image overlays.
 - **[User Guide](/guide/user-guide)**: Explore all 9 Web Admin Dashboard modules with step-by-step instructions and screenshots.
 - **[System Architecture](/architecture/)**: Review component diagrams, AST ingestion pipelines, MCP protocol flows, and database ERDs.
-- **[Reference Manual](/reference/mcp-tools)**: Inspect all 16 MCP tools, dynamic resources, guided prompts, and Admin REST API endpoints.
+- **[Reference Manual](/reference/mcp-tools)**: Inspect all 19 MCP tools, dynamic resources, guided prompts, and Admin REST API endpoints.

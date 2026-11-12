@@ -20,6 +20,20 @@ import app.services.git_manager as gm_service
 from app.services.indexing.git_progress import progress_tracker
 
 logger = logging.getLogger("contextcortex.api")
+import sys
+
+
+_ORIG_SYNC_FN = idx_service.sync_single_git_repo
+
+
+def _get_sync_fn():
+    r_mod = sys.modules.get("app.api.routes")
+    if r_mod is not None:
+        r_fn = getattr(r_mod, "sync_single_git_repo", None)
+        if r_fn is not None and r_fn is not _ORIG_SYNC_FN:
+            return r_fn
+    return idx_service.sync_single_git_repo
+
 
 router = APIRouter()
 
@@ -59,21 +73,24 @@ async def api_add_repo(repo: RepoConfig):
         return JSONResponse(status_code=400, content={"error": "Name and URL are required"})
 
     try:
+        effective_provider = gm_service.detect_git_provider(repo.url.strip(), repo.provider)
         with db_service.get_db_connection() as conn:
             cursor = conn.cursor()
             retain_count = repo.retain_commits_count if repo.retain_commits_count is not None else 20
             cursor.execute(
                 """INSERT INTO git_repositories (name, url, branch, auth_token, provider, auth_user, auto_sync, keep_shallow, retain_commits_count, webhook_secret)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (repo.name.strip(), repo.url.strip(), repo.branch or "main", repo.auth_token, repo.provider or "github", repo.auth_user,
+                (repo.name.strip(), repo.url.strip(), repo.branch or "main", repo.auth_token, effective_provider, repo.auth_user,
                  1 if repo.auto_sync else 0, 1 if repo.keep_shallow else 0, max(0, retain_count), repo.webhook_secret)
             )
             conn.commit()
             repo_id = cursor.lastrowid
 
+        sync_fn = _get_sync_fn()
         threading.Thread(
-            target=idx_service.sync_single_git_repo,
-            args=(repo_id,)
+            target=sync_fn,
+            args=(repo_id,),
+            daemon=True,
         ).start()
 
         return {"status": "success", "id": repo_id}
@@ -154,9 +171,18 @@ async def api_sync_repo(repo_id: int):
                 return JSONResponse(status_code=404, content={"error": "Repo not found"})
             r = dict(row)
 
+        sync_fn = _get_sync_fn()
+
+        def _run_manual_sync(rid: int):
+            try:
+                sync_fn(rid, force=True)
+            except TypeError:
+                sync_fn(rid)
+
         threading.Thread(
-            target=idx_service.sync_single_git_repo,
-            args=(r["id"],)
+            target=_run_manual_sync,
+            args=(r["id"],),
+            daemon=True,
         ).start()
 
         return {"status": "success", "repo": r["name"], "message": f"Sync started for {r['name']}"}

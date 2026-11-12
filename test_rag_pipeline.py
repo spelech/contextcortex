@@ -131,8 +131,10 @@ import anyio
 client = TestClient(app)
 
 def test_api_routes_pydantic():
+    from unittest.mock import patch
     req = {"name": "pytest_repo", "url": "https://github.com/pytest/repo"}
-    res = client.post("/admin/api/repos", json=req)
+    with patch("app.services.indexing.sync_single_git_repo"):
+        res = client.post("/admin/api/repos", json=req)
     assert res.status_code in [200, 400]
     data = res.json()
     assert data.get("status") == "success" or "error" in data

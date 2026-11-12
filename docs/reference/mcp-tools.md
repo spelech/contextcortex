@@ -1,6 +1,6 @@
 # MCP Tools and Resources Reference
 
-This document provides complete reference specifications for all **16 Model Context Protocol (MCP) tools**, dynamic resources, and guided prompts exposed by ContextCortex (`app/mcp/tools.py`).
+This document provides complete reference specifications for all **19 Model Context Protocol (MCP) tools**, dynamic resources, and guided prompts exposed by ContextCortex (`app/mcp/tools.py`).
 
 ---
 
@@ -10,24 +10,27 @@ This document provides complete reference specifications for all **16 Model Cont
 | :--- | :---: | :--- | :--- | :--- |
 | [`search_code`](#1-search-code) | `viewer` | Search & Retrieval | `query`, `repo`, `language`, `limit`, `dense_weight`, `mode` | Hybrid semantic + BM25 search over code chunks with AST signatures, score decomposition, and Git permalinks. |
 | [`search_docs`](#2-search-docs) | `viewer` | Search & Retrieval | `query`, `repo`, `category`, `tag`, `limit`, `dense_weight`, `mode` | Hybrid search across Markdown documentation, architectural decision records, summaries, and PDFs. |
-| [`find_symbol`](#3-find-symbol) | `viewer` | AST Symbols & Graphs | `name`, `repo`, `exact`, `limit` | Sub-50ms exact or prefix lookup of AST symbols (functions, classes, methods, interfaces). |
-| [`get_file_outline`](#4-get-file-outline) | `viewer` | AST Symbols & Graphs | `filepath`, `repo` | Structural AST outline of a file (classes, methods, signatures, line ranges) without full token costs. |
-| [`trace_path`](#5-trace-path) | `viewer` | AST Symbols & Graphs | `symbol`, `repo`, `direction`, `depth`, `limit` | Breadth-first traversal of function call graphs, imports, and inheritance relationships. |
-| [`find_routes`](#6-find-routes) | `viewer` | API Route Discovery | `query`, `method`, `repo`, `limit` | Lists or searches HTTP route declarations across backend frameworks (FastAPI, Express, ASP.NET, Flask, Gin). |
-| [`find_api_callers`](#7-find-api-callers) | `viewer` | API Route Discovery | `path`, `method`, `repo` | Finds client call sites and services that invoke a specific HTTP endpoint or URL pattern. |
-| [`list_repositories`](#8-list-repositories) | `viewer` | Repositories & Architecture | *None* | Lists all registered Git repositories and monitored local paths with branches, commit SHAs, and sync status. |
-| [`sync_repository`](#9-sync-repository) | `editor` | Repositories & Architecture | `repo` | Triggers an immediate re-fetch and incremental re-indexing of a specific repository or all sources. |
-| [`index_status`](#10-index-status) | `viewer` | Repositories & Architecture | *None* | Returns global vector counts, active vector backend, embedding models, and provider rate limits. |
-| [`get_architecture`](#11-get-architecture) | `viewer` | Repositories & Architecture | `repo` | Synthesizes language distributions, entry points, core modules, route counts, and active ADRs. |
-| [`manage_adr`](#12-manage-adr) | `editor` / `viewer` | Repositories & Architecture | `action`, `repo`, `id`, `title`, `status`, `context`, `decision`, `consequences` | Reads, lists, creates, updates, or supersedes Architectural Decision Records (MADR format). |
-| [`what_is_ingested`](#13-what-is-ingested) | `viewer` | Storage & File Access | `source_type`, `repo_name`, `path_prefix`, `file_extension`, `detail_level` | Inspects all ingested Git repositories, monitored local paths, and uploaded local storage files. |
-| [`manage_local_file`](#14-manage-local-file) | `editor` / `viewer` | Storage & File Access | `action`, `file_path`, `content`, `repo`, `category` | Uploads, replaces, reads, previews, or deletes files in managed local storage with immediate indexing. |
-| [`read_file`](#15-read-file) | `viewer` | Storage & File Access | `path`, `repo`, `start_line`, `end_line` | Reads full file content or bounded 1-indexed line ranges from monitored directories, persistent repos, or storage. |
-| [`summarize_file`](#16-summarize-file) | `viewer` | Storage & File Access | `path`, `repo`, `force_refresh` | Retrieves a cached summary or generates a structured LLM executive summary for a large file. |
+| [`grep_code`](#3-grep-code) | `viewer` | Search & Retrieval | `pattern`, `repo`, `path_glob`, `is_regex`, `case_sensitive`, `context_lines`, `limit` | Deterministic literal and regex pattern matching across one or all indexed repositories with context lines and AST symbol attribution. |
+| [`diagnose_issue`](#4-diagnose-issue) | `viewer` | Forensic Triage | `issue_text`, `repo`, `context_lines`, `limit` | Forensic triage tool that parses stack traces, resolves AST frames, matches error literals and HTTP routes, and retrieves semantic code candidates. |
+| [`find_symbol`](#5-find-symbol) | `viewer` | AST Symbols & Graphs | `name`, `repo`, `exact`, `limit` | Sub-50ms exact or prefix lookup of AST symbols (functions, classes, methods, interfaces). |
+| [`get_file_outline`](#6-get-file-outline) | `viewer` | AST Symbols & Graphs | `filepath`, `repo` | Structural AST outline of a file (classes, methods, signatures, line ranges) without full token costs. |
+| [`trace_path`](#7-trace-path) | `viewer` | AST Symbols & Graphs | `symbol`, `repo`, `direction`, `depth`, `limit` | Breadth-first traversal of function call graphs, imports, inheritance, and cross-repo HTTP boundaries (`external_callers`, `external_handlers`). |
+| [`find_routes`](#8-find-routes) | `viewer` | API Route Discovery | `query`, `method`, `repo`, `limit` | Lists or searches HTTP route declarations across backend frameworks (FastAPI, Express, ASP.NET, Flask, Gin). |
+| [`find_api_callers`](#9-find-api-callers) | `viewer` | API Route Discovery | `path`, `method`, `repo` | Finds client call sites and services that invoke a specific HTTP endpoint or URL pattern. |
+| [`list_repositories`](#10-list-repositories) | `viewer` | Repositories & Architecture | *None* | Lists all registered Git repositories and monitored local paths with branches, commit SHAs, and sync status. |
+| [`get_recent_changes`](#11-get-recent-changes) | `viewer` | Repositories & Architecture | `repo`, `filepath`, `symbol`, `limit` | Returns recent commits for a Git repository, optionally filtered by file path or AST symbol name. |
+| [`sync_repository`](#12-sync-repository) | `editor` | Repositories & Architecture | `repo` | Triggers an immediate re-fetch and incremental re-indexing of a specific repository or all sources. |
+| [`index_status`](#13-index-status) | `viewer` | Repositories & Architecture | *None* | Returns global vector counts, active vector backend, embedding models, and provider rate limits. |
+| [`get_architecture`](#14-get-architecture) | `viewer` | Repositories & Architecture | `repo` | Synthesizes language distributions, entry points, core modules, route counts, and active ADRs. |
+| [`manage_adr`](#15-manage-adr) | `editor` / `viewer` | Repositories & Architecture | `action`, `repo`, `id`, `title`, `status`, `context`, `decision`, `consequences` | Reads, lists, creates, updates, or supersedes Architectural Decision Records (MADR format). |
+| [`what_is_ingested`](#16-what-is-ingested) | `viewer` | Storage & File Access | `source_type`, `repo_name`, `path_prefix`, `file_extension`, `detail_level` | Inspects all ingested Git repositories, monitored local paths, and uploaded local storage files. |
+| [`manage_local_file`](#17-manage-local-file) | `editor` / `viewer` | Storage & File Access | `action`, `file_path`, `content`, `repo`, `category` | Uploads, replaces, reads, previews, or deletes files in managed local storage with immediate indexing. |
+| [`read_file`](#18-read-file) | `viewer` | Storage & File Access | `path`, `repo`, `start_line`, `end_line` | Reads full file content or bounded 1-indexed line ranges from disk or reconstructed from vector chunks. |
+| [`summarize_file`](#19-summarize-file) | `viewer` | Storage & File Access | `path`, `repo`, `force_refresh` | Retrieves a cached summary or generates a structured LLM executive summary for a large file. |
 
 ---
 
-## Search & Retrieval Tools
+## Search, Retrieval & Forensic Triage Tools
 
 ### 1. `search_code`
 Performs calibrated hybrid semantic and BM25 lexical search over indexed source code chunks and enriches matches with AST symbol metadata.
@@ -40,7 +43,7 @@ Performs calibrated hybrid semantic and BM25 lexical search over indexed source 
   - `limit` (*integer, default: 5*): Maximum number of ranked code blocks to return.
   - `dense_weight` (*float, optional*): Hybrid weight between `0.0` (pure lexical BM25) and `1.0` (pure semantic vector). Defaults to `0.5` balanced.
   - `mode` (*string, default: `"hybrid"`*): Search mode: `"hybrid"`, `"semantic"`, or `"lexical"`.
-- **Returns**: Formatted Markdown cards containing the repository, file path, 1-indexed line span, qualified AST symbol (`Class.Method`), extracted signature, decomposed score breakdown (`Score: 78.4% (Semantic: 82.1% | Lexical: 69.5%)`), clickable Git permalink, and syntax-fenced code block.
+- **Returns**: Compact JSON object containing the repository, file path, 1-indexed line span, qualified AST symbol (`Class.Method`), extracted signature, decomposed score breakdown (`score`, `dense_score`, `sparse_score`), clickable Git permalink, and code content.
 
 ### 2. `search_docs`
 Performs calibrated hybrid search across Markdown documentation, architectural decision records, executive summaries, and indexed PDF documents.
@@ -56,11 +59,36 @@ Performs calibrated hybrid search across Markdown documentation, architectural d
   - `mode` (*string, default: `"hybrid"`*): Search mode: `"hybrid"`, `"semantic"`, or `"lexical"`.
 - **Returns**: Ranked documentation sections with heading breadcrumbs (`# > ## > ###`), decomposed relevance scores, and source paths.
 
+### 3. `grep_code`
+Performs deterministic literal string or regular expression matching across one or all indexed repositories, scanning both on-disk files and vector-reconstructed files from ephemeral repositories.
+
+- **Minimum Role**: `viewer`
+- **Parameters**:
+  - `pattern` (*string, required*): Exact substring or regular expression pattern to search for across repositories.
+  - `repo` (*string, optional*): Repository identifier or storage namespace filter (searches all indexed sources when omitted).
+  - `path_glob` (*string, optional*): Optional `fnmatch` file path glob filter (e.g. `"*.py"` or `"app/services/*"`).
+  - `is_regex` (*boolean, default: false*): When `true`, compiles `pattern` as a regular expression; when `false`, performs literal substring matching.
+  - `case_sensitive` (*boolean, default: false*): When `true`, performs case-sensitive matching.
+  - `context_lines` (*integer, default: 2*): Number of surrounding context lines before and after each match (`0` to `10`).
+  - `limit` (*integer, default: 30*): Maximum number of matched lines to return (`1` to `100`).
+- **Returns**: Compact JSON object containing `pattern`, `total_matches`, `truncated`, and `matches` (each with `repo`, `file`, `line`, `content`, `context_before`, `context_after`, and enclosing `symbol`).
+
+### 4. `diagnose_issue`
+Forensic triage tool that accepts stack traces, error logs, or user bug reports and correlates them against indexed AST symbols, HTTP routes, error string literals, and semantic vector candidates.
+
+- **Minimum Role**: `viewer`
+- **Parameters**:
+  - `issue_text` (*string, required*): Raw stack trace, error log, user symptom report, or combination to triage.
+  - `repo` (*string, optional*): Optional repository identifier to scope diagnostics and resolution.
+  - `context_lines` (*integer, default: 5*): Number of surrounding code lines to include for resolved stack frames (`1` to `15`).
+  - `limit` (*integer, default: 5*): Maximum number of semantic code candidate blocks to retrieve (`1` to `20`).
+- **Returns**: Structured JSON payload containing `resolved_frames` (stack frames mapped to indexed files, line numbers, enclosing AST symbols, and code context), `matched_routes` (HTTP routes referenced in the error log), `matched_symbols`, `literal_matches` (exact error strings found in source code), and `semantic_candidates`.
+
 ---
 
 ## AST Symbols & Call Graph Tools
 
-### 3. `find_symbol`
+### 5. `find_symbol`
 Performs deterministic sub-50ms symbol lookup from the relational `ast_symbols` index without vector search overhead.
 
 - **Minimum Role**: `viewer`
@@ -71,7 +99,7 @@ Performs deterministic sub-50ms symbol lookup from the relational `ast_symbols` 
   - `limit` (*integer, default: 10*): Maximum matches to return.
 - **Returns**: Symbol declarations with qualified names, parameter signatures, 1-indexed starting and ending lines, and file paths.
 
-### 4. `get_file_outline`
+### 6. `get_file_outline`
 Returns the structural AST outline of a file without retrieving its full token body.
 
 - **Minimum Role**: `viewer`
@@ -80,8 +108,8 @@ Returns the structural AST outline of a file without retrieving its full token b
   - `repo` (*string, optional*): Repository identifier.
 - **Returns**: Hierarchical list of classes, functions, methods, signatures, and line spans defined in the file.
 
-### 5. `trace_path`
-Deterministically traverses function call graphs, module imports, and inheritance hierarchies using AST relationships (`ast_relationships`) via breadth-first search (BFS).
+### 7. `trace_path`
+Deterministically traverses function call graphs, module imports, inheritance hierarchies, and cross-repository HTTP route boundaries using AST relationships (`ast_relationships`), `api_routes`, and `api_client_calls` via breadth-first search (BFS).
 
 - **Minimum Role**: `viewer`
 - **Parameters**:
@@ -90,13 +118,13 @@ Deterministically traverses function call graphs, module imports, and inheritanc
   - `direction` (*string, default: `"both"`*): Traversal direction: `"callers"` (inbound), `"callees"` (outbound), or `"both"`.
   - `depth` (*integer, default: 2*): Maximum BFS traversal hops (`1` to `5`).
   - `limit` (*integer, default: 25*): Maximum relationships returned.
-- **Returns**: Directed call/import graph edges with source files, target symbols, relationship types (`CALLS`, `IMPORTS`, `EXTENDS`), and line numbers.
+- **Returns**: Directed call/import graph edges (`inbound`, `outbound`) with source files, target symbols, relationship types (`CALLS`, `IMPORTS`, `EXTENDS`), line numbers, and cross-repository HTTP links (`external_callers` for client calls invoking a route handler, and `external_handlers` for backend route handlers matching an outbound HTTP call).
 
 ---
 
 ## API Route Discovery Tools
 
-### 6. `find_routes`
+### 8. `find_routes`
 Lists or searches declared HTTP endpoints and route handlers across indexed backend frameworks.
 
 - **Minimum Role**: `viewer`
@@ -107,7 +135,7 @@ Lists or searches declared HTTP endpoints and route handlers across indexed back
   - `limit` (*integer, default: 20*): Maximum routes to return.
 - **Returns**: Matched HTTP routes with framework name, HTTP method, normalized path template, handler symbol, file path, and line numbers.
 
-### 7. `find_api_callers`
+### 9. `find_api_callers`
 Finds client call sites and services that invoke a specific HTTP endpoint or URL pattern (`api_client_calls`).
 
 - **Minimum Role**: `viewer`
@@ -121,29 +149,40 @@ Finds client call sites and services that invoke a specific HTTP endpoint or URL
 
 ## Repositories, Architecture & ADR Tools
 
-### 8. `list_repositories`
+### 10. `list_repositories`
 Lists all registered Git repositories and monitored local filesystem paths.
 
 - **Minimum Role**: `viewer`
 - **Parameters**: None.
-- **Returns**: Repository aliases, provider badges (`[GITHUB]`, `[GITLAB]`, `[GITEA]`, `[BITBUCKET]`), active branches, latest indexed commit SHAs, shallow retention flags, and file counts.
+- **Returns**: Repository aliases, provider types (`github`, `gitlab`, `gitea`, `bitbucket`, `git`), active branches, latest indexed commit SHAs, sync status, and file counts.
 
-### 9. `sync_repository`
+### 11. `get_recent_changes`
+Returns recent commit history for a registered Git repository from the `git_commits` table, optionally filtered by file path or AST symbol name.
+
+- **Minimum Role**: `viewer`
+- **Parameters**:
+  - `repo` (*string, required*): Repository name to inspect recent commits for.
+  - `filepath` (*string, optional*): Relative file path filter to only return commits touching that file.
+  - `symbol` (*string, optional*): AST symbol name; resolves the symbol's declaring file path and filters commits touching that file.
+  - `limit` (*integer, default: 10*): Maximum commits to return (`1` to `50`).
+- **Returns**: Compact JSON object containing `repo`, `retained_limit`, and `commits` (each with `sha`, `short_sha`, `author`, `date`, `message`, `files_changed`, and provider-aware `commit_url`).
+
+### 12. `sync_repository`
 Triggers an immediate synchronization and incremental re-indexing run for a registered Git repository or local path.
 
 - **Minimum Role**: `editor`
 - **Parameters**:
   - `repo` (*string, optional*): Repository alias to synchronize (synchronizes all enabled sources when omitted).
-- **Returns**: Synchronization status and updated commit SHA.
+- **Returns**: Synchronization status and scope confirmation.
 
-### 10. `index_status`
+### 13. `index_status`
 Returns global index health, vector collection statistics, active embedding models, and GitHub API rate limits.
 
 - **Minimum Role**: `viewer`
 - **Parameters**: None.
 - **Returns**: Active vector store provider (`qdrant` or `pgvector`), total vector count, dense/sparse model names, and rate limit counters.
 
-### 11. `get_architecture`
+### 14. `get_architecture`
 Synthesizes a high-level architectural overview of a repository or the entire indexed workspace.
 
 - **Minimum Role**: `viewer`
@@ -151,7 +190,7 @@ Synthesizes a high-level architectural overview of a repository or the entire in
   - `repo` (*string, optional*): Specific repository alias (returns a multi-repository overview when omitted).
 - **Returns**: Language breakdown, detected entry points, primary directory modules, API route counts, and active Architectural Decision Records.
 
-### 12. `manage_adr`
+### 15. `manage_adr`
 Reads, lists, creates, updates, or supersedes Architectural Decision Records (MADR / Nygard format).
 
 - **Minimum Role**: `viewer` for `list`/`get`; `editor` for `create`/`update`/`supersede`.
@@ -168,7 +207,7 @@ Reads, lists, creates, updates, or supersedes Architectural Decision Records (MA
 
 ## Storage, Catalog & File Reading Tools
 
-### 13. `what_is_ingested`
+### 16. `what_is_ingested`
 Inspects all ingested Git repositories, monitored local paths, and uploaded local storage files with multi-dimensional filtering.
 
 - **Minimum Role**: `viewer`
@@ -180,7 +219,7 @@ Inspects all ingested Git repositories, monitored local paths, and uploaded loca
   - `detail_level` (*string, default: `"summary"`*): `"summary"` (aggregate counts and statuses) or `"detailed"` (file-by-file inventory).
 - **Returns**: Consolidated multi-source catalog inventory.
 
-### 14. `manage_local_file`
+### 17. `manage_local_file`
 Manages files inside the managed local storage directory (`LOCAL_STORAGE_PATH`) with real-time incremental indexing.
 
 - **Minimum Role**: `viewer` for `read`; `editor` for `upload`, `replace`, `delete`.
@@ -192,8 +231,8 @@ Manages files inside the managed local storage directory (`LOCAL_STORAGE_PATH`) 
   - `category` (*string, optional*): Optional document category tag.
 - **Returns**: File operation status, byte size, and immediate vector/AST indexing confirmation.
 
-### 15. `read_file`
-Reads entire file contents or bounded 1-indexed line ranges from monitored local directories, persistent shallow repositories, or managed local storage.
+### 18. `read_file`
+Reads entire file contents or bounded 1-indexed line ranges from monitored local directories, persistent shallow repositories, managed local storage, or reconstructed directly from indexed vector chunks when an ephemeral repository is not stored on disk.
 
 - **Minimum Role**: `viewer`
 - **Parameters**:
@@ -201,9 +240,9 @@ Reads entire file contents or bounded 1-indexed line ranges from monitored local
   - `repo` (*string, optional*): Repository or storage namespace identifier.
   - `start_line` (*integer, optional*): 1-based starting line number (inclusive).
   - `end_line` (*integer, optional*): 1-based ending line number (inclusive).
-- **Returns**: Numbered source lines with truncation safeguards (`max_lines_per_read`, default `2,000` lines).
+- **Returns**: JSON object with `file`, `repo`, `source` (`local_storage`, `persistent_repo`, `monitored_path`, or `vector_store`), `lines`, `total_lines`, `size_bytes`, `truncated`, and `content`.
 
-### 16. `summarize_file`
+### 19. `summarize_file`
 Retrieves a cached executive summary or generates a structured LLM summary for a large source or documentation file.
 
 - **Minimum Role**: `viewer`
@@ -221,7 +260,7 @@ Retrieves a cached executive summary or generates a structured LLM summary for a
 
 | Resource URI | MIME Type | Description |
 | :--- | :--- | :--- |
-| `knowledge://catalog/summary` | `text/markdown` | Real-time Markdown report summarizing all indexed repositories, document distributions, and AST symbol totals. |
+| `knowledge://catalog/summary` | `text/markdown` | Real-time catalog report summarizing all indexed repositories, document distributions, and AST symbol totals. |
 
 ### Guided Prompts
 

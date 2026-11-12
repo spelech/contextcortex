@@ -28,7 +28,7 @@ ContextCortex provides:
 The requirements are organized into three primary sections:
 
 1. **[Functional Requirements](/requirements/functional)**:
-   Specifies the functional behavior, data operations, all 16 MCP tools, and user interface capabilities.
+   Specifies the functional behavior, data operations, all 19 MCP tools, and user interface capabilities.
 
 2. **[Non-Functional Requirements](/requirements/non-functional)**:
    Defines performance targets, security standards, maintainability limits (sub-500 LOC per file), and reliability constraints.

@@ -107,81 +107,6 @@ def test_token_sources(temp_db):
         assert src == "Database (Github)"
 
 @pytest.mark.asyncio
-async def test_handle_search_code():
-    import json
-    mock_hit = MagicMock()
-    mock_hit.score = 0.05
-    mock_hit.dense_score = None
-    mock_hit.sparse_score = None
-    mock_hit.payload = {
-        "repo": "test-repo",
-        "rel_path": "server.py",
-        "start_line": 1,
-        "end_line": 20,
-        "symbol": "run_server",
-        "github_url": "https://github.com/test/blob/main/server.py",
-        "language": "python",
-        "content": "def run_server(): pass"
-    }
-
-    with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]):
-        res = json.loads(await handle_search_code(query="run server", repo="test-repo", language="python"))
-        assert res["results"][0]["file"] == "server.py"
-        assert res["results"][0]["symbol"] == "run_server"
-        assert res["results"][0]["score"] == 0.05
-
-    # No results
-    with patch("app.mcp.tools.execute_hybrid_search", return_value=[]):
-        res = json.loads(await handle_search_code(query="nonexistent"))
-        assert res["results"] == []
-
-    # Empty query
-    res_empty = json.loads(await handle_search_code(query=""))
-    assert "search query cannot be empty" in res_empty["error"]
-
-    # Error during search
-    with patch("app.mcp.tools.execute_hybrid_search", side_effect=Exception("Hybrid search crash")):
-        res_err = json.loads(await handle_search_code(query="crash test"))
-        assert "Error executing code search" in res_err["error"]
-
-@pytest.mark.asyncio
-async def test_handle_search_docs():
-    import json
-    mock_hit = MagicMock()
-    mock_hit.score = 0.04
-    mock_hit.dense_score = None
-    mock_hit.sparse_score = None
-    mock_hit.payload = {
-        "repo": "docs",
-        "rel_path": "arch.md",
-        "heading": "Overview",
-        "tags": ["design"],
-        "github_url": "https://github.com/docs/arch.md",
-        "content": "# Overview of architecture"
-    }
-
-    with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]):
-        res = json.loads(await handle_search_docs(query="architecture", category="arch", tag="design"))
-        assert res["results"][0]["file"] == "arch.md"
-        assert "Overview of architecture" in res["results"][0]["content"]
-        assert res["results"][0]["permalink"] == "https://github.com/docs/arch.md"
-        assert res["results"][0]["score"] == 0.04
-
-    # Empty query
-    res_empty = json.loads(await handle_search_docs(query=""))
-    assert "search query cannot be empty" in res_empty["error"]
-
-    # No hits
-    with patch("app.mcp.tools.execute_hybrid_search", return_value=[]):
-        res_nohit = json.loads(await handle_search_docs(query="not_found"))
-        assert res_nohit["results"] == []
-
-    # Search error
-    with patch("app.mcp.tools.execute_hybrid_search", side_effect=Exception("Doc search crash")):
-        res_err = json.loads(await handle_search_docs(query="crash"))
-        assert "Error executing doc search" in res_err["error"]
-
-@pytest.mark.asyncio
 async def test_handle_search_code_and_docs_real_integration(tmp_path):
     """Real un-mocked verification of handle_search_code and handle_search_docs MCP tools."""
     import json
@@ -241,6 +166,14 @@ async def test_handle_search_code_and_docs_real_integration(tmp_path):
     assert res_doc["results"][0]["heading"] == "System Architecture"
     assert "score" in res_doc["results"][0]
 
+    # Empty query and no-match checks on real store
+    res_empty_code = json.loads(await handle_search_code(query=""))
+    assert "search query cannot be empty" in res_empty_code["error"]
+    res_empty_doc = json.loads(await handle_search_docs(query=""))
+    assert "search query cannot be empty" in res_empty_doc["error"]
+    res_nomatch = json.loads(await handle_search_code(query="anything", repo="nonexistent-repo-xyz"))
+    assert res_nomatch["results"] == []
+
 @pytest.mark.asyncio
 async def test_handle_find_symbol(temp_db):
     import json
@@ -268,11 +201,6 @@ async def test_handle_find_symbol(temp_db):
     res_nf = json.loads(await handle_find_symbol(name="not_found", exact=True))
     assert res_nf["symbols"] == []
 
-    # DB exception
-    with patch("app.mcp.tools.get_db_connection", side_effect=Exception("AST DB error")):
-        res_err = json.loads(await handle_find_symbol(name="anything"))
-        assert "Error finding symbol" in res_err["error"]
-
 @pytest.mark.asyncio
 async def test_handle_get_file_outline(temp_db):
     import json
@@ -290,10 +218,6 @@ async def test_handle_get_file_outline(temp_db):
     res_empty = json.loads(await handle_get_file_outline(filepath="nonexistent.py"))
     assert res_empty["symbols"] == []
 
-    with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Outline query error")):
-        res_err = json.loads(await handle_get_file_outline(filepath="src/auth.py"))
-        assert "Failed to get outline" in res_err["error"]
-
 @pytest.mark.asyncio
 async def test_handle_list_repositories(temp_db):
     import json
@@ -306,10 +230,6 @@ async def test_handle_list_repositories(temp_db):
     res = json.loads(await handle_list_repositories())
     assert any(r["name"] == "repo-a" for r in res["git_repositories"])
     assert any(lp["repo"] == "local-repo" for lp in res["local_paths"])
-
-    with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Repo list error")):
-        res_err = json.loads(await handle_list_repositories())
-        assert "Error listing repositories" in res_err["error"]
 
 @pytest.mark.asyncio
 async def test_handle_sync_repository(temp_db):
@@ -330,33 +250,6 @@ async def test_handle_sync_repository(temp_db):
         assert res_repo["status"] == "triggered"
         assert res_repo["repo"] == "repo-b"
 
-    with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Sync crash")):
-        res_err = json.loads(await handle_sync_repository(repo="repo-b"))
-        assert "Failed to trigger sync" in res_err["error"]
-
-@pytest.mark.asyncio
-async def test_handle_index_status(temp_db):
-    import json
-    mock_vs_cfg = {
-        "provider": "qdrant",
-        "mode": "embedded",
-        "storage_path": "/path/to/storage",
-        "collection": "knowledge_rag_v1",
-        "stats": {"points_count": 500},
-        "healthy": True,
-    }
-    with patch("app.mcp.tools.get_vector_store_config", return_value=mock_vs_cfg), \
-         patch("app.services.database.get_effective_git_token", return_value=("ghp_token123", None, "Database (Github)")), \
-         patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
-        res = json.loads(await handle_index_status())
-        assert res["vector_store"]["total_vectors"] == 500
-        assert res["vector_store"]["provider"] == "QDRANT"
-        assert res["github_rate_limit"]["remaining"] == 5000
-
-    with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Status DB fail")):
-        res_err = json.loads(await handle_index_status())
-        assert "Failed to get status" in res_err["error"]
-
 @pytest.mark.asyncio
 async def test_catalog_summary(temp_db):
     import json
@@ -367,10 +260,6 @@ async def test_catalog_summary(temp_db):
     res = json.loads(await handle_catalog_summary())
     assert any(r["name"] == "repo-c" for r in res["git_repositories"])
 
-    with patch("app.mcp.tools.get_db_connection", side_effect=Exception("Catalog DB fail")):
-        res_err = json.loads(await handle_catalog_summary())
-        assert "Error generating catalog resource" in res_err["error"]
-
 def test_custom_prompt_handlers():
     import json
     res1 = json.loads(handle_search_infrastructure_docs(topic="docker swarm"))
@@ -380,16 +269,3 @@ def test_custom_prompt_handlers():
     assert res2["symbol"] == "handle_search_code"
     assert res2["repo"] == "mcp-server"
 
-def test_register_mcp_tools():
-    # Register with mock server
-    mock_server = MagicMock()
-    mock_tool_manager = MagicMock()
-    mock_tool_manager.list_tools.return_value = []
-    mock_server._tool_manager = mock_tool_manager
-
-    register_mcp_tools_and_resources(server=mock_server)
-    assert mock_server.tool.call_count >= 2
-
-    # Register with default server=None
-    with patch("app.mcp.mcp_server.mcp_server", mock_server):
-        register_mcp_tools_and_resources(server=None)

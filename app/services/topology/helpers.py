@@ -7,9 +7,10 @@ from app.services.git_manager import format_git_permalink
 logger = logging.getLogger("contextcortex.topology")
 
 def _clean_filepath(fp: str) -> str:
-    if "://" in fp:
-        return fp.split("://", 1)[1]
-    return fp
+    norm = (fp or "").replace("\\", "/")
+    if "://" in norm:
+        return norm.split("://", 1)[1]
+    return norm
 
 def _get_permalink(
     git_repos: Dict[str, Dict[str, Any]],

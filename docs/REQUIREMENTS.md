@@ -16,7 +16,7 @@ The complete specification is maintained and continuously verified by automated 
    - **Pluggable Vector Store Schema**: Named multi-vector collection (`dense` 384d BGE + `sparse` BM25) and payload models for Qdrant and ChromaDB.
 3. [**Functional Requirements (FR-1 to FR-18)**](../REQUIREMENTS.md#3-comprehensive-functional-requirements-fr)
    - **FR-1**: FastMCP 2.0 Dual Transport Architecture (SSE, Streamable HTTP & JSON-RPC `ping`).
-   - **FR-2**: FastMCP 16 Agent Tools Contract (`search_code`, `search_docs`, `find_symbol`, `trace_path`, `find_routes`, `find_api_callers`, `get_file_outline`, `list_repositories`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `manage_local_file`, `what_is_ingested`, `read_file`, `summarize_file`).
+   - **FR-2**: FastMCP 19 Agent Tools Contract (`search_code`, `search_docs`, `grep_code`, `diagnose_issue`, `find_symbol`, `trace_path`, `find_routes`, `find_api_callers`, `get_file_outline`, `list_repositories`, `get_recent_changes`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `manage_local_file`, `what_is_ingested`, `read_file`, `summarize_file`).
    - **FR-3**: Dynamic Resources & Prompt Templates (`knowledge://catalog/summary`).
    - **FR-4**: Universal Multi-Provider Git Ingestion (GitHub, GitLab, Gitea, Bitbucket, Generic Git).
    - **FR-5**: Multi-Tier Credential Vault & Hierarchy.

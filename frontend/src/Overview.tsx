@@ -85,7 +85,13 @@ export default function Overview({ stats, refreshStats }: { stats: Stats | null,
             </div>
             <div className="spec-row">
               <span>Sparse BM25 Model:</span>
-              <code>{stats.sparse_model ? `${stats.sparse_model} (FastEmbed)` : 'Qdrant/bm25 (FastEmbed)'}</code>
+              <code>
+                {stats.vector_store_provider === 'pgvector' || stats.vector_store_provider === 'postgres' || stats.vector_store_provider === 'postgresql'
+                  ? 'PostgreSQL Full-Text Search (tsvector + GIN)'
+                  : stats.sparse_model
+                    ? `${stats.sparse_model} (FastEmbed)`
+                    : 'Qdrant/bm25 (FastEmbed)'}
+              </code>
             </div>
             <div className="spec-row">
               <span>Retrieval Strategy:</span>

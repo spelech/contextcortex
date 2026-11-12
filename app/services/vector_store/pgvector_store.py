@@ -4,6 +4,7 @@ Supports HNSW indexing, JSONB metadata payloads, and parameterized batch operati
 """
 
 import os
+import re
 import json
 import uuid
 import logging
@@ -15,6 +16,47 @@ from app.services.database.engine import get_db_engine, is_postgres
 from app.services.embeddings import get_dense_embedding, get_dense_dim
 
 logger = logging.getLogger("contextcortex.vector_store.pgvector")
+
+_SEARCH_MODE_ALIASES = {
+    "keyword": "lexical",
+    "keywords": "lexical",
+    "bm25": "lexical",
+    "fulltext": "lexical",
+    "fts": "lexical",
+    "vector": "semantic",
+    "dense": "semantic",
+    "sparse": "lexical",
+}
+
+_FTS_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "could",
+    "did", "do", "does", "for", "from", "had", "has", "have", "how", "if",
+    "in", "into", "is", "it", "its", "may", "might", "not", "of", "on", "or",
+    "our", "should", "so", "such", "than", "that", "the", "their", "them",
+    "then", "there", "these", "they", "this", "to", "too", "up", "use", "used",
+    "using", "was", "we", "were", "what", "when", "where", "which", "who",
+    "why", "will", "with", "would", "you", "your",
+})
+
+
+def _build_or_tsquery(query_text: str) -> str:
+    """
+    Builds a safe PostgreSQL tsquery string joining significant query tokens with '|' (OR).
+    Allows natural-language questions (e.g. 'how does the worker decide that a record needs action')
+    to score documents matching a subset of terms under the 'simple' FTS dictionary.
+    """
+    raw_tokens = re.findall(r"[A-Za-z0-9_]{2,}", (query_text or "").lower())
+    if not raw_tokens:
+        return ""
+    filtered = [t for t in raw_tokens if t not in _FTS_STOPWORDS]
+    tokens = filtered if filtered else raw_tokens
+    seen = []
+    for t in tokens:
+        if t not in seen:
+            seen.append(t)
+        if len(seen) >= 16:
+            break
+    return " | ".join(seen)
 
 
 class PgVectorStore(VectorStore):
@@ -230,6 +272,19 @@ class PgVectorStore(VectorStore):
                 end_line = doc.get("end_line")
                 url = doc.get("permalink_url") or doc.get("github_url")
 
+            if isinstance(path, str):
+                path = path.replace("\\", "/")
+            if isinstance(rel_path, str):
+                rel_path = rel_path.replace("\\", "/")
+            if isinstance(folder, str):
+                folder = folder.replace("\\", "/")
+            if isinstance(url, str):
+                url = url.replace("\\", "/")
+            if isinstance(payload, dict):
+                for pk in ("path", "rel_path", "filepath", "folder", "permalink_url", "github_url"):
+                    if isinstance(payload.get(pk), str):
+                        payload[pk] = payload[pk].replace("\\", "/")
+
             if dense_vec is None and text_content:
                 dense_vec = get_dense_embedding(text_content)
 
@@ -370,7 +425,8 @@ class PgVectorStore(VectorStore):
         if not query_text or not query_text.strip():
             return []
 
-        mode = (search_mode or "semantic").lower().strip()
+        raw_mode = (search_mode or "semantic").lower().strip()
+        mode = _SEARCH_MODE_ALIASES.get(raw_mode, raw_mode)
         caps = self.get_capabilities()
         supported = caps.get("search_modes", ["hybrid", "semantic", "lexical"])
         if mode not in supported:
@@ -428,7 +484,12 @@ class PgVectorStore(VectorStore):
             fts_expr = (
                 "to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, ''))"
             )
-            tsq_expr = "websearch_to_tsquery('simple', :query_text)"
+            or_tsq = _build_or_tsquery(query_text)
+            if or_tsq:
+                params["tsq_or"] = or_tsq
+                tsq_expr = "(websearch_to_tsquery('simple', :query_text) || to_tsquery('simple', :tsq_or))"
+            else:
+                tsq_expr = "websearch_to_tsquery('simple', :query_text)"
 
             # 1. Pure Semantic Search
             if mode == "semantic" or (mode == "hybrid" and alpha >= 1.0):

@@ -212,6 +212,64 @@ class TestGitManager(unittest.TestCase):
             if os.path.exists(test_dir):
                 os.rmdir(test_dir)
 
+    def test_cleanup_repo_dir_removes_readonly_files(self):
+        import stat
+        import tempfile
+        test_dir = tempfile.mkdtemp(prefix="test_readonly_git_")
+        pack_dir = os.path.join(test_dir, ".git", "objects", "pack")
+        os.makedirs(pack_dir, exist_ok=True)
+        pack_file = os.path.join(pack_dir, "pack-12345.pack")
+        with open(pack_file, "wb") as f:
+            f.write(b"packdata")
+        os.chmod(pack_file, stat.S_IREAD)
+        cleanup_repo_dir(test_dir)
+        self.assertFalse(os.path.exists(test_dir))
+
+    @patch("subprocess.run")
+    def test_shallow_clone_incremental_fetch_failure_recovers_with_fresh_clone(self, mock_run):
+        import stat
+        import tempfile
+        target_dir = tempfile.mkdtemp(prefix="test_persistent_repo_")
+        pack_dir = os.path.join(target_dir, ".git", "objects", "pack")
+        os.makedirs(pack_dir, exist_ok=True)
+        pack_file = os.path.join(pack_dir, "pack-readonly.idx")
+        with open(pack_file, "wb") as f:
+            f.write(b"idx")
+        os.chmod(pack_file, stat.S_IREAD)
+
+        clone_target_Existed_and_nonempty = []
+
+        def side_effect(cmd, **kwargs):
+            proc = MagicMock()
+            if "remote" in cmd and "set-url" in cmd:
+                proc.returncode = 0
+                proc.stdout = ""
+            elif "fetch" in cmd:
+                proc.returncode = 128
+                proc.stderr = "fatal: bad object HEAD"
+            elif "clone" in cmd:
+                clone_exists = os.path.exists(target_dir) and bool(os.listdir(target_dir))
+                clone_target_Existed_and_nonempty.append(clone_exists)
+                os.makedirs(os.path.join(target_dir, ".git"), exist_ok=True)
+                proc.returncode = 0
+                proc.stdout = ""
+            elif "rev-parse" in cmd:
+                proc.returncode = 0
+                proc.stdout = "recovered_sha_999\n"
+            else:
+                proc.returncode = 0
+                proc.stdout = ""
+            return proc
+
+        mock_run.side_effect = side_effect
+        try:
+            res = shallow_clone_repo("https://github.com/org/repo", "main", target_dir=target_dir)
+            self.assertIsNone(res.error)
+            self.assertEqual(res.commit_sha, "recovered_sha_999")
+            self.assertEqual(clone_target_Existed_and_nonempty, [False])
+        finally:
+            cleanup_repo_dir(target_dir)
+
     @patch("requests.get")
     def test_check_github_rate_limit_success(self, mock_get):
         mock_resp = MagicMock()

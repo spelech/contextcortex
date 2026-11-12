@@ -73,6 +73,7 @@ describe('Overview Component', () => {
 
     expect(screen.getByText(/PGVECTOR \(PostgreSQL\) Vectors/i)).toBeInTheDocument();
     expect(screen.getByText(/PostgreSQL \(pgvector\)/i)).toBeInTheDocument();
+    expect(screen.getByText('PostgreSQL Full-Text Search (tsvector + GIN)')).toBeInTheDocument();
     expect(screen.getByText('Dense HNSW + Full-Text Weighted Fusion')).toBeInTheDocument();
   });
 
