@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.24.1](https://github.com/spelech/contextcortex/compare/v2.24.0...v2.24.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **trace-path:** follow own-class calls and ignore test doubles ([#138](https://github.com/spelech/contextcortex/issues/138)) ([24a9b55](https://github.com/spelech/contextcortex/commit/24a9b5547a076e6fe75eb834f04cc14bee74c36d))
+
 ## [2.24.0](https://github.com/spelech/contextcortex/compare/v2.23.3...v2.24.0) (2026-11-12)
 
 
