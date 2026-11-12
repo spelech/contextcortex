@@ -88,7 +88,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 
 - **`read_file`**: Reads `path` from watched directories, persistent shallow clones, local storage, or reconstructed vector chunks. Accepts `start_line` (`>= 1`) and `end_line` (`<= 2000` lines per call). Always returns `total_lines`, `start_line`, `end_line`, `has_more`, and `next_start_line`.
 - **`summarize_file`**: Returns a cached LLM executive summary for `path` or regenerates one when `force_refresh=True`.
-- **`grep_code`**: Matches literal strings or regular expressions (`is_regex=True`) across disk and vector-backed repositories. Supports `repo`, `path_glob`, `case_sensitive`, `context_lines` (`0..10`, default `2`), `max_results`/`limit` (`1..100`, default `30`), and `offset`. Truncates any matched or context line `> 400` characters with `...[line truncated]`.
+- **`grep_code`**: Matches literal strings or regular expressions (`is_regex=True`) across disk and vector-backed repositories. Supports `repo`, `path_glob` (alias `path`; with wildcards an fnmatch glob such as `*.cs`, without wildcards a file or folder such as `Services_V2`), `case_sensitive`, `context_lines` (`0..10`, default `2`), `max_results`/`limit` (`1..100`, default `30`), and `offset`. Truncates any matched or context line `> 400` characters with `...[line truncated]`. If a literal search finds nothing and the pattern looks like a regex (for example `A|B` or `foo.*bar`), the search runs again as a regex; `pattern_mode` in the result says which mode was used.
 
 ### Repository, Architecture, and ADR Tools
 
