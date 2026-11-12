@@ -15,6 +15,13 @@ on:
         description: 'pgvector Extension Version'
         required: false
         default: '0.8.0'
+  # Called by release-please.yml after it creates a release (the normal release path).
+  workflow_call:
+    inputs:
+      tag_name:
+        description: 'Release tag to build from and attach the bundle to'
+        required: true
+        type: string
   release:
     types: [published]
   push:
@@ -35,10 +42,20 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    # One bundle build per release tag (or per ref for PR/branch builds) at a time.
+    concurrency:
+      group: windows-portable-${{ inputs.tag_name || github.event.release.tag_name || github.ref }}
+      cancel-in-progress: false
+    env:
+      # Tag to attach to: workflow_call / workflow_dispatch input, release event, or pushed tag; empty for PR builds.
+      RELEASE_TAG: ${{ inputs.tag_name || github.event.release.tag_name || (startsWith(github.ref, 'refs/tags/v') && github.ref_name) || '' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Build exactly the released code when a tag is given.
+          ref: ${{ inputs.tag_name || github.event.release.tag_name || github.ref }}
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -129,8 +146,23 @@ jobs:
           retention-days: 30
 
       - name: Attach Portable Bundle to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release' || github.event.inputs.tag_name != ''
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag_name || '' }}
-          files: dist/contextcortex-windows-x64-portable.zip
+        if: env.RELEASE_TAG != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # --clobber replaces an asset from an earlier run, so a re-run is safe.
+          gh release upload "$env:RELEASE_TAG" "dist/contextcortex-windows-x64-portable.zip" --clobber --repo "${{ github.repository }}"
+          if ($LASTEXITCODE -ne 0) { throw "Upload to release $env:RELEASE_TAG failed" }
+
+      - name: Verify the Release Asset
+        if: env.RELEASE_TAG != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $local = (Get-Item "dist/contextcortex-windows-x64-portable.zip").Length
+          $asset = gh release view "$env:RELEASE_TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[] | select(.name == "contextcortex-windows-x64-portable.zip") | .size'
+          if (-not $asset) { throw "Release $env:RELEASE_TAG has no contextcortex-windows-x64-portable.zip" }
+          if ([int64]$asset -ne $local) { throw "Release asset size $asset differs from the built zip ($local bytes)" }
+          Write-Host "Release $env:RELEASE_TAG has contextcortex-windows-x64-portable.zip ($asset bytes)." -ForegroundColor Green
