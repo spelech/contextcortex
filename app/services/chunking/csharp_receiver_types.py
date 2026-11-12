@@ -9,8 +9,9 @@ declared type, trace_path and the topology graph connect the call to the correct
 The receiver must be a simple name (`x` or `this.x`). Its type comes from the nearest scope that
 declares it: a parameter, local variable, `foreach` variable, or lambda parameter of an enclosing
 method; or a field, property, or primary-constructor parameter of the enclosing type. `var x = new T()`
-gives `T`. When no declaration is found (static calls, `var` without `new`, inherited members),
-the call keeps the bare name.
+gives `T`. A call without a receiver (`Method(...)` or `this.Method(...)`) gets the enclosing type when that
+type declares the method. When no declaration is found (static calls, `var` without `new`, inherited
+members), the call keeps the bare name.
 """
 
 import re
@@ -162,9 +163,45 @@ def receiver_type(call_node, source_bytes: bytes, cache: TypeCache) -> Optional[
     return None
 
 
+def _declared_methods(type_decl, source_bytes: bytes) -> ScopeTypes:
+    """Method names declared directly in a type (name -> type name), for calls without a receiver."""
+    name_node = type_decl.child_by_field_name("name")
+    type_name = _text(name_node, source_bytes) if name_node is not None else ""
+    out: ScopeTypes = {}
+    for child in type_decl.children:
+        if child.type == "declaration_list" and type_name:
+            for member in child.children:
+                m_name = member.child_by_field_name("name") if member.type == "method_declaration" else None
+                if m_name is not None:
+                    out.setdefault(_text(m_name, source_bytes), type_name)
+    return out
+
+
+def own_class_type(call_node, source_bytes: bytes, target: str, cache: TypeCache) -> Optional[str]:
+    """The enclosing type for `Method(...)` or `this.Method(...)` when that type declares `Method`, else None."""
+    fn_node = call_node.child_by_field_name("function")
+    if fn_node is None:
+        return None
+    if fn_node.type == "member_access_expression":
+        receiver = fn_node.child_by_field_name("expression")
+        if receiver is None or receiver.type != "this":
+            return None
+    elif fn_node.type not in ("identifier", "generic_name"):
+        return None
+    node = call_node.parent
+    while node is not None and node.type not in _TYPE_DECLARATIONS:
+        node = node.parent
+    if node is None:
+        return None
+    key = (node.start_byte, node.end_byte, "declared_methods")
+    if key not in cache:
+        cache[key] = _declared_methods(node, source_bytes)
+    return cache[key].get(target)
+
+
 def qualify_csharp_call(call_node, source_bytes: bytes, target: str, cache: TypeCache) -> str:
-    """`Type.target` when the receiver's declared type is known, else `target` unchanged."""
+    """`Type.target` when the receiver's declared type (or, without a receiver, the own class) is known."""
     if call_node.type != "invocation_expression" or not target or "." in target:
         return target
-    r_type = receiver_type(call_node, source_bytes, cache)
+    r_type = receiver_type(call_node, source_bytes, cache) or own_class_type(call_node, source_bytes, target, cache)
     return f"{r_type}.{target}" if r_type else target
