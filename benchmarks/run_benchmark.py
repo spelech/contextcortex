@@ -30,7 +30,7 @@ def load_tasks(tasks_file: Path) -> List[Dict[str, Any]]:
     return tasks
 
 
-def render_opencode_config(template_path: Path, model: str, base_url: str, api_key: str, mcp_url: str) -> str:
+def render_opencode_config(template_path: Path, model: str, base_url: str, mcp_url: str) -> str:
     provider, model_id = model.split("/", 1) if "/" in model else ("litellm", model)
     raw = template_path.read_text(encoding="utf-8")
     replacements = {
@@ -38,7 +38,6 @@ def render_opencode_config(template_path: Path, model: str, base_url: str, api_k
         "${BENCH_PROVIDER}": provider,
         "${BENCH_MODEL_ID}": model_id,
         "${BENCH_LLM_BASE_URL}": base_url,
-        "${BENCH_LLM_API_KEY}": api_key,
         "${CORTEX_MCP_URL}": mcp_url,
     }
     for token, value in replacements.items():
@@ -47,7 +46,7 @@ def render_opencode_config(template_path: Path, model: str, base_url: str, api_k
     return raw
 
 
-def prepare_runtime_homes(scratch: Path, templates_dir: Path, model: str, base_url: str, api_key: str, mcp_url: str) -> Dict[str, Path]:
+def prepare_runtime_homes(scratch: Path, templates_dir: Path, model: str, base_url: str, mcp_url: str) -> Dict[str, Path]:
     custom_configs = os.environ.get("BENCH_CONFIGS_DIR")
     if custom_configs:
         base = Path(custom_configs)
@@ -59,7 +58,7 @@ def prepare_runtime_homes(scratch: Path, templates_dir: Path, model: str, base_u
         home_dir = scratch / "configs" / home_name
         cfg_file = home_dir / ".config" / "opencode" / "opencode.json"
         cfg_file.parent.mkdir(parents=True, exist_ok=True)
-        cfg_file.write_text(render_opencode_config(templates_dir / tpl_name, model, base_url, api_key, mcp_url), encoding="utf-8")
+        cfg_file.write_text(render_opencode_config(templates_dir / tpl_name, model, base_url, mcp_url), encoding="utf-8")
         homes[arm] = home_dir
     return homes
 
@@ -139,7 +138,14 @@ def run_arm(arm_name: str, task: Dict[str, Any], home_dir: Path, scratch: Path, 
     out_file = results_dir / f"{task_id}__{arm_name}.jsonl"
     cwd = scratch / ("arm_cortex" if arm_name == "cortex" else "arm_b_workspace")
     env = os.environ.copy()
-    env.update({"OPENCODE_DB": ":memory:", "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_DISABLE_FILEWATCHER": "1", "HOME": str(home_dir), "PWD": str(cwd)})
+    env.update({
+        "OPENCODE_DB": ":memory:",
+        "OPENCODE_DISABLE_PROJECT_CONFIG": "1",
+        "OPENCODE_DISABLE_FILEWATCHER": "1",
+        "HOME": str(home_dir),
+        "PWD": str(cwd),
+        "BENCH_LLM_API_KEY": env.get("BENCH_LLM_API_KEY", env.get("LITELLM_API_KEY", env.get("OPENAI_API_KEY", ""))),
+    })
 
     t0 = time.monotonic()
     try:
@@ -193,9 +199,8 @@ def main() -> None:
     args.results_dir.mkdir(parents=True, exist_ok=True)
     tasks = load_tasks(args.tasks_file)
     base_url = os.environ.get("BENCH_LLM_BASE_URL", os.environ.get("LITELLM_URL", "http://127.0.0.1:8448/v1"))
-    api_key = os.environ.get("BENCH_LLM_API_KEY", os.environ.get("LITELLM_API_KEY", os.environ.get("OPENAI_API_KEY", "")))
     mcp_url = os.environ.get("CORTEX_MCP_URL", "http://127.0.0.1:18021/mcp")
-    homes = prepare_runtime_homes(SCRATCH, TEMPLATES_DIR, args.model, base_url, api_key, mcp_url)
+    homes = prepare_runtime_homes(SCRATCH, TEMPLATES_DIR, args.model, base_url, mcp_url)
 
     selected = set(args.task_ids) if args.task_ids else None
     summary_path = args.results_dir / "benchmark_summary.json"

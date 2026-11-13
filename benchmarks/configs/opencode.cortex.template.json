@@ -9,7 +9,7 @@
       "name": "OpenAI-Compatible Gateway",
       "settings": {
         "baseURL": "${BENCH_LLM_BASE_URL}",
-        "apiKey": "${BENCH_LLM_API_KEY}"
+        "apiKey": "{env:BENCH_LLM_API_KEY}"
       },
       "models": {
         "${BENCH_MODEL_ID}": {

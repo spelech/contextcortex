@@ -40,12 +40,11 @@ def test_opencode_templates_render_without_secrets():
             BENCH_DIR / "configs" / tpl,
             model="litellm/flash-latest",
             base_url="http://127.0.0.1:8448/v1",
-            api_key="test-placeholder",
             mcp_url="http://127.0.0.1:18021/mcp",
         )
         parsed = json.loads(rendered)
         assert parsed["model"] == "litellm/flash-latest"
-        assert parsed["providers"]["litellm"]["settings"]["apiKey"] == "test-placeholder"
+        assert parsed["providers"]["litellm"]["settings"]["apiKey"] == "{env:BENCH_LLM_API_KEY}"
         assert parsed["permission"]["task"] == "deny"
 
 
