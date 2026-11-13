@@ -80,30 +80,49 @@ def compute_git_repo_delta(
     modified_files: List[str] = []
     unchanged_files: List[str] = []
 
-    for root, dirs, files in os.walk(temp_dir):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _IGNORED_DIR_NAMES]
-        for file in files:
-            if not file.startswith(".") and file.lower().endswith(exts):
-                full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
-                if _should_skip_indexed_file(rel_path, file):
-                    continue
-                db_filepath = f"{repo_name}://{rel_path}"
-                found_filepaths.add(db_filepath)
+    from app.services.ripgrep_runner import list_files_with_ripgrep
 
-                try:
-                    content = read_source_text(full_path)
-                    file_hash = active_proc.compute_text_hash(content)
-                except Exception as e:
-                    logger.warning(f"Failed to read/hash file {full_path}: {e}")
-                    continue
+    rg_files = list_files_with_ripgrep(
+        temp_dir,
+        ignored_dirs=_IGNORED_DIR_NAMES,
+        include_hidden=False,
+        extensions=exts,
+    )
+    candidate_files: List[Tuple[str, str, str]] = []
+    if rg_files is not None:
+        for full_path, rel_path in rg_files:
+            parts = rel_path.split("/")
+            if any(p.startswith(".") for p in parts):
+                continue
+            candidate_files.append((full_path, rel_path, parts[-1]))
+    else:
+        for root, dirs, files in os.walk(temp_dir):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _IGNORED_DIR_NAMES]
+            for file in files:
+                if not file.startswith(".") and file.lower().endswith(exts):
+                    full_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
+                    candidate_files.append((full_path, rel_path, file))
 
-                if db_filepath not in db_files:
-                    added_files.append(full_path)
-                elif force or db_files[db_filepath] != file_hash:
-                    modified_files.append(full_path)
-                else:
-                    unchanged_files.append(full_path)
+    for full_path, rel_path, file in candidate_files:
+        if _should_skip_indexed_file(rel_path, file):
+            continue
+        db_filepath = f"{repo_name}://{rel_path}"
+        found_filepaths.add(db_filepath)
+
+        try:
+            content = read_source_text(full_path)
+            file_hash = active_proc.compute_text_hash(content)
+        except Exception as e:
+            logger.warning(f"Failed to read/hash file {full_path}: {e}")
+            continue
+
+        if db_filepath not in db_files:
+            added_files.append(full_path)
+        elif force or db_files[db_filepath] != file_hash:
+            modified_files.append(full_path)
+        else:
+            unchanged_files.append(full_path)
 
     deleted_filepaths = [fp for fp in db_files.keys() if fp not in found_filepaths]
     return added_files, modified_files, deleted_filepaths, unchanged_files

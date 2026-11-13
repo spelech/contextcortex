@@ -34,6 +34,7 @@ on:
       - 'scripts/portable/**'
       - 'main.py'
       - 'app/services/database/portable_postgres.py'
+      - 'app/services/ripgrep_runner.py'
       - '.github/workflows/build-portable-windows.yml'
 
 jobs:
@@ -94,6 +95,7 @@ jobs:
         run: |
           $bundle = "dist/contextcortex-windows-x64"
           if (-not (Test-Path "$bundle/contextcortex.exe")) { throw "Missing contextcortex.exe" }
+          if (-not (Test-Path "$bundle/rg.exe")) { throw "Missing portable rg.exe" }
           if (-not (Test-Path "$bundle/pgsql/bin/postgres.exe")) { throw "Missing portable postgres.exe" }
           if (-not (Test-Path "$bundle/pgsql/bin/initdb.exe")) { throw "Missing portable initdb.exe" }
           if (-not (Test-Path "$bundle/pgsql/bin/pg_ctl.exe")) { throw "Missing portable pg_ctl.exe" }

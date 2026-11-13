@@ -1,6 +1,7 @@
 from app.services.indexing.state import (
     VAULT_PATH,
     CHUNK_SIZE,
+    CODE_CHUNK_SIZE,
     CHUNK_OVERLAP,
     QDRANT_URL,
     COLLECTION_NAME,
@@ -35,6 +36,7 @@ from app.services.indexing.git_progress import (
 __all__ = [
     "VAULT_PATH",
     "CHUNK_SIZE",
+    "CODE_CHUNK_SIZE",
     "CHUNK_OVERLAP",
     "QDRANT_URL",
     "COLLECTION_NAME",

@@ -7,7 +7,7 @@ from app.services.chunking import (
     match_route_and_call,
     extract_symbols_and_chunks
 )
-from app.mcp.tools import handle_find_routes, handle_find_api_callers
+from app.mcp.tools import handle_find_routes
 from app.services.database import get_db_connection, init_db
 
 def test_path_normalization_and_matching():
@@ -185,23 +185,23 @@ async function placeOrder(cart) {
         conn.commit()
 
     import json
-    # Test find_routes tool
+    # Test find_routes tool (handlers + callers)
     routes_output = json.loads(await handle_find_routes(query="users"))
     assert any(r["path"] == "/api/v1/users/{user_id}" and r["repo"] == "backend_service" for r in routes_output["routes"])
 
-    routes_post = json.loads(await handle_find_routes(method="POST"))
+    routes_post = json.loads(await handle_find_routes(method="POST", kind="handlers"))
     assert any(r["path"] == "/api/v1/orders" for r in routes_post["routes"])
 
-    # Test find_api_callers tool
-    callers_output = json.loads(await handle_find_api_callers(path="/api/v1/users/{user_id}"))
+    # Test find_routes kind='callers'
+    callers_output = json.loads(await handle_find_routes(query="/api/v1/users/{user_id}", kind="callers"))
     assert any(c["repo"] == "frontend_app" and c["url"] == "/api/v1/users/{userId}" and c["caller"] == "getUserProfile" for c in callers_output["callers"])
 
-    callers_orders = json.loads(await handle_find_api_callers(path="/api/v1/orders", method="POST"))
+    callers_orders = json.loads(await handle_find_routes(query="/api/v1/orders", kind="callers", method="POST"))
     assert any(c["caller"] == "placeOrder" for c in callers_orders["callers"])
 
-    # Test unindexed path or empty queries
-    empty_callers = json.loads(await handle_find_api_callers(path="/api/v1/nonexistent"))
+    # Test unindexed path and invalid kind
+    empty_callers = json.loads(await handle_find_routes(query="/api/v1/nonexistent", kind="callers"))
     assert empty_callers["callers"] == []
 
-    err_callers = json.loads(await handle_find_api_callers(path=""))
-    assert "endpoint path cannot be empty" in err_callers["error"]
+    err_kind = json.loads(await handle_find_routes(kind="invalid"))
+    assert "Unsupported kind" in err_kind["error"]

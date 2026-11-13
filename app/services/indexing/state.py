@@ -9,6 +9,7 @@ logger = logging.getLogger('contextcortex.indexer')
 
 VAULT_PATH = os.getenv("VAULT_PATH", "/docs")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1500"))
+CODE_CHUNK_SIZE = int(os.getenv("CODE_CHUNK_SIZE", "4000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "knowledge_rag_v1")

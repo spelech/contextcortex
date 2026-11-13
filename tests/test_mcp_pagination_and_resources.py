@@ -174,8 +174,8 @@ def mcp_paginated_env(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports(mcp_paginated_env):
-    """Verifies all 20 tools expose rich descriptions, parameter Field docs, and backward-compatible imports."""
+async def test_all_10_default_mcp_tools_have_rich_schemas_and_write_tool_gating(mcp_paginated_env, monkeypatch):
+    """Verifies the 10 default MCP tools (11 with MCP_ENABLE_WRITE_TOOLS=true) expose rich descriptions and Field docs."""
     from app.mcp.handlers.file_handlers import handle_grep_code as grep_from_files
     from app.mcp.handlers.grep_handlers import handle_grep_code as grep_direct
     from app.mcp.handlers.repo_handlers import handle_catalog_summary as cat_from_repo
@@ -186,7 +186,19 @@ async def test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports(mcp_pagina
 
     server = mcp_paginated_env["server"]
     tools = await server.list_tools()
-    assert len(tools) == 20
+    tool_names = {t.name for t in tools}
+    assert tool_names == {
+        "diagnose_issue",
+        "execute_script",
+        "find_routes",
+        "find_symbol",
+        "get_architecture",
+        "grep_code",
+        "list_repositories",
+        "read_file",
+        "search",
+        "trace_path",
+    }
 
     for tool in tools:
         assert tool.description and len(tool.description.strip()) >= 40, f"Weak description on {tool.name}"
@@ -194,10 +206,17 @@ async def test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports(mcp_pagina
         for param_name, param_schema in props.items():
             assert param_schema.get("description"), f"Missing Field description on {tool.name}.{param_name}"
 
+    monkeypatch.setenv("MCP_ENABLE_WRITE_TOOLS", "true")
+    write_server = FastMCP("WriteEnabled", transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
+    register_mcp_tools_and_resources(write_server)
+    write_tools = await write_server.list_tools()
+    assert len(write_tools) == 11
+    assert "manage" in {t.name for t in write_tools}
+
 
 @pytest.mark.asyncio
 async def test_symbol_outline_trace_and_route_pagination(mcp_paginated_env):
-    """Verifies limit clamping and offset pagination across find_symbol, get_file_outline, trace_path, find_routes, and find_api_callers."""
+    """Verifies limit clamping and offset pagination across find_symbol, read_file(outline_only=True), trace_path, and find_routes."""
     server = mcp_paginated_env["server"]
 
     sym_p1 = await _call_tool_json(server, "find_symbol", name="worker_step_", exact=False, repo="fleet-svc", limit=3, offset=0)
@@ -208,11 +227,12 @@ async def test_symbol_outline_trace_and_route_pagination(mcp_paginated_env):
     assert sym_clamp["limit"] == 100 and len(sym_clamp["symbols"]) == 2
     assert sym_clamp["has_more"] is False and sym_clamp["next_offset"] is None
 
-    out_p1 = await _call_tool_json(server, "get_file_outline", filepath="src/mod_000.py", repo="fleet-svc", limit=5, offset=0)
+    out_p1 = await _call_tool_json(server, "read_file", path="src/mod_000.py", repo="fleet-svc", outline_only=True, limit=5, offset=0)
+    assert out_p1["outline_only"] is True
     assert out_p1["total_symbols"] == 8 and len(out_p1["symbols"]) == 5
     assert out_p1["has_more"] is True and out_p1["next_offset"] == 5
 
-    out_p2 = await _call_tool_json(server, "get_file_outline", filepath="src/mod_000.py", repo="fleet-svc", limit=999, offset=5)
+    out_p2 = await _call_tool_json(server, "read_file", path="src/mod_000.py", repo="fleet-svc", outline_only=True, limit=999, offset=5)
     assert out_p2["limit"] == 500 and len(out_p2["symbols"]) == 3
     assert out_p2["has_more"] is False and out_p2["next_offset"] is None
 
@@ -225,53 +245,42 @@ async def test_symbol_outline_trace_and_route_pagination(mcp_paginated_env):
     assert tr_p3["limit"] == 200 and len(tr_p3["callers"]) == 1 and len(tr_p3["callees"]) == 0
     assert tr_p3["has_more"] is False
 
-    rt_p1 = await _call_tool_json(server, "find_routes", repo="fleet-svc", limit=25, offset=0)
+    rt_p1 = await _call_tool_json(server, "find_routes", kind="handlers", repo="fleet-svc", limit=25, offset=0)
     assert rt_p1["total"] == 62 and len(rt_p1["routes"]) == 25
     assert rt_p1["has_more"] is True and rt_p1["next_offset"] == 25
 
-    ac_p1 = await _call_tool_json(server, "find_api_callers", path="/api/v1/vehicles/{id}", method="GET", limit=2, offset=0)
+    ac_p1 = await _call_tool_json(server, "find_routes", query="/api/v1/vehicles/{id}", kind="callers", method="GET", limit=2, offset=0)
     assert ac_p1["total"] == 5 and len(ac_p1["callers"]) == 2
     assert ac_p1["has_more"] is True and ac_p1["next_offset"] == 2
 
 
 @pytest.mark.asyncio
-async def test_grep_search_recent_changes_adr_ingested_and_read_file_bounds(mcp_paginated_env):
-    """Verifies line/snippet truncation and pagination for grep_code, search_code/docs, get_recent_changes, manage_adr, what_is_ingested, and read_file."""
+async def test_grep_search_list_repositories_and_read_file_bounds(mcp_paginated_env):
+    """Verifies line/snippet truncation and pagination for grep_code, search, list_repositories, and read_file."""
     server = mcp_paginated_env["server"]
 
-    grep_p1 = await _call_tool_json(server, "grep_code", pattern="GREP_TOKEN_", repo="fleet-svc", context_lines=1, max_results=2, offset=0)
+    grep_p1 = await _call_tool_json(server, "grep_code", pattern="GREP_TOKEN_", repo="fleet-svc", context_lines=1, limit=2, offset=0)
     assert grep_p1["total_matches"] == 4 and len(grep_p1["matches"]) == 2
     assert grep_p1["has_more"] is True and grep_p1["next_offset"] == 2
     first_match = grep_p1["matches"][0]
     assert len(first_match["match_text"]) <= 400 and first_match["match_text"].endswith("...[line truncated]")
     assert any(c["text"].endswith("...[line truncated]") and len(c["text"]) <= 400 for c in first_match["context"])
 
-    grep_p2 = await _call_tool_json(server, "grep_code", pattern="GREP_TOKEN_", repo="fleet-svc", max_results=2, offset=2)
+    grep_p2 = await _call_tool_json(server, "grep_code", pattern="GREP_TOKEN_", repo="fleet-svc", limit=2, offset=2)
     assert len(grep_p2["matches"]) == 2 and grep_p2["has_more"] is False and grep_p2["next_offset"] is None
 
-    sc = await _call_tool_json(server, "search_code", query="compute_telemetry_window", repo="fleet-svc", mode="keyword", top_k=99, offset=0, max_snippet_chars=240)
-    assert sc["top_k"] == 25 and sc["max_snippet_chars"] == 240 and len(sc["results"]) >= 1
+    sc = await _call_tool_json(server, "search", query="compute_telemetry_window", scope="code", repo="fleet-svc", mode="keyword", limit=99, offset=0, max_snippet_chars=240)
+    assert sc["limit"] == 25 and sc["max_snippet_chars"] == 240 and len(sc["results"]) >= 1
     assert sc["results"][0]["content_truncated"] is True
     assert len(sc["results"][0]["content"]) <= 240 and sc["results"][0]["content"].endswith("...[snippet truncated]")
 
-    sd = await _call_tool_json(server, "search_docs", query="Telemetry stream recovery", repo="fleet-svc", mode="hybrid", top_k=1, offset=0, max_snippet_chars=220)
+    sd = await _call_tool_json(server, "search", query="Telemetry stream recovery", scope="docs", repo="fleet-svc", mode="hybrid", limit=1, offset=0, max_snippet_chars=220)
     assert sd["limit"] == 1 and sd["has_more"] is True and sd["next_offset"] == 1
     assert sd["results"][0]["content_truncated"] is True
 
-    rc = await _call_tool_json(server, "get_recent_changes", repo="fleet-svc", limit=1, offset=0)
-    assert rc["total"] == 3 and rc["has_more"] is True and rc["next_offset"] == 1
-    commit0 = rc["commits"][0]
-    assert len(commit0["files_changed"]) == 25 and commit0["files_changed_total"] == 32 and commit0["files_changed_truncated"] is True
-
-    adr_list = await _call_tool_json(server, "manage_adr", action="list", repo="fleet-svc", limit=2, offset=0)
-    assert adr_list["total"] == 4 and len(adr_list["adrs"]) == 2
-    assert adr_list["has_more"] is True and adr_list["next_offset"] == 2
-
-    adr_search = await _call_tool_json(server, "manage_adr", action="search", query="stream batching", limit=2, offset=2)
-    assert adr_search["total"] == 4 and len(adr_search["adrs"]) == 2 and adr_search["has_more"] is False
-
-    ing = await _call_tool_json(server, "what_is_ingested", source_type="all", include_files=True, limit=10, offset=0)
+    ing = await _call_tool_json(server, "list_repositories", source_type="all", include_files=True, include_status=True, limit=10, offset=0)
     assert ing["total_files"] == 125 and ing["has_more"] is True and ing["next_offset"] == 10
+    assert "vector_store" in ing and "counts" in ing
     git_src = ing["git_repositories"][0]
     assert git_src["total_files"] == 125 and len(git_src["file_paths"]) == 10 and git_src["has_more"] is True and git_src["next_offset"] == 10
     assert ing["local_storage"]["total_files"] == 3 and ing["local_storage"]["has_more"] is False

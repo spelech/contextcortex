@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1248 Automated Tests** (884 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1259 Automated Tests** (895 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -259,29 +259,23 @@ classDiagram
 - **FR-1.2 (Lifespan & Session Registry)**: The server MUST maintain an active session registry to dispatch list change notifications (`send_tool_list_changed`, `send_resource_list_changed`, `send_prompt_list_changed`) to connected clients when indexing updates occur.
 - **FR-1.3 (JSON-RPC Schema Compliance)**: All tool definitions, parameter schemas, resource templates, and prompt descriptions MUST adhere strictly to the Model Context Protocol 2024-11-05 / 2025 specification.
 
-### FR-2: FastMCP Extended Agent Tools Contract
-- **FR-2.1 (`search_code`)**: MUST execute calibrated hybrid (Dense + BM25) code searches with configurable `dense_weight`, `mode`, `offset`, and `max_snippet_chars`, returning bounded code chunks, line ranges, decomposed scores, AST symbol signatures, and clickable Git permalinks.
-- **FR-2.2 (`search_docs`)**: MUST execute calibrated hybrid searches across markdown notes and documentation, with category/tag filtering and bounded pagination.
-- **FR-2.3 (`find_symbol`)**: MUST perform sub-50ms exact and prefix symbol lookups against SQLite `ast_symbols` with `limit`/`offset` pagination without vector search overhead.
-- **FR-2.4 (`get_file_outline`)**: MUST return the structural AST outline (classes, methods, records, COBOL paragraphs/sections, signatures, start/end lines) with bounded pagination for a specified file path.
-- **FR-2.5 (`list_repositories`)**: MUST return all registered Git repositories (with provider tags e.g. `[GITHUB]`, `[GITLAB]`, commit SHAs, and sync status) and local paths.
-- **FR-2.6 (`sync_repository`)**: MUST trigger background incremental or shallow sync for a single repo or all sources.
-- **FR-2.7 (`index_status`)**: MUST report vector count, active embedding models, collection name, and provider rate limit status.
-- **FR-2.8 (`get_architecture`)**: MUST synthesize high-level codebase architecture including detected entry points, primary language distributions, core directories, framework components, and architectural decision records.
-- **FR-2.9 (`manage_adr`)**: MUST support querying, listing, creating, updating, and superseding Architectural Decision Records (MADR / Nygard format) with lifecycle status tracking and pagination.
-- **FR-2.10 (`find_routes` & `find_api_callers`)**: MUST return API endpoint routes and HTTP client invocations parsed from backend and frontend frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET, React `fetch`/Axios) with `limit`/`offset` pagination.
-- **FR-2.11 (`trace_path`)**: MUST trace AST symbol calls, JSX usages, DI interface-to-implementation edges, COBOL `PERFORM`/`CALL`/`COPY` chains, imports, inheritance, and cross-repo API client-to-route connections using bounded BFS graph traversal.
-- **FR-2.12 (`manage_local_file`)**: MUST support uploading, replacing, reading, and deleting files under managed local storage (`LOCAL_STORAGE_PATH`) with real-time vector and symbol indexing.
-- **FR-2.13 (`what_is_ingested`)**: MUST inspect and filter across all ingested Git repositories, monitored local paths, and uploaded local storage files with bounded `limit`/`offset` file pagination.
-- **FR-2.14 (`read_file` & `summarize_file`)**: MUST support reading bounded line ranges (`has_more`, `next_start_line`) or full files (including vector chunk reconstruction for ephemeral repositories) and generating or retrieving cached LLM executive summaries.
-- **FR-2.15 (`get_recent_changes`)**: MUST return paginated recent commit history from `git_commits` for a repository, optionally filtered by file path or AST symbol name.
-- **FR-2.16 (`grep_code`)**: MUST perform deterministic literal and regular expression pattern matching across one or all indexed repositories with path glob filtering, context lines, per-line truncation caps, and enclosing AST symbol coordinates.
-- **FR-2.17 (`diagnose_issue`)**: MUST perform forensic triage of Python, C#/.NET, TS/JS/React, and COBOL/CICS stack traces, error logs, and bug descriptions by resolving stack frames to AST symbols, matching routes and error literals, and retrieving semantic code candidates.
+### FR-2: FastMCP Consolidated 10-Tool Agent Surface (+ Gated `manage`)
+- **FR-2.1 (`search`)**: MUST execute calibrated hybrid (Dense + BM25) searches across code (`scope='code'`), documentation (`scope='docs'`), or both (`scope='all'`) with configurable `dense_weight`, `mode`, `limit` (`1..25`), `offset`, and `max_snippet_chars`, returning bounded chunks, line ranges, decomposed scores, AST symbol signatures, and clickable Git permalinks.
+- **FR-2.2 (`find_symbol`)**: MUST perform sub-50ms exact and prefix symbol lookups against SQLite/PostgreSQL `ast_symbols` with `limit`/`offset` pagination without vector search overhead.
+- **FR-2.3 (`read_file`)**: MUST support reading bounded 1-based line ranges (`has_more`, `next_start_line`) from disk or reconstructed vector chunks, and returning deduplicated structural AST outlines (`outline_only=True`, classes, methods, COBOL paragraphs/sections, signatures, start/end lines) with `limit`/`offset` pagination.
+- **FR-2.4 (`list_repositories`)**: MUST return registered Git repositories (with provider tags, commit SHAs, and sync status), monitored local paths, and local storage inventory, optionally including paginated file paths (`include_files=True`, `limit`/`offset`) or vector store health/models/counts (`include_status=True`).
+- **FR-2.5 (`get_architecture`)**: MUST synthesize high-level codebase architecture including detected entry points, primary language distributions, core directories, framework components, hub symbols, and active architectural decision records.
+- **FR-2.6 (`find_routes`)**: MUST return backend HTTP endpoint routes (`kind='handlers'`), outbound HTTP client invocations (`kind='callers'`), or both (`kind='both'`) parsed across frameworks (FastAPI, Express, Flask, Gin, Axum, ASP.NET, React `fetch`/Axios, C# `HttpClient`) with specificity matching and `limit`/`offset` pagination.
+- **FR-2.7 (`trace_path`)**: MUST trace AST symbol calls, JSX usages, DI interface-to-implementation edges, COBOL `PERFORM`/`CALL`/`COPY` chains, imports, inheritance, and cross-repo API client-to-route connections using bounded BFS graph traversal.
+- **FR-2.8 (`grep_code`)**: MUST perform deterministic literal and regular expression pattern matching across one or all indexed repositories (with an in-process ripgrep fast path when all target repos exist on disk), supporting path glob filtering, context lines, per-line truncation caps, and enclosing AST symbol coordinates.
+- **FR-2.9 (`diagnose_issue`)**: MUST perform forensic triage of Python, C#/.NET, TS/JS/React, and COBOL/CICS stack traces, error logs, and bug descriptions by resolving stack frames to AST symbols, matching routes and error literals, and retrieving semantic code candidates.
+- **FR-2.10 (`execute_script`)**: MUST execute sandboxed Code Mode async JavaScript bodies calling ContextCortex tools (`await tools.<tool>(args)`) in one round trip within configured timeout, call count, and memory bounds.
+- **FR-2.11 (`manage`, gated by `MCP_ENABLE_WRITE_TOOLS=true`)**: When `MCP_ENABLE_WRITE_TOOLS=true` (disabled by default so the default tool surface remains 10 tools), MUST support background repository synchronization (`action='sync_repo'`) and local storage CRUD/preview (`upload`, `replace`, `delete`, `read`, `preview`) with editor/viewer RBAC enforcement.
 
 ### FR-3: Dynamic Resources & Paginated Resource Templates
-- **FR-3.1 (Dynamic Catalog Resource & Repo Templates)**: MUST expose compact `knowledge://catalog/summary` plus modular repository resource templates (`knowledge://repo/{repo}/summary`, `architecture`, `files/{page}`, `routes/{page}`, `adrs`).
-- **FR-3.2 (Prompt: `search_infrastructure_docs`)**: MUST provide a prompt template guiding agents to explore system architecture, networking, Docker setups, and container guides.
-- **FR-3.3 (Prompt: `find_implementation_symbol`)**: MUST provide a prompt template assisting agents in locating symbol declarations, methods, and interface signatures across repositories.
+- **FR-3.1 (Dynamic Catalog Resource & Repo Templates)**: MUST expose compact `knowledge://catalog/summary` plus modular repository resource templates (`knowledge://repo/{repo}/summary`, `architecture`, `files/{page}`, `routes/{page}`, `adrs`) and `contextcortex://code-mode/sdk.d.ts`.
+- **FR-3.2 (Prompt: `search_infrastructure_docs`)**: MUST provide a prompt template guiding agents to run `search(scope='docs')`, inspect `knowledge://repo/{repo}/adrs`, and read files.
+- **FR-3.3 (Prompt: `find_implementation_symbol`)**: MUST provide a prompt template assisting agents in locating symbol declarations, outlines (`read_file(..., outline_only=True)`), and call paths across repositories.
 
 ### FR-4: Universal Multi-Provider Git Ingestion Engine
 - **FR-4.1 (Multi-Provider Detection & Support)**: MUST detect and support repositories from GitHub, GitLab (Cloud & Self-Hosted), Gitea/Forgejo, Bitbucket, and Generic Git HTTP/HTTPS with custom ports.
@@ -343,10 +337,10 @@ classDiagram
 - **FR-16.3 (Clean File Deletion & Purging)**: File deletions MUST remove the physical file from disk, delete all associated chunk vectors from the active vector store, and remove metadata from relational tables.
 - **FR-16.4 (Directory Tree Hierarchy)**: MUST expose hierarchical directory tree inspection (`GET /admin/api/storage/tree`) returning directory structures, file sizes, modification timestamps, and total counts.
 
-### FR-17: Unified Ingestion Catalog (`what_is_ingested` & `/admin/api/ingestion/catalog`)
+### FR-17: Unified Ingestion Catalog (`list_repositories` & `/admin/api/ingestion/catalog`)
 - **FR-17.1 (Multi-Source Unified Inventory)**: MUST aggregate all ingested data sources across Git repositories, monitored local directories, and managed local storage files.
-- **FR-17.2 (Granular Multi-Dimensional Filtering)**: MUST support filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo_name`, `path_prefix`, `file_extension`, and `detail_level` (`summary` vs `detailed`).
-- **FR-17.3 (MCP & REST API Parity)**: MUST provide identical catalog inspection capabilities via FastMCP tool (`what_is_ingested`) and REST endpoint (`GET /admin/api/ingestion/catalog`) protected by `Role.VIEWER`.
+- **FR-17.2 (Granular Multi-Dimensional Filtering)**: MUST support filtering by `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `repo`, `path_prefix`, `file_extension`, `include_files`, `include_status`, `limit`, and `offset`.
+- **FR-17.3 (MCP & REST API Parity)**: MUST provide identical catalog inspection capabilities via FastMCP tool (`list_repositories`) and REST endpoint (`GET /admin/api/ingestion/catalog`) protected by `Role.VIEWER`.
 
 ### FR-18: Enterprise Private-CA Gateways & Restricted-Network Deployment
 - **FR-18.1 (Versioned Gateway URLs & Custom Request Headers)**: MUST preserve custom OpenAI-compatible gateway URL paths (such as `/api/v3`) across model discovery, embeddings, file summarization, and PDF vision OCR, and MUST inject CR/LF-validated JSON headers (`LLM_EXTRA_HEADERS`) without allowing custom headers to override resolved `Authorization` bearer credentials.
@@ -358,7 +352,7 @@ classDiagram
 ## 4. Non-Functional Requirements (NFR)
 
 - **NFR-1 (Performance & Latency Budgets)**: AST symbol lookup response latency `< 50 ms`; Hybrid vector search query latency `< 150 ms` on CPU.
-- **NFR-2 (Zero Disk Bloat & Memory Efficiency)**: Ephemeral shallow cloning MUST leave 0 MB residual cloned files on disk; FastEmbed model memory `≤ 1.2 GB` RAM.
+- **NFR-2 (Zero Disk Bloat & Memory Efficiency)**: Ephemeral shallow cloning MUST leave 0 MB residual cloned files on disk; FastEmbed model memory ≤ 1.2 GB RAM.
 - **NFR-3 (Security & Credential Sanitization)**: Personal access tokens, OAuth tokens, and passwords MUST NEVER appear in cleartext in logs, console output, URLs, or client API payloads.
 - **NFR-4 (Reliability & Concurrency)**: SQLite database MUST operate in WAL mode; Vector store schemas MUST automatically auto-heal/upgrade on startup.
 - **NFR-5 (Failure Isolation)**: Failure to sync an individual repository MUST NOT abort other repositories or crash the server.
@@ -372,7 +366,7 @@ classDiagram
 | Requirement ID | Requirement Description | Implementation Files | Backend Pytest Modules | Frontend Vitest & E2E Suites |
 | :--- | :--- | :--- | :--- | :--- |
 | **FR-1** | FastMCP 2.0 Dual Transport Architecture | `app/mcp/mcp_server.py`, `app/mcp/tools.py` | `test_mcp_v2.py`, `test_mcp_ping.py`, `test_indexer_sync.py` | E2E Spec 1 |
-| **FR-2** | FastMCP 19 Bounded Agent Tools Contract | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_mcp_pagination_and_resources.py`, `test_db_and_tools.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_grep_code.py`, `test_diagnostics_and_services_multilang.py` | E2E Specs 1, 8 |
+| **FR-2** | FastMCP 10-Tool Agent Surface (+ Gated `manage`) | `app/mcp/tools.py`, `app/mcp/handlers/*` | `test_mcp_pagination_and_resources.py`, `test_db_and_tools.py`, `test_trace_path.py`, `test_mcp_storage_tools.py`, `test_grep_code.py`, `test_diagnostics_and_services_multilang.py` | E2E Specs 1, 8 |
 | **FR-3** | Dynamic Resources, Repo Templates & Prompts | `app/mcp/handlers/resource_handlers.py`, `app/mcp/tools.py` | `test_mcp_pagination_and_resources.py`, `test_mcp_v2.py` | E2E Spec 1 |
 | **FR-4** | Universal Multi-Git Provider Ingestion | `app/services/git_manager.py`, `app/services/indexing/*` | `test_multi_git_providers.py`, `test_git_manager.py`, `test_indexer_edge_cases.py` | `GitRepoManager.test.tsx`, E2E Specs 2, 3, 4, 5, 16, 18 |
 | **FR-5** | Multi-Tier Credential Vault & Hierarchy | `app/services/database/credentials.py`, `app/services/git_manager.py` | `test_multi_git_providers.py`, `test_db_and_tools.py` | `Settings.test.tsx`, E2E Specs 10, 11 |
@@ -387,7 +381,7 @@ classDiagram
 | **FR-14** | Interactive Visual Topology Explorer UI | `frontend/src/TopologyExplorer.tsx`, `frontend/src/components/topology/*` | `test_admin_ui_api_consistency.py` | `TopologyExplorer.test.tsx`, E2E Specs 25, 26 |
 | **FR-15** | Diagnostics & Live In-Memory Log Viewer | `app/services/logger.py`, `frontend/src/DiagnosticsViewer.tsx` | `test_diagnostic_logger.py`, `test_diagnostics_and_services_multilang.py` | `DiagnosticsViewer.test.tsx`, E2E Specs 13, 21 |
 | **FR-16** | Managed Local Storage & Incremental Indexing | `app/services/local_storage.py`, `app/api/routers/storage.py` | `test_local_storage_service.py`, `test_local_storage_indexing.py`, `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `LocalStorageManager.test.tsx` |
-| **FR-17** | Unified Ingestion Catalog Explorer | `app/api/routers/ingestion.py`, `app/mcp/handlers/storage_handlers.py` | `test_mcp_pagination_and_resources.py`, `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `IngestionCatalogViewer.test.tsx` |
+| **FR-17** | Unified Ingestion Catalog Explorer | `app/api/routers/ingestion.py`, `app/mcp/handlers/repo_handlers.py` | `test_mcp_pagination_and_resources.py`, `test_mcp_storage_tools.py`, `test_storage_api_routes.py` | `IngestionCatalogViewer.test.tsx` |
 | **FR-18** | Enterprise Private-CA Gateways & Mirror Builds | `app/services/llm_client.py`, `app/services/litellm_service.py`, `docker-entrypoint.sh`, `Dockerfile`, `Dockerfile.overlay`, `docker-compose.enterprise.yml` | `test_llm_client.py`, `test_litellm_service.py`, `test_docker_entrypoint.py`, `test_docker_orchestration.py` | `Settings.test.tsx` |
 | **NFR-1** | Performance & Latency Budgets | `app/services/database/connection.py`, `app/services/search.py` | `test_db_and_tools.py`, `test_search.py` | E2E Specs 8, 9 |
 | **NFR-2** | Zero Disk Bloat & Memory Efficiency | `app/services/git_manager.py`, `app/services/embeddings.py` | `test_git_manager.py`, `test_indexer_and_embeddings.py` | E2E Specs 2, 3 |
@@ -450,17 +444,16 @@ classDiagram
 - `test_api_switch_vector_store_exception` - _Test handling of unexpected exception during switch._
 - `test_api_get_stats_uses_vector_store` - _Test that GET /admin/api/stats queries the vector store adapter._
 - `test_api_delete_repo_uses_vector_store` - _Test that DELETE /admin/api/repos/{id} calls delete_by_repo on the vector store._
-- `test_mcp_handle_index_status_details` - _Test that handle_index_status includes provider, mode, location, collection, and counts._
-- `test_mcp_handle_index_status_chroma` - _Test handle_index_status after switching to Chroma._
+- `test_mcp_handle_index_status_details` - _Test that handle_list_repositories(include_status=True) includes provider, mode, location, collection, and counts._
+- `test_mcp_handle_index_status_chroma` - _Test handle_list_repositories(include_status=True) after switching to Chroma._
 
-#### `tests/backend/test_architecture_adr.py` (7 tests)
+#### `tests/backend/test_architecture_adr.py` (6 tests)
 - `test_entry_point_detection_heuristics`
 - `test_language_distribution_and_token_limit`
 - `test_madr_nygard_markdown_ingestion`
 - `test_adr_state_transitions`
 - `test_mcp_get_architecture_tool`
-- `test_mcp_manage_adr_tool_actions`
-- `test_mcp_server_json_rpc_call`
+- `test_mcp_adrs_resource_and_tool_surface`
 
 #### `tests/backend/test_ast_relationships.py` (4 tests)
 - `test_python_relationship_extraction`
@@ -523,11 +516,10 @@ classDiagram
 - `test_handle_diagnose_issue_mcp`
 - `test_diagnose_issue_registered_on_mcp_server`
 
-#### `tests/backend/test_git_commits_history.py` (5 tests)
+#### `tests/backend/test_git_commits_history.py` (4 tests)
 - `test_extract_recent_commits_unit`
 - `test_format_git_commit_url`
 - `test_sync_single_git_repo_commits_and_pruning`
-- `test_get_recent_changes_mcp_tool`
 - `test_rest_api_patch_retain_commits`
 
 #### `tests/backend/test_git_manager.py` (38 tests)
@@ -946,6 +938,14 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_repo_auto_sync_and_list`
 - `test_auto_sync_interval_edge_cases`
 
+#### `tests/test_benchmarks_harness.py` (6 tests)
+- `test_benchmark_tasks_and_examples_valid`
+- `test_micro_benchmark_cases_valid`
+- `test_opencode_templates_render_without_secrets`
+- `test_benchmarks_directory_contains_no_hardcoded_api_keys`
+- `test_parse_opencode_events_and_scoring`
+- `test_baseline_snapshots_consistent`
+
 #### `tests/test_client_url_resolution.py` (6 tests)
 - `test_constants_are_collected_and_expanded`
 - `test_js_url_variable_is_resolved_and_ignores_content_types`
@@ -1105,10 +1105,9 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_finding_10_get_architecture_hub_symbols_excludes_boilerplate`
 - `test_findings_11_12_13_version_sparse_model_and_readme_tools`
 
-#### `tests/test_file_mcp_and_api.py` (5 tests)
+#### `tests/test_file_mcp_and_api.py` (4 tests)
 - `test_env`
 - `test_mcp_handle_read_file`
-- `test_mcp_handle_summarize_file`
 - `test_api_read_file`
 - `test_api_summarize_file`
 
@@ -1229,9 +1228,9 @@ and leaves the prior indexed state intact without data loss._
 - `test_get_local_storage_service_singleton`
 
 #### `tests/test_mcp_pagination_and_resources.py` (4 tests)
-- `test_all_19_mcp_tools_have_rich_schemas_and_clean_reexports` - _Verifies all 20 tools expose rich descriptions, parameter Field docs, and backward-compatible imports._
-- `test_symbol_outline_trace_and_route_pagination` - _Verifies limit clamping and offset pagination across find_symbol, get_file_outline, trace_path, find_routes, and find_api_callers._
-- `test_grep_search_recent_changes_adr_ingested_and_read_file_bounds` - _Verifies line/snippet truncation and pagination for grep_code, search_code/docs, get_recent_changes, manage_adr, what_is_ingested, and read_file._
+- `test_all_10_default_mcp_tools_have_rich_schemas_and_write_tool_gating` - _Verifies the 10 default MCP tools (11 with MCP_ENABLE_WRITE_TOOLS=true) expose rich descriptions and Field docs._
+- `test_symbol_outline_trace_and_route_pagination` - _Verifies limit clamping and offset pagination across find_symbol, read_file(outline_only=True), trace_path, and find_routes._
+- `test_grep_search_list_repositories_and_read_file_bounds` - _Verifies line/snippet truncation and pagination for grep_code, search, list_repositories, and read_file._
 - `test_granular_mcp_resources_and_paginated_templates` - _Verifies compact catalog summary and all 5 per-repository MCP resource templates end-to-end._
 
 #### `tests/test_mcp_pdf_tools.py` (5 tests)
@@ -1250,24 +1249,24 @@ and leaves the prior indexed state intact without data loss._
 
 #### `tests/test_mcp_real_e2e_workflows.py` (8 tests)
 - `test_e2e_grep_code_survives_broken_venv_symlink_and_enriches_ast` - _Verifies `grep_code` does not crash on broken `.venv/lib64` symlinks and returns AST symbol metadata._
-- `test_e2e_find_routes_excludes_test_files_and_links_api_callers` - _Verifies `find_routes` extracts real FastAPI routes, ignores `/etc/shadow` in `tests/test_security.py`, and links `find_api_callers`._
+- `test_e2e_find_routes_excludes_test_files_and_links_api_callers` - _Verifies `find_routes` extracts real FastAPI routes, ignores `/etc/shadow` in `tests/test_security.py`, and links callers._
 - `test_e2e_get_architecture_excludes_tests_and_anonymous_arrows` - _Verifies `get_architecture` excludes `tests`, `www/assets`, `setup_test_db`, and `anonymous` arrow functions._
-- `test_e2e_get_file_outline_resolves_guessed_subpaths_and_deduplicates` - _Verifies `get_file_outline` resolves `src/Platform.Core/Program.cs` to `Program.cs` and never returns duplicate symbols._
+- `test_e2e_get_file_outline_resolves_guessed_subpaths_and_deduplicates` - _Verifies `read_file(..., outline_only=True)` resolves `src/Platform.Core/Program.cs` to `Program.cs` and never returns duplicate symbols._
 - `test_e2e_startup_deduplication_cleans_duplicate_ast_and_routes` - _Verifies `init_db()` automatically purges duplicate `ast_symbols`, `ast_relationships`, and `api_routes` rows._
 - `test_e2e_trace_path_and_diagnose_issue_end_to_end` - _Verifies `trace_path` across C# classes and `diagnose_issue` on a real stack trace._
 - `test_e2e_hybrid_search_and_mcp_resources_and_prompts` - _Verifies hybrid/lexical/keyword search, MCP resources, resource templates, and all 5 workflow prompts._
 - `test_e2e_real_git_repo_clone_and_resync_without_mocks` - _Real end-to-end git repository sync using an actual local git repository (`git init` + commits),
 `sync_single_git_repo` (un-mocked git clone + delta + AST + vector indexing), followed by a second
-commit and re-sync, verifying zero duplicate symbols/routes/relationships and accurate `get_recent_changes`._
+commit and re-sync, verifying zero duplicate symbols/routes/relationships and indexed git commit history._
 
 #### `tests/test_mcp_storage_tools.py` (7 tests)
 - `test_manage_local_file_upload_and_read`
 - `test_manage_local_file_replace_and_delete`
 - `test_manage_local_file_rbac_forbidden`
 - `test_manage_local_file_input_validation`
-- `test_what_is_ingested_summary_and_filters`
-- `test_what_is_ingested_detailed_with_data`
-- `test_tool_registration`
+- `test_list_repositories_summary_and_filters`
+- `test_list_repositories_detailed_with_data`
+- `test_tool_registration_default_and_write_gated`
 
 #### `tests/test_memory_trim.py` (5 tests)
 - `test_trim_memory_runs_safely` - _Verifies that trim_memory executes without exceptions on the host system._
@@ -1421,6 +1420,16 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_viewer_role_permissions` - _Viewer key can read resources but is denied content mutations & administrative settings (403)._
 - `test_editor_role_permissions` - _Editor key can perform content mutations and syncs, but is denied administrative settings (403)._
 - `test_admin_role_permissions` - _Admin key has full permissions across configuration, editor, and viewer endpoints._
+
+#### `tests/test_ripgrep_and_query_router.py` (8 tests)
+- `test_word_token_query_classification` - _Verify word-token query classification across lexical_exact, agent keyword-series lexical_keywords, and semantic_prose._
+- `test_token_coverage_splits_camel_and_snake` - _Verify CamelCase and snake_case decomposition yields full word-token coverage across symbol, path, and code content._
+- `test_ripgrep_grep_code_parity_pcre2_hidden_and_fallback` - _Verify default ripgrep scanning, broken symlink safety, PCRE2 lookarounds, hidden dotfiles, and Python fallback parity._
+- `test_ripgrep_file_discovery_and_delta_scanner_parity` - _Verify ripgrep --files discovery matches Python os.walk delta scanning while ignoring dotfiles and node_modules._
+- `test_parallel_early_return_beats_slow_embeddings_for_keyword_series` - _Verify exact queries make zero embedding calls and keyword-series queries return early from Track A without blocking on slow embeddings._
+- `test_ast_chunking_preserves_whole_functions_up_to_4000_chars` - _Verify CODE_CHUNK_SIZE=4000 keeps complete functions and methods intact in a single AST chunk._
+- `test_grep_code_skips_vector_store_when_all_targets_on_disk` - _Verify grep_code skips Qdrant store.grep_chunks() when all matching target repos exist locally on disk._
+- `test_camelcase_exact_identifier_prioritized_over_subtokens` - _Verify exact CamelCase identifier tokens are preserved and ranked ahead of sub-token OR expansion._
 
 #### `tests/test_route_specificity.py` (8 tests)
 - `test_literal_segment_beats_parameter`

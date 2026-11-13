@@ -1,10 +1,11 @@
 import json
 import pytest
-import asyncio
-from app.mcp.handlers.storage_handlers import handle_manage_local_file, handle_what_is_ingested
-from app.services.auth import set_current_auth_context, AuthContext, Role, ForbiddenError
+from app.mcp.handlers.storage_handlers import handle_manage
+from app.mcp.handlers.repo_handlers import handle_list_repositories
+from app.services.auth import set_current_auth_context, AuthContext, Role
 from app.services.database.engine import get_db_engine, init_db
 import app.services.database as db_mod
+
 
 @pytest.fixture
 def db_engine(tmp_path, monkeypatch):
@@ -16,6 +17,7 @@ def db_engine(tmp_path, monkeypatch):
     init_db(engine=engine)
     return engine
 
+
 @pytest.mark.asyncio
 async def test_manage_local_file_upload_and_read(tmp_path, monkeypatch, db_engine):
     from app.services.local_storage import LocalStorageService
@@ -23,16 +25,17 @@ async def test_manage_local_file_upload_and_read(tmp_path, monkeypatch, db_engin
     monkeypatch.setattr(ls_mod, "_storage_service", LocalStorageService(storage_root=str(tmp_path)))
 
     set_current_auth_context(AuthContext(role=Role.EDITOR))
-    up_res = await handle_manage_local_file(action="upload", file_path="notes/guide.md", content="# Guide\nTest content")
+    up_res = await handle_manage(action="upload", file_path="notes/guide.md", content="# Guide\nTest content")
     up_data = json.loads(up_res)
     assert up_data["action"] == "upload"
     assert up_data["status"] == "success"
     assert up_data["file"] == "notes/guide.md"
 
-    read_res = await handle_manage_local_file(action="read", file_path="notes/guide.md")
+    read_res = await handle_manage(action="read", file_path="notes/guide.md")
     read_data = json.loads(read_res)
     assert "# Guide" in read_data["content"]
     assert "Test content" in read_data["content"]
+
 
 @pytest.mark.asyncio
 async def test_manage_local_file_replace_and_delete(tmp_path, monkeypatch, db_engine):
@@ -41,38 +44,40 @@ async def test_manage_local_file_replace_and_delete(tmp_path, monkeypatch, db_en
     monkeypatch.setattr(ls_mod, "_storage_service", LocalStorageService(storage_root=str(tmp_path)))
 
     set_current_auth_context(AuthContext(role=Role.EDITOR))
-    # Upload initial
-    await handle_manage_local_file(action="upload", file_path="notes/doc.md", content="Initial")
+    await handle_manage(action="upload", file_path="notes/doc.md", content="Initial")
 
-    # Replace
-    rep_res = await handle_manage_local_file(action="replace", file_path="notes/doc.md", content="Updated")
+    rep_res = await handle_manage(action="replace", file_path="notes/doc.md", content="Updated")
     rep_data = json.loads(rep_res)
     assert rep_data["action"] == "replace"
     assert rep_data["status"] == "success"
 
-    read_res = await handle_manage_local_file(action="read", file_path="notes/doc.md")
+    read_res = await handle_manage(action="read", file_path="notes/doc.md")
     assert "Updated" in json.loads(read_res)["content"]
 
-    # Delete
-    del_res = await handle_manage_local_file(action="delete", file_path="notes/doc.md")
+    del_res = await handle_manage(action="delete", file_path="notes/doc.md")
     del_data = json.loads(del_res)
     assert del_data["action"] == "delete"
     assert del_data["status"] == "success"
 
-    # Read after delete should return error message
-    read_after_del = await handle_manage_local_file(action="read", file_path="notes/doc.md")
+    read_after_del = await handle_manage(action="read", file_path="notes/doc.md")
     assert "error" in json.loads(read_after_del)
+
 
 @pytest.mark.asyncio
 async def test_manage_local_file_rbac_forbidden():
     set_current_auth_context(AuthContext(role=Role.VIEWER))
-    res = await handle_manage_local_file(action="upload", file_path="test.md", content="forbidden")
+    res = await handle_manage(action="upload", file_path="test.md", content="forbidden")
     res_data = json.loads(res)
     assert res_data.get("forbidden") is True or "Forbidden" in res_data.get("error", "")
 
-    del_res = await handle_manage_local_file(action="delete", file_path="test.md")
+    del_res = await handle_manage(action="delete", file_path="test.md")
     del_data = json.loads(del_res)
     assert del_data.get("forbidden") is True or "Forbidden" in del_data.get("error", "")
+
+    sync_res = await handle_manage(action="sync_repo", repo="test-repo")
+    sync_data = json.loads(sync_res)
+    assert sync_data.get("forbidden") is True or "Forbidden" in sync_data.get("error", "")
+
 
 @pytest.mark.asyncio
 async def test_manage_local_file_input_validation(tmp_path, monkeypatch):
@@ -81,35 +86,34 @@ async def test_manage_local_file_input_validation(tmp_path, monkeypatch):
     monkeypatch.setattr(ls_mod, "_storage_service", LocalStorageService(storage_root=str(tmp_path)))
 
     set_current_auth_context(AuthContext(role=Role.EDITOR))
-    # Missing content on upload
-    res = await handle_manage_local_file(action="upload", file_path="test.md", content=None)
+    res = await handle_manage(action="upload", file_path="test.md", content=None)
     assert "'content' parameter is required" in json.loads(res)["error"]
 
-    # Unsupported action
-    inv_res = await handle_manage_local_file(action="invalid_action", file_path="test.md")
+    inv_res = await handle_manage(action="invalid_action", file_path="test.md")
     assert "Unsupported action" in json.loads(inv_res)["error"]
 
+
 @pytest.mark.asyncio
-async def test_what_is_ingested_summary_and_filters(tmp_path, monkeypatch, db_engine):
+async def test_list_repositories_summary_and_filters(tmp_path, monkeypatch, db_engine):
     from app.services.local_storage import LocalStorageService
     import app.services.local_storage as ls_mod
     monkeypatch.setattr(ls_mod, "_storage_service", LocalStorageService(storage_root=str(tmp_path)))
 
     set_current_auth_context(AuthContext(role=Role.VIEWER))
-    out = await handle_what_is_ingested(source_type="all", detail_level="summary")
+    out = await handle_list_repositories(source_type="all", include_files=False)
     data = json.loads(out)
     assert "git_repositories" in data
-    assert "monitored_paths" in data
+    assert "local_paths" in data
     assert "local_storage" in data
 
+
 @pytest.mark.asyncio
-async def test_what_is_ingested_detailed_with_data(tmp_path, monkeypatch, db_engine):
+async def test_list_repositories_detailed_with_data(tmp_path, monkeypatch, db_engine):
     from app.services.local_storage import LocalStorageService
     import app.services.local_storage as ls_mod
     storage = LocalStorageService(storage_root=str(tmp_path))
     monkeypatch.setattr(ls_mod, "_storage_service", storage)
 
-    # Insert mock records in db
     with db_mod.get_db_connection() as conn:
         conn.execute(
             "INSERT INTO git_repositories (name, url, branch, commit_sha, status) VALUES (?, ?, ?, ?, ?)",
@@ -129,37 +133,52 @@ async def test_what_is_ingested_detailed_with_data(tmp_path, monkeypatch, db_eng
         )
         conn.commit()
 
-    # Upload local file
     storage.save_file_content("sub/guide.md", "# Guide")
-
     set_current_auth_context(AuthContext(role=Role.VIEWER))
 
-    # Test source_type git
-    git_out = json.loads(await handle_what_is_ingested(source_type="git", detail_level="summary"))
+    git_out = json.loads(await handle_list_repositories(source_type="git", include_files=False))
     assert any(r["name"] == "mock_repo" for r in git_out["git_repositories"])
     assert "local_storage" not in git_out
 
-    # Test source_type monitored_path
-    mon_out = json.loads(await handle_what_is_ingested(source_type="monitored_path", detail_level="summary"))
-    assert any(p["repo"] == "monitored_repo" for p in mon_out["monitored_paths"])
+    mon_out = json.loads(await handle_list_repositories(source_type="monitored_path", include_files=False))
+    assert any(p["repo"] == "monitored_repo" for p in mon_out["local_paths"])
     assert "git_repositories" not in mon_out
 
-    # Test source_type local_storage
-    ls_out = json.loads(await handle_what_is_ingested(source_type="local_storage", detail_level="summary"))
+    ls_out = json.loads(await handle_list_repositories(source_type="local_storage", include_files=False))
     assert "local_storage" in ls_out
     assert "sub" in ls_out["local_storage"]["directories"]
 
-    # Test detailed level
-    detailed_out = json.loads(await handle_what_is_ingested(source_type="all", detail_level="detailed", repo_name="monitored_repo"))
+    detailed_out = json.loads(await handle_list_repositories(source_type="all", include_files=True, repo="monitored_repo"))
     assert "files" in detailed_out
     assert any(f["repo"] == "monitored_repo" and f["file"] == "/local/path/main.py" for f in detailed_out["files"])
 
-@pytest.mark.asyncio
-async def test_tool_registration():
-    from app.mcp.tools import register_mcp_tools_and_resources
-    from app.mcp.mcp_server import mcp_server
 
-    server = register_mcp_tools_and_resources(mcp_server)
-    tools = {t.name for t in server._tool_manager.list_tools()}
-    assert "manage_local_file" in tools
-    assert "what_is_ingested" in tools
+@pytest.mark.asyncio
+async def test_tool_registration_default_and_write_gated(monkeypatch):
+    from mcp.server.fastmcp import FastMCP
+    from mcp.server.transport_security import TransportSecuritySettings
+    from app.mcp.tools import register_mcp_tools_and_resources
+
+    monkeypatch.delenv("MCP_ENABLE_WRITE_TOOLS", raising=False)
+    default_srv = FastMCP("DefaultToolsTest", transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
+    register_mcp_tools_and_resources(default_srv)
+    default_names = {t.name for t in await default_srv.list_tools()}
+    assert default_names == {
+        "diagnose_issue",
+        "execute_script",
+        "find_routes",
+        "find_symbol",
+        "get_architecture",
+        "grep_code",
+        "list_repositories",
+        "read_file",
+        "search",
+        "trace_path",
+    }
+
+    monkeypatch.setenv("MCP_ENABLE_WRITE_TOOLS", "true")
+    write_srv = FastMCP("WriteToolsTest", transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
+    register_mcp_tools_and_resources(write_srv)
+    write_names = {t.name for t in await write_srv.list_tools()}
+    assert "manage" in write_names
+    assert len(write_names) == 11

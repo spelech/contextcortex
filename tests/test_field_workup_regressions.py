@@ -110,7 +110,6 @@ def test_finding_1_shallow_clone_stages_fresh_clone_on_fetch_failure(tmp_path):
 @pytest.mark.asyncio
 async def test_finding_2_list_repositories_serializes_postgres_datetime(isolated_db):
     from app.mcp.handlers.repo_handlers import handle_catalog_summary, handle_list_repositories
-    from app.mcp.handlers.storage_handlers import handle_what_is_ingested
 
     fake_dt = datetime.datetime(2026, 11, 11, 14, 30, 0, tzinfo=datetime.timezone.utc)
     fake_conn = MagicMock()
@@ -157,9 +156,7 @@ async def test_finding_2_list_repositories_serializes_postgres_datetime(isolated
         assert "error" not in parsed_cat
         assert parsed_cat["files"][0]["file"] == "server/Product.Worker/UnitOfWork.cs"
 
-    with patch("app.mcp.handlers.storage_handlers.get_db_connection", return_value=fake_conn), \
-         patch("app.mcp.tools.get_db_connection", return_value=fake_conn):
-        raw_ingested = await handle_what_is_ingested(source_type="git", detail_level="detailed")
+        raw_ingested = await handle_list_repositories(source_type="git", include_files=True)
         parsed_ingested = json.loads(raw_ingested)
         assert "error" not in parsed_ingested
         assert parsed_ingested["files"][0]["file"] == "server/Product.Worker/UnitOfWork.cs"
@@ -292,10 +289,11 @@ namespace Product.Worker
     assert "UnitOfWork.Run" in caller_symbols
 
 
-# Finding 5, 6, 7 (P2): get_file_outline, Permalinks, and POSIX Path Normalization
+# Finding 5, 6, 7 (P2): read_file(outline_only=True), Permalinks, and POSIX Path Normalization
 @pytest.mark.asyncio
 async def test_findings_5_6_7_file_outline_permalinks_and_path_normalization(isolated_db):
-    from app.mcp.handlers.symbol_handlers import handle_find_symbol, handle_get_file_outline
+    from app.mcp.handlers.file_handlers import handle_read_file
+    from app.mcp.handlers.symbol_handlers import handle_find_symbol
     from app.services.git_manager import detect_git_provider, format_git_permalink
     from app.services.navigator import get_file_outline as nav_get_file_outline
 
@@ -310,8 +308,8 @@ async def test_findings_5_6_7_file_outline_permalinks_and_path_normalization(iso
         )
         conn.commit()
 
-    outline_posix = json.loads(await handle_get_file_outline(filepath="server/Product.Worker/UnitOfWork.cs", repo="win-repo"))
-    outline_win = json.loads(await handle_get_file_outline(filepath="server\\Product.Worker\\UnitOfWork.cs", repo="win-repo"))
+    outline_posix = json.loads(await handle_read_file(path="server/Product.Worker/UnitOfWork.cs", repo="win-repo", outline_only=True))
+    outline_win = json.loads(await handle_read_file(path="server\\Product.Worker\\UnitOfWork.cs", repo="win-repo", outline_only=True))
     assert outline_posix["file"] == "server/Product.Worker/UnitOfWork.cs"
     assert len(outline_posix["symbols"]) == 2
     assert len(outline_win["symbols"]) == 2
@@ -335,7 +333,7 @@ async def test_findings_5_6_7_file_outline_permalinks_and_path_normalization(iso
 # Finding 8 & 9 (P3): Search Mode Aliases ('keyword', 'bm25') & Natural-Language FTS
 @pytest.mark.asyncio
 async def test_findings_8_and_9_search_mode_aliases_and_or_tsquery():
-    from app.mcp.handlers.search_handlers import handle_search_code
+    from app.mcp.handlers.search_handlers import handle_search
     from app.services.search import normalize_search_mode
     from app.services.vector_store.pgvector_store import PgVectorStore, _build_or_tsquery
 
@@ -363,7 +361,7 @@ async def test_findings_8_and_9_search_mode_aliases_and_or_tsquery():
 
     with patch("app.mcp.handlers.search_handlers.execute_hybrid_search", return_value=[]) as mock_search, \
          patch("app.mcp.tools.execute_hybrid_search", mock_search):
-        out = json.loads(await handle_search_code(query="Engine", mode="keyword"))
+        out = json.loads(await handle_search(query="Engine", scope="code", mode="keyword"))
         assert out["mode"] == "lexical"
         assert mock_search.call_args.kwargs["search_mode"] == "lexical"
 
@@ -435,5 +433,5 @@ def test_findings_11_12_13_version_sparse_model_and_readme_tools(monkeypatch):
     readme_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "README.md")
     with open(readme_path, "r", encoding="utf-8") as f:
         readme_text = f.read()
-    for tool_name in ("grep_code", "diagnose_issue", "get_recent_changes"):
+    for tool_name in ("grep_code", "diagnose_issue", "search", "find_routes", "read_file", "list_repositories"):
         assert f"`{tool_name}`" in readme_text

@@ -11,6 +11,7 @@
 param(
     [string]$PostgresVersion = "16.6-1",
     [string]$PgVectorVersion = "0.8.0",
+    [string]$RipgrepVersion = "14.1.1",
     [string]$OutputDir = "dist\contextcortex-windows-x64"
 )
 
@@ -134,6 +135,18 @@ Pop-Location
 # Copy installed vector.dll and extension SQL/control files into target bundle
 Copy-Item -Path (Join-Path $ExtractedPg "lib\vector.dll") -Destination (Join-Path $TargetPg "lib\vector.dll") -Force
 Copy-Item -Path (Join-Path $ExtractedPg "share\extension\vector*") -Destination (Join-Path $TargetPg "share\extension\") -Force
+
+# 5b. Download & Bundle ripgrep (rg.exe) next to contextcortex.exe for native grep/indexing speed
+Write-Host "Downloading ripgrep v$RipgrepVersion (Windows x64)..." -ForegroundColor Cyan
+$RgArchiveName = "ripgrep-$RipgrepVersion-x86_64-pc-windows-msvc"
+$RgZipUrl = "https://github.com/BurntSushi/ripgrep/releases/download/$RipgrepVersion/$RgArchiveName.zip"
+$RgZipPath = Join-Path $TempDir "ripgrep.zip"
+$RgExtractDir = Join-Path $TempDir "ripgrep_extract"
+Invoke-WebRequest -Uri $RgZipUrl -OutFile $RgZipPath
+Expand-Archive -Path $RgZipPath -DestinationPath $RgExtractDir -Force
+$RgExeSrc = Get-ChildItem -Path $RgExtractDir -Recurse -Filter "rg.exe" | Select-Object -First 1
+if (-not $RgExeSrc) { throw "Failed to locate rg.exe inside $RgArchiveName.zip" }
+Copy-Item -Path $RgExeSrc.FullName -Destination (Join-Path $BundleDir "rg.exe") -Force
 
 # 6. Copy the .env template and launcher scripts (kept as real files in scripts\portable\)
 $PortableSrc = Join-Path $RootDir "scripts\portable"

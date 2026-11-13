@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from app.mcp.tools import handle_find_api_callers
+from app.mcp.tools import handle_find_routes
 from app.services.chunking.api_route_extractor import match_route_and_call
 from app.services.chunking.route_specificity import (
     call_belongs_to_route,
@@ -117,7 +117,7 @@ def seeded_db(tmp_path, monkeypatch):
 
 
 async def _callers(path, method=None):
-    out = json.loads(await handle_find_api_callers(path=path, method=method))
+    out = json.loads(await handle_find_routes(query=path, kind="callers", method=method))
     return sorted(c["caller"] for c in out["callers"])
 
 

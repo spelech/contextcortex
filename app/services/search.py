@@ -1,4 +1,6 @@
+import contextvars
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 
 from app.services.database import get_db_connection
@@ -8,9 +10,18 @@ from app.services.graph_traversal import (
     _methods_compatible,
     trace_symbol_path,
 )
+from app.services.lexical_retriever import run_fast_lexical_track
+from app.services.query_router import (
+    classify_query_intent,
+    fuse_search_results,
+    should_early_return_lexical,
+    strip_internal_metadata,
+)
 from app.services.vector_store import VectorSearchResult, get_vector_store
 
 logger = logging.getLogger("contextcortex.search")
+
+_TRACK_B_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ctx-search-track-b")
 
 
 def _enrich_code_ast_metadata(results: List[VectorSearchResult]) -> None:
@@ -105,10 +116,11 @@ def execute_hybrid_search(
     dense_weight: Optional[float] = None,
     search_mode: str = "hybrid",
 ) -> List[VectorSearchResult]:
-    """Executes vector search via the configured active VectorStore backend and enriches code hits with AST metadata."""
+    """Executes parallel query-routed retrieval (Track A AST+ripgrep lexical, Track B dense/hybrid) with AST enrichment."""
     if not query_text or not query_text.strip():
         return []
 
+    clean_query = query_text.strip()
     try:
         store = get_vector_store()
         try:
@@ -129,8 +141,103 @@ def execute_hybrid_search(
                     f"Search mode '{search_mode}' is not supported by the active vector store backend ({store.__class__.__name__}). Supported modes: {supported} (aliases: 'keyword', 'bm25')"
                 )
 
-        results = store.search(
-            query_text=query_text.strip(),
+        # Explicit pure semantic search bypasses lexical shortcutting
+        if mode == "semantic":
+            results = store.search(
+                query_text=clean_query,
+                doc_type=doc_type,
+                repo=repo,
+                language=language,
+                category=category,
+                tag=tag,
+                limit=limit,
+                dense_weight=dense_weight,
+                search_mode=mode,
+            )
+            _enrich_code_ast_metadata(results)
+            return results
+
+        plan = classify_query_intent(clean_query)
+
+        # Explicit lexical mode combines Track A (AST + rg) with store lexical FTS/BM25 (zero dense embeddings)
+        if mode == "lexical":
+            track_a = run_fast_lexical_track(
+                plan=plan,
+                store=store,
+                doc_type=doc_type,
+                repo=repo,
+                language=language,
+                category=category,
+                tag=tag,
+                limit=limit,
+                allow_store_chunk_hydration=True,
+            )
+            store_lex = store.search(
+                query_text=clean_query,
+                doc_type=doc_type,
+                repo=repo,
+                language=language,
+                category=category,
+                tag=tag,
+                limit=limit,
+                dense_weight=0.0,
+                search_mode="lexical",
+            )
+            fused = fuse_search_results(track_a, store_lex, limit=limit, intent="lexical_keywords")
+            _enrich_code_ast_metadata(fused)
+            return fused
+
+        # Exact-identifier / quoted / code-syntax queries: run Track A first with 0 dense embeddings on hit
+        if plan.intent == "lexical_exact" and dense_weight is None:
+            track_a = run_fast_lexical_track(
+                plan=plan,
+                store=store,
+                doc_type=doc_type,
+                repo=repo,
+                language=language,
+                category=category,
+                tag=tag,
+                limit=limit,
+                allow_store_chunk_hydration=True,
+            )
+            if not track_a and "lexical" in supported:
+                track_a = store.search(
+                    query_text=clean_query,
+                    doc_type=doc_type,
+                    repo=repo,
+                    language=language,
+                    category=category,
+                    tag=tag,
+                    limit=limit,
+                    dense_weight=0.0,
+                    search_mode="lexical",
+                )
+            if should_early_return_lexical(plan, track_a):
+                early = strip_internal_metadata(track_a[:limit])
+                _enrich_code_ast_metadata(early)
+                return early
+
+            track_b = store.search(
+                query_text=clean_query,
+                doc_type=doc_type,
+                repo=repo,
+                language=language,
+                category=category,
+                tag=tag,
+                limit=limit,
+                dense_weight=dense_weight,
+                search_mode=mode,
+            )
+            fused = fuse_search_results(track_a, track_b, limit=limit, intent=plan.intent)
+            _enrich_code_ast_metadata(fused)
+            return fused
+
+        # Parallel execution at t=0: launch Track B in background while Track A runs locally
+        ctx = contextvars.copy_context()
+        track_b_future = _TRACK_B_EXECUTOR.submit(
+            ctx.run,
+            store.search,
+            query_text=clean_query,
             doc_type=doc_type,
             repo=repo,
             language=language,
@@ -140,8 +247,52 @@ def execute_hybrid_search(
             dense_weight=dense_weight,
             search_mode=mode,
         )
-        _enrich_code_ast_metadata(results)
-        return results
+
+        # Avoid concurrent access to local file/memory QdrantClient while Track B uses it
+        store_mode = getattr(store, "mode", None)
+        allow_hydration = store_mode not in ("memory", "embedded")
+        track_a = run_fast_lexical_track(
+            plan=plan,
+            store=store,
+            doc_type=doc_type,
+            repo=repo,
+            language=language,
+            category=category,
+            tag=tag,
+            limit=limit,
+            allow_store_chunk_hydration=allow_hydration,
+        )
+
+        if dense_weight is None and plan.intent == "lexical_keywords" and should_early_return_lexical(plan, track_a):
+            if track_b_future.done():
+                try:
+                    track_b_done = track_b_future.result()
+                    fused = fuse_search_results(track_a, track_b_done, limit=limit, intent=plan.intent)
+                    _enrich_code_ast_metadata(fused)
+                    return fused
+                except ValueError:
+                    raise
+                except Exception as exc:
+                    logger.warning(f"Track B failed after Track A succeeded; returning Track A hits: {exc}")
+            early = strip_internal_metadata(track_a[:limit])
+            _enrich_code_ast_metadata(early)
+            return early
+
+        try:
+            track_b_results = track_b_future.result()
+        except ValueError:
+            raise
+        except Exception as exc:
+            logger.error(f"Error executing Track B vector search: {exc}")
+            if track_a:
+                fallback = strip_internal_metadata(track_a[:limit])
+                _enrich_code_ast_metadata(fallback)
+                return fallback
+            return []
+
+        fused = fuse_search_results(track_a, track_b_results, limit=limit, intent=plan.intent)
+        _enrich_code_ast_metadata(fused)
+        return fused
     except ValueError:
         raise
     except Exception as e:
@@ -154,6 +305,7 @@ __all__ = [
     "_clean_path",
     "_enrich_code_ast_metadata",
     "_methods_compatible",
+    "classify_query_intent",
     "execute_hybrid_search",
     "format_git_permalink",
     "get_db_connection",

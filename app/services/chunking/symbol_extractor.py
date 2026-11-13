@@ -33,7 +33,7 @@ def extract_symbols_and_chunks(
     code: str, 
     filepath: str, 
     repo: str = "default",
-    max_chunk_chars: int = 1500
+    max_chunk_chars: int = 4000
 ) -> ExtractionResult:
     """
     Parses code using Tree-sitter AST, extracting:

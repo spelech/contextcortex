@@ -22,14 +22,19 @@ def temp_mcp_db(tmp_path):
 @pytest.mark.asyncio
 async def test_fastmcp_tools_registered():
     tools = await mcp_server.list_tools()
-    tool_names = [t.name for t in tools]
-    assert "search_code" in tool_names
-    assert "search_docs" in tool_names
-    assert "find_symbol" in tool_names
-    assert "get_file_outline" in tool_names
-    assert "list_repositories" in tool_names
-    assert "sync_repository" in tool_names
-    assert "index_status" in tool_names
+    tool_names = {t.name for t in tools}
+    assert tool_names == {
+        "diagnose_issue",
+        "execute_script",
+        "find_routes",
+        "find_symbol",
+        "get_architecture",
+        "grep_code",
+        "list_repositories",
+        "read_file",
+        "search",
+        "trace_path",
+    }
 
 
 @pytest.mark.asyncio
@@ -62,7 +67,7 @@ async def test_fastmcp_tool_execution(temp_mcp_db):
     }
 
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]):
-        res, structured = await mcp_server.call_tool("search_code", {"query": "main entry point"})
+        res, structured = await mcp_server.call_tool("search", {"query": "main entry point", "scope": "code"})
         assert len(res) == 1
         data = json.loads(res[0].text)
         assert data["results"][0]["file"] == "main.py"
@@ -136,8 +141,8 @@ async def test_search_code_with_dense_weight_and_score_breakdown(temp_mcp_db):
 
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit]) as mock_exec:
         res, structured = await mcp_server.call_tool(
-            "search_code",
-            {"query": "user login", "dense_weight": 0.6, "mode": "hybrid"}
+            "search",
+            {"query": "user login", "scope": "code", "dense_weight": 0.6, "mode": "hybrid"}
         )
         assert len(res) == 1
         data = json.loads(res[0].text)
@@ -152,6 +157,8 @@ async def test_search_code_with_dense_weight_and_score_breakdown(temp_mcp_db):
             doc_type="code",
             repo=None,
             language=None,
+            category=None,
+            tag=None,
             limit=6,
             dense_weight=0.6,
             search_mode="hybrid"
@@ -162,7 +169,7 @@ async def test_search_code_empty_and_missing_ast_boundaries(temp_mcp_db):
     import json
     # 1. Empty results returns empty results list in JSON
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[]):
-        res, _ = await mcp_server.call_tool("search_code", {"query": "nonexistent_func"})
+        res, _ = await mcp_server.call_tool("search", {"query": "nonexistent_func", "scope": "code"})
         data = json.loads(res[0].text)
         assert data["query"] == "nonexistent_func"
         assert data["results"] == []
@@ -182,7 +189,7 @@ async def test_search_code_empty_and_missing_ast_boundaries(temp_mcp_db):
         "content": "#!/usr/bin/env bash\necho 'building'"
     }
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_hit_no_ast]):
-        res, _ = await mcp_server.call_tool("search_code", {"query": "build.sh"})
+        res, _ = await mcp_server.call_tool("search", {"query": "build.sh", "scope": "code"})
         assert len(res) == 1
         data = json.loads(res[0].text)
         hit = data["results"][0]
@@ -209,8 +216,8 @@ async def test_search_docs_with_dense_weight_and_score_breakdown(temp_mcp_db):
 
     with patch("app.mcp.tools.execute_hybrid_search", return_value=[mock_doc]) as mock_exec:
         res, _ = await mcp_server.call_tool(
-            "search_docs",
-            {"query": "microservices", "dense_weight": 0.4, "mode": "lexical"}
+            "search",
+            {"query": "microservices", "scope": "docs", "dense_weight": 0.4, "mode": "lexical"}
         )
         assert len(res) == 1
         data = json.loads(res[0].text)
@@ -224,6 +231,7 @@ async def test_search_docs_with_dense_weight_and_score_breakdown(temp_mcp_db):
             query_text="microservices",
             doc_type="doc",
             repo=None,
+            language=None,
             category=None,
             tag=None,
             limit=6,

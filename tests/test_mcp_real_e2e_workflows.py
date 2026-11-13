@@ -34,23 +34,15 @@ from app.services.auth import set_current_auth_context, AuthContext, Role
 from app.mcp.mcp_server import mcp_server
 from app.mcp.tools import register_mcp_tools_and_resources
 from app.mcp.handlers import (
-    handle_search_code,
-    handle_search_docs,
+    handle_search,
     handle_find_symbol,
     handle_trace_path,
-    handle_get_file_outline,
     handle_find_routes,
-    handle_find_api_callers,
     handle_list_repositories,
-    handle_index_status,
+    handle_manage,
     handle_catalog_summary,
-    handle_get_recent_changes,
     handle_get_architecture,
-    handle_manage_adr,
-    handle_manage_local_file,
-    handle_what_is_ingested,
     handle_read_file,
-    handle_summarize_file,
     handle_grep_code,
     handle_diagnose_issue,
 )
@@ -239,15 +231,15 @@ async def test_e2e_grep_code_survives_broken_venv_symlink_and_enriches_ast(real_
 
 @pytest.mark.asyncio
 async def test_e2e_find_routes_excludes_test_files_and_links_api_callers(real_e2e_env):
-    """Verifies `find_routes` extracts real FastAPI routes, ignores `/etc/shadow` in `tests/test_security.py`, and links `find_api_callers`."""
-    routes_raw = await handle_find_routes(repo="platform-core")
+    """Verifies `find_routes` extracts real FastAPI routes, ignores `/etc/shadow` in `tests/test_security.py`, and links callers."""
+    routes_raw = await handle_find_routes(kind="handlers", repo="platform-core")
     routes_data = json.loads(routes_raw)
     assert "error" not in routes_data
     paths = [r["path"] for r in routes_data["routes"]]
     assert "/api/v1/users/{user_id}" in paths
     assert "/etc/shadow" not in paths
 
-    callers_raw = await handle_find_api_callers(path="/api/v1/users/{user_id}", method="GET")
+    callers_raw = await handle_find_routes(query="/api/v1/users/{user_id}", kind="callers", method="GET")
     callers_data = json.loads(callers_raw)
     assert "error" not in callers_data
     assert len(callers_data["callers"]) == 1
@@ -277,13 +269,15 @@ async def test_e2e_get_architecture_excludes_tests_and_anonymous_arrows(real_e2e
 
 @pytest.mark.asyncio
 async def test_e2e_get_file_outline_resolves_guessed_subpaths_and_deduplicates(real_e2e_env):
-    """Verifies `get_file_outline` resolves `src/Platform.Core/Program.cs` to `Program.cs` and never returns duplicate symbols."""
-    outline_raw = await handle_get_file_outline(
-        filepath="src/Platform.Core/Program.cs",
+    """Verifies `read_file(..., outline_only=True)` resolves `src/Platform.Core/Program.cs` to `Program.cs` and never returns duplicate symbols."""
+    outline_raw = await handle_read_file(
+        path="src/Platform.Core/Program.cs",
         repo="platform-core",
+        outline_only=True,
     )
     outline = json.loads(outline_raw)
     assert "error" not in outline
+    assert outline["outline_only"] is True
     assert outline["file"].endswith("Program.cs")
     sym_names = [s["name"] for s in outline["symbols"]]
     assert "Program" in sym_names
@@ -366,14 +360,14 @@ async def test_e2e_hybrid_search_and_mcp_resources_and_prompts(real_e2e_env):
 
     # 1. Hybrid & keyword search on code and docs
     code_search = json.loads(
-        await handle_search_code(query="validate_token bearer", repo="platform-core", mode="keyword")
+        await handle_search(query="validate_token bearer", scope="code", repo="platform-core", mode="keyword")
     )
     assert "error" not in code_search
     assert len(code_search["results"]) >= 1
     assert code_search["results"][0]["file"].endswith("app/api/users.py")
 
     doc_search = json.loads(
-        await handle_search_docs(query="BAAI/bge-small-en-v1.5 BM25 lexical", repo="platform-core", mode="hybrid")
+        await handle_search(query="BAAI/bge-small-en-v1.5 BM25 lexical", scope="docs", repo="platform-core", mode="hybrid")
     )
     assert "error" not in doc_search
     assert len(doc_search["results"]) >= 1
@@ -426,7 +420,7 @@ async def test_e2e_real_git_repo_clone_and_resync_without_mocks(real_e2e_env, tm
     """
     Real end-to-end git repository sync using an actual local git repository (`git init` + commits),
     `sync_single_git_repo` (un-mocked git clone + delta + AST + vector indexing), followed by a second
-    commit and re-sync, verifying zero duplicate symbols/routes/relationships and accurate `get_recent_changes`.
+    commit and re-sync, verifying zero duplicate symbols/routes/relationships and indexed git commit history.
     """
     import subprocess
     from app.services.indexing.git_syncer import sync_single_git_repo
@@ -492,8 +486,9 @@ async def test_e2e_real_git_repo_clone_and_resync_without_mocks(real_e2e_env, tm
         route_count_2 = conn.execute("SELECT count(*) FROM api_routes WHERE repo = 'orders-svc'").fetchone()[0]
         assert sym_count_2 == 2
         assert route_count_2 == 1
-
-    recent = json.loads(await handle_get_recent_changes(repo="orders-svc", symbol="list_orders"))
-    assert len(recent["commits"]) == 2
-    assert "fix: return default order" in recent["commits"][0]["message"]
+        commits = conn.execute(
+            "SELECT message FROM git_commits WHERE repo = 'orders-svc' ORDER BY committed_at DESC, id DESC"
+        ).fetchall()
+        assert len(commits) == 2
+        assert "fix: return default order" in commits[0]["message"]
 

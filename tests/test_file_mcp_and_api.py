@@ -7,7 +7,7 @@ from app.services.database.engine import get_db_engine, init_db
 from app.services.database.connection import get_db_connection
 from app.services.file_reader import get_file_reader_service, reset_file_reader_service
 from app.services.summarizer import get_summarizer_service, reset_summarizer_service
-from app.mcp.handlers.file_handlers import handle_read_file, handle_summarize_file
+from app.mcp.handlers.file_handlers import handle_read_file
 from main import app
 
 @pytest.fixture
@@ -64,27 +64,6 @@ async def test_mcp_handle_read_file(test_env):
     # Path traversal rejected
     err_output = json.loads(await handle_read_file("../../../etc/passwd"))
     assert "error" in err_output
-
-
-@pytest.mark.asyncio
-async def test_mcp_handle_summarize_file(test_env):
-    import json
-    watched_dir = test_env["watched_dir"]
-    sample_file = watched_dir / "large.py"
-    sample_file.write_text("def hello():\n    return 'world'\n", encoding="utf-8")
-
-    fake_resp = MagicMock()
-    fake_resp.choices = [MagicMock(message=MagicMock(content="## Executive Overview\nA test module."))]
-
-    with patch("app.services.summarizer.OpenAI") as mock_openai_cls:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = fake_resp
-        mock_openai_cls.return_value = mock_client
-        reset_summarizer_service()
-
-        output = json.loads(await handle_summarize_file(str(sample_file)))
-        assert "## Executive Overview" in output["summary"]
-        assert "A test module." in output["summary"]
 
 
 def test_api_read_file(test_env):

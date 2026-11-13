@@ -1,0 +1,241 @@
+{
+  "snapshot": "pr140-10-tools-plus-fast-paths",
+  "model": "litellm/flash-latest",
+  "schema": {
+    "total_tools": 10,
+    "total_chars": 19420,
+    "est_tokens": 4855
+  },
+  "micro_bench_3run_median_ms": {
+    "grep_code exact symbol": 93.1,
+    "search CamelCase symbol (expect early-return)": 33.1,
+    "search multi-word agent query (expect early-return)": 44.1,
+    "search conceptual natural language (expect semantic)": 234.7,
+    "find_symbol AST lookup": 5.0,
+    "trace_path AST call graph": 277.8,
+    "diagnose_issue stack trace": 211.4,
+    "rg exact symbol (csharp-mcp-router)": 13.0
+  },
+  "micro_bench_last_run": {
+    "mcp": [
+      {
+        "label": "grep_code exact symbol",
+        "tool": "grep_code",
+        "latency_ms": 93.1,
+        "chars": 27184,
+        "meta": {
+          "total_matches": 72
+        }
+      },
+      {
+        "label": "search CamelCase symbol (expect early-return)",
+        "tool": "search",
+        "latency_ms": 33.1,
+        "chars": 9469,
+        "meta": {
+          "mode": "hybrid",
+          "total": 6
+        }
+      },
+      {
+        "label": "search multi-word agent query (expect early-return)",
+        "tool": "search",
+        "latency_ms": 45.4,
+        "chars": 10053,
+        "meta": {
+          "mode": "hybrid",
+          "total": 6
+        }
+      },
+      {
+        "label": "search conceptual natural language (expect semantic)",
+        "tool": "search",
+        "latency_ms": 212.0,
+        "chars": 12477,
+        "meta": {
+          "mode": "hybrid",
+          "total": 6
+        }
+      },
+      {
+        "label": "find_symbol AST lookup",
+        "tool": "find_symbol",
+        "latency_ms": 5.0,
+        "chars": 1904,
+        "meta": {
+          "total": 5
+        }
+      },
+      {
+        "label": "trace_path AST call graph",
+        "tool": "trace_path",
+        "latency_ms": 277.8,
+        "chars": 11959,
+        "meta": {}
+      },
+      {
+        "label": "diagnose_issue stack trace",
+        "tool": "diagnose_issue",
+        "latency_ms": 193.6,
+        "chars": 4930,
+        "meta": {}
+      }
+    ],
+    "rg": [
+      {
+        "label": "rg exact symbol (csharp-mcp-router)",
+        "latency_ms": 25.5,
+        "chars": 69826
+      },
+      {
+        "label": "rg OAuthEgressTokenManager",
+        "latency_ms": 11.9,
+        "chars": 4500
+      },
+      {
+        "label": "rg multi-word files-with-matches",
+        "latency_ms": 11.0,
+        "chars": 2791
+      },
+      {
+        "label": "rg auth middleware search",
+        "latency_ms": 12.5,
+        "chars": 102735
+      }
+    ]
+  },
+  "aggregates": {
+    "cortex": {
+      "tasks": 6,
+      "completed": 6,
+      "wall_seconds": 681.74,
+      "tool_exec_seconds": 12.8,
+      "steps": 86,
+      "outer_tool_count": 80,
+      "inner_tool_count": 96,
+      "discovery_calls": 8,
+      "total_tokens": 424720,
+      "cost_usd": 1.0093,
+      "gt_hits": 47,
+      "gt_total": 48
+    }
+  },
+  "tasks": [
+    {
+      "task_id": "T1_explain_codemode",
+      "category": "explain_code",
+      "repo": "csharp-mcp-router",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 87.759,
+      "tool_exec_seconds": 3.066,
+      "steps": 21,
+      "outer_tool_count": 20,
+      "inner_tool_count": 27,
+      "discovery_calls": 1,
+      "total_tokens": 82201,
+      "cost_usd": 0.233911,
+      "gt_hits": 7,
+      "gt_total": 8,
+      "gt_score": 0.875,
+      "missing_gt": [
+        "CodeModeSandboxCallbacks"
+      ]
+    },
+    {
+      "task_id": "T2_explain_remote_opencode",
+      "category": "explain_code",
+      "repo": "llmlite-modelmanager",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 40.082,
+      "tool_exec_seconds": 1.17,
+      "steps": 11,
+      "outer_tool_count": 10,
+      "inner_tool_count": 15,
+      "discovery_calls": 2,
+      "total_tokens": 63447,
+      "cost_usd": 0.137136,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T3_explain_query_router",
+      "category": "explain_code",
+      "repo": "contextcortex",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 60.974,
+      "tool_exec_seconds": 1.172,
+      "steps": 10,
+      "outer_tool_count": 9,
+      "inner_tool_count": 9,
+      "discovery_calls": 1,
+      "total_tokens": 39169,
+      "cost_usd": 0.090678,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T4_diagnose_oauth_and_403",
+      "category": "diagnose_bug",
+      "repo": "csharp-mcp-router",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 54.114,
+      "tool_exec_seconds": 1.872,
+      "steps": 12,
+      "outer_tool_count": 11,
+      "inner_tool_count": 14,
+      "discovery_calls": 1,
+      "total_tokens": 67363,
+      "cost_usd": 0.172401,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T5_diagnose_vertex_billing",
+      "category": "diagnose_bug",
+      "repo": "llmlite-modelmanager",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 50.181,
+      "tool_exec_seconds": 1.393,
+      "steps": 12,
+      "outer_tool_count": 11,
+      "inner_tool_count": 11,
+      "discovery_calls": 2,
+      "total_tokens": 55247,
+      "cost_usd": 0.113169,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T6_trace_identity_pipeline",
+      "category": "trace_symbol",
+      "repo": "csharp-mcp-router",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 388.634,
+      "tool_exec_seconds": 4.128,
+      "steps": 20,
+      "outer_tool_count": 19,
+      "inner_tool_count": 20,
+      "discovery_calls": 1,
+      "total_tokens": 117293,
+      "cost_usd": 0.262019,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    }
+  ]
+}

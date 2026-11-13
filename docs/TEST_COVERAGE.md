@@ -46,12 +46,12 @@ This document provides comprehensive test coverage metrics and verification base
 | `app/services/navigator.py` | 65 | 0 | 100% | 3-pane tree hierarchy builder, file AST outlines, symbol impact |
 | `app/mcp/mcp_server.py` | 8 | 0 | 100% | FastMCP 2.0 dual transport lifecycle & session registration |
 | `app/mcp/tools.py` | 52 | 0 | 100% | FastMCP tool registry & argument routing |
-| `app/mcp/handlers/repo_handlers.py` | 121 | 0 | 100% | `list_repositories`, `sync_repository`, `index_status` |
-| `app/mcp/handlers/search_handlers.py` | 72 | 0 | 100% | `search_code`, `search_docs` RRF hybrid handlers |
-| `app/mcp/handlers/symbol_handlers.py` | 74 | 3 | 96% | `find_symbol`, `get_file_outline` AST lookups |
-| `app/mcp/handlers/route_handlers.py` | 82 | 11 | 87% | `get_code_routes`, `trace_call_path` route traversals |
-| `app/mcp/handlers/architecture_handlers.py` | 74 | 13 | 82% | `get_architecture`, `manage_adr` ADR lifecycle handlers |
-| `app/mcp/handlers/storage_handlers.py` | 108 | 10 | 91% | `manage_local_file`, `what_is_ingested` catalog tool handlers |
+| `app/mcp/handlers/repo_handlers.py` | 121 | 0 | 100% | `list_repositories` (with `include_files` / `include_status`), `manage` (`sync_repo`) |
+| `app/mcp/handlers/search_handlers.py` | 72 | 0 | 100% | `search` (`code` / `docs` / `all`) RRF hybrid handlers |
+| `app/mcp/handlers/symbol_handlers.py` | 74 | 3 | 96% | `find_symbol`, `read_file` (`outline_only=True`) AST lookups |
+| `app/mcp/handlers/route_handlers.py` | 82 | 11 | 87% | `find_routes` (`handlers` / `callers` / `both`), `trace_path` traversals |
+| `app/mcp/handlers/architecture_handlers.py` | 74 | 13 | 82% | `get_architecture` and ADR resource/REST helpers |
+| `app/mcp/handlers/storage_handlers.py` | 108 | 10 | 91% | `manage` (`upload`/`replace`/`delete`/`read`/`preview`), catalog helpers |
 | `app/models/schemas.py` | 196 | 0 | 100% | Pydantic v2 request / response schemas & validations |
 | `app/services/git_manager.py` | 189 | 8 | 96% | Ephemeral shallow cloning, token masking, permalinks |
 | `app/services/embeddings.py` | 124 | 7 | 94% | Dense BGE-small (384d) + Sparse BM25 via FastEmbed |

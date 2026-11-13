@@ -47,9 +47,9 @@ def code_mode_enabled() -> bool:
 
 
 def _tool_handlers() -> Dict[str, Any]:
-    from app.mcp.tools import _TOOL_DEFINITIONS
+    from app.mcp.tools import get_tool_definitions
 
-    return {name: handler for name, handler, _desc in _TOOL_DEFINITIONS if name != TOOL_NAME}
+    return {name: handler for name, handler, _desc in get_tool_definitions() if name != TOOL_NAME}
 
 
 async def call_tool_from_script(name: str, tool_args: Dict[str, Any]) -> Any:

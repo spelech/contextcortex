@@ -3,7 +3,7 @@ import asyncio
 from app.services.database import get_db_connection, init_db, create_adr, update_adr, supersede_adr, get_adr, list_adrs
 from app.services.adr import parse_adr_markdown, sync_adr_file
 from app.services.architecture import detect_entry_points, synthesize_architecture
-from app.mcp.tools import handle_get_architecture, handle_manage_adr
+from app.mcp.tools import handle_get_architecture, handle_repo_adrs_resource
 from app.mcp.mcp_server import mcp_server
 
 
@@ -177,63 +177,22 @@ async def test_mcp_get_architecture_tool():
 
 
 @pytest.mark.asyncio
-async def test_mcp_manage_adr_tool_actions():
+async def test_mcp_adrs_resource_and_tool_surface():
     import json
     repo = "mcp_test_repo"
-
-    # Action: create
-    create_res = json.loads(await handle_manage_adr(
-        action="create",
+    create_adr(
         repo=repo,
-        id="ADR-100",
+        adr_id="ADR-100",
         title="Use FastMCP Framework",
-        status="PROPOSED",
+        status="ACCEPTED",
         context="We need a robust MCP server framework",
-        decision="Adopt FastMCP"
-    ))
-    assert create_res["status"] == "success"
-    assert create_res["id"] == "ADR-100"
-
-    # Action: get
-    get_res = json.loads(await handle_manage_adr(action="get", repo=repo, id="ADR-100"))
-    assert get_res["found"] is True
-    assert get_res["adr"]["id"] == "ADR-100"
-    assert get_res["adr"]["title"] == "Use FastMCP Framework"
-    assert get_res["adr"]["status"] == "PROPOSED"
-
-    # Action: update
-    update_res = json.loads(await handle_manage_adr(action="update", repo=repo, id="ADR-100", status="ACCEPTED"))
-    assert update_res["status"] == "success"
-    assert update_res["id"] == "ADR-100"
-
-    # Action: create second ADR
-    await handle_manage_adr(
-        action="create",
-        repo=repo,
-        id="ADR-101",
-        title="Switch to Custom MCP Server",
-        status="PROPOSED",
-        context="FastMCP lacks low-level protocol control",
-        decision="Write custom protocol parser"
+        decision="Adopt FastMCP",
     )
+    res = json.loads(await handle_repo_adrs_resource(repo=repo))
+    assert res["repo"] == repo
+    assert res["total_adrs"] == 1
+    assert res["adrs"][0]["id"] == "ADR-100"
 
-    # Action: supersede
-    sup_res = json.loads(await handle_manage_adr(action="supersede", repo=repo, id="ADR-100", superseded_by="ADR-101"))
-    assert sup_res["status"] == "success"
-    assert sup_res["id"] == "ADR-100"
-    assert sup_res["superseded_by"] == "ADR-101"
-
-    # Action: list
-    list_res = json.loads(await handle_manage_adr(action="list", repo=repo))
-    adr_map = {a["id"]: a for a in list_res["adrs"]}
-    assert "ADR-100" in adr_map
-    assert "ADR-101" in adr_map
-    assert adr_map["ADR-100"]["superseded_by"] == "ADR-101"
-
-
-@pytest.mark.asyncio
-async def test_mcp_server_json_rpc_call():
-    # Verify tool registration on FastMCP server instance
-    tools = [t.name for t in mcp_server._tool_manager.list_tools()]
+    tools = {t.name for t in mcp_server._tool_manager.list_tools()}
     assert "get_architecture" in tools
-    assert "manage_adr" in tools
+    assert "manage_adr" not in tools

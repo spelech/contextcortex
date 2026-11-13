@@ -1,6 +1,6 @@
 # MCP Tools, Resources, and Pagination Reference
 
-ContextCortex exposes 20 MCP tools, 2 resources (the catalog and the Code Mode SDK types), 5 repository resource templates, and 5 guided workflow prompts over SSE (`/sse`) and Streamable HTTP (`/mcp`). Every response emits bounded, deterministic JSON to protect AI agent context windows.
+ContextCortex exposes **10 default MCP tools** (plus the gated `manage` write tool when `MCP_ENABLE_WRITE_TOOLS=true`), **2 resources** (the catalog and the Code Mode SDK types), **5 repository resource templates**, and **5 guided workflow prompts** over SSE (`/sse`) and Streamable HTTP (`/mcp`). Every response emits bounded, deterministic JSON to protect AI agent context windows.
 
 ---
 
@@ -11,7 +11,7 @@ ContextCortex extracts AST symbols, call relationships, HTTP routes, and semanti
 - **Primary AST & Code Languages**: Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.
 - **Documentation & Configuration**: Markdown (`.md`), Architecture Decision Records (MADR / Nygard), PDFs (with optional Vision OCR), SQL, YAML, TOML, and JSON.
 - **Ingested Source Types**: Remote Git repositories (`git_repositories`), monitored local directories (`indexed_paths`), and managed local file storage (`local_storage`).
-- **File Paths in Tool Output**: `find_symbol`, `get_file_outline`, `trace_path`, `find_routes`, `find_api_callers`, `search_code`, and `diagnose_issue` give each file as a path relative to the root of its source (for example `server/Controllers/ToolsController.cs`), for Git repositories and for monitored local directories. This is the same form that `read_file` and `grep_code` accept with the `repo` argument. The index keeps absolute disk paths for local directories; the tools remove the `indexed_paths` root when they make the output, so no re-index is necessary.
+- **File Paths in Tool Output**: `find_symbol`, `trace_path`, `find_routes`, `search`, `read_file(..., outline_only=True)`, and `diagnose_issue` give each file as a path relative to the root of its source (for example `server/Controllers/ToolsController.cs`), for Git repositories and for monitored local directories. This is the same form that `read_file` and `grep_code` accept with the `repo` argument. The index keeps absolute disk paths for local directories; the tools remove the `indexed_paths` root when they make the output, so no re-index is necessary.
 
 ---
 
@@ -21,7 +21,7 @@ ContextCortex enforces strict upper bounds on every multi-item tool and resource
 
 ### Offset-Based Tool Pagination
 
-List and search tools accept `limit` (or `top_k` / `max_results`) and `offset` (0-based integer, default `0`). Responses include standard pagination fields:
+List and search tools accept `limit` and `offset` (0-based integer, default `0`). Responses include standard pagination fields:
 
 | Response Key | Type | Description |
 | :--- | :--- | :--- |
@@ -33,7 +33,7 @@ List and search tools accept `limit` (or `top_k` / `max_results`) and `offset` (
 
 ### Line-Window File Pagination
 
-`read_file` uses 1-based inclusive line ranges (`start_line` and `end_line`, capped at `<= 2000` lines per call). Responses return `total_lines`, `start_line`, `end_line`, `has_more`, and `next_start_line`. Pass `start_line=next_start_line` to read the next window.
+`read_file` (when `outline_only=False`) uses 1-based inclusive line ranges (`start_line` and `end_line`, capped at `<= 2000` lines per call). Responses return `total_lines`, `start_line`, `end_line`, `has_more`, and `next_start_line`. Pass `start_line=next_start_line` to read the next window. When `outline_only=True`, `read_file` uses `limit` (`1..500`, default `150`) and `offset` (`total_symbols`, `has_more`, `next_offset`).
 
 ### Page-Indexed Resource Templates
 
@@ -43,70 +43,57 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 
 ## MCP Tools Reference
 
-### Summary Matrix (20 Tools)
+### Summary Matrix (10 Default Tools + 1 Gated Write Tool)
 
 | Tool | Role | Default / Clamped Bounds | Pagination Keys |
 | :--- | :---: | :--- | :--- |
-| `search_code` | `viewer` | `top_k`/`limit`: `5` (`1..25`), `max_snippet_chars`: `2000` (`200..6000`) | `offset`, `total`, `has_more`, `next_offset` |
-| `search_docs` | `viewer` | `top_k`/`limit`: `5` (`1..25`), `max_snippet_chars`: `2000` (`200..6000`) | `offset`, `total`, `has_more`, `next_offset` |
-| `find_symbol` | `viewer` | `limit`: `30` (`1..100`) | `offset`, `total`, `has_more`, `next_offset` |
-| `get_file_outline` | `viewer` | `limit`: `150` (`1..500`) | `offset`, `total_symbols`, `has_more`, `next_offset` |
-| `trace_path` | `viewer` | `depth`: `2` (`1..5`), `limit`: `50` (`1..200`), `include_permalinks`: `False` | `offset`, `total_callers`, `total_callees`, `has_more`, `next_offset` |
-| `find_routes` | `viewer` | `limit`: `50` (`1..200`) | `offset`, `total`, `has_more`, `next_offset` |
-| `find_api_callers` | `viewer` | `limit`: `50` (`1..200`) | `offset`, `total`, `has_more`, `next_offset` |
-| `grep_code` | `viewer` | `max_results`/`limit`: `30` (`1..100`), `context_lines`: `2` (`0..10`), line `<= 400` chars | `offset`, `total_matches`, `has_more`, `next_offset` |
-| `read_file` | `viewer` | `start_line` `>= 1`, window `<= 2000` lines | `total_lines`, `start_line`, `end_line`, `has_more`, `next_start_line` |
-| `summarize_file` | `viewer` | Cached or fresh executive summary | Bounded executive summary text |
-| `what_is_ingested` | `viewer` | `limit`: `100` (`1..500`) when `include_files=True` | Per-source & top-level `total_files`, `offset`, `limit`, `has_more`, `next_offset` |
-| `get_recent_changes` | `viewer` | `limit`: `10` (`1..50`), `<= 25` `files_changed` per commit | `offset`, `total`, `has_more`, `next_offset`, `files_changed_truncated` |
-| `manage_adr` | `viewer`/`editor` | `limit`: `25` (`1..100`) on `list`/`search` | `offset`, `total`, `has_more`, `next_offset` |
-| `manage_local_file` | `viewer`/`editor` | Preview capped at `1000` chars | Single-file CRUD and preview |
 | `diagnose_issue` | `viewer` | `context_lines`: `5` (`1..15`), `limit`: `5` (`1..20`) | Bounded stack frames & semantic candidates |
-| `get_architecture` | `viewer` | Synthesized `< 4000` char overview | Compact per-repo or global summary |
-| `list_repositories` | `viewer` | Registered repos & monitored paths | Compact repository metadata list |
-| `sync_repository` | `editor` | Asynchronous background job | Immediate trigger confirmation |
-| `index_status` | `viewer` | Global health & vector metrics | Single status payload |
 | `execute_script` | `viewer` | One sandboxed script (`30` s, `50` tool calls, `64` MB) | The value the script returns (`< 100,000` chars) |
+| `find_routes` | `viewer` | `kind`: `both`\|`handlers`\|`callers`; `limit`: `50` (`1..200`) | `offset`, `total` / `total_routes` / `total_callers`, `has_more`, `next_offset` |
+| `find_symbol` | `viewer` | `limit`: `30` (`1..100`) | `offset`, `total`, `has_more`, `next_offset` |
+| `get_architecture` | `viewer` | Synthesized `< 4000` char overview | Compact per-repo or global summary |
+| `grep_code` | `viewer` | `limit`: `30` (`1..100`), `context_lines`: `2` (`0..10`), line `<= 400` chars | `offset`, `total_matches`, `has_more`, `next_offset` |
+| `list_repositories` | `viewer` | `limit`: `100` (`1..500`) when `include_files=True`; `include_status=True` adds global health | Per-source & top-level `total_files`, `offset`, `limit`, `has_more`, `next_offset` |
+| `read_file` | `viewer` | `start_line` `>= 1`, window `<= 2000` lines; `outline_only=True`: `limit` `150` (`1..500`) | `total_lines`, `has_more`, `next_start_line` (or `total_symbols`, `next_offset`) |
+| `search` | `viewer` | `scope`: `all`\|`code`\|`docs`; `limit`: `5` (`1..25`), `max_snippet_chars`: `2000` (`200..6000`) | `offset`, `total`, `has_more`, `next_offset` |
+| `trace_path` | `viewer` | `depth`: `2` (`1..5`), `limit`: `50` (`1..200`), `include_permalinks`: `False` | `offset`, `total_callers`, `total_callees`, `has_more`, `next_offset` |
+| `manage` *(requires `MCP_ENABLE_WRITE_TOOLS=true`)* | `viewer`/`editor` | `action`: `sync_repo`\|`upload`\|`replace`\|`delete`\|`read`\|`preview`; preview capped at `1000` chars | Single sync trigger or file operation status |
 
 ---
 
-### Hybrid Search Tools
+### Hybrid Search (`search`)
 
-- **`search_code`**: Runs hybrid dense + BM25 code search across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Supports `mode` (`hybrid`, `semantic`, `lexical`/`keyword`/`bm25`), `repo`, `language`, `dense_weight` (`0.0..1.0`), `top_k`/`limit` (`1..25`, default `5`), `offset` (`>= 0`), and `max_snippet_chars` (`200..6000`, default `2000`). Snippets exceeding `max_snippet_chars` end with `...[snippet truncated]` and set `content_truncated: true`.
-- **`search_docs`**: Runs hybrid dense + BM25 search over Markdown notes, runbooks, ADRs, and PDFs. Supports `repo`, `category`, `tag`, `mode`, `top_k`/`limit` (`1..25`, default `5`), `offset` (`>= 0`), and `max_snippet_chars` (`200..6000`, default `2000`).
+- **`search`**: Runs calibrated hybrid dense + BM25 search across AST-chunked code (`scope='code'`), Markdown notes/runbooks/ADRs/PDFs (`scope='docs'`), or both (`scope='all'`, default). Supports `mode` (`hybrid`, `semantic`, `lexical`/`keyword`/`bm25`), `repo`, `language`, `category`, `tag`, `dense_weight` (`0.0..1.0`), `limit` (`1..25`, default `5`), `offset` (`>= 0`), and `max_snippet_chars` (`200..6000`, default `2000`). Snippets exceeding `max_snippet_chars` end with `...[snippet truncated]` and set `content_truncated: true`.
 
 ### AST Symbol and Call Graph Tools
 
 - **`find_symbol`**: Queries `ast_symbols` directly by `name` (`exact=True` or substring `exact=False`) and optional `repo`. Clamps `limit` to `1..100` (default `30`) with `offset` pagination. Use this tool first when you know an identifier name.
-- **`get_file_outline`**: Returns deduplicated classes, methods, functions, signatures, and `[start_line, end_line]` spans for `filepath`. Clamps `limit` to `1..500` (default `150`) with `offset` pagination (`total_symbols`, `has_more`, `next_offset`).
-- **`trace_path`**: Traverses AST `callers`, `callees`, or `both` via BFS (`depth` clamped `1..5`, default `2`) and resolves cross-repository HTTP route/caller boundaries (`external_callers`, `external_handlers`). Clamps `limit` to `1..200` (default `50`) with `offset`, returning `total_callers`, `total_callees`, `has_more`, and `next_offset`. Caller/callee nodes omit their Git permalinks unless `include_permalinks=True` (the target always keeps its permalink), which keeps deep traces compact. In C#, a call such as `_toolService.PublishInstance()` is indexed with the receiver's declared type (`ToolService.PublishInstance`, from a field, property, parameter, local, or primary-constructor parameter), so methods with the same name in different classes are not mixed up; re-index C# repositories after an upgrade to get these targets.
+- **`trace_path`**: Traverses AST `callers`, `callees`, or `both` via BFS (`depth` clamped `1..5`, default `2`) and resolves cross-repository HTTP route/caller boundaries (`external_callers`, `external_handlers`). Clamps `limit` to `1..200` (default `50`) with `offset`, returning `total_callers`, `total_callees`, `has_more`, and `next_offset`. Caller/callee nodes omit their Git permalinks unless `include_permalinks=True` (the target always keeps its permalink), which keeps deep traces compact. In C#, a call such as `_toolService.PublishInstance()` is indexed with the receiver's declared type (`ToolService.PublishInstance`), so methods with the same name in different classes are not mixed up.
 
-### HTTP Route and Client Discovery Tools
+### HTTP Route and Client Discovery (`find_routes`)
 
-- **`find_routes`**: Searches declared backend endpoints (`api_routes`) by `query`, `method`, and `repo` while excluding unit test fixtures. Clamps `limit` to `1..200` (default `50`) with `offset`.
-- **`find_api_callers`**: Matches frontend and service HTTP client calls (`api_client_calls`) against `path` (including `{id}` / `:id` parameter templates), `method`, and `repo`. Client calls are recognized for `fetch`, `axios`, Python `requests`/`httpx`, Go `http`, C# `HttpClient` (also `new HttpRequestMessage(HttpMethod.Post, url)` and a URL in a variable that an earlier line sets, for example `string url = cond ? $"api/a/{id}" : $"api/b/{id}";`; each branch is one call), and JS/TS request helpers whose name suggests HTTP. URLs built from same-file string constants (`const BASE = ...`, C# `const string Base = ...`), URL variables (`const url = ...; sendHttpRequest(url, ...)`), and C# wrappers (`SendAsync(HttpMethod.Post, url, ...)`) are resolved. A URL whose base cannot be resolved (`${baseUrl}/api/v2/items/${id}`) matches a route when the rest of its path matches the end of the route with at least two literal segments (for example ``getJson(`/api/items/${id}`)`` or `apiClient.post('/api/items', ...)`); the method comes from the helper name or a `method:` option. A client call belongs only to its most specific route. When more than one known route (`api_routes`) of the same repository and a compatible method matches a call, the most specific route gets the call: the routes are compared segment by segment from the left, and a literal segment (`details`) beats a mixed segment (`v{version}`), which beats a parameter (`{id}`). Routes of different length are compared by their number of literal segments (a mixed segment counts as half). Thus `find_api_callers(path='api/v{version}/assistants/{id}')` does not list a call to `/api/v2/Assistants/details` when the route `api/v{version}/assistants/details` exists. The tool first resolves `path` to its own route in each repository, and it compares only routes of those repositories. Routes in test files do not take part. When no known route matches `path`, every matching call is listed. `trace_path` applies the same rule to `external_callers` and `external_handlers`. Clamps `limit` to `1..200` (default `50`) with `offset`.
+- **`find_routes`**: Unified route handler (`kind='handlers'`) and client call-site (`kind='callers'`) discovery across FastAPI, Flask, Django, Express/NestJS, ASP.NET Core, Go, Rust, Java, and JS/TS/C#/Python/Go HTTP clients (default `kind='both'`). Supports `query`, `method`, `repo`, and `limit` (`1..200`, default `50`) / `offset` pagination. When matching client invocations against `query`, each call belongs only to its most specific matching route in `api_routes` (literal segments beat mixed segments which beat `{param}` segments). Test files do not participate in route resolution.
 
-### File Inspection and Pattern Matching Tools
+### File Reading, Outlines, and Pattern Matching
 
-- **`read_file`**: Reads `path` from watched directories, persistent shallow clones, local storage, or reconstructed vector chunks. Accepts `start_line` (`>= 1`) and `end_line` (`<= 2000` lines per call). Always returns `total_lines`, `start_line`, `end_line`, `has_more`, and `next_start_line`.
-- **`summarize_file`**: Returns a cached LLM executive summary for `path` or regenerates one when `force_refresh=True`.
-- **`grep_code`**: Matches literal strings or regular expressions (`is_regex=True`) across disk and vector-backed repositories. Supports `repo`, `path_glob` (alias `path`; with wildcards an fnmatch glob such as `*.cs`, without wildcards a file or folder such as `Services_V2`), `case_sensitive`, `context_lines` (`0..10`, default `2`), `max_results`/`limit` (`1..100`, default `30`), and `offset`. Truncates any matched or context line `> 400` characters with `...[line truncated]`. If a literal search finds nothing and the pattern looks like a regex (for example `A|B` or `foo.*bar`), the search runs again as a regex; `pattern_mode` in the result says which mode was used.
+- **`read_file`**: Reads `path` from watched directories, persistent shallow clones, local storage, or reconstructed vector chunks, or returns deduplicated AST classes, methods, functions, signatures, and `[start_line, end_line]` spans when `outline_only=True`.
+  - Line slicing mode (`outline_only=False`): accepts `start_line` (`>= 1`) and `end_line` (`<= 2000` lines per call), returning `total_lines`, `start_line`, `end_line`, `has_more`, and `next_start_line`.
+  - Outline mode (`outline_only=True`): clamps `limit` to `1..500` (default `150`) with `offset` pagination (`total_symbols`, `has_more`, `next_offset`).
+- **`grep_code`**: Matches literal strings or regular expressions (`is_regex=True`) across disk and vector-backed repositories (using an in-process ripgrep fast path when all target repositories exist on disk). Supports `repo`, `path_glob` (alias `path`; with wildcards an fnmatch glob such as `*.cs`, without wildcards a file or folder such as `Services_V2`), `case_sensitive`, `context_lines` (`0..10`, default `2`), `limit` (`1..100`, default `30`), and `offset`. Truncates any matched or context line `> 400` characters with `...[line truncated]`. If a literal search finds nothing and the pattern looks like a regex (for example `A|B` or `foo.*bar`), the search runs again as a regex; `pattern_mode` in the result says which mode was used.
 
-### Repository, Architecture, and ADR Tools
+### Repository Inventory, Architecture, and Administration
 
-- **`list_repositories`**: Lists all registered Git repositories and monitored local paths with commit SHAs, sync status, and indexed file counts.
-- **`get_recent_changes`**: Returns retained commits for `repo`, optionally filtered by `filepath` or AST `symbol`. Clamps `limit` to `1..50` (default `10`) with `offset`. Caps `files_changed` per commit at `25` entries and includes `files_changed_total` and `files_changed_truncated`.
-- **`sync_repository`**: Triggers an immediate background sync for `repo` or all registered sources (`editor` role required).
-- **`index_status`**: Reports vector database provider/mode, point totals, active dense/sparse models, and masked Git auth status.
+- **`list_repositories`**: Consolidates registered Git repositories, monitored local paths, and managed local storage inventory. Supports `repo`, `source_type` (`all`, `git`, `monitored_path`, `local_storage`), `path_prefix`, `file_extension`, `include_files=True` (with `limit` `1..500`, default `100`, and `offset`), and `include_status=True` (adds vector database provider/mode, point totals, active dense/sparse models, and masked Git auth status).
 - **`get_architecture`**: Synthesizes language distribution, package manifests, entry points, primary modules, hub symbols, route totals, and active ADRs.
-- **`manage_adr`**: Supports `list`, `search`, `get` (`viewer` role) and `create`, `update`, `supersede` (`editor` role). `list` and `search` accept `query`, `status`, `limit` (`1..100`, default `25`), and `offset`.
+- **`manage`** *(gated behind `MCP_ENABLE_WRITE_TOOLS=true`, default `false`)*: Single admin/write tool supporting `action='sync_repo'` (`editor` role — triggers background sync for `repo` or all sources) and local storage operations inside `LOCAL_STORAGE_PATH` (`upload`, `replace`, `delete` requiring `editor` role; `read`, `preview` requiring `viewer` role) with immediate vector and AST indexing.
 
-### Storage, Catalog, and Forensic Triage Tools
+> [!NOTE]
+> Large-file summarization, recent git commit history, and ADR mutations remain available via the Web UI, REST endpoints (`/admin/api/files/summarize`, `/admin/api/repositories/{id}/commits`, `/admin/api/adrs`), and the `knowledge://repo/{repo}/adrs` MCP resource.
 
-- **`manage_local_file`**: Supports `upload`, `replace`, `delete` (`editor` role) and `read`, `preview` (`viewer` role) inside `LOCAL_STORAGE_PATH` with immediate vector and AST indexing.
-- **`what_is_ingested`**: Inspects `all`, `git`, `monitored_path`, or `local_storage` sources. Set `include_files=True` (or `detail_level='detailed'`) with `limit` (`1..500`, default `100`) and `offset` (`>= 0`) to paginate file paths per source (`total_files`, `offset`, `limit`, `has_more`, `next_offset`) without dumping thousands of paths.
-- **`execute_script`** (Code Mode): runs one async JavaScript body that calls other tools with `await tools.<tool>(args)` and returns only the final result, so several dependent calls take one round trip. Tool results are parsed JSON, and a tool error throws. Limits: `CODE_MODE_TIMEOUT_SECONDS` (`30`), `CODE_MODE_MAX_TOOL_CALLS` (`50`), `CODE_MODE_MAX_MEMORY_MB` (`64`). Types: resource `contextcortex://code-mode/sdk.d.ts`. Same pattern as Code Mode in model-context-gateway. See [the reference](reference/mcp-tools.md#20-execute-script).
-- **`diagnose_issue`**: Resolves stack traces, error string literals, HTTP routes, and semantic code candidates across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Clamps `context_lines` (`1..15`, default `5`) and `limit` (`1..20`, default `5`). When `repo` is set, every result section (stack frames, route handlers, external callers, symbols, and candidates) stays in that repo. When an HTTP route matches, `semantic_candidates` starts with the route handler and its callees (`source`: `route_handler` / `route_callee`, `depth` from the handler, `score`: `null`). Search hits (`source`: `semantic`) fill the remaining slots; hits from test files or from a different language than the route handler are dropped.
+### Code Mode and Forensic Triage
+
+- **`execute_script`** (Code Mode): runs one async JavaScript body that calls other tools with `await tools.<tool>(args)` and returns only the final result, so several dependent calls take one round trip. Tool results are parsed JSON, and a tool error throws. Limits: `CODE_MODE_TIMEOUT_SECONDS` (`30`), `CODE_MODE_MAX_TOOL_CALLS` (`50`), `CODE_MODE_MAX_MEMORY_MB` (`64`). Types: resource `contextcortex://code-mode/sdk.d.ts`. See [the reference](reference/mcp-tools.md#10-execute-script).
+- **`diagnose_issue`**: Resolves stack traces, error string literals, HTTP routes, and semantic code candidates across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Clamps `context_lines` (`1..15`, default `5`) and `limit` (`1..20`, default `5`). When `repo` is set, every result section stays in that repo. When an HTTP route matches, `semantic_candidates` starts with the route handler and its callees (`source`: `route_handler` / `route_callee`, `depth`, `score`: `null`), followed by semantic hits in the same language (excluding test files).
 
 ---
 
@@ -130,8 +117,8 @@ ContextCortex splits repository metadata into granular, bounded JSON resources (
 
 | Prompt Name | Arguments | Guided Tool Sequence |
 | :--- | :--- | :--- |
-| `search_infrastructure_docs` | `topic` | `search_docs` -> `manage_adr(action='search')` -> `read_file` |
-| `find_implementation_symbol` | `symbol`, `repo` (opt) | `find_symbol` -> `read_file` -> `trace_path` |
-| `onboard_repository` | `repo` | `get_architecture` -> `find_routes` -> `get_file_outline` -> `get_recent_changes` |
-| `triage_error` | `issue_text`, `repo` (opt) | `diagnose_issue` -> `trace_path` -> `read_file` -> `get_recent_changes` |
-| `investigate_change_impact` | `symbol`, `repo` (opt) | `find_symbol` -> `trace_path(direction='callers')` -> `find_api_callers` -> `grep_code` |
+| `search_infrastructure_docs` | `topic` | `search(scope='docs')` -> `knowledge://repo/{repo}/adrs` -> `read_file` |
+| `find_implementation_symbol` | `symbol`, `repo` (opt) | `find_symbol` -> `read_file(outline_only=True)` -> `read_file` -> `trace_path` |
+| `onboard_repository` | `repo` | `get_architecture` -> `find_routes(kind='handlers')` -> `read_file(outline_only=True)` |
+| `triage_error` | `issue_text`, `repo` (opt) | `diagnose_issue` -> `trace_path` -> `read_file` |
+| `investigate_change_impact` | `symbol`, `repo` (opt) | `find_symbol` -> `trace_path(direction='callers')` -> `find_routes(kind='callers')` -> `grep_code` |

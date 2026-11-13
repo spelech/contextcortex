@@ -1,0 +1,37 @@
+{
+  "model": "${BENCH_MODEL}",
+  "enabled_providers": [
+    "${BENCH_PROVIDER}"
+  ],
+  "providers": {
+    "${BENCH_PROVIDER}": {
+      "package": "@opencode/ai/providers/openai-compatible",
+      "name": "OpenAI-Compatible Gateway",
+      "settings": {
+        "baseURL": "${BENCH_LLM_BASE_URL}",
+        "apiKey": "{env:BENCH_LLM_API_KEY}"
+      },
+      "models": {
+        "${BENCH_MODEL_ID}": {
+          "name": "${BENCH_MODEL_ID}",
+          "limit": {
+            "context": 1000000,
+            "output": 65536
+          }
+        }
+      }
+    }
+  },
+  "mcp": {
+    "servers": {}
+  },
+  "permission": {
+    "bash": "allow",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "task": "deny",
+    "subagent": "deny"
+  }
+}
