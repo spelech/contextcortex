@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.25.0](https://github.com/spelech/contextcortex/compare/v2.24.1...v2.25.0) (2026-11-13)
+
+
+### Features
+
+* **mcp:** ripgrep default, 10-tool MCP surface, parallel query router, and benchmarks ([#140](https://github.com/spelech/contextcortex/issues/140)) ([22bd3a5](https://github.com/spelech/contextcortex/commit/22bd3a53eaf77ed6e2acf646665d4aa2fc475bb8))
+
 ## [2.24.1](https://github.com/spelech/contextcortex/compare/v2.24.0...v2.24.1) (2026-11-12)
 
 

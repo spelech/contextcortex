@@ -314,7 +314,7 @@ class AuthMiddleware:
             })
 
 
-app = FastAPI(title="ContextCortex", version="2.24.1", lifespan=lifespan)  # x-release-please-version
+app = FastAPI(title="ContextCortex", version="2.25.0", lifespan=lifespan)  # x-release-please-version
 app.add_middleware(AuthMiddleware)
 app.add_middleware(McpPingMiddleware)
 
