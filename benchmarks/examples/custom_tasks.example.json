@@ -1,0 +1,34 @@
+[
+  {
+    "id": "E1_explain_mcp_surface",
+    "category": "explain_code",
+    "repo": "contextcortex",
+    "prompt": "Target repository: contextcortex. Scope strictly to the target repository (either in ./<repo> under the current directory or by passing repo='<repo>' if using code-intelligence tools). Do not search outside the current workspace.\n\nExplain how ContextCortex registers its default 10-tool MCP surface vs the gated write tool, and how MCP RBAC enforces viewer vs editor roles across tools. Cite exact file paths, functions, and environment variables.",
+    "ground_truth": [
+      "app/mcp/tools.py",
+      "_DEFAULT_TOOL_DEFINITIONS",
+      "_WRITE_TOOL_DEFINITIONS",
+      "MCP_ENABLE_WRITE_TOOLS",
+      "write_tools_enabled",
+      "enforce_tool_permission",
+      "Role.VIEWER",
+      "Role.EDITOR"
+    ]
+  },
+  {
+    "id": "E2_trace_grep_fast_path",
+    "category": "trace_symbol",
+    "repo": "contextcortex",
+    "prompt": "Target repository: contextcortex. Scope strictly to the target repository (either in ./<repo> under the current directory or by passing repo='<repo>' if using code-intelligence tools). Do not search outside the current workspace.\n\nTrace handle_grep_code end-to-end: how ripgrep is invoked, when Qdrant store.grep_chunks fallback is skipped on disk-synced repositories, and how AST symbol enrichment is batched per file. Cite exact file paths and function names.",
+    "ground_truth": [
+      "handle_grep_code",
+      "execute_code_grep",
+      "search_files_with_ripgrep",
+      "_all_targets_on_disk",
+      "grep_chunks",
+      "ast_symbols",
+      "code_grep_scanner.py",
+      "ripgrep_runner.py"
+    ]
+  }
+]

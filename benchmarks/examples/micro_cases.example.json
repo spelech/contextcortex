@@ -1,0 +1,70 @@
+{
+  "mcp": [
+    {
+      "label": "grep_code exact symbol (contextcortex)",
+      "tool": "grep_code",
+      "args": {
+        "pattern": "execute_hybrid_search",
+        "repo": "contextcortex",
+        "context_lines": 2
+      }
+    },
+    {
+      "label": "search CamelCase symbol (expect early-return)",
+      "tool": "search",
+      "args": {
+        "query": "QueryPlan",
+        "scope": "code",
+        "repo": "contextcortex",
+        "limit": 5
+      }
+    },
+    {
+      "label": "search multi-word query (expect early-return)",
+      "tool": "search",
+      "args": {
+        "query": "execute_hybrid_search query router",
+        "scope": "code",
+        "repo": "contextcortex",
+        "limit": 5
+      }
+    },
+    {
+      "label": "search conceptual NL (expect semantic)",
+      "tool": "search",
+      "args": {
+        "query": "how does OAuth bearer token validation work",
+        "scope": "code",
+        "repo": "contextcortex",
+        "limit": 5
+      }
+    },
+    {
+      "label": "find_symbol AST lookup",
+      "tool": "find_symbol",
+      "args": {
+        "name": "classify_query_intent",
+        "repo": "contextcortex"
+      }
+    },
+    {
+      "label": "trace_path AST call graph",
+      "tool": "trace_path",
+      "args": {
+        "symbol": "execute_hybrid_search",
+        "repo": "contextcortex",
+        "depth": 2
+      }
+    }
+  ],
+  "rg": [
+    {
+      "label": "rg exact symbol (contextcortex)",
+      "cmd": ["rg", "-n", "-C", "2", "execute_hybrid_search", "{WORKSPACE}/contextcortex"]
+    },
+    {
+      "label": "rg multi-word files-with-matches",
+      "cmd": ["rg", "-l", "execute_hybrid_search", "{WORKSPACE}/contextcortex"]
+    }
+  ]
+}

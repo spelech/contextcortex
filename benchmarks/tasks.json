@@ -1,0 +1,98 @@
+[
+  {
+    "id": "T1_explain_codemode",
+    "category": "explain_code",
+    "repo": "csharp-mcp-router",
+    "prompt": "Target repository: csharp-mcp-router. Scope strictly to the target repository (either in ./<repo> under the current directory or by passing repo='<repo>' if using code-intelligence tools). Do not search outside the current workspace.\n\nExplain how Code Mode sandboxing works end-to-end: how MCP tool schemas are converted into TypeScript declarations, how runtime execution quotas (memory, statement count, timeout, and max tool calls) are enforced, and what error messages are produced when limits are exceeded. Cite exact file paths and class/method names.",
+    "ground_truth": [
+      "CodeModeTypeGenerator",
+      "CodeModeExecutionEngine",
+      "ExecuteAsync",
+      "CodeModeSandboxCallbacks",
+      "LimitMemory",
+      "MaxStatements",
+      "TimeoutInterval",
+      "CodeModeMaxToolCalls"
+    ]
+  },
+  {
+    "id": "T2_explain_remote_opencode",
+    "category": "explain_code",
+    "repo": "llmlite-modelmanager",
+    "prompt": "Target repository: llmlite-modelmanager. Scope strictly to the target repository (either in ./<repo> under the current directory or by passing repo='<repo>' if using code-intelligence tools). Do not search outside the current workspace.\n\nTrace how remote OpenCode configuration synchronization works end-to-end: which FastAPI endpoints handle testing and syncing, how multi-host SSH/SFTP connections and private keys (Ed25519/RSA/ECDSA) are handled, and how the remote config is normalized and updated. Cite exact file paths and function names.",
+    "ground_truth": [
+      "main.py",
+      "/api/settings/test-remote-opencode",
+      "/api/sync/opencode",
+      "remote_opencode_sync.py",
+      "get_remote_ssh_connection",
+      "test_remote_opencode_connection",
+      "sync_single_remote_host",
+      "normalize_opencode_v2_config"
+    ]
+  },
+  {
+    "id": "T3_explain_query_router",
+    "category": "explain_code",
+    "repo": "contextcortex",
+    "prompt": "Target repository: contextcortex. Scope strictly to the target repository (either in ./<repo> under the current directory or by passing repo='<repo>' if using code-intelligence tools). Do not search outside the current workspace.\n\nExplain how hybrid code search decides whether to return fast lexical results immediately versus waiting for dense vector embeddings, including what happens at t=0, how multi-word agent queries are classified, and what confidence thresholds gate early return. Cite exact file paths, functions, and threshold constants.",
+    "ground_truth": [
+      "query_router.py",
+      "classify_query_intent",
+      "should_early_return_lexical",
+      "lexical_retriever.py",
+      "run_fast_lexical_track",
+      "execute_hybrid_search",
+      "fuse_search_results",
+      "search.py"
+    ]
+  },
+  {
+    "id": "T4_diagnose_oauth_and_403",
+    "category": "diagnose_bug",
+    "repo": "csharp-mcp-router",
+    "prompt": "Target repository: csharp-mcp-router. Scope strictly to the target repository (either in ./<repo> under the current directory or by passing repo='<repo>' if using code-intelligence tools). Do not search outside the current workspace.\n\nDiagnose these two reported issues: (a) A backend server with 3-legged OAuth (EnableOAuth3Lo) has a stored JSON token with expires_at and refresh_token, and OAuthTokenUrl is configured, yet a token expiring in 5 seconds or failing refresh still returns the old access_token or skips refresh—trace the exact expiry buffer, JSON fields, HTTP refresh flow, and fallback return behavior. (b) When an unauthenticated or unauthorized client gets a 401/403 on a server-scoped MCP route like /my-server/mcp vs /sse, how does the gateway build the WWW-Authenticate resource_metadata URL? Cite exact file paths, classes, and methods.",
+    "ground_truth": [
+      "OAuthEgressTokenManager",
+      "ExtractOrRefreshTokenAsync",
+      "expires_at",
+      "10",
+      "McpAuthorizationSpecMiddleware",
+      "InvokeAsync",
+      "oauth-protected-resource",
+      "IsMcpPath"
+    ]
+  },
+  {
+    "id": "T5_diagnose_vertex_billing",
+    "category": "diagnose_bug",
+    "repo": "llmlite-modelmanager",
+    "prompt": "Target repository: llmlite-modelmanager. Scope strictly to the target repository (either in ./<repo> under the current directory or by passing repo='<repo>' if using code-intelligence tools). Do not search outside the current workspace.\n\nDiagnose why a call to /api/vertex/billing or vertex spend tracking could fall back from PostgreSQL to the LiteLLM proxy REST API, what SQL query and table/columns it queries in PostgreSQL, what fallback endpoint it calls when PostgreSQL fails, and what happens if VERTEX_PROJECT or LITELLM_MASTER_KEY is missing. Cite exact file paths and functions.",
+    "ground_truth": [
+      "vertex_billing.py",
+      "fetch_google_billing_info",
+      "fetch_vertex_spend",
+      "LiteLLM_SpendLogs",
+      "/global/spend/models",
+      "VERTEX_PROJECT",
+      "LITELLM_MASTER_KEY",
+      "main.py"
+    ]
+  },
+  {
+    "id": "T6_trace_identity_pipeline",
+    "category": "trace_symbol",
+    "repo": "csharp-mcp-router",
+    "prompt": "Target repository: csharp-mcp-router. Scope strictly to the target repository (either in ./<repo> under the current directory or by passing repo='<repo>' if using code-intelligence tools). Do not search outside the current workspace.\n\nTrace CompositeIdentityProvider.ResolveIdentityAsync: which concrete identity providers can be composed, in what order / fallback behavior does it resolve non-anonymous users, and where is IIdentityProvider / CompositeIdentityProvider wired up and invoked in middleware or endpoints? Cite exact file paths and symbol names.",
+    "ground_truth": [
+      "CompositeIdentityProvider",
+      "ResolveIdentityAsync",
+      "OidcIdentityProvider",
+      "AppKeyIdentityProvider",
+      "ActiveDirectoryIdentityProvider",
+      "IIdentityProvider",
+      "ServiceCollectionExtensions.cs",
+      "ProxyEndpoints.cs"
+    ]
+  }
+]

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1253 Automated Tests** (889 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1259 Automated Tests** (895 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -937,6 +937,14 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_db_migration_and_auto_sync_helpers`
 - `test_repo_auto_sync_and_list`
 - `test_auto_sync_interval_edge_cases`
+
+#### `tests/test_benchmarks_harness.py` (6 tests)
+- `test_benchmark_tasks_and_examples_valid`
+- `test_micro_benchmark_cases_valid`
+- `test_opencode_templates_render_without_secrets`
+- `test_benchmarks_directory_contains_no_hardcoded_api_keys`
+- `test_parse_opencode_events_and_scoring`
+- `test_baseline_snapshots_consistent`
 
 #### `tests/test_client_url_resolution.py` (6 tests)
 - `test_constants_are_collected_and_expanded`

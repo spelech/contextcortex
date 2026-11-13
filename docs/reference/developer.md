@@ -76,6 +76,16 @@ Run Playwright browser audits:
 npm --prefix frontend run test:layout
 ```
 
+### MCP & Agent Benchmarks
+Run schema footprint, direct latency, and OpenCode A/B benchmarks against an isolated `:18021` instance (see [Benchmarks & Baselines](/reference/benchmarks)):
+```bash
+./benchmarks/setup_and_run_server.sh start
+python3 benchmarks/measure_tool_schemas.py
+python3 benchmarks/run_micro_bench.py --runs 3
+python3 -u benchmarks/run_benchmark.py --tasks-file benchmarks/examples/custom_tasks.example.json
+./benchmarks/setup_and_run_server.sh stop
+```
+
 ---
 
 ## Building Production Bundles

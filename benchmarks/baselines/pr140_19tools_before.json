@@ -1,0 +1,376 @@
+{
+  "snapshot": "pr140-pre-consolidation-19-tools",
+  "model": "litellm/flash-latest",
+  "schema": {
+    "total_tools": 19,
+    "total_chars": 29538,
+    "est_tokens": 7384
+  },
+  "micro_bench_3run_median_ms": {
+    "grep_code exact symbol": 488.1,
+    "search_code CamelCase symbol (expect early-return)": 325.1,
+    "search_code multi-word agent query (expect early-return)": 58.3,
+    "search_code conceptual natural language (expect semantic)": 361.7,
+    "find_symbol AST lookup": 6.3,
+    "trace_path AST call graph": 326.4,
+    "diagnose_issue stack trace": 371.4,
+    "rg exact symbol (csharp-mcp-router)": 6.4
+  },
+  "micro_bench_single_run": {
+    "mcp": [
+      {
+        "label": "grep_code exact symbol",
+        "tool": "grep_code",
+        "latency_ms": 509.8,
+        "chars": 26982,
+        "meta": {
+          "total_matches": 72
+        }
+      },
+      {
+        "label": "search_code CamelCase symbol (expect early-return)",
+        "tool": "search_code",
+        "latency_ms": 365.3,
+        "chars": 13038,
+        "meta": {
+          "mode": "hybrid",
+          "total": 6
+        }
+      },
+      {
+        "label": "search_code multi-word agent query (expect early-return)",
+        "tool": "search_code",
+        "latency_ms": 63.7,
+        "chars": 12688,
+        "meta": {
+          "mode": "hybrid",
+          "total": 6
+        }
+      },
+      {
+        "label": "search_code conceptual natural language (expect semantic)",
+        "tool": "search_code",
+        "latency_ms": 218.7,
+        "chars": 12227,
+        "meta": {
+          "mode": "hybrid",
+          "total": 6
+        }
+      },
+      {
+        "label": "find_symbol AST lookup",
+        "tool": "find_symbol",
+        "latency_ms": 4.9,
+        "chars": 1904,
+        "meta": {
+          "total": 5
+        }
+      },
+      {
+        "label": "trace_path AST call graph",
+        "tool": "trace_path",
+        "latency_ms": 313.6,
+        "chars": 20389,
+        "meta": {}
+      },
+      {
+        "label": "diagnose_issue stack trace",
+        "tool": "diagnose_issue",
+        "latency_ms": 225.3,
+        "chars": 9768,
+        "meta": {}
+      }
+    ],
+    "rg": [
+      {
+        "label": "rg exact symbol (csharp-mcp-router)",
+        "latency_ms": 8.8,
+        "chars": 111406
+      },
+      {
+        "label": "rg OAuthEgressTokenManager",
+        "latency_ms": 11.1,
+        "chars": 6012
+      },
+      {
+        "label": "rg multi-word files-with-matches",
+        "latency_ms": 12.5,
+        "chars": 5296
+      },
+      {
+        "label": "rg auth middleware search",
+        "latency_ms": 10.9,
+        "chars": 156033
+      }
+    ]
+  },
+  "aggregates": {
+    "cortex": {
+      "tasks": 6,
+      "completed": 6,
+      "wall_seconds": 808.96,
+      "tool_exec_seconds": 23.26,
+      "steps": 101,
+      "outer_tool_count": 95,
+      "inner_tool_count": 106,
+      "discovery_calls": 17,
+      "total_tokens": 550867,
+      "cost_usd": 1.3176,
+      "gt_hits": 48,
+      "gt_total": 48
+    },
+    "raw": {
+      "tasks": 6,
+      "completed": 5,
+      "wall_seconds": 863.22,
+      "tool_exec_seconds": 15.95,
+      "steps": 134,
+      "outer_tool_count": 129,
+      "inner_tool_count": 129,
+      "discovery_calls": 0,
+      "total_tokens": 658692,
+      "cost_usd": 1.8162,
+      "gt_hits": 40,
+      "gt_total": 48
+    }
+  },
+  "tasks": [
+    {
+      "task_id": "T1_explain_codemode",
+      "category": "explain_code",
+      "repo": "csharp-mcp-router",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 123.825,
+      "tool_exec_seconds": 5.084,
+      "steps": 24,
+      "outer_tool_count": 23,
+      "inner_tool_count": 23,
+      "discovery_calls": 3,
+      "total_tokens": 132191,
+      "cost_usd": 0.325111,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T2_explain_remote_opencode",
+      "category": "explain_code",
+      "repo": "llmlite-modelmanager",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 139.039,
+      "tool_exec_seconds": 1.057,
+      "steps": 12,
+      "outer_tool_count": 11,
+      "inner_tool_count": 13,
+      "discovery_calls": 3,
+      "total_tokens": 83785,
+      "cost_usd": 0.163707,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T3_explain_query_router",
+      "category": "explain_code",
+      "repo": "contextcortex",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 51.478,
+      "tool_exec_seconds": 1.976,
+      "steps": 11,
+      "outer_tool_count": 10,
+      "inner_tool_count": 10,
+      "discovery_calls": 2,
+      "total_tokens": 63033,
+      "cost_usd": 0.136539,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T4_diagnose_oauth_and_403",
+      "category": "diagnose_bug",
+      "repo": "csharp-mcp-router",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 342.317,
+      "tool_exec_seconds": 3.555,
+      "steps": 15,
+      "outer_tool_count": 14,
+      "inner_tool_count": 16,
+      "discovery_calls": 3,
+      "total_tokens": 82809,
+      "cost_usd": 0.197756,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T5_diagnose_vertex_billing",
+      "category": "diagnose_bug",
+      "repo": "llmlite-modelmanager",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 47.324,
+      "tool_exec_seconds": 2.082,
+      "steps": 13,
+      "outer_tool_count": 12,
+      "inner_tool_count": 16,
+      "discovery_calls": 3,
+      "total_tokens": 70507,
+      "cost_usd": 0.15107,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T6_trace_identity_pipeline",
+      "category": "trace_symbol",
+      "repo": "csharp-mcp-router",
+      "arm": "cortex",
+      "timed_out": false,
+      "wall_seconds": 104.976,
+      "tool_exec_seconds": 9.503,
+      "steps": 26,
+      "outer_tool_count": 25,
+      "inner_tool_count": 28,
+      "discovery_calls": 3,
+      "total_tokens": 118542,
+      "cost_usd": 0.343415,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T1_explain_codemode",
+      "category": "explain_code",
+      "repo": "csharp-mcp-router",
+      "arm": "raw",
+      "timed_out": true,
+      "wall_seconds": 450.02,
+      "tool_exec_seconds": 2.786,
+      "steps": 31,
+      "outer_tool_count": 31,
+      "inner_tool_count": 31,
+      "discovery_calls": 0,
+      "total_tokens": 157607,
+      "cost_usd": 0.401695,
+      "gt_hits": 0,
+      "gt_total": 8,
+      "gt_score": 0.0,
+      "missing_gt": [
+        "CodeModeTypeGenerator",
+        "CodeModeExecutionEngine",
+        "ExecuteAsync",
+        "CodeModeSandboxCallbacks",
+        "LimitMemory",
+        "MaxStatements",
+        "TimeoutInterval",
+        "CodeModeMaxToolCalls"
+      ]
+    },
+    {
+      "task_id": "T2_explain_remote_opencode",
+      "category": "explain_code",
+      "repo": "llmlite-modelmanager",
+      "arm": "raw",
+      "timed_out": false,
+      "wall_seconds": 42.783,
+      "tool_exec_seconds": 1.814,
+      "steps": 12,
+      "outer_tool_count": 11,
+      "inner_tool_count": 11,
+      "discovery_calls": 0,
+      "total_tokens": 40404,
+      "cost_usd": 0.100778,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T3_explain_query_router",
+      "category": "explain_code",
+      "repo": "contextcortex",
+      "arm": "raw",
+      "timed_out": false,
+      "wall_seconds": 59.491,
+      "tool_exec_seconds": 3.053,
+      "steps": 19,
+      "outer_tool_count": 18,
+      "inner_tool_count": 18,
+      "discovery_calls": 0,
+      "total_tokens": 84966,
+      "cost_usd": 0.267486,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T4_diagnose_oauth_and_403",
+      "category": "diagnose_bug",
+      "repo": "csharp-mcp-router",
+      "arm": "raw",
+      "timed_out": false,
+      "wall_seconds": 44.406,
+      "tool_exec_seconds": 2.224,
+      "steps": 14,
+      "outer_tool_count": 13,
+      "inner_tool_count": 13,
+      "discovery_calls": 0,
+      "total_tokens": 76294,
+      "cost_usd": 0.178123,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T5_diagnose_vertex_billing",
+      "category": "diagnose_bug",
+      "repo": "llmlite-modelmanager",
+      "arm": "raw",
+      "timed_out": false,
+      "wall_seconds": 80.563,
+      "tool_exec_seconds": 0.63,
+      "steps": 8,
+      "outer_tool_count": 7,
+      "inner_tool_count": 7,
+      "discovery_calls": 0,
+      "total_tokens": 44257,
+      "cost_usd": 0.09057,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    },
+    {
+      "task_id": "T6_trace_identity_pipeline",
+      "category": "trace_symbol",
+      "repo": "csharp-mcp-router",
+      "arm": "raw",
+      "timed_out": false,
+      "wall_seconds": 185.954,
+      "tool_exec_seconds": 5.443,
+      "steps": 50,
+      "outer_tool_count": 49,
+      "inner_tool_count": 49,
+      "discovery_calls": 0,
+      "total_tokens": 255164,
+      "cost_usd": 0.777505,
+      "gt_hits": 8,
+      "gt_total": 8,
+      "gt_score": 1.0,
+      "missing_gt": []
+    }
+  ]
+}

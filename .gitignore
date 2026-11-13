@@ -24,3 +24,7 @@ certs/*
 # Local compose overrides
 docker-compose.override.yml
 /.secrets/
+
+# Benchmark runtime workspaces & ephemeral run outputs (baselines/ stays tracked)
+benchmarks/workspace/
+benchmarks/results/

@@ -83,6 +83,7 @@ export default withMermaid(
             items: [
               { text: 'MCP Tools & Resources', link: '/reference/mcp-tools' },
               { text: 'Admin REST API', link: '/reference/rest-api' },
+              { text: 'Benchmarks & Baselines', link: '/reference/benchmarks' },
               { text: 'Developer & Contributor Guide', link: '/reference/developer' }
             ]
           }

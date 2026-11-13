@@ -241,6 +241,7 @@ curl -X POST http://localhost:3000/admin/api/auth/keys \
 
 - **[Interactive Documentation Site (VitePress)](https://spelech.github.io/contextcortex/)** (`npm run docs:dev` / `npm run docs:build`)
 - **[MCP Tools, Resources, and Pagination Reference (`docs/mcp-tools-and-resources.md`)](docs/mcp-tools-and-resources.md)**
+- **[Benchmarks & Performance Baselines (`docs/reference/benchmarks.md`)](docs/reference/benchmarks.md)** ([`benchmarks/README.md`](benchmarks/README.md))
 - **[Restricted-Network & Enterprise Builds (`docs/guide/enterprise-build.md`)](docs/guide/enterprise-build.md)**
 - **[Software Requirements (`REQUIREMENTS.md`)](REQUIREMENTS.md)** | **[Architecture (`ARCHITECTURE.md`)](ARCHITECTURE.md)** | **[Developer Docs (`DEVELOPER_DOCS.md`)](DEVELOPER_DOCS.md)** | **[Test Coverage (`docs/TEST_COVERAGE.md`)](docs/TEST_COVERAGE.md)**
 
@@ -250,4 +251,11 @@ pytest -v --cov=app
 
 # Frontend Unit (Vitest) & E2E (Playwright) Suites
 cd frontend && npm run test && npx playwright test
+
+# Isolated MCP Schema, Latency & OpenCode A/B Benchmarks (uses :18021)
+./benchmarks/setup_and_run_server.sh start
+python3 benchmarks/measure_tool_schemas.py
+python3 benchmarks/run_micro_bench.py --runs 3
+python3 -u benchmarks/run_benchmark.py --tasks-file benchmarks/examples/custom_tasks.example.json
+./benchmarks/setup_and_run_server.sh stop
 ```

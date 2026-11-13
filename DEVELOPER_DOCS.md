@@ -143,6 +143,16 @@ python3 scripts/generate_requirements.py
 pytest -v tests/backend/test_requirements_sync.py
 ```
 
+### MCP & Agent Benchmarks
+See [`benchmarks/README.md`](benchmarks/README.md) and [`docs/reference/benchmarks.md`](docs/reference/benchmarks.md) for isolated `:18021` schema, latency, and OpenCode A/B runs:
+```bash
+./benchmarks/setup_and_run_server.sh start
+python3 benchmarks/measure_tool_schemas.py
+python3 benchmarks/run_micro_bench.py --runs 3
+python3 -u benchmarks/run_benchmark.py --tasks-file benchmarks/examples/custom_tasks.example.json
+./benchmarks/setup_and_run_server.sh stop
+```
+
 ### VitePress Documentation Site
 ```bash
 # Start local documentation dev server
