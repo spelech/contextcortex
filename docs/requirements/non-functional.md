@@ -11,7 +11,7 @@ This section specifies the non-functional requirements and quality attributes fo
 ---
 
 ### NFR-02: Query Response Latency
-- **Requirement**: Symbol lookup (`find_symbol`) and file outline (`get_file_outline`) requests must return within 50 milliseconds for codebases containing up to 100,000 indexed symbols.
+- **Requirement**: Symbol lookup (`find_symbol`) and file outline (`read_file(..., outline_only=True)`) requests must return within 50 milliseconds for codebases containing up to 100,000 indexed symbols.
 - **Hybrid Vector Queries**: Dense and sparse hybrid search requests must return within 350 milliseconds under standard CPU execution.
 
 ---

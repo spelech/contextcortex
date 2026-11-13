@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -10,7 +11,7 @@ from app.services.database import get_db_connection
 from app.services.file_path_resolver import FilePathResolver
 from app.services.git_manager import format_git_permalink
 from app.services.local_storage import get_default_storage_path
-from app.services.query_router import QueryPlan, compute_token_coverage, split_identifier_tokens
+from app.services.query_router import QueryPlan, _has_term_code_syntax, compute_token_coverage, split_identifier_tokens
 from app.services.ripgrep_runner import search_tokens_with_ripgrep
 from app.services.vector_store.base import VectorSearchResult
 
@@ -122,6 +123,24 @@ def _permalink(git_repos: Dict[str, Dict[str, Any]], repo: str, rel_p: str, s_li
     return format_git_permalink(g["url"], g.get("commit_sha"), rel_p, s_line, e_line, provider=g.get("provider"))
 
 
+def _extract_priority_terms(plan: QueryPlan) -> List[str]:
+    """Returns exact phrase / raw code-syntax identifiers that must match before sub-token OR expansion."""
+    terms: List[str] = []
+    if plan.exact_phrase and plan.exact_phrase.strip():
+        terms.append(plan.exact_phrase.strip())
+    for raw in plan.raw_terms:
+        cleaned = re.sub(r'^["\'\(\[]+|["\'\)\],;:]+$', "", raw.strip())
+        if not cleaned or len(cleaned) < 2:
+            continue
+        if _has_term_code_syntax(cleaned) or len(plan.raw_terms) == 1:
+            terms.append(cleaned)
+            if "." in cleaned:
+                tail = cleaned.rsplit(".", 1)[-1]
+                if len(tail) >= 2:
+                    terms.append(tail)
+    return list(dict.fromkeys(terms))
+
+
 def _query_ast_candidates(
     plan: QueryPlan,
     roots: List[Tuple[str, str]],
@@ -132,25 +151,51 @@ def _query_ast_candidates(
     limit: int,
     allow_store_hydration: bool,
 ) -> List[VectorSearchResult]:
-    terms = list(dict.fromkeys(([plan.exact_phrase] if plan.exact_phrase else []) + plan.content_tokens[:6]))
-    if not terms:
+    priority_terms = _extract_priority_terms(plan)
+    sub_terms = list(dict.fromkeys(([plan.exact_phrase] if plan.exact_phrase else []) + plan.content_tokens[:6]))
+    if not priority_terms and not sub_terms:
         return []
 
-    clauses = ["(name LIKE ? OR full_symbol LIKE ? OR signature LIKE ? OR filepath LIKE ?)"] * len(terms)
-    params: List[Any] = [v for t in terms for v in (f"%{t}%", f"%{t}%", f"%{t}%", f"%{t}%")]
-    where_parts = [f"({' OR '.join(clauses)})"]
+    base_parts: List[str] = []
+    base_params: List[Any] = []
     if repo and repo not in ("__all__", "all"):
-        where_parts.append("repo = ?")
-        params.append(repo)
+        base_parts.append("repo = ?")
+        base_params.append(repo)
     lang_variants = _language_variants(language)
     if lang_variants:
-        where_parts.append(f"LOWER(language) IN ({', '.join('?' for _ in lang_variants)})")
-        params.extend(lang_variants)
+        base_parts.append(f"LOWER(language) IN ({', '.join('?' for _ in lang_variants)})")
+        base_params.extend(lang_variants)
 
-    sql = f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language FROM ast_symbols WHERE {' AND '.join(where_parts)} LIMIT 60"
+    rows: List[Any] = []
+    seen_ids = set()
+    target_cap = max(limit * 2, 8)
     try:
         with get_db_connection() as conn:
-            rows = conn.execute(sql, params).fetchall()
+            if priority_terms:
+                p_clauses = ["(name LIKE ? OR full_symbol LIKE ? OR filepath LIKE ?)"] * len(priority_terms[:4])
+                p_params: List[Any] = [v for t in priority_terms[:4] for v in (f"%{t}%", f"%{t}%", f"%{t}%")]
+                primary = priority_terms[0]
+                where_p = [f"({' OR '.join(p_clauses)})"] + base_parts
+                sql_p = (
+                    f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language "
+                    f"FROM ast_symbols WHERE {' AND '.join(where_p)} "
+                    f"ORDER BY (CASE WHEN LOWER(name) = LOWER(?) OR LOWER(full_symbol) = LOWER(?) THEN 0 "
+                    f"WHEN LOWER(name) LIKE LOWER(?) OR LOWER(full_symbol) LIKE LOWER(?) THEN 1 ELSE 2 END) ASC LIMIT 40"
+                )
+                for r in conn.execute(sql_p, p_params + base_params + [primary, primary, f"%{primary}%", f"%{primary}%"]).fetchall():
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        rows.append(r)
+
+            if len(rows) < target_cap and sub_terms:
+                clauses = ["(name LIKE ? OR full_symbol LIKE ? OR signature LIKE ? OR filepath LIKE ?)"] * len(sub_terms)
+                params: List[Any] = [v for t in sub_terms for v in (f"%{t}%", f"%{t}%", f"%{t}%", f"%{t}%")]
+                where_parts = [f"({' OR '.join(clauses)})"] + base_parts
+                sql = f"SELECT id, repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language FROM ast_symbols WHERE {' AND '.join(where_parts)} LIMIT 60"
+                for r in conn.execute(sql, params + base_params).fetchall():
+                    if r["id"] not in seen_ids:
+                        seen_ids.add(r["id"])
+                        rows.append(r)
     except Exception as exc:
         logger.debug(f"AST lexical query skipped: {exc}")
         return []
@@ -167,7 +212,7 @@ def _query_ast_candidates(
 
     scored_rows.sort(key=lambda item: item[0], reverse=True)
     results: List[VectorSearchResult] = []
-    for _, row in scored_rows[: max(limit * 2, 8)]:
+    for _, row in scored_rows[:target_cap]:
         r_repo = row["repo"]
         rel_p = _clean_rel_path(row["filepath"], r_repo)
         s_line, e_line = int(row["start_line"] or 1), int(row["end_line"] or 1)
@@ -256,17 +301,25 @@ def _query_rg_disk_candidates(
     if category or tag or not roots:
         return []
     exts = _extensions_for_filter(doc_type, language)
-    search_terms = list(dict.fromkeys(([plan.exact_phrase] if plan.exact_phrase else []) + plan.content_tokens[:6]))
-    if not search_terms:
+    priority_terms = _extract_priority_terms(plan)
+    sub_terms = list(dict.fromkeys(([plan.exact_phrase] if plan.exact_phrase else []) + plan.content_tokens[:6]))
+    if not priority_terms and not sub_terms:
         return []
 
     candidates: List[VectorSearchResult] = []
     q_set = set(plan.content_tokens)
     for root_dir, r_name in roots:
-        by_file = search_tokens_with_ripgrep(
-            root_dir=root_dir, tokens=search_terms, ignored_dirs=IGNORED_GREP_DIRS,
-            extensions=exts, max_per_file=20, max_files=40,
-        )
+        by_file = None
+        if priority_terms:
+            by_file = search_tokens_with_ripgrep(
+                root_dir=root_dir, tokens=priority_terms[:4], ignored_dirs=IGNORED_GREP_DIRS,
+                extensions=exts, max_per_file=20, max_files=40,
+            )
+        if not by_file and sub_terms:
+            by_file = search_tokens_with_ripgrep(
+                root_dir=root_dir, tokens=sub_terms, ignored_dirs=IGNORED_GREP_DIRS,
+                extensions=exts, max_per_file=20, max_files=40,
+            )
         if not by_file:
             continue
         ranked_files = sorted(

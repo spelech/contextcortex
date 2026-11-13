@@ -157,12 +157,12 @@ erDiagram
 - **`indexed_files`**: Tracks file-level SHA-256 content hashes, modification timestamps (`mtime`), and commit SHAs for incremental delta indexing across Git, local paths, and managed local storage.
 
 ### Code Intelligence & AST Tables
-- **`ast_symbols`**: Stores Tree-sitter AST symbol declarations (`function`, `class`, `method`, `interface`, `struct`) with qualified container names (`full_symbol`), parameter signatures (`signature`), and 1-indexed line spans. Powers sub-50ms `find_symbol` and `get_file_outline` queries and enriches code search results.
+- **`ast_symbols`**: Stores Tree-sitter AST symbol declarations (`function`, `class`, `method`, `interface`, `struct`) with qualified container names (`full_symbol`), parameter signatures (`signature`), and 1-indexed line spans. Powers sub-50ms `find_symbol` and `read_file(..., outline_only=True)` queries and enriches code search results.
 - **`ast_relationships`**: Stores directed edges (`CALLS`, `IMPORTS`, `EXTENDS`, `IMPLEMENTS`) between symbols to power `trace_path`, the Codebase Navigator Impact Inspector, and the visual Topology Graph.
-- **`api_routes` & `api_client_calls`**: Indexes declared REST endpoints (`find_routes`) and outbound HTTP client invocations (`find_api_callers`) across backend and frontend frameworks.
+- **`api_routes` & `api_client_calls`**: Indexes declared REST endpoints (`find_routes(kind="handlers")`) and outbound HTTP client invocations (`find_routes(kind="callers")`) across backend and frontend frameworks.
 
 ### Summaries, Caching & Security Tables
-- **`file_summaries` & `architecture_adrs`**: Stores extracted Markdown frontmatter, headings, executive LLM summaries for large files (`summarize_file`), and MADR/Nygard Architectural Decision Records (`manage_adr`).
+- **`file_summaries` & `architecture_adrs`**: Stores extracted Markdown frontmatter, headings, executive LLM summaries for large files (`/admin/api/files/summarize`), and MADR/Nygard Architectural Decision Records (`knowledge://repo/{repo}/adrs` and `/admin/api/adrs`).
 - **`embedding_cache`**: Deduplicates unchanged chunks by `(chunk_hash, model_name)` so re-indexing skips redundant embedding computation.
 - **`api_keys` & `system_metadata`**: Stores SHA-256 hashed `cc_` API keys with RBAC roles and runtime system settings (active vector store backend, AI Gateway URLs, model selections, and file size thresholds).
 

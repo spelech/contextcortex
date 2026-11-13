@@ -46,7 +46,7 @@ class QueryPlan:
 
 
 def split_identifier_tokens(text: str, min_len: int = 2) -> List[str]:
-    """Splits prose and CamelCase/snake_case/dotted identifiers into lowercase word tokens."""
+    """Splits prose and CamelCase/snake_case/dotted identifiers into lowercase word tokens, preserving whole identifiers."""
     if not text:
         return []
     raw_pieces = re.findall(r"[A-Za-z0-9]+", text)
@@ -54,13 +54,10 @@ def split_identifier_tokens(text: str, min_len: int = 2) -> List[str]:
     seen = set()
     for piece in raw_pieces:
         sub_parts = _CAMEL_SPLIT_RE.split(piece)
-        candidates = [piece.lower()] if len(sub_parts) > 1 else []
-        candidates.extend(sp.lower() for sp in sub_parts if sp)
         if len(sub_parts) > 1:
-            # Prefer decomposed word parts first, keep joined token only if needed separately
-            ordered = [sp.lower() for sp in sub_parts if sp]
+            ordered = [piece.lower()] + [sp.lower() for sp in sub_parts if sp]
         else:
-            ordered = candidates
+            ordered = [piece.lower()]
         for tok in ordered:
             if len(tok) >= min_len and tok not in seen:
                 seen.add(tok)
@@ -165,9 +162,12 @@ def compute_token_coverage(
     if raw_query:
         q_low = raw_query.strip().lower()
         sym_low = (symbol or "").strip().lower()
+        path_low = (rel_path or "").strip().lower()
         content_low = (content or "").lower()
         if sym_low and (sym_low == q_low or sym_low.endswith(f".{q_low}")):
             score = max(score, 0.98)
+        elif q_low and len(q_low) >= 4 and ((sym_low and q_low in sym_low) or (path_low and q_low in path_low)):
+            score = max(score, 0.92)
         elif q_low and len(q_low) >= 4 and q_low in content_low:
             score = min(1.0, score + 0.15)
 

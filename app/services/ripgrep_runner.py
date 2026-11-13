@@ -44,13 +44,26 @@ def find_ripgrep_binary() -> Optional[str]:
     return None
 
 
+_GLOB_CHARS = frozenset("*?[")
+
+
 def matches_path_glob(rel_path: str, path_glob: Optional[str]) -> bool:
-    """Checks relative path or basename against fnmatch-style glob."""
+    """Checks relative path against an fnmatch glob (with wildcards) or folder/file filter (without wildcards)."""
     if not path_glob:
         return True
-    norm_path = rel_path.replace("\\", "/")
-    norm_glob = path_glob.replace("\\", "/")
-    return fnmatch.fnmatch(norm_path, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_path), norm_glob)
+    norm_path = rel_path.replace("\\", "/").strip("/")
+    norm_filter = path_glob.replace("\\", "/").strip().strip("/")
+    if not norm_filter:
+        return True
+    if _GLOB_CHARS & set(norm_filter):
+        return fnmatch.fnmatch(norm_path, norm_filter) or fnmatch.fnmatch(os.path.basename(norm_path), norm_filter)
+    path_l, filter_l = norm_path.lower(), norm_filter.lower()
+    return (
+        path_l == filter_l
+        or path_l.startswith(filter_l + "/")
+        or path_l.endswith("/" + filter_l)
+        or f"/{filter_l}/" in f"/{path_l}/"
+    )
 
 
 def _normalize_rg_rel_path(raw_path: str) -> str:
@@ -92,9 +105,15 @@ def _build_include_glob_args(path_glob: Optional[str]) -> List[str]:
         return []
     while norm_glob.startswith("./"):
         norm_glob = norm_glob[2:]
-    norm_glob = norm_glob.lstrip("/")
+    norm_glob = norm_glob.strip("/")
     if not norm_glob:
         return []
+    if not (_GLOB_CHARS & set(norm_glob)):
+        globs = [norm_glob, f"{norm_glob}/**", f"**/{norm_glob}", f"**/{norm_glob}/**"]
+        args: List[str] = []
+        for g in dict.fromkeys(globs):
+            args.extend(["--iglob", g])
+        return args
     if "/" not in norm_glob:
         return ["-g", norm_glob]
 

@@ -74,8 +74,7 @@ async def handle_grep_code(
     is_regex: Annotated[bool, Field(description="Set True to evaluate pattern as a Python regular expression; False (default) matches literal text. If a literal search finds nothing and the pattern looks like a regex (for example 'A|B'), the search runs again as a regex and pattern_mode says so.")] = False,
     case_sensitive: Annotated[bool, Field(description="Set True for case-sensitive matching; False (default) ignores case.")] = False,
     context_lines: Annotated[int, Field(description="Surrounding context lines per match, clamped to 0..10 (default 2). Lines > 400 chars are truncated.")] = 2,
-    limit: Annotated[int, Field(description="Alias for max_results: maximum matches per page, clamped to 1..100 (default 30).")] = 30,
-    max_results: Annotated[Optional[int], Field(description="Maximum matched lines per page, clamped to 1..100 (default 30). Overrides limit when specified.")] = None,
+    limit: Annotated[int, Field(description="Maximum matched lines per page, clamped to 1..100 (default 30).")] = 30,
     offset: Annotated[int, Field(description="0-based match offset for pagination (default 0). Advance by next_offset when has_more is True.")] = 0,
     path: Annotated[Optional[str], Field(description="Alias for path_glob (a file, folder, or glob). path_glob wins when both are given.")] = None,
 ) -> str:
@@ -85,8 +84,7 @@ async def handle_grep_code(
         reader_fn = _resolve_reader_factory()
         reader = reader_fn()
 
-        raw_max = max_results if max_results is not None else limit
-        safe_limit = max(1, min(int(raw_max if raw_max is not None else 30), 100))
+        safe_limit = max(1, min(int(limit if limit is not None else 30), 100))
         safe_offset = max(0, int(offset if offset is not None else 0))
         safe_context = max(0, min(int(context_lines if context_lines is not None else 2), 10))
         needed = safe_offset + safe_limit + 1
@@ -139,7 +137,6 @@ async def handle_grep_code(
             "total_matches": len(all_matches),
             "offset": safe_offset,
             "limit": safe_limit,
-            "max_results": safe_limit,
             "has_more": has_more,
             "next_offset": next_offset,
             "truncated": has_more,

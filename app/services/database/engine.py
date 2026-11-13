@@ -218,7 +218,7 @@ def _seed_defaults(engine: Engine, vault_path: str = "/docs") -> None:
                         "arguments_json": json.dumps([
                             {"name": "topic", "description": "The specific infrastructure topic to search for", "required": True}
                         ]),
-                        "template": "Please perform a search using the search_docs tool for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions.",
+                        "template": "Please perform a search using the search tool (scope='docs') for topic '{topic}' and summarize the matching container mappings, port numbers, reverse proxy routes, or setup instructions.",
                     },
                     {
                         "name": "find_implementation_symbol",

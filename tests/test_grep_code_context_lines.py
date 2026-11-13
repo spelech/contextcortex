@@ -56,13 +56,13 @@ def _grep(**kwargs):
     return json.loads(asyncio.run(handle_grep_code(**kwargs)))
 
 
-@pytest.mark.parametrize("extra", [{}, {"offset": 95, "max_results": 10}])
+@pytest.mark.parametrize("extra", [{}, {"offset": 95, "limit": 10}])
 def test_indexed_path_regex_context_lines_are_consecutive(hub_reader, extra):
-    # offset + max_results > 100 sends the search through _scan_extended_matches.
+    # offset + limit > 100 sends the search through _scan_extended_matches.
     result = _grep(pattern=r"TARGET_\w+", is_regex=True, repo="hub-prefix", context_lines=3, **extra)
     if extra:
         assert result["matches"] == []
-        result = _grep(pattern=r"TARGET_\w+", is_regex=True, repo="hub-prefix", context_lines=3, max_results=100, offset=0)
+        result = _grep(pattern=r"TARGET_\w+", is_regex=True, repo="hub-prefix", context_lines=3, limit=100, offset=0)
     assert [m["line"] for m in result["matches"]] == [47, 63]
     for match in result["matches"]:
         _assert_context(match, FILE_LINES, 3)

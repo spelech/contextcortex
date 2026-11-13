@@ -142,6 +142,31 @@ def _scan_root_with_python(
     return out
 
 
+def _all_targets_on_disk(
+    effective_repo: Optional[str],
+    repo_root_dirs: Dict[str, List[str]],
+    db_conn_factory: Callable[[], Any],
+) -> bool:
+    """True when every matching target repository already has an existing local directory on disk."""
+    if effective_repo:
+        return bool(repo_root_dirs.get(effective_repo))
+    try:
+        with db_conn_factory() as conn:
+            known: Set[str] = set()
+            for r in conn.execute("SELECT name FROM git_repositories WHERE enabled = 1").fetchall():
+                if r["name"]:
+                    known.add(r["name"])
+            for r in conn.execute("SELECT repo FROM indexed_paths WHERE enabled = 1").fetchall():
+                if r["repo"]:
+                    known.add(r["repo"])
+            for r in conn.execute("SELECT DISTINCT repo FROM indexed_files").fetchall():
+                if r["repo"]:
+                    known.add(r["repo"])
+    except Exception:
+        return False
+    return bool(known) and known.issubset(repo_root_dirs.keys())
+
+
 def execute_code_grep(
     pattern: str,
     storage_root: str,
@@ -252,7 +277,7 @@ def execute_code_grep(
                 break
 
     # Vector store fallback for ephemeral / remote repos not on disk
-    if len(matches) < clamped_limit:
+    if len(matches) < clamped_limit and not _all_targets_on_disk(effective_repo, repo_root_dirs, db_conn_factory):
         try:
             from app.services.vector_store import get_vector_store
             store = get_vector_store()
@@ -287,34 +312,50 @@ def execute_code_grep(
         except Exception as e:
             logger.warning(f"grep_chunks fallback in grep_code encountered error: {e}")
 
-    # AST symbol and permalink enrichment
+    # AST symbol and permalink enrichment (single DB connection + per-file AST span cache)
+    file_symbols: Dict[Tuple[str, str], List[Tuple[int, int, str, str]]] = {}
+    if matches:
+        for m in matches:
+            m["file"] = m["file"].replace("\\", "/")
+        try:
+            with db_conn_factory() as conn:
+                unique_files = {(m["repo"], m["file"]) for m in matches}
+                for u_repo, u_file in unique_files:
+                    rows = conn.execute(
+                        """
+                        SELECT name, full_symbol, kind, start_line, end_line
+                        FROM ast_symbols
+                        WHERE repo = ?
+                          AND (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)
+                        ORDER BY (end_line - start_line) ASC
+                        """,
+                        (u_repo, u_file, f"%/{u_file}", f"%://{u_file}"),
+                    ).fetchall()
+                    file_symbols[(u_repo, u_file)] = [
+                        (
+                            int(r["start_line"]),
+                            int(r["end_line"]),
+                            r["full_symbol"] or r["name"],
+                            r["kind"],
+                        )
+                        for r in rows
+                        if r["start_line"] is not None and r["end_line"] is not None
+                    ]
+        except Exception as e:
+            logger.debug(f"AST symbol batch lookup failed: {e}")
+
     for m in matches:
         m_repo = m["repo"]
-        m_file = m["file"].replace("\\", "/")
-        m["file"] = m_file
+        m_file = m["file"]
         m_line = m["line"]
 
         sym_name = None
         sym_kind = None
-        try:
-            with db_conn_factory() as conn:
-                row = conn.execute(
-                    """
-                    SELECT name, full_symbol, kind, start_line, end_line
-                    FROM ast_symbols
-                    WHERE repo = ?
-                      AND (REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)
-                      AND start_line <= ? AND end_line >= ?
-                    ORDER BY (end_line - start_line) ASC
-                    LIMIT 1
-                    """,
-                    (m_repo, m_file, f"%/{m_file}", f"%://{m_file}", m_line, m_line),
-                ).fetchone()
-                if row:
-                    sym_name = row["full_symbol"] or row["name"]
-                    sym_kind = row["kind"]
-        except Exception as e:
-            logger.debug(f"AST symbol lookup failed for {m_repo}:{m_file}:{m_line}: {e}")
+        for s_line, e_line, s_name, s_kind in file_symbols.get((m_repo, m_file), ()):
+            if s_line <= m_line <= e_line:
+                sym_name = s_name
+                sym_kind = s_kind
+                break
 
         m["symbol"] = sym_name
         m["kind"] = sym_kind

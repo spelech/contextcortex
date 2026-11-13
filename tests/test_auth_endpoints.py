@@ -262,10 +262,9 @@ async def test_mcp_tools_rbac_viewer_vs_editor_vs_admin(isolated_db_and_auth, mo
     - Admin: allowed full access
     """
     from app.mcp.handlers import (
-        handle_search_code,
+        handle_search,
         handle_list_repositories,
-        handle_sync_repository,
-        handle_manage_adr,
+        handle_manage,
     )
     from app.services.auth.service import set_current_auth_context
 
@@ -283,21 +282,22 @@ async def test_mcp_tools_rbac_viewer_vs_editor_vs_admin(isolated_db_and_auth, mo
     )
     set_current_auth_context(viewer_ctx)
 
-    # Viewer can list repositories
-    repo_list = json.loads(await handle_list_repositories())
+    # Viewer can list repositories (including status)
+    repo_list = json.loads(await handle_list_repositories(include_status=True))
     assert "git_repositories" in repo_list and "error" not in repo_list
 
-    # Viewer can list ADRs
-    adr_list = json.loads(await handle_manage_adr(action="list", repo="test-repo"))
-    assert "adrs" in adr_list and "error" not in adr_list
+    # Viewer can read/preview via manage tool (viewer-scoped)
+    with patch("app.services.local_storage.LocalStorageService.read_file_content", return_value={"rel_path": "doc.md", "size_bytes": 4, "content": "hi"}):
+        read_res = json.loads(await handle_manage(action="read", file_path="doc.md"))
+        assert read_res["content"] == "hi"
 
-    # Viewer attempting mutation (sync_repository) -> Denied
-    sync_res = json.loads(await handle_sync_repository(repo="test-repo"))
+    # Viewer attempting mutation (sync_repo) -> Denied
+    sync_res = json.loads(await handle_manage(action="sync_repo", repo="test-repo"))
     assert sync_res.get("forbidden") is True or "Forbidden" in sync_res.get("error", "")
 
-    # Viewer attempting mutation (create ADR) -> Denied
-    create_adr_res = json.loads(await handle_manage_adr(action="create", repo="test-repo", title="ADR 1"))
-    assert create_adr_res.get("forbidden") is True or "Forbidden" in create_adr_res.get("error", "")
+    # Viewer attempting mutation (upload) -> Denied
+    upload_res = json.loads(await handle_manage(action="upload", file_path="a.md", content="hi"))
+    assert upload_res.get("forbidden") is True or "Forbidden" in upload_res.get("error", "")
 
     # 2. Test with EDITOR context
     editor_ctx = AuthContext(
@@ -310,17 +310,17 @@ async def test_mcp_tools_rbac_viewer_vs_editor_vs_admin(isolated_db_and_auth, mo
     )
     set_current_auth_context(editor_ctx)
 
-    # Editor can execute sync_repository
-    with patch("threading.Thread") as mock_thread:
-        sync_res = json.loads(await handle_sync_repository(repo="test-repo"))
+    # Editor can execute manage sync_repo
+    with patch("threading.Thread"):
+        sync_res = json.loads(await handle_manage(action="sync_repo", repo="test-repo"))
         assert sync_res["status"] == "triggered"
         assert "error" not in sync_res
 
-    # Editor can execute manage_adr create
-    with patch("app.services.database.create_adr", return_value={"id": "ADR-001", "status": "PROPOSED"}):
-        create_res = json.loads(await handle_manage_adr(action="create", repo="test-repo", title="ADR 1"))
-        assert create_res["status"] == "success"
-        assert create_res["id"] == "ADR-001"
+    # Editor can execute manage upload
+    with patch("app.services.local_storage.LocalStorageService.save_file", return_value={"rel_path": "a.md", "repo": "local_storage", "size_bytes": 2, "chunks_indexed": 1}):
+        up_res = json.loads(await handle_manage(action="upload", file_path="a.md", content="hi"))
+        assert up_res["status"] == "success"
+        assert up_res["file"] == "a.md"
 
     # 3. Clean up context
     set_current_auth_context(None)

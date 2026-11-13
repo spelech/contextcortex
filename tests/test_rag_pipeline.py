@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 import app.services.database as db_mod
 import app.services.database.connection as conn_mod
-from app.mcp.tools import handle_search_code
+from app.mcp.tools import handle_search
 from app.services.chunking import chunk_markdown, extract_symbols_and_chunks
 from app.services.database import (
     get_db_connection,
@@ -192,7 +192,7 @@ def test_api_routes_pydantic():
 
 @pytest.mark.asyncio
 async def test_mcp_tools_pydantic():
-    res = await handle_search_code(query="test query", limit=2)
+    res = await handle_search(query="test query", scope="code", limit=2)
     assert isinstance(res, str)
     data = json.loads(res)
     assert "results" in data or "error" in data

@@ -13,7 +13,7 @@ from app.services.vector_store import (
     get_vector_store_config,
 )
 from app.services.database import init_db, set_vector_store_db_config, get_vector_store_db_config
-from app.mcp.tools import handle_index_status
+from app.mcp.tools import handle_list_repositories
 
 
 app = FastAPI()
@@ -266,14 +266,14 @@ def test_api_delete_repo_uses_vector_store(setup_test_environment):
 
 
 
-# --- MCP handle_index_status() ---
+# --- MCP handle_list_repositories(include_status=True) ---
 
 @pytest.mark.asyncio
 async def test_mcp_handle_index_status_details(setup_test_environment):
-    """Test that handle_index_status includes provider, mode, location, collection, and counts."""
+    """Test that handle_list_repositories(include_status=True) includes provider, mode, location, collection, and counts."""
     import json
     with patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
-        res = json.loads(await handle_index_status())
+        res = json.loads(await handle_list_repositories(include_status=True))
         assert res["vector_store"]["provider"] == "QDRANT"
         assert "mode" in res["vector_store"]
         assert "collection" in res["vector_store"]
@@ -283,7 +283,7 @@ async def test_mcp_handle_index_status_details(setup_test_environment):
 
 @pytest.mark.asyncio
 async def test_mcp_handle_index_status_chroma(setup_test_environment, tmp_path):
-    """Test handle_index_status after switching to Chroma."""
+    """Test handle_list_repositories(include_status=True) after switching to Chroma."""
     import json
     chroma_dir = str(tmp_path / "chroma_status_dir")
     set_vector_store_db_config(
@@ -295,6 +295,6 @@ async def test_mcp_handle_index_status_chroma(setup_test_environment, tmp_path):
     VectorStoreManager.reset_instance()
 
     with patch("app.services.git_manager.check_github_rate_limit", return_value={"remaining": 5000, "limit": 5000}):
-        res = json.loads(await handle_index_status())
+        res = json.loads(await handle_list_repositories(include_status=True))
         assert res["vector_store"]["provider"] == "CHROMA"
         assert res["vector_store"]["collection"] == "chroma_notes"

@@ -43,7 +43,7 @@ This section specifies the functional requirements for ContextCortex (`v2.24.1`)
 ### FR-06: Managed Local Storage, File Reading & Summarization
 - **Description**: The system must provide a managed local storage directory (`/app/data/storage`) for uploaded files and safe reading across indexed sources.
 - **Security**: The system must sanitize all file paths using canonical containment checks to prevent directory traversal attacks (rejection of `..`, leading slashes, and null bytes).
-- **Immediate Indexing & Summarization**: Uploaded and modified files must be indexed immediately. Files exceeding the size threshold (default `500 KB`) must be summarized via the configured LLM (`summarize_file`) and readable via bounded line ranges (`read_file`).
+- **Immediate Indexing & Summarization**: Uploaded and modified files must be indexed immediately. Files exceeding the size threshold (default `500 KB`) must be summarized via the configured LLM (accessible via Web UI / `/admin/api/files/summarize`) and readable via bounded line ranges (`read_file`).
 
 ---
 
@@ -55,10 +55,10 @@ This section specifies the functional requirements for ContextCortex (`v2.24.1`)
 
 ---
 
-### FR-08: Model Context Protocol (MCP) 2.0 Compliance & 20 Tools
+### FR-08: Model Context Protocol (MCP) 2.0 Compliance & 10-Tool Surface
 - **Description**: The system must implement the official Model Context Protocol using `FastMCP` 2.0.
 - **Transports & Liveness**: The system must provide Server-Sent Events (SSE) at `/sse` (with `/messages/`), Streamable HTTP at `/mcp`, and zero-allocation JSON-RPC `ping` interception via `McpPingMiddleware`.
-- **Tools**: The system must expose **20 dedicated agent tools**: `search_code`, `search_docs`, `grep_code`, `diagnose_issue`, `find_symbol`, `trace_path`, `find_routes`, `find_api_callers`, `get_file_outline`, `list_repositories`, `get_recent_changes`, `sync_repository`, `index_status`, `get_architecture`, `manage_adr`, `manage_local_file`, `what_is_ingested`, `read_file`, `summarize_file`, and `execute_script` (Code Mode).
+- **Tools**: The system must expose **10 default agent tools** (`diagnose_issue`, `execute_script`, `find_routes`, `find_symbol`, `get_architecture`, `grep_code`, `list_repositories`, `read_file`, `search`, and `trace_path`), plus the gated `manage` write tool when `MCP_ENABLE_WRITE_TOOLS=true`.
 
 ---
 
@@ -94,14 +94,14 @@ This section specifies the functional requirements for ContextCortex (`v2.24.1`)
 ---
 
 ### FR-13: Unified Ingestion Catalog
-- **Description**: The system must provide a unified view of all indexed sources via `what_is_ingested` and `GET /admin/api/ingestion/catalog`.
+- **Description**: The system must provide a unified view of all indexed sources via `list_repositories` (with `include_files` and `include_status`) and `GET /admin/api/ingestion/catalog`.
 - **Filtering**: Users can filter sources by type (`git`, `monitored_path`, `local_storage`), repository name, path prefix, and file extension.
 
 ---
 
 ### FR-14: Architectural Decision Records (ADR)
 - **Description**: The system must parse and track Architectural Decision Records (MADR format).
-- **Operations**: Agents can query, create, update, and supersede ADRs via `manage_adr`.
+- **Operations**: Agents can inspect repository ADRs via the `knowledge://repo/{repo}/adrs` MCP resource, and administrators can query, create, update, and supersede ADRs via the REST endpoints (`/admin/api/adrs`).
 
 ---
 

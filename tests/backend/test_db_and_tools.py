@@ -8,10 +8,10 @@ from app.services.database import (
 )
 import app.mcp.tools as tools_module
 from app.mcp.tools import (
-    handle_search_code, handle_search_docs, handle_find_symbol,
-    handle_get_file_outline, handle_list_repositories, handle_sync_repository,
-    handle_index_status, handle_catalog_summary, handle_search_infrastructure_docs,
-    handle_find_implementation_symbol, register_mcp_tools_and_resources
+    handle_search, handle_find_symbol, handle_read_file,
+    handle_list_repositories, handle_manage, handle_catalog_summary,
+    handle_search_infrastructure_docs, handle_find_implementation_symbol,
+    register_mcp_tools_and_resources,
 )
 from app.services.vector_store import VectorDocument, VectorStoreManager
 
@@ -154,24 +154,24 @@ async def test_handle_search_code_and_docs_real_integration(tmp_path):
     assert store.upsert_documents([doc1, doc2]) is True
 
     # Real un-mocked code search via MCP tool
-    res_code = json.loads(await handle_search_code(query="authenticate JWT user", repo="gateway-core"))
+    res_code = json.loads(await handle_search(query="authenticate JWT user", scope="code", repo="gateway-core"))
     assert res_code["results"][0]["file"] == "app/auth.py"
     assert res_code["results"][0]["symbol"] == "authenticate_jwt_user"
     assert "Validates bearer JWT token" in res_code["results"][0]["content"]
     assert "score" in res_code["results"][0]
 
     # Real un-mocked doc search via MCP tool
-    res_doc = json.loads(await handle_search_docs(query="hybrid BM25 retrieval", repo="docs-vault"))
+    res_doc = json.loads(await handle_search(query="hybrid BM25 retrieval", scope="docs", repo="docs-vault"))
     assert res_doc["results"][0]["file"] == "docs/architecture.md"
     assert res_doc["results"][0]["heading"] == "System Architecture"
     assert "score" in res_doc["results"][0]
 
     # Empty query and no-match checks on real store
-    res_empty_code = json.loads(await handle_search_code(query=""))
+    res_empty_code = json.loads(await handle_search(query="", scope="code"))
     assert "search query cannot be empty" in res_empty_code["error"]
-    res_empty_doc = json.loads(await handle_search_docs(query=""))
+    res_empty_doc = json.loads(await handle_search(query="", scope="docs"))
     assert "search query cannot be empty" in res_empty_doc["error"]
-    res_nomatch = json.loads(await handle_search_code(query="anything", repo="nonexistent-repo-xyz"))
+    res_nomatch = json.loads(await handle_search(query="anything", scope="code", repo="nonexistent-repo-xyz"))
     assert res_nomatch["results"] == []
 
 @pytest.mark.asyncio
@@ -211,11 +211,12 @@ async def test_handle_get_file_outline(temp_db):
         )
         conn.commit()
 
-    res = json.loads(await handle_get_file_outline(filepath="src/auth.py", repo="my-repo"))
+    res = json.loads(await handle_read_file(path="src/auth.py", repo="my-repo", outline_only=True))
     assert res["file"] == "src/auth.py"
+    assert res["outline_only"] is True
     assert res["symbols"][0]["name"] == "authenticate"
 
-    res_empty = json.loads(await handle_get_file_outline(filepath="nonexistent.py"))
+    res_empty = json.loads(await handle_read_file(path="nonexistent.py", outline_only=True))
     assert res_empty["symbols"] == []
 
 @pytest.mark.asyncio
@@ -237,7 +238,7 @@ async def test_handle_sync_repository(temp_db):
     with patch("app.services.indexing.run_full_indexing"), \
          patch("app.services.indexing.sync_single_git_repo"):
         # Sync all
-        res_all = json.loads(await handle_sync_repository())
+        res_all = json.loads(await handle_manage(action="sync_repo"))
         assert res_all["status"] == "triggered"
         assert res_all["scope"] == "full"
 
@@ -246,7 +247,7 @@ async def test_handle_sync_repository(temp_db):
             conn.execute("INSERT INTO git_repositories (name, url, branch, status) VALUES ('repo-b', 'http://url', 'main', 'synced')")
             conn.commit()
 
-        res_repo = json.loads(await handle_sync_repository(repo="repo-b"))
+        res_repo = json.loads(await handle_manage(action="sync_repo", repo="repo-b"))
         assert res_repo["status"] == "triggered"
         assert res_repo["repo"] == "repo-b"
 
@@ -265,7 +266,7 @@ def test_custom_prompt_handlers():
     res1 = json.loads(handle_search_infrastructure_docs(topic="docker swarm"))
     assert res1["topic"] == "docker swarm"
 
-    res2 = json.loads(handle_find_implementation_symbol(symbol="handle_search_code", repo="mcp-server"))
-    assert res2["symbol"] == "handle_search_code"
+    res2 = json.loads(handle_find_implementation_symbol(symbol="handle_search", repo="mcp-server"))
+    assert res2["symbol"] == "handle_search"
     assert res2["repo"] == "mcp-server"
 

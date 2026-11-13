@@ -268,3 +268,120 @@ def test_ast_chunking_preserves_whole_functions_up_to_4000_chars():
     assert len(fn_chunks) == 1
     assert fn_chunks[0].start_line == 1
     assert fn_chunks[0].end_line == 44
+
+
+def test_grep_code_skips_vector_store_when_all_targets_on_disk(tmp_path, monkeypatch):
+    """Verify grep_code skips Qdrant store.grep_chunks() when all matching target repos exist locally on disk."""
+    from unittest.mock import MagicMock
+
+    db_file = tmp_path / "disk_only_grep.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setattr("app.services.database.connection.CACHE_DB_PATH", str(db_file))
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", str(db_file), raising=False)
+
+    repo_dir = tmp_path / "on_disk_repo"
+    repo_dir.mkdir(parents=True)
+    (repo_dir / "main.py").write_text("ALPHA_MARKER = 1\n", encoding="utf-8")
+
+    engine = get_db_engine(db_url, reset=True)
+    init_db(engine=engine)
+    with get_db_connection() as conn:
+        conn.execute(
+            "INSERT INTO indexed_paths (path, type, recursive, enabled, category, repo) VALUES (?, 'directory', 1, 1, 'code', 'on-disk')",
+            (str(repo_dir),),
+        )
+        conn.execute(
+            "INSERT INTO git_repositories (name, url, branch, commit_sha, provider, enabled) VALUES ('on-disk', 'https://github.com/org/on-disk', 'main', 'abc', 'github', 1)"
+        )
+        conn.commit()
+
+    reset_file_reader_service()
+    reader = FileReaderService(storage_root=str(tmp_path / "storage"))
+    mock_store = MagicMock()
+
+    with patch("app.services.vector_store.get_vector_store", return_value=mock_store):
+        res = reader.grep_code(pattern="ALPHA_MARKER", repo="on-disk", limit=30)
+        assert res["total_matches"] == 1
+        assert mock_store.grep_chunks.call_count == 0
+
+        # When repo=None and all known repos exist on disk, vector fallback is still skipped
+        res_all = reader.grep_code(pattern="NO_SUCH_TOKEN_XYZ", limit=30)
+        assert res_all["total_matches"] == 0
+        assert mock_store.grep_chunks.call_count == 0
+
+        # Add an ephemeral repo with no directory on disk -> fallback must query store
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO git_repositories (name, url, branch, commit_sha, provider, enabled) VALUES ('ephemeral-only', 'https://github.com/org/eph', 'main', 'def', 'github', 1)"
+            )
+            conn.commit()
+        reader.grep_code(pattern="NO_SUCH_TOKEN_XYZ", repo="ephemeral-only", limit=30)
+        assert mock_store.grep_chunks.call_count == 1
+
+
+def test_camelcase_exact_identifier_prioritized_over_subtokens(tmp_path, monkeypatch):
+    """Verify exact CamelCase identifier tokens are preserved and ranked ahead of sub-token OR expansion."""
+    from app.services.query_router import split_identifier_tokens
+
+    toks = split_identifier_tokens("OAuthEgressTokenManager")
+    assert toks[0] == "oauthegresstokenmanager"
+    assert {"auth", "egress", "token", "manager"}.issubset(set(toks))
+
+    db_file = tmp_path / "camel.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setattr("app.services.database.connection.CACHE_DB_PATH", str(db_file))
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", str(db_file), raising=False)
+    engine = get_db_engine(db_url, reset=True)
+    init_db(engine=engine)
+
+    repo_dir = tmp_path / "egress_repo"
+    (repo_dir / "src").mkdir(parents=True)
+    target_file = repo_dir / "src" / "OAuthEgressTokenManager.cs"
+    target_file.write_text("public class OAuthEgressTokenManager {\n    public string GetToken() => \"ok\";\n}\n", encoding="utf-8")
+
+    with get_db_connection() as conn:
+        conn.execute(
+            "INSERT INTO indexed_paths (path, type, recursive, enabled, category, repo) VALUES (?, 'directory', 1, 1, 'code', 'egress')",
+            (str(repo_dir),),
+        )
+        # Insert 75 noisy rows matching sub-tokens ('Manager', 'Token') before the target row
+        noisy_rows = [
+            (
+                "egress",
+                f"src/NoiseManager_{i:02d}.cs",
+                f"NoiseTokenManager_{i:02d}",
+                f"App.NoiseTokenManager_{i:02d}",
+                "class_declaration",
+                1,
+                5,
+                f"public class NoiseTokenManager_{i:02d}",
+                "csharp",
+            )
+            for i in range(75)
+        ] + [
+            (
+                "egress",
+                "src/OAuthEgressTokenManager.cs",
+                "OAuthEgressTokenManager",
+                "App.OAuthEgressTokenManager",
+                "class_declaration",
+                1,
+                3,
+                "public class OAuthEgressTokenManager",
+                "csharp",
+            )
+        ]
+        conn.executemany(
+            "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            noisy_rows,
+        )
+        conn.commit()
+
+    store = PgVectorStore(engine=engine, collection_name="camel_test", dimension=4)
+    with patch("app.services.search.get_vector_store", return_value=store):
+        hits = execute_hybrid_search("OAuthEgressTokenManager", doc_type="code", repo="egress", limit=5)
+        assert len(hits) >= 1
+        assert hits[0].payload.get("rel_path") == "src/OAuthEgressTokenManager.cs"
+        assert "OAuthEgressTokenManager" in (hits[0].payload.get("symbol") or "")

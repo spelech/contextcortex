@@ -249,136 +249,6 @@ async def handle_trace_path(
         return json.dumps({"error": f"Error executing trace_path: {str(e)}"})
 
 
-async def handle_get_file_outline(
-    filepath: Annotated[str, Field(description="Relative or repo-prefixed file path (e.g. 'app/main.py' or 'my-repo://Program.cs') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")],
-    repo: Annotated[Optional[str], Field(description="Optional repository identifier to disambiguate identical filenames across repos.")] = None,
-    limit: Annotated[int, Field(description="Maximum AST symbols returned per page, clamped to 1..500 (default 150).")] = 150,
-    offset: Annotated[int, Field(description="0-based symbol offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
-) -> str:
-    """Return the structural AST outline (classes, methods, functions, signatures, line ranges) of a file with bounded pagination."""
-    fp = filepath.strip().replace("\\", "/") if filepath else ""
-    clean_fp = fp.split("://", 1)[1].lstrip("/") if "://" in fp else fp.lstrip("/")
-    try:
-        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
-        enforce_tool_permission(Role.VIEWER)
-
-        safe_limit = max(1, min(int(limit if limit is not None else 150), 500))
-        safe_offset = max(0, int(offset if offset is not None else 0))
-
-        candidates: List[str] = []
-        matched_file = _strip_repo_prefix(fp)
-        with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
-            local_roots = LocalSourceRoots.load(conn)
-
-            def _rel(row) -> str:
-                return local_roots.relative(row["filepath"], row["repo"])
-
-            def _query_outline_rows(target_clean: str):
-                if repo:
-                    return conn.execute(
-                        """
-                        SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature
-                        FROM ast_symbols
-                        WHERE (
-                            REPLACE(filepath, '\\', '/') = ?
-                            OR REPLACE(filepath, '\\', '/') = ?
-                            OR REPLACE(filepath, '\\', '/') LIKE ?
-                            OR REPLACE(filepath, '\\', '/') LIKE ?
-                        ) AND repo = ?
-                        ORDER BY start_line ASC
-                        """,
-                        (fp, target_clean, f"%/{target_clean}", f"%://{target_clean}", repo),
-                    ).fetchall()
-                return conn.execute(
-                    """
-                    SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature
-                    FROM ast_symbols
-                    WHERE REPLACE(filepath, '\\', '/') = ?
-                       OR REPLACE(filepath, '\\', '/') = ?
-                       OR REPLACE(filepath, '\\', '/') LIKE ?
-                       OR REPLACE(filepath, '\\', '/') LIKE ?
-                    ORDER BY start_line ASC
-                    """,
-                    (fp, target_clean, f"%/{target_clean}", f"%://{target_clean}"),
-                ).fetchall()
-
-            rows = _query_outline_rows(clean_fp)
-            if rows:
-                distinct_files = sorted({
-                    _rel(r) for r in rows if r["filepath"]
-                })
-                if len(distinct_files) > 1:
-                    chosen_file = clean_fp if clean_fp in distinct_files else distinct_files[0]
-                    rows = [r for r in rows if _rel(r) == chosen_file]
-                    matched_file = chosen_file
-                    candidates = distinct_files
-
-            if not rows and "/" in clean_fp:
-                parts = [p for p in clean_fp.split("/") if p]
-                for idx in range(1, len(parts)):
-                    suffix = "/".join(parts[idx:])
-                    cand_rows = _query_outline_rows(suffix)
-                    if cand_rows:
-                        distinct_files = sorted({
-                            _rel(r) for r in cand_rows if r["filepath"]
-                        })
-                        if len(distinct_files) == 1:
-                            rows = cand_rows
-                            matched_file = distinct_files[0]
-                            break
-                        if suffix in distinct_files:
-                            rows = [r for r in cand_rows if _rel(r) == suffix]
-                            matched_file = suffix
-                            candidates = distinct_files
-                            break
-                        candidates = distinct_files
-                        break
-
-        resolved_repo = repo or (rows[0]["repo"] if rows and "repo" in rows[0].keys() else None)
-        if rows and rows[0]["filepath"]:
-            matched_file = _rel(rows[0])
-
-        all_symbols = []
-        seen_syms = set()
-        for r in rows:
-            sym_full = r["full_symbol"] or r["name"]
-            dedup_key = (r["name"], sym_full, r["kind"], r["start_line"], r["end_line"])
-            if dedup_key in seen_syms:
-                continue
-            seen_syms.add(dedup_key)
-            all_symbols.append({
-                "name": r["name"],
-                "symbol": sym_full,
-                "kind": r["kind"],
-                "lines": [r["start_line"], r["end_line"]],
-                "signature": r["signature"],
-            })
-
-        total_symbols = len(all_symbols)
-        paged_symbols = all_symbols[safe_offset : safe_offset + safe_limit]
-        has_more = (safe_offset + safe_limit) < total_symbols
-        next_offset = (safe_offset + safe_limit) if has_more else None
-
-        result_payload: Dict[str, Any] = {
-            "file": matched_file,
-            "repo": resolved_repo,
-            "total_symbols": total_symbols,
-            "offset": safe_offset,
-            "limit": safe_limit,
-            "has_more": has_more,
-            "next_offset": next_offset,
-            "symbols": paged_symbols,
-        }
-        if candidates:
-            result_payload["candidates"] = candidates
-        return json.dumps(result_payload)
-    except ForbiddenError as fe:
-        logger.warning(f"Forbidden error in handle_get_file_outline: {fe}")
-        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
-    except Exception as e:
-        return json.dumps({"error": f"Failed to get outline: {str(e)}"})
-
-
 def handle_find_implementation_symbol(
     symbol: Annotated[str, Field(description="Function, method, or class name to locate across indexed repositories.")],
     repo: Annotated[Optional[str], Field(description="Optional target repository name.")] = None,
@@ -390,10 +260,10 @@ def handle_find_implementation_symbol(
         "prompt": "find_implementation_symbol",
         "symbol": symbol,
         "repo": repo,
-        "recommended_tools": ["find_symbol", "get_file_outline", "read_file", "trace_path"],
+        "recommended_tools": ["find_symbol", "read_file", "trace_path"],
         "instructions": (
             f"1. Call find_symbol(name='{symbol}', repo={json.dumps(repo)}, exact=True) (fall back to exact=False if not found) to get the file path and start/end lines.\n"
-            f"2. Call read_file(path=..., repo=..., start_line=..., end_line=...) using the exact line range returned by find_symbol to read the implementation without loading the whole file.\n"
+            f"2. Call read_file(path=..., repo=..., outline_only=True) to inspect surrounding structure or read_file(path=..., repo=..., start_line=..., end_line=...) to read the implementation without loading the whole file.\n"
             f"3. Call trace_path(symbol='{symbol}', repo={json.dumps(repo)}, direction='both', depth=2) to understand how '{symbol}' is called and what it invokes."
         ),
     })

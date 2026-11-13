@@ -5,8 +5,9 @@ import json
 
 import pytest
 
-from app.mcp.handlers.route_handlers import handle_find_api_callers, handle_find_routes
-from app.mcp.handlers.symbol_handlers import handle_find_symbol, handle_get_file_outline
+from app.mcp.handlers.route_handlers import handle_find_routes
+from app.mcp.handlers.symbol_handlers import handle_find_symbol
+from app.mcp.handlers.file_handlers import handle_read_file
 from app.services.database import get_db_connection
 from app.services.database.engine import get_db_engine, init_db
 from app.services.diagnostics import (
@@ -122,15 +123,15 @@ def test_find_symbol_returns_relative_paths(local_source_db):
 
 
 def test_get_file_outline_returns_the_relative_path(local_source_db):
-    result = _run(handle_get_file_outline(filepath=CONTROLLER, repo=LOCAL_REPO))
+    result = _run(handle_read_file(path=CONTROLLER, repo=LOCAL_REPO, outline_only=True))
     assert result["file"] == CONTROLLER
     assert {s["name"] for s in result["symbols"]} == {"ToolsController", "GetTool"}
 
 
 def test_find_routes_and_api_callers_return_relative_paths(local_source_db):
-    routes = _run(handle_find_routes(query="/api/tools"))
+    routes = _run(handle_find_routes(query="/api/tools", kind="handlers"))
     assert [r["file"] for r in routes["routes"]] == [CONTROLLER]
-    callers = _run(handle_find_api_callers(path="/api/tools/{id}"))
+    callers = _run(handle_find_routes(query="/api/tools/{id}", kind="callers"))
     assert sorted(c["file"] for c in callers["callers"]) == sorted([CLIENT, SERVICE])
 
 
