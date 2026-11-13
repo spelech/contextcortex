@@ -177,7 +177,8 @@ npm run docs:preview
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for rate limits & private repos | `None` |
 | `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |
 | `CACHE_DB_PATH` | Path to persistent SQLite cache database | `/app/data/index_cache.db` |
-| `CHUNK_SIZE` | Maximum character length per chunk | `1500` |
+| `CHUNK_SIZE` | Maximum character length per Markdown/doc chunk | `1500` |
+| `CODE_CHUNK_SIZE` | Maximum character length per AST code symbol/function chunk | `4000` |
 | `CHUNK_OVERLAP` | Character overlap between consecutive chunks | `200` |
 
 ---

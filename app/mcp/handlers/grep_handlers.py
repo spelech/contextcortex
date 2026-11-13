@@ -1,27 +1,18 @@
 import json
 import logging
-import os
-import re
 import sys
-from typing import Any, Dict, List, Optional, Tuple, Annotated
+from typing import Annotated, Any, Dict, List, Optional
 from pydantic import Field
 
-from app.services.auth import enforce_tool_permission, Role, ForbiddenError
+from app.services.auth import ForbiddenError, Role, enforce_tool_permission
+from app.services.code_grep_scanner import execute_code_grep, looks_like_regex
 from app.services.database.connection import get_db_connection
-from app.services.code_grep_scanner import looks_like_regex, path_matches_filter
 from app.services.file_reader import get_file_reader_service
-from app.services.git_manager import format_git_permalink
 
 logger = logging.getLogger("contextcortex.mcp.grep")
 
 _LINE_TRUNCATION_SUFFIX = "...[line truncated]"
 _MAX_GREP_LINE_CHARS = 400
-_IGNORED_GREP_DIRS = frozenset({
-    ".git", ".hg", ".svn", ".venv", "venv", "env",
-    "node_modules", "vendor", "__pycache__", ".pytest_cache",
-    ".mypy_cache", ".ruff_cache", ".tox", "dist", "build",
-    "target", "bin", "obj", ".next", ".nuxt", "coverage",
-})
 
 
 def _resolve_reader_factory():
@@ -76,118 +67,6 @@ def _sanitize_match_lines(match: Dict[str, Any]) -> Dict[str, Any]:
     return sanitized
 
 
-def _scan_extended_matches(
-    reader: Any,
-    pattern: str,
-    repo: Optional[str],
-    path_glob: Optional[str],
-    is_regex: bool,
-    case_sensitive: bool,
-    context_lines: int,
-    max_needed: int,
-) -> List[Dict[str, Any]]:
-    """Collects matches when offset + max_results exceeds FileReaderService's 100-match cap."""
-    flags = 0 if case_sensitive else re.IGNORECASE
-    regex_str = pattern if is_regex else re.escape(pattern)
-    try:
-        compiled = re.compile(regex_str, flags)
-    except re.error as exc:
-        raise ValueError(f"Invalid regular expression pattern: {exc}") from exc
-
-    clamped_ctx = max(0, min(10, int(context_lines)))
-    effective_repo = None if repo in ("__all__", "", "all") else repo
-
-    disk_files: List[Tuple[str, str, str]] = []
-    for ip in reader._get_authorized_indexed_paths():
-        r_name = ip.get("repo") or "local"
-        if effective_repo and r_name != effective_repo:
-            continue
-        root_p = os.path.abspath(ip["path"])
-        if os.path.isdir(root_p):
-            for dirpath, dirnames, filenames in os.walk(root_p):
-                dirnames[:] = [d for d in dirnames if d not in _IGNORED_GREP_DIRS]
-                for fname in filenames:
-                    full_p = os.path.join(dirpath, fname)
-                    rel_p = os.path.relpath(full_p, root_p).replace("\\", "/")
-                    disk_files.append((full_p, r_name, rel_p))
-        elif os.path.isfile(root_p):
-            disk_files.append((root_p, r_name, os.path.basename(root_p)))
-
-    for r_name, r_dir in reader._get_authorized_persistent_repos().items():
-        if effective_repo and r_name != effective_repo:
-            continue
-        if os.path.isdir(r_dir):
-            for dirpath, dirnames, filenames in os.walk(r_dir):
-                dirnames[:] = [d for d in dirnames if d not in _IGNORED_GREP_DIRS]
-                for fname in filenames:
-                    full_p = os.path.join(dirpath, fname)
-                    rel_p = os.path.relpath(full_p, r_dir).replace("\\", "/")
-                    disk_files.append((full_p, r_name, rel_p))
-
-    if effective_repo in (None, "local_storage") and os.path.isdir(reader.storage_root):
-        s_root = reader.storage_root
-        for dirpath, dirnames, filenames in os.walk(s_root):
-            dirnames[:] = [d for d in dirnames if d not in _IGNORED_GREP_DIRS]
-            for fname in filenames:
-                full_p = os.path.join(dirpath, fname)
-                rel_p = os.path.relpath(full_p, s_root).replace("\\", "/")
-                disk_files.append((full_p, "local_storage", rel_p))
-
-    matches: List[Dict[str, Any]] = []
-    seen_files = set()
-    seen_keys = set()
-
-    for abs_p, r_name, rel_p in disk_files:
-        if not path_matches_filter(rel_p, path_glob):
-            continue
-        if (r_name, rel_p) in seen_files:
-            continue
-        seen_files.add((r_name, rel_p))
-        try:
-            if not os.path.isfile(abs_p) or reader.is_binary_file(abs_p):
-                continue
-            with open(abs_p, "r", encoding="utf-8", errors="replace") as f:
-                file_lines = f.read().splitlines()
-        except Exception:
-            continue
-
-        for idx, line_str in enumerate(file_lines):
-            line_no = idx + 1
-            if compiled.search(line_str) and (r_name, rel_p, line_no) not in seen_keys:
-                seen_keys.add((r_name, rel_p, line_no))
-                s_ctx = max(0, idx - clamped_ctx)
-                e_ctx = min(len(file_lines), idx + clamped_ctx + 1)
-                matches.append({
-                    "repo": r_name,
-                    "file": rel_p,
-                    "line": line_no,
-                    "match_text": line_str,
-                    "context": [{"line": c + 1, "text": file_lines[c]} for c in range(s_ctx, e_ctx)],
-                })
-                if len(matches) >= max_needed:
-                    break
-        if len(matches) >= max_needed:
-            break
-
-    git_repos: Dict[str, Dict[str, Any]] = {}
-    try:
-        with get_db_connection() as conn:
-            for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall():
-                git_repos[r["name"]] = dict(r)
-    except Exception:
-        pass
-
-    for m in matches:
-        m["symbol"] = None
-        m["kind"] = None
-        g_info = git_repos.get(m["repo"])
-        m["permalink"] = (
-            format_git_permalink(g_info["url"], g_info.get("commit_sha"), m["file"], m["line"], m["line"], provider=g_info.get("provider"))
-            if g_info and g_info.get("url") else None
-        )
-    return matches
-
-
 async def handle_grep_code(
     pattern: Annotated[str, Field(description="Exact literal string or regular expression to match across source files (Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, configs).")],
     repo: Annotated[Optional[str], Field(description="Optional repository name or 'local_storage' to scope search. Omit to scan all indexed sources.")] = None,
@@ -225,16 +104,22 @@ async def handle_grep_code(
                     limit=100,
                 )
                 return raw_result.get("matches", [])
-            return _scan_extended_matches(
-                reader=reader,
+            raw_result = execute_code_grep(
                 pattern=pattern,
+                storage_root=reader.storage_root,
+                indexed_paths=reader._get_authorized_indexed_paths(),
+                persistent_repos=reader._get_authorized_persistent_repos(),
+                is_binary_fn=reader.is_binary_file,
+                db_conn_factory=lambda: get_db_connection(),
                 repo=repo,
                 path_glob=path_filter,
                 is_regex=as_regex,
                 case_sensitive=case_sensitive,
                 context_lines=safe_context,
-                max_needed=needed,
+                limit=needed,
+                max_limit=needed,
             )
+            return raw_result.get("matches", [])
 
         pattern_mode = "regex" if is_regex else "literal"
         all_matches = _search(is_regex)

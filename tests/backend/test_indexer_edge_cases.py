@@ -146,6 +146,7 @@ def test_sync_single_git_repo_unexpected_exception(temp_edge_db, tmp_path):
 
     with patch("app.services.git_manager.get_remote_head_sha", return_value="newsha_fatal"), \
          patch("app.services.git_manager.shallow_clone_repo", return_value=CloneResult(temp_dir=str(repo_dir), commit_sha="newsha_fatal", error=None)), \
+         patch("app.services.ripgrep_runner.list_files_with_ripgrep", return_value=None), \
          patch("os.walk", side_effect=RuntimeError("Fatal filesystem crash")), \
          patch("app.services.git_manager.cleanup_repo_dir"):
         sync_single_git_repo(repo_id)

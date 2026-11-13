@@ -17,7 +17,7 @@ from app.services.vector_store import (
     VectorStoreManager, get_vector_store
 )
 from app.services.indexing.state import (
-    VAULT_PATH, CHUNK_SIZE, CHUNK_OVERLAP, QDRANT_URL, COLLECTION_NAME,
+    VAULT_PATH, CHUNK_SIZE, CODE_CHUNK_SIZE, CHUNK_OVERLAP, QDRANT_URL, COLLECTION_NAME,
     trigger_list_changed_notification, ensure_collection
 )
 
@@ -352,7 +352,7 @@ def process_file_content(
                 ))
 
     else: # Code file
-        ast_result = extract_symbols_and_chunks(content, filepath, repo=repo, max_chunk_chars=CHUNK_SIZE)
+        ast_result = extract_symbols_and_chunks(content, filepath, repo=repo, max_chunk_chars=CODE_CHUNK_SIZE)
         chunks = [c.model_dump() for c in ast_result.chunks]
         ast_symbols = [s.model_dump() for s in ast_result.symbols]
         ast_relationships = [r.model_dump() for r in ast_result.relationships]

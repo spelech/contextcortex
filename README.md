@@ -135,7 +135,7 @@ See the full **[MCP Tools, Resources, and Pagination Reference](docs/mcp-tools-a
 | `EXTRA_CA_CERTS_DIR` | Directory of private `*.crt` CA certificates trusted at startup ([certs/README.md](certs/README.md)) | `/certs` |
 | `GITHUB_TOKEN` / `GITLAB_TOKEN` | Optional global Personal Access Tokens for private Git hosts | `None` |
 | `CACHE_DB_PATH` | Persistent SQLite database path when `DATABASE_URL` is unset | `/app/data/index_cache.db` |
-| `CHUNK_SIZE` / `CHUNK_OVERLAP` | Character chunk length and overlap window | `1500` / `200` |
+| `CHUNK_SIZE` / `CODE_CHUNK_SIZE` / `CHUNK_OVERLAP` | Markdown chunk limit, AST code function/symbol chunk limit, and overlap window | `1500` / `4000` / `200` |
 
 ---
 

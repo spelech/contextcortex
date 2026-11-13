@@ -2,10 +2,11 @@ import fnmatch
 import logging
 import os
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from app.services.code_grep_chunks import grep_chunk_matches
 from app.services.git_manager import format_git_permalink
+from app.services.ripgrep_runner import search_files_with_ripgrep
 from app.services.text_decoding import read_source_text
 
 logger = logging.getLogger("contextcortex.file_reader")
@@ -16,7 +17,6 @@ IGNORED_GREP_DIRS = frozenset({
     ".mypy_cache", ".ruff_cache", ".tox", "dist", "build",
     "target", "bin", "obj", ".next", ".nuxt", "coverage",
 })
-
 
 _GLOB_CHARS = set("*?[")
 # Regex syntax that is rare in literal search text: alternation, wildcards, classes, anchors, groups.
@@ -57,6 +57,91 @@ def looks_like_regex(pattern: str) -> bool:
     return True
 
 
+def _collect_target_roots(
+    storage_root: str,
+    indexed_paths: List[Dict[str, Any]],
+    persistent_repos: Dict[str, str],
+    effective_repo: Optional[str],
+) -> List[Tuple[str, str]]:
+    roots: List[Tuple[str, str]] = []
+    for ip in indexed_paths:
+        r_name = ip.get("repo") or "local"
+        if effective_repo and r_name != effective_repo:
+            continue
+        root_p = os.path.abspath(ip["path"])
+        if os.path.exists(root_p):
+            roots.append((root_p, r_name))
+
+    for r_name, r_dir in persistent_repos.items():
+        if effective_repo and r_name != effective_repo:
+            continue
+        if os.path.exists(r_dir):
+            roots.append((os.path.abspath(r_dir), r_name))
+
+    if effective_repo in (None, "local_storage") and os.path.isdir(storage_root):
+        roots.append((os.path.abspath(storage_root), "local_storage"))
+
+    return roots
+
+
+def _scan_root_with_python(
+    root_path: str,
+    repo_name: str,
+    compiled: re.Pattern,
+    is_binary_fn: Callable[[str], bool],
+    path_glob: Optional[str],
+    context_lines: int,
+    max_matches: int,
+    seen_files: Set[Tuple[str, str]],
+) -> List[Dict[str, Any]]:
+    """Pure-Python fallback when ripgrep binary is unavailable or cannot handle an expression."""
+    disk_files: List[Tuple[str, str]] = []
+    if os.path.isfile(root_path):
+        disk_files.append((root_path, os.path.basename(root_path)))
+    elif os.path.isdir(root_path):
+        for dirpath, dirnames, filenames in os.walk(root_path):
+            dirnames[:] = [d for d in dirnames if d not in IGNORED_GREP_DIRS]
+            norm_dp = dirpath.replace("\\", "/")
+            if "/.git" in norm_dp or norm_dp.endswith("/.git"):
+                continue
+            for fname in filenames:
+                full_p = os.path.join(dirpath, fname)
+                rel_p = os.path.relpath(full_p, root_path).replace("\\", "/")
+                disk_files.append((full_p, rel_p))
+
+    out: List[Dict[str, Any]] = []
+    for abs_p, rel_p in disk_files:
+        if not path_matches_filter(rel_p, path_glob):
+            continue
+        if (repo_name, rel_p) in seen_files:
+            continue
+        seen_files.add((repo_name, rel_p))
+        try:
+            if not os.path.isfile(abs_p) or is_binary_fn(abs_p):
+                continue
+            file_lines = read_source_text(abs_p).splitlines()
+        except Exception:
+            continue
+
+        for line_idx, line_str in enumerate(file_lines):
+            if compiled.search(line_str):
+                start_ctx = max(0, line_idx - context_lines)
+                end_ctx = min(len(file_lines), line_idx + context_lines + 1)
+                out.append({
+                    "repo": repo_name,
+                    "file": rel_p,
+                    "line": line_idx + 1,
+                    "match_text": line_str,
+                    "context": [
+                        {"line": c_idx + 1, "text": file_lines[c_idx]}
+                        for c_idx in range(start_ctx, end_ctx)
+                    ],
+                })
+                if len(out) >= max_matches:
+                    return out
+    return out
+
+
 def execute_code_grep(
     pattern: str,
     storage_root: str,
@@ -70,8 +155,9 @@ def execute_code_grep(
     case_sensitive: bool = False,
     context_lines: int = 2,
     limit: int = 30,
+    max_limit: int = 100,
 ) -> Dict[str, Any]:
-    """Searches files across disk, persistent clones, local storage, and vector store chunks with AST enrichment."""
+    """Searches files via ripgrep (with Python fallback) and ephemeral vector chunks, plus AST/permalink enrichment."""
     if not pattern or not isinstance(pattern, str) or not pattern.strip():
         raise ValueError("pattern must be a non-empty string")
 
@@ -83,7 +169,8 @@ def execute_code_grep(
         raise ValueError(f"Invalid regular expression pattern: {e}") from e
 
     clamped_context = max(0, min(10, int(context_lines)))
-    clamped_limit = max(1, min(100, int(limit)))
+    upper_limit = max(100, int(max_limit))
+    clamped_limit = max(1, min(upper_limit, int(limit)))
     effective_repo = None if repo in ("__all__", "", "all") else repo
 
     git_repos: Dict[str, Dict[str, Any]] = {}
@@ -95,94 +182,76 @@ def execute_code_grep(
     except Exception as e:
         logger.debug(f"Failed to load git repositories for permalinks: {e}")
 
-    disk_files: List[Tuple[str, str, str]] = []
-
-    # 1. Monitored indexed_paths
-    for ip in indexed_paths:
-        r_name = ip.get("repo") or "local"
-        if effective_repo and r_name != effective_repo:
-            continue
-        root_p = os.path.abspath(ip["path"])
-        if os.path.isdir(root_p):
-            for dirpath, dirnames, filenames in os.walk(root_p):
-                dirnames[:] = [d for d in dirnames if d not in IGNORED_GREP_DIRS]
-                for fname in filenames:
-                    full_p = os.path.join(dirpath, fname)
-                    rel_p = os.path.relpath(full_p, root_p).replace("\\", "/")
-                    disk_files.append((full_p, r_name, rel_p))
-        elif os.path.isfile(root_p):
-            disk_files.append((root_p, r_name, os.path.basename(root_p)))
-
-    # 2. Persistent repos (keep_shallow=1)
-    for r_name, r_dir in persistent_repos.items():
-        if effective_repo and r_name != effective_repo:
-            continue
-        if os.path.isdir(r_dir):
-            for dirpath, dirnames, filenames in os.walk(r_dir):
-                dirnames[:] = [d for d in dirnames if d not in IGNORED_GREP_DIRS]
-                norm_dp = dirpath.replace("\\", "/")
-                if "/.git" in norm_dp or norm_dp.endswith("/.git"):
-                    continue
-                for fname in filenames:
-                    full_p = os.path.join(dirpath, fname)
-                    rel_p = os.path.relpath(full_p, r_dir).replace("\\", "/")
-                    disk_files.append((full_p, r_name, rel_p))
-
-    # 3. Local storage root
-    if effective_repo in (None, "local_storage") and os.path.isdir(storage_root):
-        for dirpath, dirnames, filenames in os.walk(storage_root):
-            dirnames[:] = [d for d in dirnames if d not in IGNORED_GREP_DIRS]
-            for fname in filenames:
-                full_p = os.path.join(dirpath, fname)
-                rel_p = os.path.relpath(full_p, storage_root).replace("\\", "/")
-                disk_files.append((full_p, "local_storage", rel_p))
-
-    disk_files = [item for item in disk_files if path_matches_filter(item[2], path_glob)]
-
+    roots = _collect_target_roots(storage_root, indexed_paths, persistent_repos, effective_repo)
     matches: List[Dict[str, Any]] = []
-    seen_keys = set()
-    disk_scanned_keys = set()
+    seen_keys: Set[Tuple[str, str, int]] = set()
+    seen_files: Set[Tuple[str, str]] = set()
+    repo_root_dirs: Dict[str, List[str]] = {}
+    for rp, rn in roots:
+        if os.path.isdir(rp):
+            repo_root_dirs.setdefault(rn, []).append(rp)
 
-    for abs_p, r_name, rel_p in disk_files:
-        if (r_name, rel_p) in disk_scanned_keys:
-            continue
-        disk_scanned_keys.add((r_name, rel_p))
-
-        try:
-            if not os.path.isfile(abs_p) or is_binary_fn(abs_p):
-                continue
-            file_text = read_source_text(abs_p)
-        except Exception:
-            continue
-
-        file_lines = file_text.splitlines()
-        for line_idx, line_str in enumerate(file_lines):
-            line_no = line_idx + 1
-            if compiled.search(line_str):
-                key = (r_name, rel_p, line_no)
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-
-                start_ctx = max(0, line_idx - clamped_context)
-                end_ctx = min(len(file_lines), line_idx + clamped_context + 1)
-                context_items = [
-                    {"line": c_idx + 1, "text": file_lines[c_idx]}
-                    for c_idx in range(start_ctx, end_ctx)
-                ]
-                matches.append({
-                    "repo": r_name,
-                    "file": rel_p,
-                    "line": line_no,
-                    "match_text": line_str,
-                    "context": context_items,
-                })
-                if len(matches) >= clamped_limit:
-                    break
+    for root_p, r_name in roots:
         if len(matches) >= clamped_limit:
             break
+        remaining = clamped_limit - len(matches)
+        rg_hits = search_files_with_ripgrep(
+            root_dir=root_p,
+            repo_name=r_name,
+            pattern=pattern,
+            ignored_dirs=IGNORED_GREP_DIRS,
+            path_glob=path_glob,
+            is_regex=is_regex,
+            case_sensitive=case_sensitive,
+            context_lines=clamped_context,
+            max_matches=remaining + 10,
+            include_hidden=True,
+        )
+        if rg_hits is None:
+            py_hits = _scan_root_with_python(
+                root_path=root_p,
+                repo_name=r_name,
+                compiled=compiled,
+                is_binary_fn=is_binary_fn,
+                path_glob=path_glob,
+                context_lines=clamped_context,
+                max_matches=remaining,
+                seen_files=seen_files,
+            )
+            for item in py_hits:
+                key = (item["repo"], item["file"], item["line"])
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    matches.append(item)
+                    if len(matches) >= clamped_limit:
+                        break
+            continue
 
-    # 4. Vector store fallback for ephemeral / remote repos not on disk
+        for item in rg_hits:
+            rel_p = item["file"]
+            abs_p = item.get("abs_path")
+            seen_files.add((r_name, rel_p))
+            if abs_p:
+                try:
+                    if not os.path.isfile(abs_p) or is_binary_fn(abs_p):
+                        continue
+                except OSError:
+                    continue
+            key = (r_name, rel_p, item["line"])
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            matches.append({
+                "repo": r_name,
+                "file": rel_p,
+                "line": item["line"],
+                "match_text": item["match_text"],
+                "context": item["context"],
+            })
+            if len(matches) >= clamped_limit:
+                break
+
+    # Vector store fallback for ephemeral / remote repos not on disk
     if len(matches) < clamped_limit:
         try:
             from app.services.vector_store import get_vector_store
@@ -197,6 +266,12 @@ def execute_code_grep(
                     case_sensitive=case_sensitive,
                     limit=max(10, remaining_limit),
                 )
+                from app.services.code_grep_chunks import chunk_file_key
+                skip_files = set(seen_files)
+                for ch in chunks:
+                    ch_repo, ch_file = chunk_file_key(ch)
+                    if any(os.path.isfile(os.path.join(rd, ch_file)) for rd in repo_root_dirs.get(ch_repo, ())):
+                        skip_files.add((ch_repo, ch_file))
                 load_fn = None
                 if hasattr(store, "get_file_chunks"):
                     load_fn = lambda r_name, r_file: store.get_file_chunks(path=r_file, repo=r_name)
@@ -205,14 +280,14 @@ def execute_code_grep(
                     compiled=compiled,
                     context_lines=clamped_context,
                     limit=clamped_limit - len(matches),
-                    skip_files=disk_scanned_keys,
+                    skip_files=skip_files,
                     seen_keys=seen_keys,
                     load_file_chunks=load_fn,
                 ))
         except Exception as e:
             logger.warning(f"grep_chunks fallback in grep_code encountered error: {e}")
 
-    # 5. AST symbol and permalink enrichment
+    # AST symbol and permalink enrichment
     for m in matches:
         m_repo = m["repo"]
         m_file = m["file"].replace("\\", "/")

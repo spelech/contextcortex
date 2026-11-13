@@ -68,6 +68,8 @@ def _sync_local_paths_internal():
     )
     supported_extensions = DEFAULT_SUPPORTED_EXTENSIONS
 
+    from app.services.ripgrep_runner import list_files_with_ripgrep
+
     for target in active_paths:
         tpath = os.path.abspath(target["path"])
         if not os.path.exists(tpath):
@@ -79,14 +81,28 @@ def _sync_local_paths_internal():
         else:
             base_dir = tpath
             if target["recursive"]:
-                for root, dirs, files in os.walk(tpath):
-                    dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _IGNORED_DIR_NAMES]
-                    for file in files:
-                        if not file.startswith(".") and file.lower().endswith(supported_extensions):
-                            full = os.path.abspath(os.path.join(root, file))
-                            rel_p = os.path.relpath(full, base_dir).replace("\\", "/")
-                            if not _should_skip_indexed_file(rel_p, file):
-                                found_files[full] = (target["repo"], target["category"], base_dir)
+                rg_files = list_files_with_ripgrep(
+                    tpath,
+                    ignored_dirs=_IGNORED_DIR_NAMES,
+                    include_hidden=False,
+                    extensions=supported_extensions,
+                )
+                if rg_files is not None:
+                    for full, rel_p in rg_files:
+                        parts = rel_p.split("/")
+                        if any(p.startswith(".") for p in parts):
+                            continue
+                        if not _should_skip_indexed_file(rel_p, parts[-1]):
+                            found_files[full] = (target["repo"], target["category"], base_dir)
+                else:
+                    for root, dirs, files in os.walk(tpath):
+                        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _IGNORED_DIR_NAMES]
+                        for file in files:
+                            if not file.startswith(".") and file.lower().endswith(supported_extensions):
+                                full = os.path.abspath(os.path.join(root, file))
+                                rel_p = os.path.relpath(full, base_dir).replace("\\", "/")
+                                if not _should_skip_indexed_file(rel_p, file):
+                                    found_files[full] = (target["repo"], target["category"], base_dir)
             else:
                 try:
                     for entry in os.scandir(tpath):
