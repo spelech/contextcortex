@@ -11,11 +11,10 @@ logger = logging.getLogger("contextcortex.poller")
 
 _poller_thread: Optional[threading.Thread] = None
 _poller_stop_event = threading.Event()
-is_indexing: bool = False
 
 def check_all_auto_sync_repos() -> Tuple[int, int]:
     """Checks all auto_sync=1 repos for remote commit SHA changes."""
-    if is_indexing or getattr(indexer, "is_indexing", False):
+    if indexer.is_indexing():
         logger.info("Poller check deferred: indexing engine is currently busy.")
         return (0, 0)
 

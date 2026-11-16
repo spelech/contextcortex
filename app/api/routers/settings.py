@@ -135,7 +135,6 @@ async def api_get_stats():
                 "points_count": total_chunks
             }
 
-        is_idx = idx_service.is_indexing
         emb_cfg = emb_service.get_embedding_config()
         return {
             "repos_count": repo_count,
@@ -150,7 +149,7 @@ async def api_get_stats():
             "total_routes": total_routes,
             "local_paths": path_count,
             "last_indexed": last_indexed,
-            "is_indexing": is_idx() if callable(is_idx) else is_idx,
+            "is_indexing": idx_service.is_indexing(),
             "vector_db_status": vector_db_status,
             "vector_store": vs_cfg,
             "vector_store_provider": vs_cfg.get("provider"),

@@ -379,8 +379,7 @@ async def api_delete_path(path_id: int):
     dependencies=[Depends(require_role(Role.EDITOR))],
 )
 async def api_trigger_sync():
-    is_idx = idx_service.is_indexing
-    if (is_idx() if callable(is_idx) else is_idx):
+    if idx_service.is_indexing():
         return JSONResponse(status_code=409, content={"status": "error", "error": "Indexing in progress", "message": "Indexing is already in progress."})
     
     threading.Thread(target=idx_service.run_full_indexing, daemon=True).start()

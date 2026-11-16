@@ -36,7 +36,16 @@ def trigger_list_changed_notification():
         asyncio.run_coroutine_threadsafe(notify_list_changed(), loop)
 
 indexing_lock = threading.Lock()
-is_indexing = False
+
+
+def is_indexing() -> bool:
+    """Return True while a full indexing run holds ``indexing_lock``.
+
+    This is the single source of truth for "indexing is running". Callers must
+    call this function: a module-level bool copied with ``from ... import`` goes stale.
+    """
+    return indexing_lock.locked()
+
 
 def ensure_collection() -> bool:
     """Ensures that the vector store collection/index exists."""
