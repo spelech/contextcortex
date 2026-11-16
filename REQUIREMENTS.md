@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1265 Automated Tests** (901 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1285 Automated Tests** (921 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -409,7 +409,7 @@ classDiagram
 - `test_client_call_detection`
 - `test_multi_repo_contract_linking_and_mcp_tools`
 
-#### `tests/backend/test_api_routes.py` (18 tests)
+#### `tests/backend/test_api_routes.py` (19 tests)
 - `test_api_get_stats_with_keywords`
 - `test_api_get_stats_error`
 - `test_api_stats_field_names`
@@ -422,6 +422,7 @@ classDiagram
 - `test_api_search_test`
 - `test_api_search_test_error`
 - `test_api_reindex`
+- `test_api_reindex_force_passes_force_to_full_indexing`
 - `test_api_browse_dir`
 - `test_api_browse_dir_error`
 - `test_api_logs_endpoints`
@@ -481,7 +482,7 @@ classDiagram
 - `test_call_extraction_constructors_and_generics`
 - `test_toplevel_call_source_symbol_preservation`
 
-#### `tests/backend/test_db_and_tools.py` (13 tests)
+#### `tests/backend/test_db_and_tools.py` (14 tests)
 - `test_db_path_and_init`
 - `test_db_init_seeding_vault`
 - `test_db_init_seeding_errors`
@@ -493,6 +494,7 @@ classDiagram
 - `test_handle_get_file_outline`
 - `test_handle_list_repositories`
 - `test_handle_sync_repository`
+- `test_handle_sync_repository_forces_local_path_repo`
 - `test_catalog_summary`
 - `test_custom_prompt_handlers`
 
@@ -1430,6 +1432,14 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_github_permalink`
 - `test_ephemeral_clone_and_cleanup`
 - `test_db_symbols_and_metadata`
+
+#### `tests/test_reindex_on_format_change.py` (6 tests)
+- `test_fingerprint_changes_with_chunk_settings_and_version`
+- `test_full_indexing_reprocesses_local_files_once_after_format_change`
+- `test_full_indexing_forces_stale_git_repos_and_stores_fingerprint_on_success`
+- `test_forced_local_sync_ignores_mtime_cache_without_duplicates`
+- `test_sync_local_repo_forces_only_that_repo`
+- `test_sync_local_repo_skips_when_indexing_is_running`
 
 #### `tests/test_rest_role_permissions.py` (4 tests)
 - `test_anonymous_and_invalid_key_requests_denied` - _Anonymous or invalid/revoked requests receive 401 Unauthorized._
