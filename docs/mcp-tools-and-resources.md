@@ -47,7 +47,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 
 | Tool | Role | Default / Clamped Bounds | Pagination Keys |
 | :--- | :---: | :--- | :--- |
-| `diagnose_issue` | `viewer` | `context_lines`: `5` (`1..15`), `limit`: `5` (`1..20`) | Bounded stack frames & semantic candidates |
+| `diagnose_issue` | `viewer` | `context_lines`: `5` (`1..15`), `limit`: `5` (`1..20`), `detail`: `false` | Call chain (max depth `6`, `60` methods read), stack frames & compact semantic candidates |
 | `execute_script` | `viewer` | One sandboxed script (`30` s, `50` tool calls, `64` MB) | The value the script returns (`< 100,000` chars) |
 | `find_routes` | `viewer` | `kind`: `both`\|`handlers`\|`callers`; `limit`: `50` (`1..200`) | `offset`, `total` / `total_routes` / `total_callers`, `has_more`, `next_offset` |
 | `find_symbol` | `viewer` | `limit`: `30` (`1..100`) | `offset`, `total`, `has_more`, `next_offset` |
@@ -93,7 +93,11 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 ### Code Mode and Forensic Triage
 
 - **`execute_script`** (Code Mode): runs one async JavaScript body that calls other tools with `await tools.<tool>(args)` and returns only the final result, so several dependent calls take one round trip. Tool results are parsed JSON, and a tool error throws. Limits: `CODE_MODE_TIMEOUT_SECONDS` (`30`), `CODE_MODE_MAX_TOOL_CALLS` (`50`), `CODE_MODE_MAX_MEMORY_MB` (`64`). Types: resource `contextcortex://code-mode/sdk.d.ts`. See [the reference](reference/mcp-tools.md#10-execute-script).
-- **`diagnose_issue`**: Resolves stack traces, error string literals, HTTP routes, and semantic code candidates across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Clamps `context_lines` (`1..15`, default `5`) and `limit` (`1..20`, default `5`). When `repo` is set, every result section stays in that repo. When an HTTP route matches, `semantic_candidates` starts with the route handler and its callees (`source`: `route_handler` / `route_callee`, `depth`, `score`: `null`), followed by semantic hits in the same language (excluding test files).
+- **`diagnose_issue`**: Resolves stack traces, error string literals, HTTP routes, and semantic code candidates across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Clamps `context_lines` (`1..15`, default `5`) and `limit` (`1..20`, default `5`). When `repo` is set, every result section stays in that repo.
+  - `call_chain` starts at the matched route handlers, stack-frame symbols, and matched symbols. It follows resolved production calls best-first. It skips tests, ambiguous library calls, and interface methods that do not have exactly one implementation. The error terms rank each method. The error terms are words from the issue, plus common code words for error words such as `ExecuteReader` or `timeout`. A call can omit a context argument that the caller has or the callee accepts (for example a `transaction`). In that case, the step shows the argument in `not_passed`. The chain ends at the first method (in execution order) below such a call that does the failing kind of work. Otherwise, it ends at the method with the highest score.
+  - Each step has `symbol`, `file` (repository-relative), `lines`, `call_site` (`file`, `line`, `text`), `evidence` (1 to 3 matching lines), and `score`. `other_hits` lists up to 3 other methods with high scores.
+  - `semantic_candidates` are compact (location and score only). When the call chain covers a matched route, the route handler and its callees are not repeated there. Only semantic hits in the same language follow (test files are excluded). Without a chain, the route handler and its callees come first (`source`: `route_handler` / `route_callee`).
+  - `detail=true` adds the method body (`code`) to each chain step. It also adds the code, permalink, callers, and callees to each candidate.
 
 ---
 

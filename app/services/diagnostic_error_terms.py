@@ -1,0 +1,149 @@
+"""Error terms for `diagnose_issue`: words from the issue text that show which code is related to the fault.
+
+The terms rank the methods on a call path and select the evidence lines in each method. A small
+vocabulary table adds the code words that usually go with common error words (for example, an
+`ExecuteReader` error adds `query`, `command`, `transaction`, and `connection`). The table is
+language-neutral: the terms are matched against camelCase and snake_case parts of the code lines.
+"""
+
+import re
+from typing import Dict, Iterable, List, Optional
+
+from app.services.stack_trace_parser import RE_EXCEPTION_NAME, RE_SYMBOL_CANDIDATE
+
+# Weight of each term kind. Vocabulary terms and code identifiers from the issue are strong signals;
+# plain words from the error message are weak signals.
+VOCABULARY_WEIGHT = 3.0
+IDENTIFIER_WEIGHT = 3.0
+EXCEPTION_WEIGHT = 2.0
+MESSAGE_WORD_WEIGHT = 1.0
+STRONG_WEIGHT = 3.0
+MAX_TERMS = 24
+
+# Trigger (lowercase text in the issue) -> code words that usually go with that error.
+ERROR_VOCABULARY: Dict[str, tuple] = {
+    "executereader": ("query", "execute", "command", "transaction", "connection"),
+    "executenonquery": ("execute", "command", "transaction", "connection"),
+    "executescalar": ("execute", "command", "transaction", "connection"),
+    "transaction": ("transaction", "commit", "rollback"),
+    "connection": ("connection", "open"),
+    "deadlock": ("deadlock", "lock", "transaction"),
+    "timeout": ("timeout", "cancellation", "wait"),
+    "timed out": ("timeout", "cancellation", "wait"),
+    "nullreference": ("null",),
+    "null reference": ("null",),
+    "nullpointer": ("null",),
+    "nonetype": ("none",),
+    "undefined": ("undefined", "null"),
+    "keyerror": ("key",),
+    "keynotfound": ("key",),
+    "indexoutofrange": ("index", "count", "length"),
+    "indexerror": ("index", "len"),
+    "outofrange": ("index", "count", "length"),
+    "unauthorized": ("authorize", "permission", "access", "role"),
+    "forbidden": ("authorize", "permission", "access", "role"),
+    "access denied": ("permission", "access", "role"),
+    "permission": ("permission", "access", "role"),
+    "duplicate": ("insert", "unique", "exists"),
+    "unique constraint": ("insert", "unique", "exists"),
+    "foreign key": ("delete", "insert", "reference"),
+    "serializ": ("serialize", "deserialize", "json"),
+    "disposed": ("dispose", "using"),
+    "deserializ": ("deserialize", "json"),
+    "concurren": ("lock", "concurrent"),
+    "race condition": ("lock", "concurrent"),
+    "overflow": ("overflow", "checked"),
+    "divide by zero": ("divide", "zero"),
+    "zerodivision": ("divide", "zero"),
+}
+
+_STOP_WORDS = {
+    "about", "after", "again", "against", "being", "below", "between", "cannot", "could", "doesn", "error",
+    "exception", "fails", "failed", "failing", "first", "from", "have", "having", "http", "into", "other",
+    "should", "shows", "since", "still", "system", "their", "there", "these", "thing", "those", "through",
+    "under", "until", "when", "where", "which", "while", "with", "without", "would", "returns", "return",
+    "requires", "assigned", "works", "working", "property", "value", "object", "instance", "while",
+    "please", "users", "using", "been", "this", "that", "than", "does", "will", "they", "them", "then", "also", "only", "some", "log", "logs", "shows", "message", "throws", "thrown", "occurred",
+}
+_IDENT_PARTS = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
+_WORD = re.compile(r"[A-Za-z][A-Za-z0-9_]{3,}")
+_GENERIC_EXCEPTION_PARTS = {"invalid", "operation", "exception", "error", "argument", "system", "runtime"}
+
+
+def identifier_parts(text: str) -> List[str]:
+    """Splits identifiers in a line into lowercase camelCase / snake_case parts."""
+    parts: List[str] = []
+    for token in re.findall(r"[A-Za-z0-9]+", text or ""):
+        parts.extend(p.lower() for p in _IDENT_PARTS.findall(token))
+    return parts
+
+
+def _add(terms: Dict[str, float], term: str, weight: float) -> None:
+    term = term.lower().strip()
+    if len(term) >= 3 and term not in _STOP_WORDS:
+        terms[term] = max(terms.get(term, 0.0), weight)
+
+
+def _error_lines(text: str, exceptions: Iterable[str]) -> List[str]:
+    """Lines that carry the error message (they name an exception or an error)."""
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    keys = [e.lower() for e in exceptions] + ["error", "exception", "failed", "abend"]
+    picked = [ln for ln in lines if any(k in ln.lower() for k in keys)]
+    return picked or lines[:3]
+
+
+def extract_error_terms(issue_text: str, signals: Optional[Dict[str, List]] = None) -> Dict[str, float]:
+    """Returns {term: weight} for the issue: vocabulary words, code identifiers, exceptions, error-message words."""
+    signals = signals or {}
+    text = issue_text or ""
+    low = text.lower()
+    terms: Dict[str, float] = {}
+    exceptions = list(signals.get("exceptions") or []) + RE_EXCEPTION_NAME.findall(text)
+
+    for trigger, words in ERROR_VOCABULARY.items():
+        if trigger in low:
+            for word in words:
+                _add(terms, word, VOCABULARY_WEIGHT)
+
+    identifiers = list(signals.get("symbols") or []) + RE_SYMBOL_CANDIDATE.findall(text)
+    identifiers += re.findall(r"\b[A-Z][a-z]+(?:[A-Z][a-z0-9]+)+\b", text)
+    for ident in identifiers:
+        last = ident.split(".")[-1]
+        if last in exceptions or RE_EXCEPTION_NAME.fullmatch(last):
+            continue
+        _add(terms, last, IDENTIFIER_WEIGHT)
+
+    for exc in exceptions:
+        name = exc.split(".")[-1]
+        _add(terms, name, EXCEPTION_WEIGHT)
+        for part in identifier_parts(name):
+            if part not in _GENERIC_EXCEPTION_PARTS:
+                _add(terms, part, EXCEPTION_WEIGHT)
+
+    for line in _error_lines(text, exceptions):
+        for word in _WORD.findall(line):
+            if "_" not in word and not any(c.isupper() for c in word[1:]):
+                _add(terms, word, MESSAGE_WORD_WEIGHT)
+
+    ranked = sorted(terms.items(), key=lambda kv: (-kv[1], kv[0]))[:MAX_TERMS]
+    return dict(ranked)
+
+
+def line_term_hits(line: str, terms: Dict[str, float]) -> Dict[str, float]:
+    """Terms that a code line contains: a whole camelCase/snake_case part, or a substring for long terms."""
+    if not line or not terms:
+        return {}
+    parts = set(identifier_parts(line))
+    low = line.lower()
+    hits = {}
+    for term, weight in terms.items():
+        if term in parts or (len(term) >= 5 and term in low):
+            hits[term] = weight
+    return hits
+
+
+def strong_terms(terms: Dict[str, float]) -> Dict[str, float]:
+    return {t: w for t, w in terms.items() if w >= STRONG_WEIGHT}
+
+
+__all__ = ["ERROR_VOCABULARY", "extract_error_terms", "identifier_parts", "line_term_hits", "strong_terms"]

@@ -212,8 +212,8 @@ def handle_triage_error(
         "repo": repo,
         "recommended_tools": ["diagnose_issue", "trace_path", "read_file"],
         "instructions": (
-            f"1. Call diagnose_issue(issue_text={json.dumps(issue_text)}, repo={json.dumps(repo)}) to resolve stack frames, error string literals, matching routes, and semantic candidates.\n"
-            f"2. For the primary resolved symbol, call trace_path(symbol=..., repo={json.dumps(repo)}, direction='both', depth=2) to inspect upstream callers and downstream callees.\n"
+            f"1. Call diagnose_issue(issue_text={json.dumps(issue_text)}, repo={json.dumps(repo)}) to get the call chain (call_chain.steps: call-site lines, evidence lines, not_passed arguments), stack frames, matching routes, and semantic candidates.\n"
+            f"2. If the chain does not explain the fault, for the primary resolved symbol, call trace_path(symbol=..., repo={json.dumps(repo)}, direction='both', depth=2) to inspect upstream callers and downstream callees.\n"
             f"3. Call read_file(path=..., repo=..., start_line=..., end_line=...) around the suspect lines to inspect error handling and state mutations."
         ),
     })

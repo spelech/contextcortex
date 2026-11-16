@@ -20,14 +20,16 @@ async def handle_diagnose_issue(
     repo: Annotated[Optional[str], Field(description="Optional repository name to scope stack frame, route, and semantic candidate resolution.")] = None,
     context_lines: Annotated[int, Field(description="Surrounding source lines returned per resolved stack frame, clamped to 1..15 (default 5).")] = 5,
     limit: Annotated[int, Field(description="Maximum semantic code candidates returned alongside resolved stack frames, clamped to 1..20 (default 5).")] = 5,
+    detail: Annotated[bool, Field(description="Set True to add full method bodies to call_chain steps and code, permalinks, callers, and callees to semantic_candidates (default False keeps the answer compact).")] = False,
 ) -> str:
-    """Forensic triage engine resolving stack frames, error string literals, HTTP routes, and semantic code candidates in one call."""
+    """Forensic triage: a ranked call chain with evidence lines, plus stack frames, routes, symbols, and semantic candidates."""
     try:
         enforce_tool_permission(Role.VIEWER)
 
         text = (issue_text or "").strip()
         if not text:
             return json.dumps({
+                "call_chain": {"entry": None, "terms": [], "steps": [], "other_hits": [], "nodes_read": 0},
                 "resolved_frames": [],
                 "matched_routes": [],
                 "matched_symbols": [],
@@ -43,9 +45,10 @@ async def handle_diagnose_issue(
             repo=repo,
             context_lines=safe_ctx,
             limit=safe_limit,
+            detail=bool(detail),
         )
 
-        return json.dumps(result, indent=2, default=str)
+        return json.dumps(result, separators=(",", ":"), default=str)
 
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_diagnose_issue: {fe}")

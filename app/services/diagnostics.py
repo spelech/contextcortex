@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.chunking import match_route_and_call, normalize_path_pattern
 from app.services.database import get_db_connection
+from app.services.diagnostic_error_terms import extract_error_terms
+from app.services.diagnostic_evidence_chain import build_call_chain
 from app.services.diagnostic_route_path import collect_route_path_symbols, keep_semantic_hit, language_family
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
@@ -359,13 +361,14 @@ def match_symbols_and_exceptions(
     return matched
 
 
-def _build_candidate(conn, git_repos, item: Dict[str, Any]) -> Dict[str, Any]:
-    """Adds a permalink and 1-hop callers/callees to a candidate (route-path or semantic)."""
+def _build_candidate(conn, git_repos, item: Dict[str, Any], detail: bool = True) -> Dict[str, Any]:
+    """Adds a permalink and 1-hop callers/callees to a candidate; without `detail`, keeps only the location and score."""
+    if not detail:
+        return {k: item.get(k) for k in ("source", "depth", "score", "repo", "file", "lines", "symbol", "kind")}
     target_repo, file_path, sym = item["repo"], item["file"], item["symbol"]
     start_l, end_l = item["lines"]
     permalink = item.pop("permalink", None)
-    if permalink and "\\" in permalink:
-        permalink = permalink.replace("\\", "/")
+    permalink = permalink.replace("\\", "/") if permalink else permalink
     if not permalink and target_repo in git_repos:
         g_info = git_repos[target_repo]
         permalink = format_git_permalink(
@@ -397,8 +400,10 @@ def find_semantic_candidates(
     signals: Optional[Dict[str, Any]] = None,
     frames: Optional[List[Dict[str, Any]]] = None,
     matched_routes: Optional[List[Dict[str, Any]]] = None,
+    detail: bool = True,
+    route_path: bool = True,
 ) -> List[Dict[str, Any]]:
-    """Returns ranked code candidates: the matched route's call path first, then filtered hybrid search hits."""
+    """Returns ranked code candidates: the matched route's call path first (unless `route_path` is False), then filtered search hits."""
     candidates: List[Dict[str, Any]] = []
     if not issue_text or not issue_text.strip():
         return candidates
@@ -411,6 +416,7 @@ def find_semantic_candidates(
         roots = LocalSourceRoots.load(conn)
         route_syms = collect_route_path_symbols(conn, matched_routes or [], repo=repo, limit=limit)
         route_languages = {lang for s in route_syms if (lang := language_family(s.get("language"), s["filepath"]))}
+        route_syms = route_syms if route_path else []
         seen = set()
         for s in route_syms:
             file_path = _diag_file(roots, s["filepath"])
@@ -419,8 +425,8 @@ def find_semantic_candidates(
             candidates.append(_build_candidate(conn, git_repos, {
                 "score": None, "source": s["source"], "depth": s["depth"], "repo": s["repo"], "file": file_path,
                 "lines": [s["start_line"], s["end_line"]], "symbol": sym, "kind": s["kind"], "signature": s["signature"],
-                "content": _read_symbol_code(s["filepath"], s["repo"], s["start_line"], s["end_line"]),
-            }))
+                "content": _read_symbol_code(s["filepath"], s["repo"], s["start_line"], s["end_line"]) if detail else None,
+            }, detail))
 
         remaining = limit - len(candidates)
         hits = []
@@ -448,7 +454,7 @@ def find_semantic_candidates(
                 "kind": p.get("kind"), "signature": p.get("signature"),
                 "content": (p.get("content") or "")[:MAX_CANDIDATE_CHARS],
                 "permalink": p.get("permalink_url") or p.get("github_url"),
-            }))
+            }, detail))
     return candidates
 
 
@@ -457,6 +463,7 @@ def diagnose_issue(
     repo: Optional[str] = None,
     context_lines: int = 5,
     limit: int = 5,
+    detail: bool = False,
 ) -> Dict[str, Any]:
     """Main triage coordinator for stack trace, log, and bug triage across Python, C#, TS/JS, COBOL, Java, Go, Rust."""
     clamped_context = max(1, min(15, int(context_lines)))
@@ -466,34 +473,29 @@ def diagnose_issue(
     parsed_frames = parse_stack_frames(safe_text)
     signals = extract_diagnostic_signals(safe_text)
 
-    frame_symbols = []
-    for f in parsed_frames:
-        if f.get("function"):
-            frame_symbols.append(f["function"])
-        if f.get("program"):
-            frame_symbols.append(f["program"])
+    frame_symbols = [v for f in parsed_frames for v in (f.get("function"), f.get("program")) if v]
     merged_candidate_symbols = list(OrderedDict.fromkeys(signals.get("symbols", []) + frame_symbols))
 
     matched_routes = match_routes_and_callers(signals["routes"], repo=repo)
+    frames = resolve_stack_frames(parsed_frames, repo=repo, context_lines=clamped_context)
+    symbols = match_symbols_and_exceptions(
+        signals["exceptions"], signals["quoted_errors"], repo=repo, candidate_symbols=merged_candidate_symbols
+    )
+    with get_db_connection() as conn:
+        chain = build_call_chain(conn, extract_error_terms(safe_text, signals), matched_routes, frames, symbols, repo, detail)
     return {
-        "resolved_frames": resolve_stack_frames(parsed_frames, repo=repo, context_lines=clamped_context),
-        "matched_routes": matched_routes,
-        "matched_symbols": match_symbols_and_exceptions(
-            signals["exceptions"], signals["quoted_errors"], repo=repo, candidate_symbols=merged_candidate_symbols
-        ),
+        "call_chain": chain, "resolved_frames": frames, "matched_routes": matched_routes, "matched_symbols": symbols,
         "semantic_candidates": find_semantic_candidates(
             issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
-            matched_routes=matched_routes,
+            matched_routes=matched_routes, detail=detail, route_path=not chain["steps"],
         ),
     }
 
 
 __all__ = [
-    "RE_PYTHON_FRAME", "RE_CSHARP_FRAME", "RE_JAVA_FRAME", "RE_NODE_AT_FRAME",
-    "RE_COBOL_PARAGRAPH_FRAME", "RE_COBOL_ABEND_FRAME", "RE_COBOL_DIAG_FRAME",
-    "RE_GENERIC_FRAME", "RE_QUOTED_ERROR", "RE_EXCEPTION_NAME", "RE_SYMBOL_CANDIDATE",
-    "RE_HTTP_ROUTE", "_STOP_IDENTIFIERS", "normalize_stack_path", "_clean_diag_path",
-    "_is_test_path", "parse_stack_frames", "extract_diagnostic_signals",
-    "resolve_stack_frames", "match_routes_and_callers", "match_symbols_and_exceptions",
-    "find_semantic_candidates", "diagnose_issue",
+    "RE_PYTHON_FRAME", "RE_CSHARP_FRAME", "RE_JAVA_FRAME", "RE_NODE_AT_FRAME", "RE_COBOL_PARAGRAPH_FRAME",
+    "RE_COBOL_ABEND_FRAME", "RE_COBOL_DIAG_FRAME", "RE_GENERIC_FRAME", "RE_QUOTED_ERROR", "RE_EXCEPTION_NAME",
+    "RE_SYMBOL_CANDIDATE", "RE_HTTP_ROUTE", "_STOP_IDENTIFIERS", "normalize_stack_path", "_clean_diag_path",
+    "_is_test_path", "parse_stack_frames", "extract_diagnostic_signals", "resolve_stack_frames",
+    "match_routes_and_callers", "match_symbols_and_exceptions", "find_semantic_candidates", "diagnose_issue",
 ]

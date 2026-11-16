@@ -10,7 +10,7 @@ This document provides complete reference specifications for the **10 default Mo
 | :--- | :---: | :--- | :--- | :--- |
 | [`search`](#1-search) | `viewer` | Search & Retrieval | `query`, `scope`, `repo`, `language`, `category`, `tag`, `limit`, `offset`, `dense_weight`, `mode`, `max_snippet_chars` | Hybrid semantic + BM25 search across AST code chunks (`scope='code'`), documentation (`scope='docs'`), or both (`scope='all'`). |
 | [`grep_code`](#2-grep-code) | `viewer` | Search & Retrieval | `pattern`, `repo`, `path_glob`, `is_regex`, `case_sensitive`, `context_lines`, `limit`, `offset` | Deterministic literal and regex pattern matching across indexed repositories with context lines and AST symbol attribution. |
-| [`diagnose_issue`](#3-diagnose-issue) | `viewer` | Forensic Triage | `issue_text`, `repo`, `context_lines`, `limit` | Forensic triage tool that parses stack traces, resolves AST frames, matches error literals and HTTP routes, and retrieves semantic code candidates. |
+| [`diagnose_issue`](#3-diagnose-issue) | `viewer` | Forensic Triage | `issue_text`, `repo`, `context_lines`, `limit`, `detail` | Forensic triage tool that returns a ranked call chain with evidence lines from the entry point to the likely fault, plus resolved stack frames, HTTP routes, symbols, and compact semantic code candidates. |
 | [`find_symbol`](#4-find-symbol) | `viewer` | AST Symbols & Graphs | `symbol` (alias `name`), `repo`, `exact`, `limit`, `offset` | Sub-50ms exact or prefix lookup of AST symbols (functions, classes, methods, interfaces). |
 | [`read_file`](#5-read-file) | `viewer` | Storage & File Access | `path`, `repo`, `start_line`, `end_line`, `outline_only`, `limit`, `offset` | Reads bounded 1-indexed line ranges or inspects AST symbol outlines (`outline_only=True`). |
 | [`trace_path`](#6-trace-path) | `viewer` | AST Symbols & Graphs | `symbol`, `repo`, `direction`, `depth`, `limit`, `offset`, `include_permalinks`, `include_unresolved` | Breadth-first traversal of function call graphs, imports, inheritance, and cross-repo HTTP boundaries (`external_callers`, `external_handlers`). |
@@ -66,7 +66,11 @@ Forensic triage tool that accepts stack traces, error logs, or user bug reports 
   - `repo` (*string, optional*): Optional repository identifier to scope diagnostics and resolution.
   - `context_lines` (*integer, default: 5*): Number of surrounding code lines to include for resolved stack frames (`1` to `15`).
   - `limit` (*integer, default: 5*): Maximum number of semantic code candidate blocks to retrieve (`1` to `20`).
-- **Returns**: Structured JSON payload containing `resolved_frames`, `matched_routes`, `matched_symbols`, `literal_matches`, and `semantic_candidates`.
+  - `detail` (*boolean, default: false*): Adds the method body to each call-chain step. Adds the code, permalink, callers, and callees to each semantic candidate.
+- **Returns**: Compact JSON with `call_chain`, `resolved_frames`, `matched_routes`, `matched_symbols`, and `semantic_candidates`.
+  - `call_chain` has `entry` (`route_handler`, `stack_frame`, or `matched_symbol`), `terms` (the error terms for the ranking), `steps`, `other_hits`, and `nodes_read`. The steps go from the entry point to the most likely fault.
+  - Each step has `symbol`, `kind`, `file`, `lines`, `call_site` (`file`, `line`, and `text` of the call in the previous step), `evidence` (1 to 3 lines that contain error terms), and `score`. Optional keys: `via` (the interface method that the call goes through) and `not_passed` (context arguments, such as `transaction`, that the caller has or the callee accepts, but that the call does not pass).
+  - Example step: `{"symbol": "ToolRepository.GetToolAccess", "file": "Data/ToolRepository.cs", "lines": [3, 7], "call_site": {"file": "Services/ToolReader.cs", "line": 11, "text": "var rows = await _repo.GetToolAccess(id);"}, "not_passed": ["transaction"], "evidence": [{"line": 6, "text": "return await _connection.QueryAsync<Row>(command);"}]}`.
 
 ---
 

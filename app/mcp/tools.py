@@ -47,7 +47,9 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "diagnose_issue",
         handle_diagnose_issue,
         f"Use for forensic triage of stack traces, error logs, or failing HTTP routes across {_SUPPORTED_LANGS}. "
-        "Resolves stack frames (context_lines 1..15), error literals, API routes, and semantic candidates (limit 1..20).",
+        "Returns call_chain: the call path from the matched route, stack frame, or symbol to the most likely fault, with the "
+        "call-site line, 1-3 evidence lines, and arguments not passed (not_passed) for each step. Also resolves stack frames "
+        "(context_lines 1..15), API routes, symbols, and compact semantic candidates (limit 1..20). detail=true adds method bodies.",
     ),
     (
         "execute_script",
