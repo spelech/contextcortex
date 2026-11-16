@@ -111,7 +111,8 @@ jobs:
           $bundle = Resolve-Path "dist/contextcortex-windows-x64"
           # Keep test data out of the bundle so it is not zipped
           $env:DATA_DIR = Join-Path $env:RUNNER_TEMP "cc-smoke-data"
-          $env:HOST = "127.0.0.1"
+          # HOST=localhost (portable default) listens on 127.0.0.1 and ::1
+          $env:HOST = "localhost"
           $env:PORT = "3999"
           $env:PORTABLE_POSTGRES_ENABLED = "true"
           $env:PORTABLE_PG_PORT = "54399"
@@ -129,11 +130,19 @@ jobs:
               if ($r.status -eq "ready" -and $r.database.type -eq "postgresql") { $ready = $true; break }
             } catch { }
           }
+          $ipv6Ready = $false
+          if ($ready) {
+            try {
+              $r6 = Invoke-RestMethod -Uri "http://[::1]:3999/health" -TimeoutSec 3
+              $ipv6Ready = ($r6.status -eq "healthy")
+            } catch { Write-Host "IPv6 loopback check failed: $_" }
+          }
           if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
           Get-Process postgres -ErrorAction SilentlyContinue | Stop-Process -Force
           Get-Content $log, "$log.err" -ErrorAction SilentlyContinue | Select-Object -Last 60
           if (-not $ready) { throw "Portable bundle did not become ready with portable PostgreSQL" }
-          Write-Host "Portable bundle started and reported ready on PostgreSQL + pgvector." -ForegroundColor Green
+          if (-not $ipv6Ready) { throw "Portable bundle with HOST=localhost did not answer on IPv6 loopback [::1]" }
+          Write-Host "Portable bundle started and reported ready on PostgreSQL + pgvector (127.0.0.1 and ::1)." -ForegroundColor Green
 
       - name: Create Portable Zip Archive
         shell: pwsh

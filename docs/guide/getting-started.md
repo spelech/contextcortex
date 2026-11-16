@@ -74,7 +74,10 @@ For Windows environments without Docker or administrator privileges, ContextCort
 On first start, the bundle does these steps:
 - It makes a local PostgreSQL 16 + `pgvector` cluster in `.\data\pgdata`.
 - It adds the CA files in `.\certs\` to the public root CAs and uses this bundle for HTTPS and Git.
-- It starts the web dashboard and the MCP endpoints on `http://127.0.0.1:3000`.
+- It starts the web dashboard and the MCP endpoints on `http://127.0.0.1:3000`. With the default `HOST=localhost`, the server listens on both loopback addresses (`127.0.0.1` and `::1`). It does not listen on other network interfaces. Thus `http://localhost:3000` is also fast.
+
+> [!TIP]
+> **Slow `http://localhost:3000` (about 200 ms for each new connection):** Windows resolves `localhost` to the IPv6 address `::1` first. If `.env` has `HOST=127.0.0.1`, the server listens only on IPv4, and each client waits for the IPv6 connection to fail. Set `HOST=localhost` in `.env`, or use `http://127.0.0.1:3000` in your MCP client configuration. An explicit IP address in `HOST` always gives one IPv4 or IPv6 listener.
 
 All data stays in `.\data\`. To use a different folder, set `DATA_DIR` in `.env`. The launcher works with Windows PowerShell 5.1 and with PowerShell 7.
 
