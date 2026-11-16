@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1290 Automated Tests** (926 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1298 Automated Tests** (934 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -977,6 +977,16 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_free_format_cobol_and_copybook_line_preservation`
 - `test_cobol_end_to_end_indexing_architecture_and_trace_path`
 - `test_local_storage_cobol_persists_language_and_relationships` - _Uploading COBOL programs via LocalStorageService persists language='cobol' and ast_relationships for trace_path & diagnose_issue._
+
+#### `tests/test_compact_grep_and_read_output.py` (8 tests)
+- `test_matches_group_by_file_with_merged_context_and_block_separators`
+- `test_contiguous_blocks_have_no_separator_and_a_match_line_wins_over_context`
+- `test_files_from_different_repos_keep_their_repo`
+- `test_number_lines_prefixes_each_line`
+- `test_grep_code_output_gives_each_path_once`
+- `test_grep_code_pagination_fields_appear_only_when_needed`
+- `test_read_file_returns_numbered_text_and_minimal_metadata`
+- `test_code_mode_sdk_types_grep_code_and_read_file_results`
 
 #### `tests/test_csharp_client_calls.py` (4 tests)
 - `test_url_variable_with_conditional_gives_both_routes`
