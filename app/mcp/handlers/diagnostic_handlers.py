@@ -30,6 +30,7 @@ async def handle_diagnose_issue(
         if not text:
             return json.dumps({
                 "call_chain": {"entry": None, "terms": [], "steps": [], "other_hits": [], "nodes_read": 0},
+                "working_path_comparison": None,
                 "resolved_frames": [],
                 "matched_routes": [],
                 "matched_symbols": [],

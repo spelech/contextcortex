@@ -6,6 +6,7 @@ from app.services.chunking import match_route_and_call, normalize_path_pattern
 from app.services.database import get_db_connection
 from app.services.diagnostic_error_terms import extract_error_terms
 from app.services.diagnostic_evidence_chain import build_call_chain
+from app.services.diagnostic_working_path import compare_working_path
 from app.services.diagnostic_route_path import collect_route_path_symbols, keep_semantic_hit, language_family
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
@@ -469,19 +470,18 @@ def diagnose_issue(
     safe_text = issue_text or ""
     parsed_frames = parse_stack_frames(safe_text)
     signals = extract_diagnostic_signals(safe_text)
-
     frame_symbols = [v for f in parsed_frames for v in (f.get("function"), f.get("program")) if v]
     merged_candidate_symbols = list(OrderedDict.fromkeys(signals.get("symbols", []) + frame_symbols))
 
     matched_routes = match_routes_and_callers(signals["routes"], repo=repo)
     frames = resolve_stack_frames(parsed_frames, repo=repo, context_lines=clamped_context)
-    symbols = match_symbols_and_exceptions(
-        signals["exceptions"], signals["quoted_errors"], repo=repo, candidate_symbols=merged_candidate_symbols
-    )
+    symbols = match_symbols_and_exceptions(signals["exceptions"], signals["quoted_errors"], repo, merged_candidate_symbols)
     with get_db_connection() as conn:
-        chain = build_call_chain(conn, extract_error_terms(safe_text, signals), matched_routes, frames, symbols, repo, detail)
+        terms = extract_error_terms(safe_text, signals)
+        chain = build_call_chain(conn, terms, matched_routes, frames, symbols, repo, detail)
+        working = compare_working_path(conn, safe_text, terms, chain, matched_routes, repo)
     return {
-        "call_chain": chain, "resolved_frames": frames, "matched_routes": matched_routes, "matched_symbols": symbols,
+        "call_chain": chain, "working_path_comparison": working, "resolved_frames": frames, "matched_routes": matched_routes, "matched_symbols": symbols,
         "semantic_candidates": find_semantic_candidates(
             issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
             matched_routes=matched_routes, detail=detail, route_path=not chain["steps"],
@@ -492,7 +492,7 @@ def diagnose_issue(
 __all__ = [
     "RE_PYTHON_FRAME", "RE_CSHARP_FRAME", "RE_JAVA_FRAME", "RE_NODE_AT_FRAME", "RE_COBOL_PARAGRAPH_FRAME",
     "RE_COBOL_ABEND_FRAME", "RE_COBOL_DIAG_FRAME", "RE_GENERIC_FRAME", "RE_QUOTED_ERROR", "RE_EXCEPTION_NAME",
-    "RE_SYMBOL_CANDIDATE", "RE_HTTP_ROUTE", "_STOP_IDENTIFIERS", "normalize_stack_path", "_clean_diag_path",
-    "_is_test_path", "parse_stack_frames", "extract_diagnostic_signals", "resolve_stack_frames",
-    "match_routes_and_callers", "match_symbols_and_exceptions", "find_semantic_candidates", "diagnose_issue",
+    "RE_SYMBOL_CANDIDATE", "RE_HTTP_ROUTE", "_STOP_IDENTIFIERS", "normalize_stack_path", "_clean_diag_path", "_is_test_path",
+    "parse_stack_frames", "extract_diagnostic_signals", "resolve_stack_frames", "match_routes_and_callers",
+    "match_symbols_and_exceptions", "find_semantic_candidates", "diagnose_issue",
 ]
