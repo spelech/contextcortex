@@ -244,6 +244,18 @@ def test_api_reindex():
         res = client.post("/admin/api/reindex")
         assert res.status_code == 409
 
+def test_api_reindex_force_passes_force_to_full_indexing():
+    with patch("app.services.indexing.is_indexing", return_value=False), \
+          patch("app.api.routers.repositories.threading.Thread") as mock_thread:
+        res = client.post("/admin/api/reindex?force=true")
+        assert res.status_code == 200
+        assert res.json()["force"] is True
+        assert mock_thread.call_args.kwargs["kwargs"] == {"force": True}
+
+        res = client.post("/admin/api/reindex")
+        assert res.json()["force"] is False
+        assert mock_thread.call_args.kwargs["kwargs"] == {}
+
 def test_api_browse_dir(tmp_path):
     sub = tmp_path / "subdir"
     sub.mkdir()

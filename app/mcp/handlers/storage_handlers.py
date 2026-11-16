@@ -151,7 +151,7 @@ def collect_index_status() -> Dict[str, Any]:
 
 async def handle_manage(
     action: Annotated[Literal["sync_repo", "upload", "replace", "delete", "read", "preview"], Field(description="Admin/storage operation: 'sync_repo' (re-fetch/index Git repo or all sources), 'upload', 'replace', 'delete' (editor role), or 'read', 'preview' (viewer role) on managed local storage.")],
-    repo: Annotated[Optional[str], Field(description="Target Git repository name for 'sync_repo' (omit for full re-index), or storage namespace tag for file operations (default 'local_storage').")] = None,
+    repo: Annotated[Optional[str], Field(description="Target Git repository or local-path repo name for 'sync_repo' (forces a full reprocess of that source; omit for full re-index), or storage namespace tag for file operations (default 'local_storage').")] = None,
     file_path: Annotated[Optional[str], Field(description="Safe relative path inside managed local storage (required for 'upload', 'replace', 'delete', 'read', and 'preview').")] = None,
     content: Annotated[Optional[str], Field(description="UTF-8 text payload to write when action is 'upload' or 'replace'.")] = None,
     category: Annotated[Optional[str], Field(description="Optional document category metadata tag (e.g. 'runbook', 'architecture').")] = None,
@@ -187,6 +187,32 @@ async def handle_manage(
                         "scope": "repository",
                         "repo": target_repo,
                         "message": f"Triggered background sync for repo: '{target_repo}'",
+                    })
+                with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
+                    local_row = conn.execute(
+                        "SELECT 1 FROM indexed_paths WHERE repo = ? AND enabled = 1", (target_repo,)
+                    ).fetchone()
+                if local_row:
+                    if idx_mod.indexing_lock.locked():
+                        return json.dumps({
+                            "action": "sync_repo",
+                            "status": "busy",
+                            "scope": "local",
+                            "repo": target_repo,
+                            "message": "Indexing is already in progress. Try again when it completes.",
+                        })
+                    threading.Thread(
+                        target=idx_mod.sync_local_repo,
+                        args=(target_repo,),
+                        kwargs={"force": True},
+                        daemon=True,
+                    ).start()
+                    return json.dumps({
+                        "action": "sync_repo",
+                        "status": "triggered",
+                        "scope": "local",
+                        "repo": target_repo,
+                        "message": f"Triggered forced background reindex of local paths for repo: '{target_repo}'",
                     })
             threading.Thread(target=idx_mod.run_full_indexing, daemon=True).start()
             return json.dumps({

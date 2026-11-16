@@ -252,6 +252,23 @@ async def test_handle_sync_repository(temp_db):
         assert res_repo["repo"] == "repo-b"
 
 @pytest.mark.asyncio
+async def test_handle_sync_repository_forces_local_path_repo(temp_db):
+    import json
+    with get_db_connection() as conn:
+        conn.execute("INSERT INTO indexed_paths (path, repo, category, enabled) VALUES ('/local/path', 'local-repo', 'notes', 1)")
+        conn.commit()
+
+    import app.services.indexing as idx_mod
+    with patch("app.mcp.handlers.storage_handlers.threading.Thread") as mock_thread:
+        res = json.loads(await handle_manage(action="sync_repo", repo="local-repo"))
+        assert res["status"] == "triggered"
+        assert res["scope"] == "local"
+        call = mock_thread.call_args.kwargs
+        assert call["target"] is idx_mod.sync_local_repo
+        assert call["args"] == ("local-repo",)
+        assert call["kwargs"] == {"force": True}
+
+@pytest.mark.asyncio
 async def test_catalog_summary(temp_db):
     import json
     with get_db_connection() as conn:
