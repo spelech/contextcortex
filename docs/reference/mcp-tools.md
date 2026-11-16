@@ -77,7 +77,8 @@ Performs deterministic sub-50ms symbol lookup from the relational `ast_symbols` 
 
 - **Minimum Role**: `viewer`
 - **Parameters**:
-  - `symbol` (*string, required*): Symbol identifier to find (e.g. `QdrantVectorStore` or `execute_hybrid_search`). This is the same argument name as `trace_path`. The old name `name` is accepted as an alias but is not in the input schema.
+  - `symbol` (*string, required*): Symbol identifier to find (e.g. `QdrantVectorStore` or `execute_hybrid_search`). This is the same argument name as `trace_path`. 
+  - `name` (*string, optional, deprecated*): Old name of `symbol`, kept for older callers. Use `symbol`. When both are given, `symbol` is used.
   - `repo` (*string, optional*): Repository alias filter.
   - `exact` (*boolean, default: true*): Perform exact matching when `true`, prefix/fuzzy matching when `false`.
   - `limit` (*integer, default: 30*): Maximum matches to return (`1..100`).

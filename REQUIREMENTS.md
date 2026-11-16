@@ -1131,8 +1131,8 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_find_symbol_accepts_symbol_and_the_name_alias`
 - `test_mcp_call_accepts_the_name_alias_without_a_validation_error`
 - `test_find_symbol_without_a_symbol_gives_a_clear_error`
-- `test_schema_documents_symbol_only_and_matches_trace_path`
-- `test_sdk_typings_show_symbol_for_find_symbol`
+- `test_schema_requires_symbol_and_lists_name_as_optional_deprecated_alias`
+- `test_sdk_typings_show_symbol_required_and_name_optional`
 - `test_code_mode_calls_accept_symbol_and_name`
 
 #### `tests/test_git_incremental.py` (6 tests)

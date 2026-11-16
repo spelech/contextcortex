@@ -3,7 +3,6 @@ import logging
 import sys
 from typing import List, Dict, Any, Optional, Annotated, Tuple
 from pydantic import Field
-from pydantic.json_schema import SkipJsonSchema
 
 from app.services.database import get_db_connection
 from app.services.search import trace_symbol_path
@@ -72,15 +71,16 @@ def _paginate_trace_tree(
 
 
 async def handle_find_symbol(
-    symbol: Annotated[Optional[str], Field(description="Required. Function, method, class, struct, interface, record, or COBOL paragraph name (or qualified name such as 'OrderService.create_order') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Same parameter name as trace_path; 'name' is accepted as an alias.")] = None,
+    symbol: Annotated[Optional[str], Field(description="Function, method, class, struct, interface, record, or COBOL paragraph name (or qualified name such as 'OrderService.create_order') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Same parameter name as trace_path.")] = None,
     repo: Annotated[Optional[str], Field(description="Optional repository name filter to restrict AST lookup.")] = None,
     exact: Annotated[bool, Field(description="Set True (default) for exact symbol/qualified-name match; False for substring/prefix matching.")] = True,
     limit: Annotated[int, Field(description="Maximum AST symbols per page, clamped to 1..100 (default 30).")] = 30,
     offset: Annotated[int, Field(description="0-based symbol offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
-    name: SkipJsonSchema[Optional[str]] = None,
+    name: Annotated[Optional[str], Field(description="Deprecated alias of `symbol`, kept for older callers. Use `symbol`; it wins when both are given.")] = None,
 ) -> str:
     """Instant deterministic AST symbol lookup (functions, classes, methods, interfaces) without token-heavy full-file scans."""
-    # `name` is the pre-2.26 parameter name. It stays accepted (but not advertised) so older callers keep working.
+    # `symbol` is optional here only so that a call with the deprecated `name` alias still validates.
+    # The published schema marks `symbol` as required (see app/mcp/tools.py `_SCHEMA_REQUIRED_OVERRIDES`).
     sym_name = (symbol or name or "").strip()
     if not sym_name:
         return json.dumps({"error": "symbol name cannot be empty: pass 'symbol' (the alias 'name' is also accepted)."})

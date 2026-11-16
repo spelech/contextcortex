@@ -1,4 +1,4 @@
-"""find_symbol takes `symbol` (the same name as trace_path) and still accepts the old `name` as a hidden alias."""
+"""find_symbol requires `symbol` (the same name as trace_path) and still accepts the old `name` as an optional deprecated alias."""
 
 import asyncio
 import json
@@ -48,22 +48,23 @@ def test_find_symbol_without_a_symbol_gives_a_clear_error(kwargs):
     assert "'symbol'" in result["error"] and "'name'" in result["error"]
 
 
-def test_schema_documents_symbol_only_and_matches_trace_path():
+def test_schema_requires_symbol_and_lists_name_as_optional_deprecated_alias():
     tools = _tools()
-    find_props = tools["find_symbol"].parameters["properties"]
-    assert "symbol" in find_props and "name" not in find_props
-    assert "alias" in find_props["symbol"]["description"]
-    assert "symbol" in tools["trace_path"].parameters["properties"]
-    for tool in tools.values():
-        assert "name" not in tool.parameters.get("properties", {}), tool.name
+    schema = tools["find_symbol"].parameters
+    props = schema["properties"]
+    assert schema["required"] == ["symbol"]
+    assert props["symbol"]["type"] == "string" and "anyOf" not in props["symbol"] and "default" not in props["symbol"]
+    assert "name" in props and "name" not in schema["required"]
+    assert "Deprecated alias" in props["name"]["description"]
+    assert "symbol" in tools["trace_path"].parameters["required"]
 
 
-def test_sdk_typings_show_symbol_for_find_symbol():
+def test_sdk_typings_show_symbol_required_and_name_optional():
     sdk = build_sdk_declarations([_tools()["find_symbol"]])
     block = sdk[sdk.index("find_symbol(args"):]
     block = block[:block.index("Promise<any>;")]
-    assert "symbol?: string | null;" in block
-    assert "name?:" not in block and "name:" not in block
+    assert "symbol: string;" in block
+    assert "name?: string | null;" in block
 
 
 def test_code_mode_calls_accept_symbol_and_name(local_source_db):  # noqa: F811

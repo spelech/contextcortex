@@ -165,6 +165,31 @@ _RESOURCE_TEMPLATE_DEFINITIONS = [
 ]
 
 
+# Parameters that the published inputSchema marks as required, although the handler signature keeps them optional
+# so that a deprecated alias (find_symbol `name`) still validates. FastMCP validates calls with the handler's
+# pydantic model, not with this schema, so the alias keeps working on the server.
+_SCHEMA_REQUIRED_OVERRIDES = {"find_symbol": ["symbol"]}
+
+
+def _apply_schema_required_overrides(server) -> None:
+    for tool in server._tool_manager.list_tools():
+        required = _SCHEMA_REQUIRED_OVERRIDES.get(tool.name)
+        if not required:
+            continue
+        schema = tool.parameters
+        props = schema.get("properties", {})
+        for param in required:
+            prop = props.get(param)
+            if prop is None:
+                continue
+            prop.pop("default", None)
+            if "anyOf" in prop:
+                types = [t for t in prop.pop("anyOf") if t.get("type") != "null"]
+                if len(types) == 1:
+                    prop.update(types[0])
+        schema["required"] = sorted(set(schema.get("required", [])) | {p for p in required if p in props})
+
+
 def register_mcp_tools_and_resources(server=None):
     """Register the consolidated 10-tool default MCP surface (11 when MCP_ENABLE_WRITE_TOOLS=true), resources, templates, and prompts."""
     if server is None:
@@ -175,6 +200,7 @@ def register_mcp_tools_and_resources(server=None):
     for tool_name, handler_fn, description in get_tool_definitions():
         if tool_name not in existing_tools:
             server.tool(name=tool_name, description=description)(handler_fn)
+    _apply_schema_required_overrides(server)
 
     existing_resources = {str(r.uri) for r in server._resource_manager.list_resources()}
     if "knowledge://catalog/summary" not in existing_resources:
