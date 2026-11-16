@@ -161,6 +161,7 @@ async def handle_trace_path(
     limit: Annotated[int, Field(description="Maximum caller/callee relationships per direction per page, clamped to 1..200 (default 50).")] = 50,
     offset: Annotated[int, Field(description="0-based relationship offset per direction for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
     include_permalinks: Annotated[bool, Field(description="Include a Git permalink on every caller/callee node (default False keeps answers compact; the target always has its permalink).")] = False,
+    include_unresolved: Annotated[bool, Field(description="Show library calls (no indexed symbol) and calls into test code as tree nodes. Default False lists unresolved call names in a compact 'unresolved' list per node and drops test code for a production target.")] = False,
 ) -> str:
     """Traverse AST call graphs, imports, inheritance, and cross-repo HTTP route/client boundaries via bounded BFS."""
     try:
@@ -178,6 +179,7 @@ async def handle_trace_path(
             direction=direction,
             depth=depth,
             limit=fetch_cap,
+            include_unresolved=bool(include_unresolved),
         )
 
         parsed: Optional[Dict[str, Any]] = None

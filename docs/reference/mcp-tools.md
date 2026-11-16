@@ -13,7 +13,7 @@ This document provides complete reference specifications for the **10 default Mo
 | [`diagnose_issue`](#3-diagnose-issue) | `viewer` | Forensic Triage | `issue_text`, `repo`, `context_lines`, `limit` | Forensic triage tool that parses stack traces, resolves AST frames, matches error literals and HTTP routes, and retrieves semantic code candidates. |
 | [`find_symbol`](#4-find-symbol) | `viewer` | AST Symbols & Graphs | `name`, `repo`, `exact`, `limit`, `offset` | Sub-50ms exact or prefix lookup of AST symbols (functions, classes, methods, interfaces). |
 | [`read_file`](#5-read-file) | `viewer` | Storage & File Access | `path`, `repo`, `start_line`, `end_line`, `outline_only`, `limit`, `offset` | Reads bounded 1-indexed line ranges or inspects AST symbol outlines (`outline_only=True`). |
-| [`trace_path`](#6-trace-path) | `viewer` | AST Symbols & Graphs | `symbol`, `repo`, `direction`, `depth`, `limit`, `offset`, `include_permalinks` | Breadth-first traversal of function call graphs, imports, inheritance, and cross-repo HTTP boundaries (`external_callers`, `external_handlers`). |
+| [`trace_path`](#6-trace-path) | `viewer` | AST Symbols & Graphs | `symbol`, `repo`, `direction`, `depth`, `limit`, `offset`, `include_permalinks`, `include_unresolved` | Breadth-first traversal of function call graphs, imports, inheritance, and cross-repo HTTP boundaries (`external_callers`, `external_handlers`). |
 | [`find_routes`](#7-find-routes) | `viewer` | API Route Discovery | `query`, `kind`, `method`, `repo`, `limit`, `offset` | Discovers backend HTTP route handlers (`kind='handlers'`), client call sites (`kind='callers'`), or both (`kind='both'`). |
 | [`list_repositories`](#8-list-repositories) | `viewer` | Repositories & Architecture | `repo`, `source_type`, `path_prefix`, `file_extension`, `include_files`, `include_status`, `limit`, `offset` | Lists registered Git repos, local paths, and storage inventory, with optional paginated file lists or global index health. |
 | [`get_architecture`](#9-get-architecture) | `viewer` | Repositories & Architecture | `repo` | Synthesizes language distributions, entry points, core modules, route counts, and active ADRs. |
@@ -110,6 +110,7 @@ Deterministically traverses function call graphs, module imports, inheritance hi
   - `limit` (*integer, default: 50*): Maximum relationships returned (`1` to `200`).
   - `offset` (*integer, default: 0*): 0-based pagination offset.
   - `include_permalinks` (*boolean, default: false*): Include Git permalinks on neighbor nodes (target always includes its permalink).
+  - `include_unresolved` (*boolean, default: false*): Show library calls and calls into test code as tree nodes. By default, a call that does not resolve to one indexed symbol (for example `string.IsNullOrEmpty`, LINQ `Where`, or a bare method name that several classes declare) is listed by name in the `unresolved` list of its calling node (or of the result for the target), and test code is dropped when the target is production code (`hidden_test_calls` gives the count). COBOL `CALL` targets always stay tree nodes.
 - **Returns**: Directed call/import graph edges (`callers`, `callees`) alongside cross-repository HTTP links (`external_callers`, `external_handlers`).
 
 ---

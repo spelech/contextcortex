@@ -168,7 +168,9 @@ export function formatKeyMask(raw) {
         out_trace = json.loads(trace_symbol_path("DashboardPage", repo="web_ui", direction="outbound", depth=2))
         lvl1 = {c["symbol"]: c for c in out_trace["callees"]}
         assert "AppKeysCard" in lvl1
-        assert "Header" in lvl1
+        # `Layout.Header` comes from a file that is not indexed: it is listed by name, not as a tree node.
+        assert "Header" not in lvl1
+        assert "Header" in out_trace["unresolved"]
 
         in_trace = json.loads(trace_symbol_path("AppKeysCard", repo="web_ui", direction="inbound", depth=1))
         assert any(c["symbol"] == "DashboardPage" for c in in_trace["callers"])
