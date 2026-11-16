@@ -33,7 +33,7 @@ List and search tools accept `limit` and `offset` (0-based integer, default `0`)
 
 ### Line-Window File Pagination
 
-`read_file` (when `outline_only=False`) uses 1-based inclusive line ranges (`start_line` and `end_line`, capped at `<= 2000` lines per call). Responses return `total_lines`, `start_line`, `end_line`, `has_more`, and `next_start_line`. Pass `start_line=next_start_line` to read the next window. When `outline_only=True`, `read_file` uses `limit` (`1..500`, default `150`) and `offset` (`total_symbols`, `has_more`, `next_offset`).
+`read_file` (when `outline_only=False`) uses 1-based inclusive line ranges (`start_line` and `end_line`, capped at `<= 2000` lines per call). Responses return `lines` (`[start, end]`), `total_lines`, and, when more lines follow, `next_start_line`. Each `content` line starts with its line number (`<line>:<text>`). Pass `start_line=next_start_line` to read the next window. When `outline_only=True`, `read_file` uses `limit` (`1..500`, default `150`) and `offset` (`total_symbols`, `has_more`, `next_offset`).
 
 ### Page-Indexed Resource Templates
 
@@ -54,7 +54,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 | `get_architecture` | `viewer` | Synthesized `< 4000` char overview | Compact per-repo or global summary |
 | `grep_code` | `viewer` | `limit`: `30` (`1..100`), `context_lines`: `2` (`0..10`), line `<= 400` chars | `offset`, `total_matches`, `has_more`, `next_offset` |
 | `list_repositories` | `viewer` | `limit`: `100` (`1..500`) when `include_files=True`; `include_status=True` adds global health | Per-source & top-level `total_files`, `offset`, `limit`, `has_more`, `next_offset` |
-| `read_file` | `viewer` | `start_line` `>= 1`, window `<= 2000` lines; `outline_only=True`: `limit` `150` (`1..500`) | `total_lines`, `has_more`, `next_start_line` (or `total_symbols`, `next_offset`) |
+| `read_file` | `viewer` | `start_line` `>= 1`, window `<= 2000` lines; `outline_only=True`: `limit` `150` (`1..500`) | `total_lines`, `next_start_line` (or `total_symbols`, `next_offset`) |
 | `search` | `viewer` | `scope`: `all`\|`code`\|`docs`; `limit`: `5` (`1..25`), `max_snippet_chars`: `2000` (`200..6000`) | `offset`, `total`, `has_more`, `next_offset` |
 | `trace_path` | `viewer` | `depth`: `2` (`1..5`), `limit`: `50` (`1..200`), `include_permalinks`: `False`, `include_unresolved`: `False` | `offset`, `total_callers`, `total_callees`, `has_more`, `next_offset` |
 | `manage` *(requires `MCP_ENABLE_WRITE_TOOLS=true`)* | `viewer`/`editor` | `action`: `sync_repo`\|`upload`\|`replace`\|`delete`\|`read`\|`preview`; preview capped at `1000` chars | Single sync trigger or file operation status |
@@ -79,7 +79,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 - **`read_file`**: Reads `path` from watched directories, persistent shallow clones, local storage, or reconstructed vector chunks, or returns deduplicated AST classes, methods, functions, signatures, and `[start_line, end_line]` spans when `outline_only=True`.
   - Line slicing mode (`outline_only=False`): accepts `start_line` (`>= 1`) and `end_line` (`<= 2000` lines per call), returning `total_lines`, `start_line`, `end_line`, `has_more`, and `next_start_line`.
   - Outline mode (`outline_only=True`): clamps `limit` to `1..500` (default `150`) with `offset` pagination (`total_symbols`, `has_more`, `next_offset`).
-- **`grep_code`**: Matches literal strings or regular expressions (`is_regex=True`) across disk and vector-backed repositories (using an in-process ripgrep fast path when all target repositories exist on disk). Supports `repo`, `path_glob` (alias `path`; with wildcards an fnmatch glob such as `*.cs`, without wildcards a file or folder such as `Services_V2`), `case_sensitive`, `context_lines` (`0..10`, default `2`), `limit` (`1..100`, default `30`), and `offset`. Truncates any matched or context line `> 400` characters with `...[line truncated]`. If a literal search finds nothing and the pattern looks like a regex (for example `A|B` or `foo.*bar`), the search runs again as a regex; `pattern_mode` in the result says which mode was used.
+- **`grep_code`**: Matches literal strings or regular expressions (`is_regex=True`) across disk and vector-backed repositories (using an in-process ripgrep fast path when all target repositories exist on disk). Supports `repo`, `path_glob` (alias `path`; with wildcards an fnmatch glob such as `*.cs`, without wildcards a file or folder such as `Services_V2`), `case_sensitive`, `context_lines` (`0..10`, default `2`), `limit` (`1..100`, default `30`), and `offset`. Truncates any matched or context line `> 400` characters with `...[line truncated]`. If a literal search finds nothing and the pattern looks like a regex (for example `A|B` or `foo.*bar`), the search runs again as a regex; `pattern_mode` in the result says so. The result groups matches by file (`files`, each with `file`, `symbols`, `permalink`, and `lines`); each line is `<line>:<text>` for a match or `<line>-<text>` for context, as ripgrep writes it.
 
 ### Repository Inventory, Architecture, and Administration
 

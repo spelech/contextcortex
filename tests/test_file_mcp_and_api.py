@@ -59,7 +59,9 @@ async def test_mcp_handle_read_file(test_env):
     output = json.loads(await handle_read_file("example.py", repo="watched_repo", start_line=2, end_line=4))
     assert output["lines"] == [2, 4]
     assert output["total_lines"] == 5
-    assert output["content"] == "line 2\nline 3\nline 4"
+    assert output["content"] == "2:line 2\n3:line 3\n4:line 4"
+    assert output["next_start_line"] == 5
+    assert set(output) == {"file", "lines", "total_lines", "next_start_line", "content"}
 
     # Path traversal rejected
     err_output = json.loads(await handle_read_file("../../../etc/passwd"))

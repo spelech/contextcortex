@@ -260,14 +260,19 @@ async def test_grep_search_list_repositories_and_read_file_bounds(mcp_paginated_
     server = mcp_paginated_env["server"]
 
     grep_p1 = await _call_tool_json(server, "grep_code", pattern="GREP_TOKEN_", repo="fleet-svc", context_lines=1, limit=2, offset=0)
-    assert grep_p1["total_matches"] == 4 and len(grep_p1["matches"]) == 2
-    assert grep_p1["has_more"] is True and grep_p1["next_offset"] == 2
-    first_match = grep_p1["matches"][0]
-    assert len(first_match["match_text"]) <= 400 and first_match["match_text"].endswith("...[line truncated]")
-    assert any(c["text"].endswith("...[line truncated]") and len(c["text"]) <= 400 for c in first_match["context"])
+    assert grep_p1["total_matches"] == 4 and grep_p1["has_more"] is True and grep_p1["next_offset"] == 2
+    assert grep_p1["repo"] == "fleet-svc"
+    [p1_file] = grep_p1["files"]
+    assert p1_file["file"] == "grep_sample.py"
+    assert [line.split("GREP", 1)[0][:2] for line in p1_file["lines"][1:]] == ["2:", "3:", "4-"]
+    ctx_line, alpha_line = p1_file["lines"][0], p1_file["lines"][1]
+    assert ctx_line.startswith("1-# ctx Y") and ctx_line.endswith("...[line truncated]") and len(ctx_line) <= 402
+    assert alpha_line.startswith("2:GREP_TOKEN_ALPHA") and alpha_line.endswith("...[line truncated]") and len(alpha_line) <= 402
 
     grep_p2 = await _call_tool_json(server, "grep_code", pattern="GREP_TOKEN_", repo="fleet-svc", limit=2, offset=2)
-    assert len(grep_p2["matches"]) == 2 and grep_p2["has_more"] is False and grep_p2["next_offset"] is None
+    p2_lines = grep_p2["files"][0]["lines"]
+    assert [line for line in p2_lines if line[:2] in ("4:", "5:")] == ["4:GREP_TOKEN_GAMMA = 'short_2'", "5:GREP_TOKEN_DELTA = 'short_3'"]
+    assert grep_p2["offset"] == 2 and grep_p2["has_more"] is False and "next_offset" not in grep_p2
 
     sc = await _call_tool_json(server, "search", query="compute_telemetry_window", scope="code", repo="fleet-svc", mode="keyword", limit=99, offset=0, max_snippet_chars=240)
     assert sc["limit"] == 25 and sc["max_snippet_chars"] == 240 and len(sc["results"]) >= 1
@@ -286,12 +291,11 @@ async def test_grep_search_list_repositories_and_read_file_bounds(mcp_paginated_
     assert ing["local_storage"]["total_files"] == 3 and ing["local_storage"]["has_more"] is False
 
     rf1 = await _call_tool_json(server, "read_file", path="seven_lines.py", repo="fleet-svc", start_line=2, end_line=4)
-    assert rf1["total_lines"] == 7 and rf1["start_line"] == 2 and rf1["end_line"] == 4
-    assert rf1["has_more"] is True and rf1["next_start_line"] == 5
+    assert rf1["total_lines"] == 7 and rf1["lines"] == [2, 4] and rf1["next_start_line"] == 5
+    assert rf1["content"] == "2:line_2\n3:line_3\n4:line_4"
 
     rf2 = await _call_tool_json(server, "read_file", path="seven_lines.py", repo="fleet-svc", start_line=rf1["next_start_line"])
-    assert rf2["start_line"] == 5 and rf2["end_line"] == 7
-    assert rf2["has_more"] is False and rf2["next_start_line"] is None
+    assert rf2["lines"] == [5, 7] and "next_start_line" not in rf2
 
 
 @pytest.mark.asyncio

@@ -222,11 +222,13 @@ async def test_e2e_grep_code_survives_broken_venv_symlink_and_enriches_ast(real_
     res = json.loads(res_raw)
     assert "error" not in res, f"grep_code failed: {res}"
     assert res["total_matches"] == 1
-    match = res["matches"][0]
-    assert match["repo"] == "platform-core"
-    assert match["file"].endswith("app/api/users.py")
-    assert match["symbol"] == "validate_token"
-    assert "blob/400ce382" in (match["permalink"] or "")
+    assert res["repo"] == "platform-core"
+    [group] = res["files"]
+    assert group["file"].endswith("app/api/users.py")
+    [(match_line, symbol)] = group["symbols"].items()
+    assert symbol == "validate_token"
+    assert any(line.startswith(f"{match_line}:") and "Missing bearer token" in line for line in group["lines"])
+    assert "blob/400ce382" in group.get("permalink", "") and "#L" not in group["permalink"]
 
 
 @pytest.mark.asyncio

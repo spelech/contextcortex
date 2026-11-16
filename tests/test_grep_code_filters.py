@@ -71,7 +71,7 @@ def _grep(**kwargs):
 
 
 def _files(result):
-    return sorted({m["file"] for m in result["matches"]})
+    return sorted({group["file"] for group in result["files"]})
 
 
 def test_path_alias_limits_the_search_to_a_folder(grep_storage):
@@ -94,5 +94,5 @@ def test_alternation_without_is_regex_runs_as_regex(grep_storage):
 
 def test_literal_text_with_regex_characters_stays_literal_when_it_matches(grep_storage):
     result = _grep(pattern="a|b")
-    assert result["pattern_mode"] == "literal"
-    assert [m["line"] for m in result["matches"]] == [2]
+    assert "pattern_mode" not in result
+    assert result["files"][0]["lines"] == ["1-return await svc.PublishInstance(id);", "2:// a|b is literal text here"]
