@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1307 Automated Tests** (943 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1315 Automated Tests** (951 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1012,12 +1012,22 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_wait_for_db_retries_and_success`
 - `test_wait_for_db_exhausts_retries`
 
+#### `tests/test_diagnose_evidence_chain.py` (8 tests)
+- `test_chain_follows_the_call_path_to_the_query_that_drops_the_transaction`
+- `test_chain_skips_loggers_interfaces_with_many_implementations_and_test_doubles`
+- `test_compact_by_default_and_detail_adds_method_bodies`
+- `test_route_candidates_are_left_out_when_the_chain_covers_the_route`
+- `test_handler_returns_compact_json_with_the_call_chain`
+- `test_no_entry_point_gives_an_empty_chain`
+- `test_error_terms_expand_common_error_words`
+- `test_line_term_hits_match_identifier_parts`
+
 #### `tests/test_diagnose_repo_filter_route_candidates.py` (8 tests)
 - `test_external_callers_respect_repo`
 - `test_external_callers_cross_repo_without_filter`
 - `test_stack_frame_does_not_fall_back_to_other_repo`
-- `test_route_call_path_ranks_first_and_noise_is_filtered`
-- `test_route_call_path_fills_limit_and_skips_search`
+- `test_route_candidates_ranked_first_without_a_call_chain`
+- `test_call_chain_replaces_route_candidates_and_keeps_the_language_filter`
 - `test_semantic_hits_without_route_still_filter_repo`
 - `test_language_family`
 - `test_keep_semantic_hit_rules`
