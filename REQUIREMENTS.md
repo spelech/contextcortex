@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1315 Automated Tests** (951 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1320 Automated Tests** (956 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1031,6 +1031,13 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_semantic_hits_without_route_still_filter_repo`
 - `test_language_family`
 - `test_keep_semantic_hit_rules`
+
+#### `tests/test_diagnose_working_path.py` (5 tests)
+- `test_sibling_route_is_aligned_and_the_first_divergence_shows_the_dropped_transaction`
+- `test_sibling_class_by_name_when_no_route_matches`
+- `test_no_working_statement_gives_no_comparison`
+- `test_working_path_without_a_sibling_is_reported_as_not_found`
+- `test_working_statements`
 
 #### `tests/test_diagnostics_and_services_multilang.py` (7 tests)
 - `test_parse_csharp_posix_and_windows_frames`
