@@ -21,7 +21,7 @@ from app.services.indexing.processor import (
     compute_text_hash,
     MAX_FILE_SIZE_BYTES,
 )
-from app.services.indexing.local_syncer import sync_local_paths
+from app.services.indexing.local_syncer import sync_local_paths, sync_local_repo
 from app.services.indexing.git_syncer import (
     compute_git_repo_delta,
     sync_single_git_repo,
@@ -54,6 +54,7 @@ __all__ = [
     "compute_text_hash",
     "MAX_FILE_SIZE_BYTES",
     "sync_local_paths",
+    "sync_local_repo",
     "compute_git_repo_delta",
     "sync_single_git_repo",
     "run_full_indexing",

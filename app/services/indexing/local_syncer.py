@@ -28,16 +28,31 @@ def _get_indexer_attr(name, default):
     return getattr(mod, name, default) if mod else default
 
 
-def sync_local_paths():
-    """Scans and indexes mounted local paths and notes vaults."""
+def sync_local_paths(force: bool = False, repo: str = None):
+    """Scans and indexes mounted local paths and notes vaults.
+
+    force=True ignores the mtime cache and reprocesses every file. repo limits the scan
+    to the indexed paths with that repo name.
+    """
     try:
-        return _sync_local_paths_internal()
+        return _sync_local_paths_internal(force=force, repo_filter=repo)
     finally:
         trim_memory()
 
 
-def _sync_local_paths_internal():
-    logger.info("Scanning local paths...")
+def sync_local_repo(repo: str, force: bool = True) -> bool:
+    """Syncs the local paths of one repo name while it holds the global indexing lock."""
+    if not idx_state.indexing_lock.acquire(blocking=False):
+        logger.warning(f"Indexing already running. Skipping local sync for repo '{repo}'.")
+        return False
+    try:
+        return sync_local_paths(force=force, repo=repo)
+    finally:
+        idx_state.indexing_lock.release()
+
+
+def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
+    logger.info(f"Scanning local paths (force={force}, repo={repo_filter or 'all'})...")
     active_paths = []
     with db_service.get_db_connection() as conn:
         rows = conn.execute("SELECT path, type, recursive, category, repo FROM indexed_paths WHERE enabled = 1").fetchall()
@@ -59,6 +74,8 @@ def _sync_local_paths_internal():
             "category": "vault",
             "repo": "vault"
         })
+    if repo_filter:
+        active_paths = [p for p in active_paths if p["repo"] == repo_filter]
 
     found_files = {} # abs_path -> (repo, category, base_dir)
     from app.services.indexing.git_delta_scanner import (
@@ -127,7 +144,7 @@ def _sync_local_paths_internal():
             with db_service.get_db_connection() as conn:
                 cached = conn.execute("SELECT mtime FROM indexed_files WHERE filepath = ?", (filepath,)).fetchone()
             
-            if cached and abs(cached["mtime"] - mtime) < 0.01:
+            if not force and cached and abs(cached["mtime"] - mtime) < 0.01:
                 continue # Cached & unchanged
 
             rel_path = os.path.relpath(filepath, base_dir).replace("\\", "/")

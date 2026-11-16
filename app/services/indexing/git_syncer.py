@@ -23,6 +23,7 @@ def _get_repo_lock(repo_id: int) -> threading.Lock:
 
 import app.services.database as db_service
 import app.services.git_manager as gm_service
+import app.services.indexing.index_format as index_format
 import app.services.indexing.local_syncer as local_syncer
 import app.services.indexing.processor as proc_service
 import app.services.indexing.state as idx_state
@@ -65,7 +66,10 @@ logger = logging.getLogger("contextcortex.indexer")
 
 
 def sync_single_git_repo(repo_id: int, force: bool = False):
-    """Ephemeral shallow clone, delta calculation, incremental vector upsert, and immediate disk cleanup."""
+    """Ephemeral shallow clone, delta calculation, incremental vector upsert, and immediate disk cleanup.
+
+    Returns True when the repository is synced; a falsy value when the sync failed, was cancelled, or was skipped.
+    """
     repo_lock = _get_repo_lock(repo_id)
     if not repo_lock.acquire(blocking=False):
         logger.info(f"Sync already in progress for repo_id={repo_id}; skipping overlapping call.")
@@ -126,7 +130,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                 conn.execute("UPDATE git_repositories SET status = 'synced', last_synced = CURRENT_TIMESTAMP WHERE id = ?", (repo_id,))
                 conn.commit()
             progress_tracker.finish_job(repo_id, "synced")
-            return
+            return True
 
         if progress_tracker.is_cancelled(repo_id):
             logger.info(f"Sync cancelled for repo '{repo_name}'")
@@ -212,7 +216,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                 conn.commit()
             progress_tracker.finish_job(repo_id, "synced")
             idx_state.trigger_list_changed_notification()
-            return
+            return True
 
         if progress_tracker.is_cancelled(repo_id):
             logger.info(f"Sync cancelled for repo '{repo_name}' after delta scan")
@@ -340,6 +344,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         progress_tracker.log(repo_id, "INFO", success_msg)
         progress_tracker.finish_job(repo_id, "synced")
         idx_state.trigger_list_changed_notification()
+        return True
 
     except Exception as e:
         logger.error(f"Unexpected error during repo sync for '{repo_name}': {e}")
@@ -360,18 +365,35 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         trim_memory()
 
 
-def run_full_indexing():
+def _sync_all_sources(force: bool = False) -> None:
+    """Syncs local paths and enabled Git repos. A source whose index format fingerprint is
+    missing or old is reprocessed in full once; its fingerprint is stored after a successful sync."""
+    fingerprint = index_format.current_fingerprint()
+
+    local_force = force or index_format.is_stale("local", fingerprint)
+    if local_force and not force:
+        logger.info("Index format changed for local paths. Reprocessing all local files.")
+    if local_syncer.sync_local_paths(force=local_force) is not False and local_force:
+        index_format.mark_current("local", fingerprint)
+
+    with db_service.get_db_connection() as conn:
+        git_repos = conn.execute("SELECT id FROM git_repositories WHERE enabled = 1").fetchall()
+    for gr in git_repos:
+        source = f"git:{gr['id']}"
+        repo_force = force or index_format.is_stale(source, fingerprint)
+        if repo_force and not force:
+            logger.info(f"Index format changed for Git repo id={gr['id']}. Reprocessing all files.")
+        if sync_single_git_repo(gr["id"], force=repo_force) and repo_force:
+            index_format.mark_current(source, fingerprint)
+
+
+def run_full_indexing(force: bool = False):
     if not indexing_lock.acquire(blocking=False):
         logger.warning("Indexing already running. Skipping duplicate call.")
         return False
     try:
         idx_state.ensure_collection()
-        local_syncer.sync_local_paths()
-
-        with db_service.get_db_connection() as conn:
-            git_repos = conn.execute("SELECT id FROM git_repositories WHERE enabled = 1").fetchall()
-        for gr in git_repos:
-            sync_single_git_repo(gr["id"])
+        _sync_all_sources(force=force)
 
         import datetime
         set_metadata("last_indexed", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))

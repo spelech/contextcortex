@@ -378,12 +378,13 @@ async def api_delete_path(path_id: int):
     "/admin/api/reindex",
     dependencies=[Depends(require_role(Role.EDITOR))],
 )
-async def api_trigger_sync():
+async def api_trigger_sync(force: bool = False):
     if idx_service.is_indexing():
         return JSONResponse(status_code=409, content={"status": "error", "error": "Indexing in progress", "message": "Indexing is already in progress."})
-    
-    threading.Thread(target=idx_service.run_full_indexing, daemon=True).start()
-    return {"status": "success", "message": "Background ingestion pipeline dispatched."}
+
+    kwargs = {"force": True} if force else {}
+    threading.Thread(target=idx_service.run_full_indexing, kwargs=kwargs, daemon=True).start()
+    return {"status": "success", "force": force, "message": "Background ingestion pipeline dispatched."}
 
 @router.post(
     "/admin/api/search/test",
