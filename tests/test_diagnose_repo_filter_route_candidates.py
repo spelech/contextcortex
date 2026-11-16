@@ -119,9 +119,9 @@ def test_stack_frame_does_not_fall_back_to_other_repo(hub_db):
     assert resolve_stack_frames(frames)[0]["repo"] == OTHER
 
 
-def test_route_call_path_ranks_first_and_noise_is_filtered(hub_db):
-    with patch("app.services.diagnostics.execute_hybrid_search", return_value=NOISE_HITS):
-        result = diagnose_issue(ISSUE, repo=REPO, limit=5)
+def test_route_candidates_ranked_first_without_a_call_chain(hub_db):
+    with patch("app.services.diagnostics.build_call_chain", return_value={"steps": []}),             patch("app.services.diagnostics.execute_hybrid_search", return_value=NOISE_HITS):
+        result = diagnose_issue(ISSUE, repo=REPO, limit=5, detail=True)
 
     assert result["resolved_frames"] == []
     assert [r["handler"]["symbol"] for r in result["matched_routes"]] == ["ToolsController.PublishInstance"]
@@ -138,11 +138,17 @@ def test_route_call_path_ranks_first_and_noise_is_filtered(hub_db):
     assert cands[0]["lines"] == [20, 40]
 
 
-def test_route_call_path_fills_limit_and_skips_search(hub_db):
+def test_call_chain_replaces_route_candidates_and_keeps_the_language_filter(hub_db):
     with patch("app.services.diagnostics.execute_hybrid_search", return_value=NOISE_HITS) as search:
-        cands = diagnose_issue(ISSUE, repo=REPO, limit=2)["semantic_candidates"]
-    assert [c["symbol"] for c in cands] == ["ToolsController.PublishInstance", "ToolService.PublishInstance"]
-    search.assert_not_called()
+        result = diagnose_issue(ISSUE, repo=REPO, limit=5)
+    assert result["call_chain"]["entry"] == "route_handler"
+    assert result["call_chain"]["steps"][0]["symbol"] == "ToolsController.PublishInstance"
+    search.assert_called_once()
+    # Other repos, test files, and other languages (python) are dropped; candidates are compact (no code).
+    assert result["semantic_candidates"] == [{
+        "source": "semantic", "depth": None, "score": 0.55, "repo": REPO, "file": "Models/SystemToolNames.cs",
+        "lines": [1, 9], "symbol": "SystemToolNames", "kind": "method",
+    }]
 
 
 def test_semantic_hits_without_route_still_filter_repo(hub_db):
