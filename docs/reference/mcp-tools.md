@@ -166,7 +166,7 @@ Synthesizes a high-level architectural overview of a repository or the entire in
 ---
 
 ### 10. `execute_script`
-Code Mode. Runs one async JavaScript body that calls other ContextCortex tools and returns only the final result. Use it when a question needs several dependent calls (for example: find a route, trace its handler, read each callee). The design is the same as Code Mode (`execute_script`) in model-context-gateway, so a script also runs there unchanged.
+Code Mode. Runs one async JavaScript body that calls other ContextCortex tools and returns only the final result. Use it when a question needs several dependent calls (for example: find a route, trace its handler, read each callee). For a bug report, a stack trace, or a failing route, call `diagnose_issue` first (directly or as `tools.diagnose_issue` in a script). One call returns the call chain to the likely fault, so the script only needs the follow-up lookups. The design is the same as Code Mode (`execute_script`) in model-context-gateway, so a script also runs there unchanged.
 
 - **Minimum Role**: `viewer`. Each tool call in the script goes through the normal handler and its own role check.
 - **Parameters**:

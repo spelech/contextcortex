@@ -139,3 +139,14 @@ def test_sdk_declarations_from_tool_schemas():
     sdk = build_sdk_declarations([tool])
     assert "trace_path(args: {" in sdk and "symbol: string;" in sdk and "depth?: number;" in sdk
     assert " * Qualified symbol." in sdk and "): Promise<any>;" in sdk and "contextcortex: Omit<typeof tools" in sdk
+
+
+def test_code_mode_points_bug_reports_to_diagnose_issue_first():
+    from mcp.server.fastmcp import FastMCP
+    from app.mcp.tools import register_mcp_tools_and_resources
+
+    server = register_mcp_tools_and_resources(FastMCP("DiagnoseFirst"))
+    tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+    assert "diagnose_issue first" in tools["execute_script"].description
+    assert "Call it FIRST for a bug report" in tools["diagnose_issue"].description
+    assert "diagnose_issue(args" in build_sdk_declarations(list(tools.values()))

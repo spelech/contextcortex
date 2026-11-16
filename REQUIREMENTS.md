@@ -1123,7 +1123,7 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_all_frontend_and_script_files_under_500_loc` - _Verify every TypeScript, TSX, CSS, shell, and PowerShell file in source/tests/scripts stays <= 500 LOC._
 - `test_semantic_naming_bans_junk_drawer_modules_and_classes` - _Verify case-insensitively that no new *Manager, *Helper, *Util, *Utils, or *Data modules/classes exist._
 
-#### `tests/test_execute_script.py` (13 tests)
+#### `tests/test_execute_script.py` (14 tests)
 - `test_script_calls_tools_and_returns_a_small_result`
 - `test_gateway_form_and_call_tool_work`
 - `test_tool_errors_throw_and_can_be_caught`
@@ -1137,6 +1137,7 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_execute_script_rejects_empty_input`
 - `test_limits_come_from_the_environment`
 - `test_sdk_declarations_from_tool_schemas`
+- `test_code_mode_points_bug_reports_to_diagnose_issue_first`
 
 #### `tests/test_field_workup_regressions.py` (9 tests)
 - `test_finding_1_git_env_strips_ambient_git_vars`
