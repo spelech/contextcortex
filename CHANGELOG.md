@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.26.0](https://github.com/spelech/contextcortex/compare/v2.25.0...v2.26.0) (2026-11-16)
+
+
+### Features
+
+* **diagnose-issue:** compare the failing path with a path that still works ([#153](https://github.com/spelech/contextcortex/issues/153)) ([1f91227](https://github.com/spelech/contextcortex/commit/1f91227863e223ea7cdde74fa25c9162c35bd376))
+* **diagnose-issue:** return a ranked call chain with evidence lines ([#152](https://github.com/spelech/contextcortex/issues/152)) ([dcd80fd](https://github.com/spelech/contextcortex/commit/dcd80fdd41ade2a04fdffff70d3a4122d16ced3d))
+
+
+### Bug Fixes
+
+* **diagnose-issue:** return repo-relative paths for route-path and semantic candidates ([#150](https://github.com/spelech/contextcortex/issues/150)) ([3b0a1c9](https://github.com/spelech/contextcortex/commit/3b0a1c9fe51d102dd3cb5a421b830cdda182a868))
+* **indexing:** reindex when the chunk format changes and allow forced local sync ([#149](https://github.com/spelech/contextcortex/issues/149)) ([4b73f12](https://github.com/spelech/contextcortex/commit/4b73f12289171514af02bf4532e193784640dcd7))
+* **indexing:** report is_indexing from the indexing lock ([#143](https://github.com/spelech/contextcortex/issues/143)) ([66dac5f](https://github.com/spelech/contextcortex/commit/66dac5fc89e4de21da38ad04e58557a7a84e5568))
+* **logging:** send application logs to stdout and the Admin UI log view ([#144](https://github.com/spelech/contextcortex/issues/144)) ([6e01246](https://github.com/spelech/contextcortex/commit/6e01246238ba07d6fb12ac257a03fe4188d0ee36))
+* **mcp:** find_symbol takes symbol like trace_path, keeps name as alias ([#146](https://github.com/spelech/contextcortex/issues/146)) ([24ad851](https://github.com/spelech/contextcortex/commit/24ad8516c1db6517617479c6e77570c11c6278dd))
+* **portable:** listen on 127.0.0.1 and ::1 when HOST=localhost ([#142](https://github.com/spelech/contextcortex/issues/142)) ([14d9172](https://github.com/spelech/contextcortex/commit/14d91722de96765aabbec3bdbe926f660074182c))
+* **trace-path:** hide test doubles and group library calls in callees ([#148](https://github.com/spelech/contextcortex/issues/148)) ([29d4893](https://github.com/spelech/contextcortex/commit/29d4893ec863096957fe4bbdd3bd1cc7ed764e7c))
+
+
+### Performance Improvements
+
+* **mcp:** compact grep_code and read_file output ([#147](https://github.com/spelech/contextcortex/issues/147)) ([14a5a4f](https://github.com/spelech/contextcortex/commit/14a5a4f2d4ce4978e708fe2783e4f5635b180f79))
+
 ## [2.25.0](https://github.com/spelech/contextcortex/compare/v2.24.1...v2.25.0) (2026-11-13)
 
 
