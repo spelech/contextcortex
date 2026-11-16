@@ -32,7 +32,9 @@ def _apply_frozen_bundle_defaults() -> None:
     os.environ.setdefault("TMP_REPOS_DIR", os.path.join(data_dir, "tmp_repos"))
     # The portable bundle does not include FastEmbed/ONNX, so embeddings must use the API gateway.
     os.environ.setdefault("EMBEDDING_PROVIDER", "api")
-    os.environ.setdefault("HOST", "127.0.0.1")
+    # "localhost" listens on both loopback addresses (127.0.0.1 and ::1), never on other interfaces.
+    # Windows resolves localhost to ::1 first; an IPv4-only listener adds ~200 ms per connection.
+    os.environ.setdefault("HOST", "localhost")
     # tree-sitter-language-pack loads grammar DLLs from its cache folder (default:
     # %LOCALAPPDATA%\tree-sitter-language-pack). Endpoint protection often blocks
     # DLLs there, and offline machines cannot download them. The build script
@@ -53,7 +55,6 @@ configure_application_logging()
 from fastapi import FastAPI  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-import uvicorn
 
 from app.api.routes import router as admin_router
 from app.mcp.mcp_server import mcp_server
@@ -64,6 +65,7 @@ from app.services.auth import (
     set_current_auth_context,
 )
 from app.services.database import init_db, check_db_readiness
+from app.services.listen_sockets import run_server
 import app.services.indexing as indexer
 from app.services.indexing import run_full_indexing, VAULT_PATH
 from app.services.poller import start_poller_daemon, stop_poller_daemon
@@ -448,4 +450,4 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port_str = os.getenv("PORT", "3000")
     port = int(port_str) if port_str.isdigit() else 3000
-    uvicorn.run(app, host=host, port=port)
+    run_server(app, host=host, port=port)

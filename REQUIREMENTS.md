@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1298 Automated Tests** (934 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1306 Automated Tests** (942 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1213,6 +1213,16 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 persisting all records and vector points correctly across multiple flushes._
 - `test_incremental_pipeline_clone_error_resilience` - _Verifies that a failure during shallow clone records an error in git_repositories
 and leaves the prior indexed state intact without data loss._
+
+#### `tests/test_listen_sockets.py` (8 tests)
+- `test_localhost_expands_to_both_loopback_addresses`
+- `test_explicit_host_values_keep_a_single_address`
+- `test_open_listen_sockets_binds_ipv4_and_ipv6_loopback_on_same_port`
+- `test_open_listen_sockets_skips_unavailable_ipv6_with_warning`
+- `test_open_listen_sockets_fails_when_ipv4_loopback_cannot_bind`
+- `test_run_server_uses_plain_uvicorn_run_for_explicit_host`
+- `test_run_server_passes_both_loopback_sockets_to_uvicorn_for_localhost`
+- `test_portable_defaults_use_localhost_for_dual_loopback`
 
 #### `tests/test_litellm_service.py` (9 tests)
 - `test_discover_models_success`

@@ -8,6 +8,7 @@ Configure the application by setting these environment variables in your system 
 
 | Variable Name | Description | Default Value | Example |
 | :--- | :--- | :--- | :--- |
+| `HOST` | Listen address. `localhost` listens on both loopback addresses (`127.0.0.1` and `::1`), so clients that resolve `localhost` to `::1` first (Windows) connect at once. An IP address gives one listener on that address. | `0.0.0.0` (Docker) / `localhost` (Windows portable) | `127.0.0.1` |
 | `DATABASE_URL` | SQLAlchemy connection string for relational data. | `sqlite:////app/data/index_cache.db` | `postgresql+psycopg://user:pass@postgres:5432/contextcortex` |
 | `VECTOR_STORE_PROVIDER` | Active vector search engine (`pgvector` or `qdrant`). | `pgvector` (PostgreSQL) / `qdrant` (SQLite) | `pgvector` |
 | `QDRANT_URL` | URL of remote Qdrant service (when `VECTOR_STORE_PROVIDER=qdrant` in remote mode). | `http://localhost:6333` | `http://10.0.0.10:6333` |
