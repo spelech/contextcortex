@@ -114,6 +114,7 @@ By default, ContextCortex registers **10 read/search/code-mode tools** (includin
 | :--- | :--- | :--- |
 | `DATABASE_URL` | SQLAlchemy URL (`postgresql+psycopg://...` or `sqlite:////app/data/index_cache.db`) | `sqlite:////app/data/index_cache.db` |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | PostgreSQL container credentials (`POSTGRES_PORT` default `5432`) | `contextcortex` / `cortexsecret` |
+| `LOG_LEVEL` | Level for the `contextcortex.*` application logs on stdout and in the Admin UI log view (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
 | `LOCAL_STORAGE_PATH` | Managed local storage root for direct uploads and incremental indexing | `/app/data/storage` |
 | `AUTH_ENABLED` | Enable MCP 2026-07-28 OAuth 2.1 and API Key RBAC | `false` |
 | `AUTH_OIDC_ISSUER` / `AUTH_JWKS_URI` | OIDC Issuer URL and optional custom JWKS URI override | `None` |

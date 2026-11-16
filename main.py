@@ -43,6 +43,13 @@ def _apply_frozen_bundle_defaults() -> None:
 
 _apply_frozen_bundle_defaults()
 
+# Configure logging before the app.* imports, so their import-time log lines are kept.
+# Do not use logging.basicConfig(): app.services.logger puts the diagnostic ring buffer
+# on the root logger, so basicConfig() would do nothing and INFO lines would be lost.
+from app.services.logger import configure_application_logging  # noqa: E402
+
+configure_application_logging()
+
 from fastapi import FastAPI  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -62,8 +69,6 @@ from app.services.indexing import run_full_indexing, VAULT_PATH
 from app.services.poller import start_poller_daemon, stop_poller_daemon
 from app.services.vector_store.manager import VectorStoreManager
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("contextcortex")
 
 
