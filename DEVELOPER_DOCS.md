@@ -316,7 +316,7 @@ Example configuration:
 - `search_docs(query="caddy reverse proxy configuration")` [Role: `viewer`]
 - `grep_code(pattern="enforce_tool_permission", repo="backend-api", path_glob="*.py")` [Role: `viewer`]
 - `diagnose_issue(issue_text="Traceback (most recent call last): ...", repo="backend-api")` [Role: `viewer`]
-- `find_symbol(name="extract_symbols_and_chunks", exact=true)` [Role: `viewer`]
+- `find_symbol(symbol="extract_symbols_and_chunks", exact=true)` [Role: `viewer`]
 - `trace_path(symbol="authenticate_user", repo="backend-api")` [Role: `viewer`]
 - `find_routes(repo="backend-api")` [Role: `viewer`]
 - `find_api_callers(path="/api/v1/auth/login")` [Role: `viewer`]

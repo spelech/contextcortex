@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1259 Automated Tests** (895 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1265 Automated Tests** (901 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1126,6 +1126,14 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_file_settings_defaults`
 - `test_set_file_settings_persists`
 - `test_file_settings_api_endpoints`
+
+#### `tests/test_find_symbol_symbol_parameter.py` (6 tests)
+- `test_find_symbol_accepts_symbol_and_the_name_alias`
+- `test_mcp_call_accepts_the_name_alias_without_a_validation_error`
+- `test_find_symbol_without_a_symbol_gives_a_clear_error`
+- `test_schema_documents_symbol_only_and_matches_trace_path`
+- `test_sdk_typings_show_symbol_for_find_symbol`
+- `test_code_mode_calls_accept_symbol_and_name`
 
 #### `tests/test_git_incremental.py` (6 tests)
 - `test_compute_git_repo_delta`

@@ -68,7 +68,7 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "find_symbol",
         handle_find_symbol,
         f"Use when you know an exact or partial symbol name (function, method, class, struct, interface, COBOL paragraph) across {_SUPPORTED_LANGS}. "
-        "Avoids broad vector scans by querying the AST symbol table directly. "
+        "Pass it as `symbol` (the same argument as trace_path). Avoids broad vector scans by querying the AST symbol table directly. "
         "Paginate with limit (clamped 1..100, default 30) and offset (returns total, has_more, next_offset).",
     ),
     (

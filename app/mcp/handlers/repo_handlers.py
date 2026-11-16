@@ -232,7 +232,7 @@ def handle_investigate_change_impact(
         "repo": repo,
         "recommended_tools": ["find_symbol", "trace_path", "find_routes", "grep_code"],
         "instructions": (
-            f"1. Call find_symbol(name='{symbol}', repo={json.dumps(repo)}, exact=True) to locate the symbol's exact file and line range.\n"
+            f"1. Call find_symbol(symbol='{symbol}', repo={json.dumps(repo)}, exact=True) to locate the symbol's exact file and line range.\n"
             f"2. Call trace_path(symbol='{symbol}', repo={json.dumps(repo)}, direction='callers', depth=3) to map all direct and transitive callers.\n"
             f"3. If the symbol handles or invokes an API route, call find_routes(query=..., kind='callers') to discover cross-repository client callers.\n"
             f"4. Call grep_code(pattern='{symbol}', repo={json.dumps(repo)}) to catch dynamic references, configuration bindings, and unit tests."

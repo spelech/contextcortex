@@ -22,7 +22,7 @@ DEFAULT_MCP_CASES = [
     {"label": "search CamelCase symbol (expect early-return)", "tool": "search", "args": {"query": "OAuthEgressTokenManager", "scope": "code", "repo": "csharp-mcp-router", "limit": 5}},
     {"label": "search multi-word agent query (expect early-return)", "tool": "search", "args": {"query": "execute_hybrid_search query router", "scope": "code", "repo": "contextcortex", "limit": 5}},
     {"label": "search conceptual natural language (expect semantic)", "tool": "search", "args": {"query": "how does authentication work in the gateway", "scope": "code", "repo": "csharp-mcp-router", "limit": 5}},
-    {"label": "find_symbol AST lookup", "tool": "find_symbol", "args": {"name": "ResolveIdentityAsync", "repo": "csharp-mcp-router"}},
+    {"label": "find_symbol AST lookup", "tool": "find_symbol", "args": {"symbol": "ResolveIdentityAsync", "repo": "csharp-mcp-router"}},
     {"label": "trace_path AST call graph", "tool": "trace_path", "args": {"symbol": "CompositeIdentityProvider", "repo": "csharp-mcp-router", "depth": 2}},
     {"label": "diagnose_issue stack trace", "tool": "diagnose_issue", "args": {"issue_text": "ValueError: Failed to parse provided SSH Private Key in app/remote_opencode_sync.py line 40", "repo": "llmlite-modelmanager"}},
 ]

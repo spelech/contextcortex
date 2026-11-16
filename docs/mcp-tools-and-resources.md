@@ -67,7 +67,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 
 ### AST Symbol and Call Graph Tools
 
-- **`find_symbol`**: Queries `ast_symbols` directly by `name` (`exact=True` or substring `exact=False`) and optional `repo`. Clamps `limit` to `1..100` (default `30`) with `offset` pagination. Use this tool first when you know an identifier name.
+- **`find_symbol`**: Queries `ast_symbols` directly by `symbol` (alias `name`; `exact=True` or substring `exact=False`) and optional `repo`. Clamps `limit` to `1..100` (default `30`) with `offset` pagination. Use this tool first when you know an identifier name.
 - **`trace_path`**: Traverses AST `callers`, `callees`, or `both` via BFS (`depth` clamped `1..5`, default `2`) and resolves cross-repository HTTP route/caller boundaries (`external_callers`, `external_handlers`). Clamps `limit` to `1..200` (default `50`) with `offset`, returning `total_callers`, `total_callees`, `has_more`, and `next_offset`. Caller/callee nodes omit their Git permalinks unless `include_permalinks=True` (the target always keeps its permalink), which keeps deep traces compact. In C#, a call such as `_toolService.PublishInstance()` is indexed with the receiver's declared type (`ToolService.PublishInstance`), so methods with the same name in different classes are not mixed up.
 
 ### HTTP Route and Client Discovery (`find_routes`)
