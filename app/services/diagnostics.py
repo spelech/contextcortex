@@ -409,10 +409,7 @@ def find_semantic_candidates(
         return candidates
 
     with get_db_connection() as conn:
-        git_repos = {
-            r["name"]: dict(r)
-            for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall()
-        }
+        git_repos = {r["name"]: dict(r) for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall()}
         roots = LocalSourceRoots.load(conn)
         route_syms = collect_route_path_symbols(conn, matched_routes or [], repo=repo, limit=limit)
         route_languages = {lang for s in route_syms if (lang := language_family(s.get("language"), s["filepath"]))}
