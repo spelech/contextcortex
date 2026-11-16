@@ -66,7 +66,8 @@ Forensic triage tool that accepts stack traces, error logs, or user bug reports 
   - `repo` (*string, optional*): Optional repository identifier to scope diagnostics and resolution.
   - `context_lines` (*integer, default: 5*): Number of surrounding code lines to include for resolved stack frames (`1` to `15`).
   - `limit` (*integer, default: 5*): Maximum number of semantic code candidate blocks to retrieve (`1` to `20`).
-- **Returns**: Structured JSON payload containing `resolved_frames`, `matched_routes`, `matched_symbols`, `literal_matches`, and `semantic_candidates`.
+  - `detail` (*boolean, default: false*): Set to `true` to get the code of each semantic candidate and the full caller, callee, and external-caller lists.
+- **Returns**: Compact JSON payload containing `resolved_frames`, `matched_routes`, `matched_symbols`, and `semantic_candidates`. By default, semantic candidates have no code (symbol, file, lines, source, score, and signature only), each caller, callee, and external-caller list has a maximum of 3 items, and a `hint` field tells how to get more. Resolved stack frames always include their code.
 
 ---
 

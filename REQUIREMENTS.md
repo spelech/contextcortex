@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1259 Automated Tests** (895 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1263 Automated Tests** (899 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -984,6 +984,12 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_is_postgres_detection`
 - `test_wait_for_db_retries_and_success`
 - `test_wait_for_db_exhausts_retries`
+
+#### `tests/test_diagnose_compact_output.py` (4 tests)
+- `test_default_candidates_have_no_code_and_keep_leads`
+- `test_detail_returns_candidate_code_and_no_hint`
+- `test_compact_cuts_relation_lists_but_keeps_frame_code`
+- `test_handler_passes_detail_and_returns_unindented_json`
 
 #### `tests/test_diagnose_repo_filter_route_candidates.py` (8 tests)
 - `test_external_callers_respect_repo`

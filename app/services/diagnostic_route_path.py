@@ -10,6 +10,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Set
 
+from app.services.file_reader import get_file_reader_service
 from app.services.graph_traversal import trace_symbol_path
 from app.services.stack_trace_parser import _is_test_path
 
@@ -17,6 +18,17 @@ logger = logging.getLogger("contextcortex.diagnostics")
 
 ROUTE_CALLEE_DEPTH = 3
 MAX_ROUTE_TRACE_NODES = 40
+MAX_CANDIDATE_CHARS = 3000
+
+
+def read_symbol_code(raw_path: str, repo: str, start_l: int, end_l: int) -> str:
+    """Code of one candidate symbol (only for detail output), cut to MAX_CANDIDATE_CHARS."""
+    try:
+        res = get_file_reader_service().read_file(path=raw_path, repo=repo, start_line=start_l, end_line=end_l)
+        return (res.get("content") or "")[:MAX_CANDIDATE_CHARS]
+    except Exception as e:
+        logger.debug(f"Could not read route-path candidate code for {raw_path}:{start_l}: {e}")
+        return ""
 
 _LANGUAGE_ALIASES = {
     "c_sharp": "csharp", "cs": "csharp", "c#": "csharp",

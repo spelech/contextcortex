@@ -4,7 +4,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.chunking import match_route_and_call, normalize_path_pattern
 from app.services.database import get_db_connection
-from app.services.diagnostic_route_path import collect_route_path_symbols, keep_semantic_hit, language_family
+from app.services.diagnostic_output import compact_diagnosis
+from app.services.diagnostic_route_path import (
+    MAX_CANDIDATE_CHARS, collect_route_path_symbols, keep_semantic_hit, language_family, read_symbol_code,
+)
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
 from app.services.search import execute_hybrid_search
@@ -22,7 +25,6 @@ logger = logging.getLogger("contextcortex.diagnostics")
 
 MAX_RESOLVED_FRAMES = 15
 MAX_SNIPPET_CHARS = 4000
-MAX_CANDIDATE_CHARS = 3000
 MAX_MATCHED_ROUTES = 15
 MAX_MATCHED_SYMBOLS = 20
 
@@ -381,15 +383,6 @@ def _build_candidate(conn, git_repos, item: Dict[str, Any]) -> Dict[str, Any]:
     return {**item, "permalink": permalink, "callers": callers, "callees": callees}
 
 
-def _read_symbol_code(raw_path: str, repo: str, start_l: int, end_l: int) -> str:
-    try:
-        res = get_file_reader_service().read_file(path=raw_path, repo=repo, start_line=start_l, end_line=end_l)
-        return (res.get("content") or "")[:MAX_CANDIDATE_CHARS]
-    except Exception as e:
-        logger.debug(f"Could not read route-path candidate code for {raw_path}:{start_l}: {e}")
-        return ""
-
-
 def find_semantic_candidates(
     issue_text: str,
     repo: Optional[str] = None,
@@ -397,6 +390,7 @@ def find_semantic_candidates(
     signals: Optional[Dict[str, Any]] = None,
     frames: Optional[List[Dict[str, Any]]] = None,
     matched_routes: Optional[List[Dict[str, Any]]] = None,
+    include_code: bool = True,
 ) -> List[Dict[str, Any]]:
     """Returns ranked code candidates: the matched route's call path first, then filtered hybrid search hits."""
     candidates: List[Dict[str, Any]] = []
@@ -418,7 +412,7 @@ def find_semantic_candidates(
             candidates.append(_build_candidate(conn, git_repos, {
                 "score": None, "source": s["source"], "depth": s["depth"], "repo": s["repo"], "file": file_path,
                 "lines": [s["start_line"], s["end_line"]], "symbol": sym, "kind": s["kind"], "signature": s["signature"],
-                "content": _read_symbol_code(s["filepath"], s["repo"], s["start_line"], s["end_line"]),
+                **({"content": read_symbol_code(s["filepath"], s["repo"], s["start_line"], s["end_line"])} if include_code else {}),
             }))
 
         remaining = limit - len(candidates)
@@ -445,7 +439,7 @@ def find_semantic_candidates(
                 "score": round(score_val, 4), "source": "semantic", "depth": None, "repo": target_repo,
                 "file": file_path, "lines": [p.get("start_line", 1), p.get("end_line", 1)], "symbol": sym,
                 "kind": p.get("kind"), "signature": p.get("signature"),
-                "content": (p.get("content") or "")[:MAX_CANDIDATE_CHARS],
+                **({"content": (p.get("content") or "")[:MAX_CANDIDATE_CHARS]} if include_code else {}),
                 "permalink": p.get("permalink_url") or p.get("github_url"),
             }))
     return candidates
@@ -456,8 +450,9 @@ def diagnose_issue(
     repo: Optional[str] = None,
     context_lines: int = 5,
     limit: int = 5,
+    detail: bool = False,
 ) -> Dict[str, Any]:
-    """Main triage coordinator for stack trace, log, and bug triage across Python, C#, TS/JS, COBOL, Java, Go, Rust."""
+    """Main triage coordinator for stack trace, log, and bug triage. Compact by default (see diagnostic_output)."""
     clamped_context = max(1, min(15, int(context_lines)))
     clamped_limit = max(1, min(20, int(limit)))
 
@@ -474,7 +469,7 @@ def diagnose_issue(
     merged_candidate_symbols = list(OrderedDict.fromkeys(signals.get("symbols", []) + frame_symbols))
 
     matched_routes = match_routes_and_callers(signals["routes"], repo=repo)
-    return {
+    result = {
         "resolved_frames": resolve_stack_frames(parsed_frames, repo=repo, context_lines=clamped_context),
         "matched_routes": matched_routes,
         "matched_symbols": match_symbols_and_exceptions(
@@ -482,9 +477,10 @@ def diagnose_issue(
         ),
         "semantic_candidates": find_semantic_candidates(
             issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
-            matched_routes=matched_routes,
+            matched_routes=matched_routes, include_code=detail,
         ),
     }
+    return result if detail else compact_diagnosis(result)
 
 
 __all__ = [

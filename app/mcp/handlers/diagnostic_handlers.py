@@ -20,6 +20,7 @@ async def handle_diagnose_issue(
     repo: Annotated[Optional[str], Field(description="Optional repository name to scope stack frame, route, and semantic candidate resolution.")] = None,
     context_lines: Annotated[int, Field(description="Surrounding source lines returned per resolved stack frame, clamped to 1..15 (default 5).")] = 5,
     limit: Annotated[int, Field(description="Maximum semantic code candidates returned alongside resolved stack frames, clamped to 1..20 (default 5).")] = 5,
+    detail: Annotated[bool, Field(description="Default false: compact output (candidates as symbol, file, lines, source/score, with no code; caller/callee lists cut to 3). Set true to also get candidate code and full caller/callee lists.")] = False,
 ) -> str:
     """Forensic triage engine resolving stack frames, error string literals, HTTP routes, and semantic code candidates in one call."""
     try:
@@ -43,9 +44,10 @@ async def handle_diagnose_issue(
             repo=repo,
             context_lines=safe_ctx,
             limit=safe_limit,
+            detail=bool(detail),
         )
 
-        return json.dumps(result, indent=2, default=str)
+        return json.dumps(result, default=str)
 
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_diagnose_issue: {fe}")
