@@ -1135,6 +1135,14 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_set_file_settings_persists`
 - `test_file_settings_api_endpoints`
 
+#### `tests/test_find_symbol_symbol_parameter.py` (6 tests)
+- `test_find_symbol_accepts_symbol_and_the_name_alias`
+- `test_mcp_call_accepts_the_name_alias_without_a_validation_error`
+- `test_find_symbol_without_a_symbol_gives_a_clear_error`
+- `test_schema_requires_symbol_and_lists_name_as_optional_deprecated_alias`
+- `test_sdk_typings_show_symbol_required_and_name_optional`
+- `test_code_mode_calls_accept_symbol_and_name`
+
 #### `tests/test_git_incremental.py` (6 tests)
 - `test_compute_git_repo_delta`
 - `test_compute_git_repo_delta_custom_extensions`

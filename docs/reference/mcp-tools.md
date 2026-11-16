@@ -11,7 +11,7 @@ This document provides complete reference specifications for the **10 default Mo
 | [`search`](#1-search) | `viewer` | Search & Retrieval | `query`, `scope`, `repo`, `language`, `category`, `tag`, `limit`, `offset`, `dense_weight`, `mode`, `max_snippet_chars` | Hybrid semantic + BM25 search across AST code chunks (`scope='code'`), documentation (`scope='docs'`), or both (`scope='all'`). |
 | [`grep_code`](#2-grep-code) | `viewer` | Search & Retrieval | `pattern`, `repo`, `path_glob`, `is_regex`, `case_sensitive`, `context_lines`, `limit`, `offset` | Deterministic literal and regex pattern matching across indexed repositories with context lines and AST symbol attribution. |
 | [`diagnose_issue`](#3-diagnose-issue) | `viewer` | Forensic Triage | `issue_text`, `repo`, `context_lines`, `limit` | Forensic triage tool that parses stack traces, resolves AST frames, matches error literals and HTTP routes, and retrieves semantic code candidates. |
-| [`find_symbol`](#4-find-symbol) | `viewer` | AST Symbols & Graphs | `name`, `repo`, `exact`, `limit`, `offset` | Sub-50ms exact or prefix lookup of AST symbols (functions, classes, methods, interfaces). |
+| [`find_symbol`](#4-find-symbol) | `viewer` | AST Symbols & Graphs | `symbol` (alias `name`), `repo`, `exact`, `limit`, `offset` | Sub-50ms exact or prefix lookup of AST symbols (functions, classes, methods, interfaces). |
 | [`read_file`](#5-read-file) | `viewer` | Storage & File Access | `path`, `repo`, `start_line`, `end_line`, `outline_only`, `limit`, `offset` | Reads bounded 1-indexed line ranges or inspects AST symbol outlines (`outline_only=True`). |
 | [`trace_path`](#6-trace-path) | `viewer` | AST Symbols & Graphs | `symbol`, `repo`, `direction`, `depth`, `limit`, `offset`, `include_permalinks` | Breadth-first traversal of function call graphs, imports, inheritance, and cross-repo HTTP boundaries (`external_callers`, `external_handlers`). |
 | [`find_routes`](#7-find-routes) | `viewer` | API Route Discovery | `query`, `kind`, `method`, `repo`, `limit`, `offset` | Discovers backend HTTP route handlers (`kind='handlers'`), client call sites (`kind='callers'`), or both (`kind='both'`). |
@@ -77,7 +77,8 @@ Performs deterministic sub-50ms symbol lookup from the relational `ast_symbols` 
 
 - **Minimum Role**: `viewer`
 - **Parameters**:
-  - `name` (*string, required*): Symbol identifier to find (e.g. `QdrantVectorStore` or `execute_hybrid_search`).
+  - `symbol` (*string, required*): Symbol identifier to find (e.g. `QdrantVectorStore` or `execute_hybrid_search`). This is the same argument name as `trace_path`. 
+  - `name` (*string, optional, deprecated*): Old name of `symbol`, kept for older callers. Use `symbol`. When both are given, `symbol` is used.
   - `repo` (*string, optional*): Repository alias filter.
   - `exact` (*boolean, default: true*): Perform exact matching when `true`, prefix/fuzzy matching when `false`.
   - `limit` (*integer, default: 30*): Maximum matches to return (`1..100`).

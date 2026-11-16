@@ -71,16 +71,19 @@ def _paginate_trace_tree(
 
 
 async def handle_find_symbol(
-    name: Annotated[str, Field(description="Function, method, class, struct, interface, record, or COBOL paragraph name across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")],
+    symbol: Annotated[Optional[str], Field(description="Function, method, class, struct, interface, record, or COBOL paragraph name (or qualified name such as 'OrderService.create_order') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Same parameter name as trace_path.")] = None,
     repo: Annotated[Optional[str], Field(description="Optional repository name filter to restrict AST lookup.")] = None,
     exact: Annotated[bool, Field(description="Set True (default) for exact symbol/qualified-name match; False for substring/prefix matching.")] = True,
     limit: Annotated[int, Field(description="Maximum AST symbols per page, clamped to 1..100 (default 30).")] = 30,
     offset: Annotated[int, Field(description="0-based symbol offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
+    name: Annotated[Optional[str], Field(description="Deprecated alias of `symbol`, kept for older callers. Use `symbol`; it wins when both are given.")] = None,
 ) -> str:
     """Instant deterministic AST symbol lookup (functions, classes, methods, interfaces) without token-heavy full-file scans."""
-    sym_name = name.strip() if name else ""
+    # `symbol` is optional here only so that a call with the deprecated `name` alias still validates.
+    # The published schema marks `symbol` as required (see app/mcp/tools.py `_SCHEMA_REQUIRED_OVERRIDES`).
+    sym_name = (symbol or name or "").strip()
     if not sym_name:
-        return json.dumps({"error": "symbol name cannot be empty."})
+        return json.dumps({"error": "symbol name cannot be empty: pass 'symbol' (the alias 'name' is also accepted)."})
 
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
@@ -262,7 +265,7 @@ def handle_find_implementation_symbol(
         "repo": repo,
         "recommended_tools": ["find_symbol", "read_file", "trace_path"],
         "instructions": (
-            f"1. Call find_symbol(name='{symbol}', repo={json.dumps(repo)}, exact=True) (fall back to exact=False if not found) to get the file path and start/end lines.\n"
+            f"1. Call find_symbol(symbol='{symbol}', repo={json.dumps(repo)}, exact=True) (fall back to exact=False if not found) to get the file path and start/end lines.\n"
             f"2. Call read_file(path=..., repo=..., outline_only=True) to inspect surrounding structure or read_file(path=..., repo=..., start_line=..., end_line=...) to read the implementation without loading the whole file.\n"
             f"3. Call trace_path(symbol='{symbol}', repo={json.dumps(repo)}, direction='both', depth=2) to understand how '{symbol}' is called and what it invokes."
         ),

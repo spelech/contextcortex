@@ -43,7 +43,7 @@
       "label": "find_symbol AST lookup",
       "tool": "find_symbol",
       "args": {
-        "name": "classify_query_intent",
+        "symbol": "classify_query_intent",
         "repo": "contextcortex"
       }
     },
