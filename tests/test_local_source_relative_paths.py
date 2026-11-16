@@ -11,7 +11,7 @@ from app.mcp.handlers.file_handlers import handle_read_file
 from app.services.database import get_db_connection
 from app.services.database.engine import get_db_engine, init_db
 from app.services.diagnostics import (
-    _get_callers_and_callees, match_routes_and_callers, match_symbols_and_exceptions, resolve_stack_frames,
+    _get_callers_and_callees, find_semantic_candidates, match_routes_and_callers, match_symbols_and_exceptions, resolve_stack_frames,
 )
 from app.services.graph_traversal import trace_symbol_path
 from app.services.source_paths import LocalSourceRoots, clean_stored_path
@@ -170,3 +170,22 @@ def test_resolved_stack_frames_return_relative_paths(local_source_db):
     assert resolved[0]["file"] == CONTROLLER
     assert resolved[0]["symbol"] == "ToolsController.GetTool"
     assert [c["file"] for c in resolved[0]["callees"]] == [CONTROLLER]
+
+
+def test_diagnose_candidates_return_relative_paths(local_source_db, monkeypatch):
+    class _Hit:
+        score = 0.5
+        payload = {
+            "repo": LOCAL_REPO, "path": _local(SERVICE), "symbol": "LoadTool", "full_symbol": "ToolService.LoadTool",
+            "start_line": 5, "end_line": 15, "language": "c_sharp", "content": "void LoadTool() {}",
+        }
+
+    class _OtherHit(_Hit):
+        payload = {**_Hit.payload, "path": _local("server/Services/OtherService.cs"), "full_symbol": "OtherService.Run"}
+
+    monkeypatch.setattr("app.services.diagnostics.execute_hybrid_search", lambda **_: [_Hit(), _OtherHit()])
+    routes = match_routes_and_callers([("GET", "/api/tools/42")])
+    candidates = find_semantic_candidates("GET /api/tools/42 fails", repo=LOCAL_REPO, limit=3, matched_routes=routes)
+    assert [(c["source"], c["file"]) for c in candidates] == [
+        ("route_handler", CONTROLLER), ("route_callee", SERVICE), ("semantic", "server/Services/OtherService.cs"),
+    ]
