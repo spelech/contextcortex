@@ -56,7 +56,7 @@ Paginated MCP resource templates (`files/{page}` and `routes/{page}`) use 1-inde
 | `list_repositories` | `viewer` | `limit`: `100` (`1..500`) when `include_files=True`; `include_status=True` adds global health | Per-source & top-level `total_files`, `offset`, `limit`, `has_more`, `next_offset` |
 | `read_file` | `viewer` | `start_line` `>= 1`, window `<= 2000` lines; `outline_only=True`: `limit` `150` (`1..500`) | `total_lines`, `has_more`, `next_start_line` (or `total_symbols`, `next_offset`) |
 | `search` | `viewer` | `scope`: `all`\|`code`\|`docs`; `limit`: `5` (`1..25`), `max_snippet_chars`: `2000` (`200..6000`) | `offset`, `total`, `has_more`, `next_offset` |
-| `trace_path` | `viewer` | `depth`: `2` (`1..5`), `limit`: `50` (`1..200`), `include_permalinks`: `False` | `offset`, `total_callers`, `total_callees`, `has_more`, `next_offset` |
+| `trace_path` | `viewer` | `depth`: `2` (`1..5`), `limit`: `50` (`1..200`), `include_permalinks`: `False`, `include_unresolved`: `False` | `offset`, `total_callers`, `total_callees`, `has_more`, `next_offset` |
 | `manage` *(requires `MCP_ENABLE_WRITE_TOOLS=true`)* | `viewer`/`editor` | `action`: `sync_repo`\|`upload`\|`replace`\|`delete`\|`read`\|`preview`; preview capped at `1000` chars | Single sync trigger or file operation status |
 
 ---

@@ -3,10 +3,12 @@ import sys
 from collections import deque
 from typing import Dict, List, Optional, Set, Tuple
 
-from app.services.chunking.route_specificity import call_belongs_to_route, is_test_route_file
+from app.services.chunking.route_specificity import is_test_route_file
 from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
 from app.services.source_paths import LocalSourceRoots
+from app.services.trace_call_filters import is_cobol_file, member_visible_from
+from app.services.trace_http_boundaries import make_http_boundary_resolver
 
 _DIRECTION_ALIASES = {
     "inbound": "callers",
@@ -55,11 +57,15 @@ def trace_symbol_path(
     direction: str = "both",
     depth: int = 2,
     limit: int = 25,
+    include_unresolved: bool = False,
 ) -> str:
     """
     Breadth-First Search (BFS) call graph traversal engine over ast_relationships.
     Supports direction ('callers'/'inbound', 'callees'/'outbound', 'both'), depth clamping (1-5),
     cross-repository HTTP boundaries, COBOL program/paragraph/copybook links, and DI interface resolution.
+    By default, calls into test code are dropped for a production target, and calls that do not resolve to an
+    indexed symbol (library calls) are listed by name in `unresolved` instead of as tree nodes.
+    `include_unresolved=True` keeps both as tree nodes.
     """
     target_sym = symbol.strip() if symbol else ""
     if not target_sym:
@@ -281,50 +287,7 @@ def trace_symbol_path(
                 return (s.get("full_symbol") or s.get("name") or fallback_sym), s
         return fallback_sym, None
 
-    # Routes that compete for a call, per repository (routes in test files never take a call from a real route).
-    competing_routes: Dict[str, List[dict]] = {}
-    for r in all_routes:
-        if not is_test_route_file(_rel_path(r.get("filepath"))):
-            competing_routes.setdefault(r.get("repo") or "", []).append(r)
-
-    def _owns_call(route: dict, call_url: str, call_method: Optional[str]) -> bool:
-        return call_belongs_to_route(route, call_url, call_method, competing_routes.get(route.get("repo") or "", []))
-
-    def resolve_http_boundaries(sym_name: str, sym_repo: str):
-        route_meta, ext_callers, http_calls = None, [], []
-        short_s = sym_name.split(".")[-1]
-        matched_routes = [
-            r for r in all_routes
-            if (r.get("repo") == sym_repo or not sym_repo)
-            and (r.get("handler_symbol") == sym_name or (r.get("handler_symbol") and (r["handler_symbol"] == short_s or sym_name.endswith(f".{r['handler_symbol']}"))))
-        ]
-        if matched_routes:
-            route_meta = {"method": matched_routes[0]["http_method"].upper(), "path": matched_routes[0]["path_pattern"]}
-            for r_item in matched_routes:
-                # A call belongs to this route only when no more specific route of the same repository matches it.
-                for c in all_calls:
-                    if c["repo"] != sym_repo and _owns_call(r_item, c.get("url_pattern", ""), c.get("http_method")):
-                        entry = {"repo": c["repo"], "symbol": c.get("caller_symbol") or "", "file": _rel_path(c["filepath"]), "line": c.get("line_number"), "method": c.get("http_method", "").upper(), "url": c.get("url_pattern", "")}
-                        if entry not in ext_callers:
-                            ext_callers.append(entry)
-
-        matched_calls = [
-            c for c in all_calls
-            if (c.get("repo") == sym_repo or not sym_repo)
-            and (c.get("caller_symbol") == sym_name or (c.get("caller_symbol") and (c["caller_symbol"] == short_s or sym_name.endswith(f".{c['caller_symbol']}"))))
-        ]
-        for c in matched_calls:
-            c_method, c_url = c.get("http_method", "").upper(), c.get("url_pattern", "")
-            ext_handlers = []
-            for r in all_routes:
-                # Per repository, only the most specific matching route handles the call.
-                if r["repo"] == sym_repo or not _owns_call(r, c_url, c_method):
-                    continue
-                h_entry = {"repo": r["repo"], "symbol": r.get("handler_symbol") or "", "file": _rel_path(r["filepath"]), "line": r.get("start_line"), "path": r.get("path_pattern")}
-                if h_entry not in ext_handlers:
-                    ext_handlers.append(h_entry)
-            http_calls.append({"method": c_method, "url": c_url, "line": c.get("line_number"), "external_handlers": ext_handlers})
-        return route_meta, ext_callers, http_calls
+    resolve_http_boundaries = make_http_boundary_resolver(all_routes, all_calls, _rel_path)
 
     if symbols_found:
         s0 = symbols_found[0]
@@ -359,6 +322,23 @@ def trace_symbol_path(
     if t_http_calls:
         target_info["http_calls"] = t_http_calls
 
+    hide_tests = not include_unresolved and not is_test_route_file(target_info.get("file") or "")
+    hidden_test_rows = 0
+
+    def _hidden_test_row(row) -> bool:
+        nonlocal hidden_test_rows
+        if hide_tests and is_test_route_file(_rel_path(row["source_filepath"])):
+            hidden_test_rows += 1
+            return True
+        return False
+
+    def _unresolved_call(callee_sym: str, row) -> bool:
+        """A call (not a COBOL CALL) to no indexed symbol: a library call, an ambiguous name, or only test doubles match."""
+        if include_unresolved or (row["relationship_type"] or "calls").upper() != "CALLS" or is_cobol_file(_rel_path(row["source_filepath"])):
+            return False
+        hits = syms_by_full.get(callee_sym) or [s for s in syms_by_name.get(callee_sym, []) if not s.get("full_symbol")]
+        return not any(not (hide_tests and s["_test"]) for s in hits)
+
     def _make_edge_node(display_sym: str, row_obj: object, child_key: str) -> dict:
         clean_fp = _rel_path(row_obj["source_filepath"])
         r_route, r_ext_callers, r_http_calls = resolve_http_boundaries(display_sym, row_obj["repo"])
@@ -384,6 +364,7 @@ def trace_symbol_path(
     truncated = False
     callers_tree: List[dict] = []
     callees_tree: List[dict] = []
+    root_holder: dict = {}
 
     with _db_conn() as conn:
         if direction in ("callers", "both"):
@@ -394,7 +375,8 @@ def trace_symbol_path(
                 if curr_depth > depth:
                     continue
                 short_curr = curr_sym.split(".")[-1] if "." in curr_sym else curr_sym
-                curr_ids = {c["id"] for c in _resolve_symbol_candidates(curr_sym) if c.get("id") is not None}
+                curr_cands = _resolve_symbol_candidates(curr_sym)
+                curr_ids = {c["id"] for c in curr_cands if c.get("id") is not None}
                 curr_ifaces = concrete_to_ifaces.get(curr_sym.rsplit(".", 1)[0] if "." in curr_sym else "", set())
 
                 q = "SELECT repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number FROM ast_relationships WHERE (target_symbol = ? OR target_symbol = ? OR target_symbol LIKE ?)"
@@ -417,6 +399,10 @@ def trace_symbol_path(
                         continue
                     if not _call_reaches(r_target, caller_sym, curr_sym):
                         continue
+                    if curr_cands and not any(member_visible_from(c, caller_sym) for c in curr_cands):
+                        continue  # a private member is called only from its own class
+                    if _hidden_test_row(r):
+                        continue
                     edge_key = (caller_sym, curr_sym, r["relationship_type"], "caller", r["line_number"])
                     if edge_key in visited_edges:
                         continue
@@ -432,10 +418,10 @@ def trace_symbol_path(
                             truncated = True
 
         if direction in ("callees", "both"):
-            queue = deque([(target_sym, 1, callees_tree)])
+            queue = deque([(target_sym, 1, callees_tree, root_holder)])
             visited_nodes = {target_sym}
             while queue:
-                curr_sym, curr_depth, parent_list = queue.popleft()
+                curr_sym, curr_depth, parent_list, holder = queue.popleft()
                 if curr_depth > depth:
                     continue
                 short_curr = curr_sym.split(".")[-1] if "." in curr_sym else curr_sym
@@ -468,9 +454,19 @@ def trace_symbol_path(
                         caller_sym, _ = _resolve_enclosing_symbol(r["repo"], r["source_filepath"], r["line_number"], r["source_symbol"], r["source_symbol_id"])
                         if caller_sym != curr_sym and not caller_sym.endswith(f".{curr_sym}"):
                             continue
+                    if _hidden_test_row(r):
+                        continue
                     raw_target = r["target_symbol"]
-                    callee_cands = [c for c in _resolve_symbol_candidates(raw_target) if c.get("full_symbol") != curr_sym]
+                    callee_cands = [
+                        c for c in _resolve_symbol_candidates(raw_target)
+                        if c.get("full_symbol") != curr_sym and member_visible_from(c, caller_sym)
+                    ]
                     callee_sym = _resolve_di_callee(raw_target, caller_sym, callee_cands, r["source_filepath"])
+                    if _unresolved_call(callee_sym, r):
+                        names = holder.setdefault("unresolved", [])
+                        if callee_sym not in names:
+                            names.append(callee_sym)
+                        continue
                     edge_key = (curr_sym, callee_sym, r["relationship_type"], "callee", r["line_number"])
                     if edge_key in visited_edges:
                         continue
@@ -481,11 +477,16 @@ def trace_symbol_path(
                     if curr_depth < depth and callee_sym not in visited_nodes:
                         visited_nodes.add(callee_sym)
                         if total_returned < limit:
-                            queue.append((callee_sym, curr_depth + 1, node["callees"]))
+                            queue.append((callee_sym, curr_depth + 1, node["callees"], node))
                         else:
                             truncated = True
 
-    return json.dumps({
+    result = {
         "target": target_info, "direction": direction, "depth": depth,
         "truncated": truncated, "callers": callers_tree, "callees": callees_tree,
-    }, separators=(",", ":"))
+    }
+    if root_holder.get("unresolved"):
+        result["unresolved"] = root_holder["unresolved"]
+    if hidden_test_rows:
+        result["hidden_test_calls"] = hidden_test_rows
+    return json.dumps(result, separators=(",", ":"))

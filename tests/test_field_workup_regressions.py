@@ -282,7 +282,9 @@ namespace Product.Worker
     uow_trace = json.loads(await handle_trace_path(symbol="UnitOfWork.Run", repo="my-repo", direction="both", depth=2))
     callee_symbols = {c["symbol"] for c in uow_trace["callees"]}
     assert "Engine.Run" in callee_symbols
-    assert any("LoadAsync" in s for s in callee_symbols)
+    # `services.Reads.LoadAsync` has no indexed symbol (IServices is not in the repo): it is listed by name, not as a node.
+    assert "LoadAsync" not in callee_symbols
+    assert "LoadAsync" in uow_trace["unresolved"]
 
     eng_trace = json.loads(await handle_trace_path(symbol="Engine.Run", repo="my-repo", direction="both", depth=2))
     caller_symbols = {c["symbol"] for c in eng_trace["callers"]}

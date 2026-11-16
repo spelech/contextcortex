@@ -1495,6 +1495,14 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_upsert_reports_failure_when_every_record_is_rejected`
 - `test_rejected_record_warnings_do_not_log_the_chunk_text`
 
+#### `tests/test_trace_path_callee_noise.py` (6 tests)
+- `test_private_members_are_visible_only_from_their_own_class`
+- `test_callees_keep_production_symbols_and_group_library_calls`
+- `test_include_unresolved_shows_every_call_as_a_node`
+- `test_callers_skip_test_code_and_calls_that_cannot_reach_a_private_member`
+- `test_a_test_target_still_shows_its_test_callees`
+- `test_mcp_answer_is_smaller_by_default`
+
 #### `tests/test_trace_path_case_insensitive.py` (2 tests)
 - `test_lowercase_symbol_resolves_to_the_indexed_symbol`
 - `test_graph_traversal_sql_has_no_sqlite_only_collation`
