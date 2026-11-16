@@ -5,6 +5,7 @@ from typing import Annotated, Any, Dict, List, Optional
 from pydantic import Field
 
 from app.services.auth import ForbiddenError, Role, enforce_tool_permission
+from app.services.compact_results import group_grep_matches
 from app.services.code_grep_scanner import execute_code_grep, looks_like_regex
 from app.services.database.connection import get_db_connection
 from app.services.file_reader import get_file_reader_service
@@ -130,18 +131,20 @@ async def handle_grep_code(
         sanitized_matches = [_sanitize_match_lines(m) for m in page_slice]
         next_offset = (safe_offset + safe_limit) if has_more else None
 
-        payload = {
-            "pattern": pattern,
-            "pattern_mode": pattern_mode,
-            "path_filter": path_filter,
-            "total_matches": len(all_matches),
-            "offset": safe_offset,
-            "limit": safe_limit,
-            "has_more": has_more,
-            "next_offset": next_offset,
-            "truncated": has_more,
-            "matches": sanitized_matches,
-        }
+        shared_repo, files = group_grep_matches(sanitized_matches, block_separators=safe_context > 0)
+        payload: Dict[str, Any] = {"total_matches": len(all_matches)}
+        if pattern_mode != ("regex" if is_regex else "literal"):
+            payload["pattern_mode"] = pattern_mode
+        if path_filter:
+            payload["path_filter"] = path_filter
+        if safe_offset:
+            payload["offset"] = safe_offset
+        payload["has_more"] = has_more
+        if has_more:
+            payload["next_offset"] = next_offset
+        if shared_repo:
+            payload["repo"] = shared_repo
+        payload["files"] = files
         return json.dumps(payload, separators=(",", ":"))
 
     except ForbiddenError as fe:

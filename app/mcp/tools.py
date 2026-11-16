@@ -80,7 +80,9 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "grep_code",
         handle_grep_code,
         f"Use for exact literal or regex pattern matching across {_SUPPORTED_LANGS} and configs with context_lines (0..10) and AST symbol attribution. "
-        "Truncates lines > 400 chars with '...[line truncated]'. Paginate with limit (clamped 1..100, default 30) and offset.",
+        "Truncates lines > 400 chars with '...[line truncated]'. Paginate with limit (clamped 1..100, default 30) and offset. "
+        "Returns {total_matches, has_more, next_offset?, repo?, files: [{file, repo?, symbols?: {line: symbol}, permalink?, lines}]}; "
+        "lines are ripgrep-style strings, '<line>:<text>' for a match, '<line>-<text>' for context, '--' between blocks.",
     ),
     (
         "list_repositories",
@@ -91,7 +93,8 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "read_file",
         handle_read_file,
         f"Use to read exact 1-based line slices (start_line..end_line) across {_SUPPORTED_LANGS}, Markdown, or configs, or set outline_only=True to inspect AST classes/functions/signatures before slicing lines. "
-        "Returns pagination cursors (next_start_line for text slices; total_symbols/has_more/next_offset for outline_only=True).",
+        "Text slices return {file, lines: [start, end], total_lines, next_start_line?, truncated?, content} with each content line as '<line>:<text>'. "
+        "outline_only=True returns total_symbols/has_more/next_offset.",
     ),
     (
         "search",

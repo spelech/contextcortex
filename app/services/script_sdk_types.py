@@ -22,6 +22,18 @@ HEADER = """\
  */
 """
 
+# Result types for tools whose results have a fixed compact shape. The other tools return `Promise<any>`.
+RESULT_TYPES = """\
+/** grep_code lines: '<line>:<text>' is a match, '<line>-<text>' is context, '--' separates blocks. */
+interface GrepCodeFile { file: string; repo?: string; symbols?: Record<string, string>; permalink?: string; lines: string[] }
+interface GrepCodeResult { total_matches: number; has_more: boolean; next_offset?: number; offset?: number; pattern_mode?: string; path_filter?: string; repo?: string; files: GrepCodeFile[] }
+/** read_file text slice: each content line is '<line>:<text>'. With outline_only=True the result has symbols instead. */
+interface ReadFileResult { file: string; lines: [number, number]; total_lines: number; next_start_line?: number; truncated?: boolean; source?: string; content: string }
+interface ReadFileOutline { file: string; repo: string | null; outline_only: true; total_symbols: number; offset: number; limit: number; has_more: boolean; next_offset: number | null; symbols: { name: string; symbol: string; kind: string; lines: [number, number]; signature: string | null }[]; candidates?: string[] }
+"""
+
+_RESULT_TYPE_NAMES = {"grep_code": "GrepCodeResult", "read_file": "ReadFileResult | ReadFileOutline"}
+
 
 def _doc(text: str, indent: str) -> List[str]:
     lines = [line.rstrip() for line in (text or "").strip().splitlines() if line.strip()]
@@ -92,14 +104,14 @@ def _args_type(schema: Dict[str, Any], indent: str) -> List[str]:
 
 def build_sdk_declarations(tools: Iterable[Any]) -> str:
     """`declare const tools: {...}` with one async function per tool (objects with name, description, parameters)."""
-    lines = [HEADER, "declare const args: Record<string, any>;", "declare const tools: {"]
+    lines = [HEADER, RESULT_TYPES, "declare const args: Record<string, any>;", "declare const tools: {"]
     for tool in sorted(tools, key=lambda t: t.name):
         schema = getattr(tool, "parameters", None) or {}
         lines += _doc(getattr(tool, "description", "") or "", "  ")
         has_required = bool(schema.get("required"))
         arg_lines = _args_type(schema, "  ")
         arg_lines[0] = f"  {tool.name}(args{'' if has_required else '?'}: {arg_lines[0]}"
-        arg_lines[-1] = arg_lines[-1] + "): Promise<any>;"
+        arg_lines[-1] = arg_lines[-1] + f"): Promise<{_RESULT_TYPE_NAMES.get(tool.name, 'any')}>;"
         lines += arg_lines
     lines += [
         "  contextcortex: Omit<typeof tools, \"contextcortex\">;",

@@ -6,6 +6,7 @@ from pydantic import Field
 
 from app.services.auth import enforce_tool_permission, Role, ForbiddenError
 from app.services.database import get_db_connection
+from app.services.compact_results import number_lines
 from app.services.file_reader import get_file_reader_service
 from app.services.source_paths import LocalSourceRoots
 from app.mcp.handlers.grep_handlers import handle_grep_code
@@ -180,20 +181,19 @@ async def handle_read_file(
         )
         next_start_line = (e_line + 1) if (has_more and e_line is not None) else None
 
-        return json.dumps({
+        payload: Dict[str, Any] = {
             "file": _strip_repo_prefix(result.get("filepath") or path),
-            "repo": repo,
-            "source": result.get("source"),
             "lines": [s_line, e_line],
-            "start_line": s_line,
-            "end_line": e_line,
             "total_lines": t_lines,
-            "has_more": has_more,
-            "next_start_line": next_start_line,
-            "size_bytes": result.get("size_bytes"),
-            "truncated": is_truncated,
-            "content": result.get("content", ""),
-        })
+        }
+        if has_more:
+            payload["next_start_line"] = next_start_line
+        if is_truncated:
+            payload["truncated"] = True
+        if result.get("source") == "vector_store":
+            payload["source"] = "vector_store"
+        payload["content"] = number_lines(result.get("content", ""), s_line or 1)
+        return json.dumps(payload, separators=(",", ":"))
 
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_read_file ({path}): {fe}")

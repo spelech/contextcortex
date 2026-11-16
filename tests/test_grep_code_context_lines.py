@@ -61,11 +61,14 @@ def test_indexed_path_regex_context_lines_are_consecutive(hub_reader, extra):
     # offset + limit > 100 sends the search through _scan_extended_matches.
     result = _grep(pattern=r"TARGET_\w+", is_regex=True, repo="hub-prefix", context_lines=3, **extra)
     if extra:
-        assert result["matches"] == []
+        assert result["files"] == []
         result = _grep(pattern=r"TARGET_\w+", is_regex=True, repo="hub-prefix", context_lines=3, limit=100, offset=0)
-    assert [m["line"] for m in result["matches"]] == [47, 63]
-    for match in result["matches"]:
-        _assert_context(match, FILE_LINES, 3)
+    assert result["repo"] == "hub-prefix"
+    [group] = result["files"]
+    assert group["file"] == "skill.md"
+    expected = [f"{n}{':' if n in (47, 63) else '-'}{FILE_LINES[n - 1]}" for n in range(44, 51)]
+    expected += ["--"] + [f"{n}{':' if n == 63 else '-'}{FILE_LINES[n - 1]}" for n in range(60, 67)]
+    assert group["lines"] == expected
 
 
 def _chunk(start, end, lines, **extra):

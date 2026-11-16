@@ -55,7 +55,7 @@ Performs deterministic literal string or regular expression matching across one 
   - `context_lines` (*integer, default: 2*): Number of surrounding context lines before and after each match (`0` to `10`).
   - `limit` (*integer, default: 30*): Maximum number of matched lines to return (`1` to `100`).
   - `offset` (*integer, default: 0*): 0-based match offset for pagination.
-- **Returns**: Compact JSON object containing `pattern`, `pattern_mode`, `total_matches`, `has_more`, `next_offset`, and `matches` (each with `repo`, `file`, `line`, `match_text`, `context`, and enclosing `symbol`).
+- **Returns**: Compact JSON object grouped by file, as ripgrep writes it: `total_matches`, `has_more`, `next_offset` (only when `has_more`), `offset` (only when not `0`), `pattern_mode` (only when a literal search ran again as a regex), `path_filter` (only when given), `repo` (when all files come from one repository), and `files`. Each file has `file`, `repo` (only when the files come from different repositories), `symbols` (`{line: enclosing symbol}`), `permalink` (the file permalink; add `#L<line>`), and `lines`. Each line is a string: `<line>:<text>` for a match, `<line>-<text>` for a context line, and, when `context_lines > 0`, `--` between blocks that are not next to each other.
 
 ### 3. `diagnose_issue`
 Forensic triage tool that accepts stack traces, error logs, or user bug reports and correlates them against indexed AST symbols, HTTP routes, error string literals, and semantic vector candidates.
@@ -97,7 +97,7 @@ Reads bounded 1-indexed line slices from monitored local directories, persistent
   - `outline_only` (*boolean, default: false*): When `true`, returns the AST outline (classes, methods, functions, signatures, line ranges) instead of source text.
   - `limit` (*integer, default: 150*): Maximum AST symbols returned per page when `outline_only=True` (`1..500`).
   - `offset` (*integer, default: 0*): 0-based AST symbol offset when `outline_only=True`.
-- **Returns**: In read mode: `file`, `repo`, `source`, `lines`, `total_lines`, `has_more`, `next_start_line`, `size_bytes`, `truncated`, and `content`. In outline mode: `file`, `repo`, `outline_only: true`, `total_symbols`, `has_more`, `next_offset`, and `symbols`.
+- **Returns**: In read mode: `file`, `lines` (`[start, end]`), `total_lines`, `next_start_line` (only when more lines follow), `truncated` (only when the line cap cut the window), `source` (only `vector_store`, when the file was reconstructed from index chunks), and `content`, where each line is `<line>:<text>`. In outline mode: `file`, `repo`, `outline_only: true`, `total_symbols`, `has_more`, `next_offset`, and `symbols`.
 
 ### 6. `trace_path`
 Deterministically traverses function call graphs, module imports, inheritance hierarchies, and cross-repository HTTP route boundaries using AST relationships (`ast_relationships`), `api_routes`, and `api_client_calls` via breadth-first search (BFS).
@@ -212,7 +212,7 @@ Registered only when `MCP_ENABLE_WRITE_TOOLS=true` (disabled by default so the d
 All list- and search-oriented MCP tools enforce safe upper bounds and return standardized pagination metadata:
 - **Inputs**: `limit` (clamped per tool) and `offset` (0-based integer, default `0`).
 - **Outputs**: `total` (or `total_matches` / `total_symbols` / `total_files`), `offset`, `limit`, `has_more` (`boolean`), and `next_offset` (`integer | null`).
-- **Snippet & Line Caps**: `search` accepts `max_snippet_chars` (`200..6000`, default `2000`, marking `content_truncated: true` when clipped). `grep_code` caps individual matched/context lines at `400` characters (`...[line truncated]`). `read_file` returns `has_more` and `next_start_line` for chunked file reading, and `total_symbols`/`has_more`/`next_offset` when `outline_only=True`.
+- **Snippet & Line Caps**: `search` accepts `max_snippet_chars` (`200..6000`, default `2000`, marking `content_truncated: true` when clipped). `grep_code` caps individual matched/context lines at `400` characters (`...[line truncated]`). `read_file` returns `next_start_line` for chunked file reading, and `total_symbols`/`has_more`/`next_offset` when `outline_only=True`.
 
 ---
 

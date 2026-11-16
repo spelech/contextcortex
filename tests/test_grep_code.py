@@ -289,10 +289,9 @@ async def test_mcp_grep_code_registration_and_execution(grep_test_env):
     # Call handle_grep_code
     out_json = await handle_grep_code(pattern="authenticate", repo="auth-service")
     parsed = json.loads(out_json)
-    assert parsed["pattern"] == "authenticate"
     assert parsed["total_matches"] == 1
-    assert parsed["matches"][0]["file"] == "services/auth.py"
-    assert parsed["matches"][0]["line"] == 1
+    assert parsed["files"][0]["file"] == "services/auth.py"
+    assert parsed["files"][0]["lines"] == ["1:def authenticate(user):", "2-    pass"]
 
 
 def test_api_search_grep_endpoint(grep_test_env):
