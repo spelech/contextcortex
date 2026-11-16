@@ -408,11 +408,12 @@ def find_semantic_candidates(
             r["name"]: dict(r)
             for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall()
         }
+        roots = LocalSourceRoots.load(conn)
         route_syms = collect_route_path_symbols(conn, matched_routes or [], repo=repo, limit=limit)
         route_languages = {lang for s in route_syms if (lang := language_family(s.get("language"), s["filepath"]))}
         seen = set()
         for s in route_syms:
-            file_path = _clean_diag_path(s["filepath"])
+            file_path = _diag_file(roots, s["filepath"])
             sym = s["full_symbol"] or s["name"]
             seen.add((s["repo"], file_path, sym))
             candidates.append(_build_candidate(conn, git_repos, {
@@ -435,7 +436,7 @@ def find_semantic_candidates(
             p = h.payload
             if not keep_semantic_hit(p, repo, route_languages):
                 continue
-            file_path = _clean_diag_path(p.get("rel_path") or p.get("path") or "")
+            file_path = _diag_file(roots, p.get("rel_path") or p.get("path") or "")
             sym = p.get("full_symbol") or p.get("symbol")
             target_repo = p.get("repo") or repo or "unknown"
             if (target_repo, file_path, sym) in seen:
