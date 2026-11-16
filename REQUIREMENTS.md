@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1285 Automated Tests** (921 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1290 Automated Tests** (926 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -447,6 +447,13 @@ classDiagram
 - `test_api_delete_repo_uses_vector_store` - _Test that DELETE /admin/api/repos/{id} calls delete_by_repo on the vector store._
 - `test_mcp_handle_index_status_details` - _Test that handle_list_repositories(include_status=True) includes provider, mode, location, collection, and counts._
 - `test_mcp_handle_index_status_chroma` - _Test handle_list_repositories(include_status=True) after switching to Chroma._
+
+#### `tests/backend/test_application_logging_setup.py` (5 tests)
+- `test_indexer_info_reaches_stdout_and_diagnostic_buffer`
+- `test_configure_application_logging_is_idempotent`
+- `test_third_party_info_is_not_printed`
+- `test_log_level_env_controls_application_level`
+- `test_resolve_log_level`
 
 #### `tests/backend/test_architecture_adr.py` (6 tests)
 - `test_entry_point_detection_heuristics`
