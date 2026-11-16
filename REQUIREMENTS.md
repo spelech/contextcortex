@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1259 Automated Tests** (895 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1265 Automated Tests** (901 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -646,6 +646,14 @@ classDiagram
 - `test_ensure_collection_delegation`
 - `test_catalog_summary_truncation`
 - `test_get_prompt_unknown_error`
+
+#### `tests/backend/test_indexing_status_flag.py` (6 tests)
+- `test_is_indexing_is_a_function_backed_by_the_lock`
+- `test_stats_reports_is_indexing_true_during_full_run`
+- `test_is_indexing_false_again_when_run_completes`
+- `test_sync_and_reindex_return_409_while_indexing`
+- `test_sync_dispatches_when_idle`
+- `test_poller_defers_while_full_run_holds_lock`
 
 #### `tests/backend/test_mcp_v2.py` (9 tests)
 - `test_fastmcp_tools_registered`

@@ -56,7 +56,6 @@ from app.services.indexing.state import (
     VAULT_PATH,
     ensure_collection,
     indexing_lock,
-    is_indexing,
     trigger_list_changed_notification,
 )
 from app.services.memory_utils import trim_memory
@@ -362,11 +361,9 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
 
 def run_full_indexing():
-    global is_indexing
     if not indexing_lock.acquire(blocking=False):
         logger.warning("Indexing already running. Skipping duplicate call.")
         return False
-    is_indexing = True
     try:
         idx_state.ensure_collection()
         local_syncer.sync_local_paths()
@@ -384,7 +381,6 @@ def run_full_indexing():
         logger.error(f"Error during full indexing: {e}")
         return False
     finally:
-        is_indexing = False
         indexing_lock.release()
         trim_memory()
 
