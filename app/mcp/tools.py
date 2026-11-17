@@ -47,6 +47,7 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "diagnose_issue",
         handle_diagnose_issue,
         f"Use for forensic triage of stack traces, error logs, or failing HTTP routes across {_SUPPORTED_LANGS}. "
+        "Call it FIRST for a bug report, before find_routes, trace_path, or read_file: one call replaces most of those lookups. "
         "Returns call_chain: the call path from the matched route, stack frame, or symbol to the most likely fault, with the "
         "call-site line, 1-3 evidence lines, and arguments not passed (not_passed) for each step. If the report says that a similar "
         "action still works, working_path_comparison aligns that path with the chain and shows the first difference. Also resolves stack frames "
@@ -55,7 +56,9 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
     (
         "execute_script",
         handle_execute_script,
-        "Code Mode: use to chain several ContextCortex tool calls in ONE call. Send an async JavaScript body; it calls tools with "
+        "Code Mode: use to chain several ContextCortex tool calls in ONE call. For a bug report, stack trace, or failing route, call "
+        "diagnose_issue first (directly or as tools.diagnose_issue), then use a script for the follow-up lookups. "
+        "Send an async JavaScript body; it calls tools with "
         "`await tools.<tool>(args)` (results are parsed JSON, a tool error throws) and returns only what you need. "
         "Example: `const r = await tools.find_routes({query: 'publish', kind: 'handlers'}); const t = await tools.trace_path({symbol: r.routes[0].handler, "
         "direction: 'callees', depth: 3}); return t.callees.map(c => c.symbol);`. Typed signatures: resource contextcortex://code-mode/sdk.d.ts. "
