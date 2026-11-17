@@ -59,7 +59,7 @@ RESULT_INTERFACES: Dict[str, Dict[str, str]] = {
                   "route?": "any", "external_callers?": "any[]", "http_calls?": "any[]", "unresolved?": "string[]",
                   "callers?": "TraceNode[]", "callees?": "TraceNode[]"},
     "TracePathResult": {"target?": "TraceTarget", "symbol?": _S, "found?": "false",
-                        "candidates?": "{ symbol: string; file: string; line: number }[]", "hint?": _S, "direction?": _S, "depth?": _N,
+                        "candidates?": "{ symbol: string; file: string; line: number; repos: string[] }[]", "hint?": _S, "direction?": _S, "depth?": _N,
                         "truncated?": "boolean", "callers": "TraceNode[]", "callees": "TraceNode[]",
                         "unresolved?": "string[]", "total_callers": _N, "total_callees": _N, **_PAGE},
     "SymbolHit": {"name": _S, "symbol": _S, "kind": _SN, "repo": _S, "file": _S, "lines": _LINES, "signature": _SN,
