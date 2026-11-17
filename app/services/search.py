@@ -1,5 +1,6 @@
 import contextvars
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 
@@ -11,6 +12,7 @@ from app.services.graph_traversal import (
     trace_symbol_path,
 )
 from app.services.lexical_retriever import run_fast_lexical_track
+from app.services.source_paths import LocalSourceRoots
 from app.services.query_router import (
     classify_query_intent,
     fuse_search_results,
@@ -22,6 +24,36 @@ from app.services.vector_store import VectorSearchResult, get_vector_store
 logger = logging.getLogger("contextcortex.search")
 
 _TRACK_B_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ctx-search-track-b")
+_ABSOLUTE_PATH_RE = re.compile(r"^(/|[A-Za-z]:/)")
+
+
+def _needs_relative_path(payload: dict) -> bool:
+    raw = str(payload.get("rel_path") or payload.get("path") or "").replace("\\", "/")
+    return bool(raw) and (not payload.get("rel_path") or bool(_ABSOLUTE_PATH_RE.match(raw)))
+
+
+def _with_relative_paths(results: List[VectorSearchResult]) -> List[VectorSearchResult]:
+    """Gives vector-store hits the repo-relative `rel_path` that Track A hits already have.
+
+    Local-source chunks store the absolute disk path. Without this, the same chunk from Track A and from the
+    store gets two dedup keys (so it is not merged), and the search tool returns an absolute path.
+    """
+    todo = [r for r in results or [] if _needs_relative_path(r.payload or {})]
+    if not todo:
+        return results
+    try:
+        with get_db_connection() as conn:
+            roots = LocalSourceRoots.load(conn)
+    except Exception as e:
+        logger.debug(f"Could not load local-source roots for search paths: {e}")
+        return results
+    for r in todo:
+        r.payload["rel_path"] = roots.relative(r.payload.get("rel_path") or r.payload.get("path"), r.payload.get("repo"))
+    return results
+
+
+def _store_search(store, **kwargs) -> List[VectorSearchResult]:
+    return _with_relative_paths(store.search(**kwargs))
 
 
 def _enrich_code_ast_metadata(results: List[VectorSearchResult]) -> None:
@@ -143,7 +175,8 @@ def execute_hybrid_search(
 
         # Explicit pure semantic search bypasses lexical shortcutting
         if mode == "semantic":
-            results = store.search(
+            results = _store_search(
+                store,
                 query_text=clean_query,
                 doc_type=doc_type,
                 repo=repo,
@@ -172,7 +205,8 @@ def execute_hybrid_search(
                 limit=limit,
                 allow_store_chunk_hydration=True,
             )
-            store_lex = store.search(
+            store_lex = _store_search(
+                store,
                 query_text=clean_query,
                 doc_type=doc_type,
                 repo=repo,
@@ -201,7 +235,8 @@ def execute_hybrid_search(
                 allow_store_chunk_hydration=True,
             )
             if not track_a and "lexical" in supported:
-                track_a = store.search(
+                track_a = _store_search(
+                    store,
                     query_text=clean_query,
                     doc_type=doc_type,
                     repo=repo,
@@ -217,7 +252,8 @@ def execute_hybrid_search(
                 _enrich_code_ast_metadata(early)
                 return early
 
-            track_b = store.search(
+            track_b = _store_search(
+                store,
                 query_text=clean_query,
                 doc_type=doc_type,
                 repo=repo,
@@ -236,7 +272,8 @@ def execute_hybrid_search(
         ctx = contextvars.copy_context()
         track_b_future = _TRACK_B_EXECUTOR.submit(
             ctx.run,
-            store.search,
+            _store_search,
+            store,
             query_text=clean_query,
             doc_type=doc_type,
             repo=repo,

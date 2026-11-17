@@ -1520,6 +1520,10 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_find_api_callers_without_known_route_keeps_every_match`
 - `test_trace_path_external_callers_and_handlers_use_most_specific_route`
 
+#### `tests/test_search_relative_paths.py` (2 tests)
+- `test_store_hits_get_relative_paths_and_merge_with_track_a`
+- `test_paths_outside_local_roots_keep_the_stored_path`
+
 #### `tests/test_storage_api_routes.py` (4 tests)
 - `test_storage_upload_and_get_file`
 - `test_storage_upload_multipart_and_put`
