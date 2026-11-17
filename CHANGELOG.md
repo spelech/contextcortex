@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.27.1](https://github.com/spelech/contextcortex/compare/v2.27.0...v2.27.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **search:** return repo-relative paths for local-source chunks and merge them with lexical hits ([#160](https://github.com/spelech/contextcortex/issues/160)) ([0675183](https://github.com/spelech/contextcortex/commit/06751832cbccca5d9ce7ea7125a36d60e8d78471))
+* **ui:** show the release version from package.json instead of a hard-coded v2.17.1 ([#159](https://github.com/spelech/contextcortex/issues/159)) ([7354d6a](https://github.com/spelech/contextcortex/commit/7354d6a612775a38a5d50c3df203932e8dc5b655))
+
 ## [2.27.0](https://github.com/spelech/contextcortex/compare/v2.26.1...v2.27.0) (2026-11-17)
 
 
