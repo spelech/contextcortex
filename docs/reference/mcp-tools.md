@@ -183,6 +183,18 @@ Code Mode. Runs one async JavaScript body that calls other ContextCortex tools a
 - **Field errors**: if a script fails with a TypeError such as "Cannot read properties of undefined", the error message adds a hint to call `tools.help("<tool>")` or to return `Object.keys(<result>)`.
 
 ```javascript
+// Bug report: one diagnose_issue call, then read the most likely fault. arguments: {error, repo}
+const d = await tools.diagnose_issue({ issue_text: args.error, repo: args.repo });
+const last = d.call_chain.steps.at(-1);
+const code = await tools.read_file({ path: last.file, repo: args.repo, start_line: last.lines[0], end_line: last.lines[1] });
+return {
+  chain: d.call_chain.steps.map(s => [s.symbol, s.call_site?.line, s.not_passed]),
+  compare: d.working_path_comparison?.first_divergence,
+  code: code.content,
+};
+```
+
+```javascript
 // Which classes call each repository method that a route handler reaches?
 const routes = await tools.find_routes({ query: args.route, kind: "handlers", repo: args.repo });
 const handler = routes.routes[0].handler;

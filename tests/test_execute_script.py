@@ -149,6 +149,8 @@ def test_code_mode_points_bug_reports_to_diagnose_issue_first():
     server = register_mcp_tools_and_resources(FastMCP("DiagnoseFirst"))
     tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
     assert "diagnose_issue first" in tools["execute_script"].description
+    assert "tools.diagnose_issue({issue_text: args.error, repo: args.repo})" in tools["execute_script"].description
+    assert "trace_path {target, callees/callers: [{symbol, file, line, defined_at, callees}]}" in tools["execute_script"].description
     assert "Call it FIRST for a bug report" in tools["diagnose_issue"].description
     assert "diagnose_issue(args" in build_sdk_declarations(list(tools.values()))
 
