@@ -39,7 +39,7 @@ BANNED_NAMING_PATTERN = re.compile(r"(?:manager|managers|helper|helpers|util|uti
 
 
 def test_repository_root_structure_hygiene():
-    """Verify repository root contains required living docs, no stray test_*.py files, and synced www/ overlay."""
+    """Verify repository root contains required living docs, no stray test_*.py files, and no committed UI build."""
     stray_root_tests = [
         p.name for p in sorted(PROJECT_ROOT.iterdir())
         if p.is_file() and (p.name.startswith("test_") or p.name.endswith("_test.py"))
@@ -50,12 +50,10 @@ def test_repository_root_structure_hygiene():
     missing_docs = [doc for doc in required_docs if not (PROJECT_ROOT / doc).is_file()]
     assert not missing_docs, f"Missing required root living documentation files: {missing_docs}"
 
-    dist_index = PROJECT_ROOT / "frontend" / "dist" / "index.html"
-    www_index = PROJECT_ROOT / "www" / "index.html"
-    if dist_index.is_file() and www_index.is_file():
-        assert dist_index.read_text(encoding="utf-8") == www_index.read_text(encoding="utf-8"), (
-            "www/index.html is out of sync with frontend/dist/index.html (required by Dockerfile.overlay)"
-        )
+    # The dashboard is built by `npm run build` (Dockerfile, portable build); a committed build goes stale.
+    ignored = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "/frontend/dist/" in ignored and "/www/" in ignored
+    assert "COPY www/" not in (PROJECT_ROOT / "Dockerfile.overlay").read_text(encoding="utf-8")
 
 
 def test_all_python_files_and_classes_under_500_loc():

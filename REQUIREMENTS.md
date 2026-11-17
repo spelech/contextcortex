@@ -1122,7 +1122,7 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_rollback_and_complete_rebuild` - _Tests model transition, rollback, and complete rebuild across local paths._
 
 #### `tests/test_engineering_style_guardrails.py` (4 tests)
-- `test_repository_root_structure_hygiene` - _Verify repository root contains required living docs, no stray test_*.py files, and synced www/ overlay._
+- `test_repository_root_structure_hygiene` - _Verify repository root contains required living docs, no stray test_*.py files, and no committed UI build._
 - `test_all_python_files_and_classes_under_500_loc` - _Verify every Python file and class across main.py, app/, scripts/, and tests/ stays <= 500 LOC._
 - `test_all_frontend_and_script_files_under_500_loc` - _Verify every TypeScript, TSX, CSS, shell, and PowerShell file in source/tests/scripts stays <= 500 LOC._
 - `test_semantic_naming_bans_junk_drawer_modules_and_classes` - _Verify case-insensitively that no new *Manager, *Helper, *Util, *Utils, or *Data modules/classes exist._

@@ -167,8 +167,9 @@ docker build --file Dockerfile.overlay --tag contextcortex-enterprise:local `
 `RUNTIME_IMAGE` is intentionally required; there is no implicit mutable `latest`
 fallback. Use a release image matching this checkout's requirements and verify
 compatibility. Review/scan/promote the base image according to enterprise policy.
-This build uses the checked-in dashboard bundle, not a new npm build, and does
-not upgrade dependencies. Dependency upgrades require a new approved base/source
+This build keeps the dashboard of the release image (the repository does not
+contain a built dashboard), so it does not run npm and does not upgrade
+dependencies. Dependency upgrades require a new approved base/source
 build. Private CAs and the runtime entrypoint are included.
 
 ## Run the built image

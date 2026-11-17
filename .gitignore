@@ -17,6 +17,9 @@ node_modules/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 /dist/
+# Built dashboard: `cd frontend && npm ci && npm run build` (the Dockerfile and the portable build do this)
+/frontend/dist/
+/www/
 
 # Local private CA certificates (see certs/README.md)
 certs/*
