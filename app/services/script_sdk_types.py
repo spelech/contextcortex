@@ -58,7 +58,8 @@ RESULT_INTERFACES: Dict[str, Dict[str, str]] = {
     "TraceNode": {"symbol": _S, "rel": _S, "repo": _S, "file": _S, "line": _NN, "defined_at?": _S, "permalink?": _SN,
                   "route?": "any", "external_callers?": "any[]", "http_calls?": "any[]", "unresolved?": "string[]",
                   "callers?": "TraceNode[]", "callees?": "TraceNode[]"},
-    "TracePathResult": {"target?": "TraceTarget", "symbol?": _S, "found?": "false", "direction?": _S, "depth?": _N,
+    "TracePathResult": {"target?": "TraceTarget", "symbol?": _S, "found?": "false",
+                        "candidates?": "{ symbol: string; file: string; line: number }[]", "hint?": _S, "direction?": _S, "depth?": _N,
                         "truncated?": "boolean", "callers": "TraceNode[]", "callees": "TraceNode[]",
                         "unresolved?": "string[]", "total_callers": _N, "total_callees": _N, **_PAGE},
     "SymbolHit": {"name": _S, "symbol": _S, "kind": _SN, "repo": _S, "file": _S, "lines": _LINES, "signature": _SN,
@@ -76,7 +77,8 @@ _INTERFACE_DOCS = {
     "ChainStep": "One step of the failing call path. The last step is the most likely fault; not_passed lists "
                  "arguments that the call site does not pass on (for example the transaction).",
     "TraceNode": "file/line is the call site in the caller; defined_at (path:line) is where the callee is defined.",
-    "TracePathResult": "An unknown symbol gives {symbol, found: false} and no target.",
+    "TracePathResult": "An unknown symbol gives {symbol, found: false} and no target; for an unknown class, candidates "
+                       "lists the indexed symbols with the same member name.",
 }
 
 

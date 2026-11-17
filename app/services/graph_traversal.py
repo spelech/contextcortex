@@ -9,6 +9,7 @@ from app.services.git_manager import format_git_permalink
 from app.services.source_paths import LocalSourceRoots
 from app.services.trace_call_filters import is_cobol_file, member_visible_from
 from app.services.trace_http_boundaries import make_http_boundary_resolver
+from app.services.trace_target_lookup import trace_not_found
 
 _DIRECTION_ALIASES = {
     "inbound": "callers",
@@ -105,12 +106,10 @@ def trace_symbol_path(
                 short_target = target_sym.split(".")[-1] if "." in target_sym else target_sym
 
         if not symbols_found:
+            # The full name only: a qualified name must not fall back to every method with the same short name.
             rel_hit = conn.execute(
-                "SELECT source_symbol, target_symbol FROM ast_relationships "
-                "WHERE (source_symbol = ? OR target_symbol = ? OR source_symbol = ? OR target_symbol = ?)"
-                + repo_sql + " LIMIT 1",
-                [target_sym, target_sym, short_target, short_target] + repo_arg,
-            ).fetchone()
+                "SELECT source_symbol, target_symbol FROM ast_relationships WHERE (source_symbol = ? OR target_symbol = ?)"
+                + repo_sql + " LIMIT 1", [target_sym, target_sym] + repo_arg).fetchone()
             if not rel_hit:
                 rel_hit = conn.execute(
                     "SELECT source_symbol, target_symbol FROM ast_relationships "
@@ -122,7 +121,7 @@ def trace_symbol_path(
                     target_sym = rel_hit["source_symbol"] if (rel_hit["source_symbol"] or "").upper() == target_sym.upper() else rel_hit["target_symbol"]
                     short_target = target_sym.split(".")[-1] if "." in target_sym else target_sym
             if not rel_hit:
-                return json.dumps({"symbol": target_sym, "found": False, "callers": [], "callees": []}, separators=(",", ":"))
+                return json.dumps(trace_not_found(conn, target_sym, short_target, repo), separators=(",", ":"))
 
         git_repos = {r["name"]: dict(r) for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall()}
         all_routes = [dict(r) for r in conn.execute("SELECT id, repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line FROM api_routes").fetchall()]
