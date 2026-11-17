@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1332 Automated Tests** (968 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1335 Automated Tests** (971 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1590,6 +1590,11 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_calls_without_a_receiver_get_the_own_class`
 - `test_a_method_the_class_does_not_declare_stays_bare`
 - `test_trace_reaches_the_repository_through_own_class_calls_and_the_real_implementation`
+
+#### `tests/test_trace_path_unknown_class.py` (3 tests)
+- `test_unknown_class_gives_candidates_and_no_merged_graph`
+- `test_known_names_still_trace`
+- `test_unknown_bare_name_has_no_candidates`
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`
