@@ -62,7 +62,7 @@ def test_schema_requires_symbol_and_lists_name_as_optional_deprecated_alias():
 def test_sdk_typings_show_symbol_required_and_name_optional():
     sdk = build_sdk_declarations([_tools()["find_symbol"]])
     block = sdk[sdk.index("find_symbol(args"):]
-    block = block[:block.index("Promise<any>;")]
+    block = block[:block.index("): Promise<")]
     assert "symbol: string;" in block
     assert "name?: string | null;" in block
 

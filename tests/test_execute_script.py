@@ -138,7 +138,7 @@ def test_sdk_declarations_from_tool_schemas():
                        "depth": {"type": "integer", "default": 2}}})
     sdk = build_sdk_declarations([tool])
     assert "trace_path(args: {" in sdk and "symbol: string;" in sdk and "depth?: number;" in sdk
-    assert " * Qualified symbol." in sdk and "): Promise<any>;" in sdk and "contextcortex: Omit<typeof tools" in sdk
+    assert " * Qualified symbol." in sdk and "): Promise<TracePathResult>;" in sdk and "contextcortex: Omit<typeof tools" in sdk
 
 
 def test_code_mode_points_bug_reports_to_diagnose_issue_first():

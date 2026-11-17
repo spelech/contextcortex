@@ -32,7 +32,66 @@ interface ReadFileResult { file: string; lines: [number, number]; total_lines: n
 interface ReadFileOutline { file: string; repo: string | null; outline_only: true; total_symbols: number; offset: number; limit: number; has_more: boolean; next_offset: number | null; symbols: { name: string; symbol: string; kind: string; lines: [number, number]; signature: string | null }[]; candidates?: string[] }
 """
 
-_RESULT_TYPE_NAMES = {"grep_code": "GrepCodeResult", "read_file": "ReadFileResult | ReadFileOutline"}
+# Result shapes of the tools that scripts chain most. A field name that ends in "?" is not always there.
+# tests/test_code_mode_result_types.py checks these fields against real results of the tools.
+_S, _SN, _N, _NN, _LINES = "string", "string | null", "number", "number | null", "[number, number]"
+_PAGE = {"offset": _N, "limit": _N, "has_more": "boolean", "next_offset": _NN}
+RESULT_INTERFACES: Dict[str, Dict[str, str]] = {
+    "CallSite": {"file?": _S, "line": _N, "text": _S},
+    "ChainStep": {"symbol": _S, "kind": _SN, "file": _S, "lines": _LINES, "via?": _S, "call_site?": "CallSite",
+                  "not_passed?": "string[]", "evidence": "{ line: number; text: string }[]", "score": _N, "code?": _S},
+    "ChainHit": {"symbol": _S, "file": _S, "lines": _LINES, "score": _N, "not_passed?": "string[]"},
+    "CallChain": {"entry": _SN, "terms": "string[]", "steps": "ChainStep[]", "other_hits": "ChainHit[]", "nodes_read": _N},
+    "WorkingStep": {"symbol": _S, "file": _S, "lines": _LINES, "call_site?": "CallSite"},
+    "WorkingPathComparison": {"statement": _S, "entry": "{ symbol: string; aligned_with: string; route?: string } | null",
+                              "steps": "WorkingStep[]", "first_divergence": "Record<string, any> | null"},
+    "DiagnoseResult": {"call_chain": "CallChain", "working_path_comparison": "WorkingPathComparison | null",
+                       "resolved_frames": "any[]", "matched_routes": "any[]", "matched_symbols": "any[]",
+                       "semantic_candidates": "any[]"},
+    "Route": {"repo": _S, "method": _S, "path": _S, "framework": _SN, "handler": _S, "file": _S, "lines": _LINES,
+              "permalink": _SN},
+    "RouteCaller": {"repo": _S, "method": _SN, "url": _S, "caller": _S, "file": _S, "line": _N, "permalink": _SN},
+    "FindRoutesResult": {"query": _SN, "kind": _S, "method": _SN, "repo": _SN, "total": _N, "total_routes?": _N,
+                         "total_callers?": _N, **_PAGE, "routes?": "Route[]", "callers?": "RouteCaller[]"},
+    "TraceTarget": {"symbol": _S, "name": _S, "kind": _SN, "repo": _S, "file": _S, "lines": _LINES, "permalink": _SN,
+                    "route?": "any", "external_callers?": "any[]", "http_calls?": "any[]"},
+    "TraceNode": {"symbol": _S, "rel": _S, "repo": _S, "file": _S, "line": _NN, "defined_at?": _S, "permalink?": _SN,
+                  "route?": "any", "external_callers?": "any[]", "http_calls?": "any[]", "unresolved?": "string[]",
+                  "callers?": "TraceNode[]", "callees?": "TraceNode[]"},
+    "TracePathResult": {"target?": "TraceTarget", "symbol?": _S, "found?": "false", "direction?": _S, "depth?": _N,
+                        "truncated?": "boolean", "callers": "TraceNode[]", "callees": "TraceNode[]",
+                        "unresolved?": "string[]", "total_callers": _N, "total_callees": _N, **_PAGE},
+    "SymbolHit": {"name": _S, "symbol": _S, "kind": _SN, "repo": _S, "file": _S, "lines": _LINES, "signature": _SN,
+                  "language": _SN},
+    "FindSymbolResult": {"query": _S, "exact": "boolean", "total": _N, **_PAGE, "symbols": "SymbolHit[]"},
+    "SearchHit": {"repo": _SN, "file": _S, "doc_type": _S, "lines": "[number, number] | null", "symbol": _SN,
+                  "kind": _SN, "signature": _SN, "language": _SN, "heading": _SN, "tags": "string[]", "score": _N,
+                  "dense_score": _NN, "sparse_score": _NN, "permalink": _SN, "content_truncated": "boolean",
+                  "content": _S},
+    "SearchResult": {"query": _S, "scope": _S, "mode": _S, "total": _N, **_PAGE, "max_snippet_chars": _N,
+                     "results": "SearchHit[]"},
+}
+_INTERFACE_DOCS = {
+    "CallSite": "The line in the caller that calls this step (a working-path step has no file).",
+    "ChainStep": "One step of the failing call path. The last step is the most likely fault; not_passed lists "
+                 "arguments that the call site does not pass on (for example the transaction).",
+    "TraceNode": "file/line is the call site in the caller; defined_at (path:line) is where the callee is defined.",
+    "TracePathResult": "An unknown symbol gives {symbol, found: false} and no target.",
+}
+
+
+def _render_interface(name: str, fields: Dict[str, str]) -> str:
+    doc = f"/** {_INTERFACE_DOCS[name]} */\n" if name in _INTERFACE_DOCS else ""
+    return doc + f"interface {name} {{ " + "; ".join(f"{key}: {ts}" for key, ts in fields.items()) + " }"
+
+
+RESULT_TYPES += "\n".join(_render_interface(name, fields) for name, fields in RESULT_INTERFACES.items()) + "\n"
+
+_RESULT_TYPE_NAMES = {
+    "grep_code": "GrepCodeResult", "read_file": "ReadFileResult | ReadFileOutline", "diagnose_issue": "DiagnoseResult",
+    "find_routes": "FindRoutesResult", "trace_path": "TracePathResult", "find_symbol": "FindSymbolResult",
+    "search": "SearchResult",
+}
 
 
 def _doc(text: str, indent: str) -> List[str]:
