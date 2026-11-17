@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.27.2](https://github.com/spelech/contextcortex/compare/v2.27.1...v2.27.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **search:** strip the local-source root from lexical AST and summary hits ([#163](https://github.com/spelech/contextcortex/issues/163)) ([919edc4](https://github.com/spelech/contextcortex/commit/919edc45fc24dbfbe409fe386c508d4910ce4293))
+
 ## [2.27.1](https://github.com/spelech/contextcortex/compare/v2.27.0...v2.27.1) (2026-11-17)
 
 
