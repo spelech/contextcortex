@@ -179,7 +179,8 @@ Code Mode. Runs one async JavaScript body that calls other ContextCortex tools a
   - The script cannot call `execute_script`, and it has no file, network, or process access.
 - **Limits** (environment settings): `CODE_MODE_TIMEOUT_SECONDS` (`30`, `1..300`), `CODE_MODE_MAX_TOOL_CALLS` (`50`, `1..500`), `CODE_MODE_MAX_MEMORY_MB` (`64`, `8..512`). `CODE_MODE_ENABLED=false` turns Code Mode off. Scripts are at most `50,000` characters; results larger than `100,000` characters are cut and marked `truncated`.
 - **Returns**: `{"result", "logs", "executionTimeMs", "toolCallsCount"}`. On a failure: `{"error": "script_failed", "message", "logs", "executionTimeMs", "toolCallsCount"}`. Line numbers in error messages count from the first line of the script.
-- **Types**: read the resource `contextcortex://code-mode/sdk.d.ts` for one typed function per tool.
+- **Types and help**: in a script, `tools.help()` returns the list of tools with their arguments and result types, and `tools.help("<tool>")` returns the full declaration of one tool with the result interfaces it uses. `tools.help` is not a tool call. The same declarations are in the resource `contextcortex://code-mode/sdk.d.ts` (some MCP clients cannot read resources). The result types cover `diagnose_issue`, `find_routes`, `trace_path`, `find_symbol`, `search`, `grep_code`, and `read_file`.
+- **Field errors**: if a script fails with a TypeError such as "Cannot read properties of undefined", the error message adds a hint to call `tools.help("<tool>")` or to return `Object.keys(<result>)`.
 
 ```javascript
 // Which classes call each repository method that a route handler reaches?

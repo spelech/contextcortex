@@ -58,6 +58,7 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         handle_execute_script,
         "Code Mode: use to chain several ContextCortex tool calls in ONE call. For a bug report, stack trace, or failing route, call "
         "diagnose_issue first (directly or as tools.diagnose_issue), then use a script for the follow-up lookups. "
+        "In a script, `tools.help('<tool>')` gives the arguments and result type of a tool (it is not a tool call). "
         "Send an async JavaScript body; it calls tools with "
         "`await tools.<tool>(args)` (results are parsed JSON, a tool error throws) and returns only what you need. "
         "Example: `const r = await tools.find_routes({query: 'publish', kind: 'handlers'}); const t = await tools.trace_path({symbol: r.routes[0].handler, "
