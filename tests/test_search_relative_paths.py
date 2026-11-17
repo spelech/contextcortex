@@ -51,3 +51,19 @@ def test_paths_outside_local_roots_keep_the_stored_path(chain_db):  # noqa: F811
     with patch("app.services.search.get_vector_store", return_value=store):
         hits = execute_hybrid_search("other", repo=REPO, search_mode="semantic")
     assert hits[0].payload["rel_path"] == "D:/elsewhere/Other.cs"
+
+
+class _EmptyStore(_LocalChunkStore):
+    def search(self, **_kwargs):
+        return []
+
+
+def test_lexical_ast_hits_of_a_local_source_use_relative_paths(chain_db):  # noqa: F811
+    """Track A (AST symbols, stored with the absolute disk path for a local source) runs for real here."""
+    with patch("app.services.search.get_vector_store", return_value=_EmptyStore("")):
+        hits = execute_hybrid_search("PublishInstance", repo=REPO, search_mode="lexical")
+        payload = json.loads(asyncio.run(handle_search("PublishInstance", repo=REPO, mode="lexical", limit=10)))
+    files = {h.payload["rel_path"] for h in hits}
+    assert REL in files
+    assert not [f for f in files if ":/" in f or f.startswith("/")]
+    assert REL in {r["file"] for r in payload["results"]}

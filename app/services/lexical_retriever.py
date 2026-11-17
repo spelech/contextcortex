@@ -13,6 +13,7 @@ from app.services.git_manager import format_git_permalink
 from app.services.local_storage import get_default_storage_path
 from app.services.query_router import QueryPlan, _has_term_code_syntax, compute_token_coverage, split_identifier_tokens
 from app.services.ripgrep_runner import search_tokens_with_ripgrep
+from app.services.source_paths import LocalSourceRoots
 from app.services.vector_store.base import VectorSearchResult
 
 logger = logging.getLogger("contextcortex.lexical_retriever")
@@ -20,7 +21,12 @@ logger = logging.getLogger("contextcortex.lexical_retriever")
 _DOC_EXTENSIONS = (".md", ".markdown", ".txt", ".rst", ".adoc", ".yaml", ".yml", ".json")
 
 
-def _clean_rel_path(raw_path: str, repo: Optional[str]) -> str:
+def _clean_rel_path(raw_path: str, repo: Optional[str], local_roots: Optional[LocalSourceRoots] = None) -> str:
+    """The repo-relative path: without a `repo://` prefix, and (with local_roots) without a local-source root."""
+    if local_roots is not None:
+        stripped = local_roots.strip_root(raw_path, repo)
+        if stripped is not None:
+            return stripped
     cleaned = (raw_path or "").replace("\\", "/")
     if "://" in cleaned:
         cleaned = cleaned.split("://", 1)[1]
@@ -169,8 +175,10 @@ def _query_ast_candidates(
     rows: List[Any] = []
     seen_ids = set()
     target_cap = max(limit * 2, 8)
+    local_roots = LocalSourceRoots()
     try:
         with get_db_connection() as conn:
+            local_roots = LocalSourceRoots.load(conn)
             if priority_terms:
                 p_clauses = ["(name LIKE ? OR full_symbol LIKE ? OR filepath LIKE ?)"] * len(priority_terms[:4])
                 p_params: List[Any] = [v for t in priority_terms[:4] for v in (f"%{t}%", f"%{t}%", f"%{t}%")]
@@ -202,7 +210,7 @@ def _query_ast_candidates(
 
     scored_rows = []
     for row in rows:
-        rel_p = _clean_rel_path(row["filepath"], row["repo"])
+        rel_p = _clean_rel_path(row["filepath"], row["repo"], local_roots)
         pre_score, _ = compute_token_coverage(
             plan.content_tokens, rel_path=rel_p, symbol=row["full_symbol"] or row["name"],
             heading=None, content=row["signature"] or "", raw_query=plan.exact_phrase or plan.raw_query,
@@ -214,7 +222,7 @@ def _query_ast_candidates(
     results: List[VectorSearchResult] = []
     for _, row in scored_rows[:target_cap]:
         r_repo = row["repo"]
-        rel_p = _clean_rel_path(row["filepath"], r_repo)
+        rel_p = _clean_rel_path(row["filepath"], r_repo, local_roots)
         s_line, e_line = int(row["start_line"] or 1), int(row["end_line"] or 1)
         content = _read_disk_slice(roots, r_repo, rel_p, s_line, min(e_line, s_line + 140))
         payload_path = row["filepath"]
@@ -354,6 +362,7 @@ def _query_summary_candidates(
     try:
         with get_db_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
+            local_roots = LocalSourceRoots.load(conn)
     except Exception:
         return []
 
@@ -366,7 +375,7 @@ def _query_summary_candidates(
             except Exception:
                 continue
         r_repo = row["repo"]
-        rel_p = _clean_rel_path(row["filepath"], r_repo)
+        rel_p = _clean_rel_path(row["filepath"], r_repo, local_roots)
         content = _read_disk_slice(roots, r_repo, rel_p, 1, 120)
         payload_path, heading = row["filepath"], None
         if content is None and allow_store_hydration:
