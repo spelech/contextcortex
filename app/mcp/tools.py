@@ -75,14 +75,16 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "find_routes",
         handle_find_routes,
         "Use to discover HTTP/API server route handlers (kind='handlers'), frontend/microservice client call sites (kind='callers'), or both (default kind='both') across FastAPI, Flask, Django, Express/NestJS, ASP.NET Core, Go, Rust, Java, and JS/TS clients. "
-        "Paginate with limit (clamped 1..200, default 50) and offset (advance via next_offset when has_more is True).",
+        "Paginate with limit (clamped 1..200, default 50) and offset (advance via next_offset when has_more is True). "
+        "For a failing route or an error report, call diagnose_issue first. It finds the route and traces the call chain to the fault in one call.",
     ),
     (
         "find_symbol",
         handle_find_symbol,
         f"Use when you know an exact or partial symbol name (function, method, class, struct, interface, COBOL paragraph) across {_SUPPORTED_LANGS}. "
         "Pass it as `symbol` (the same argument as trace_path). Avoids broad vector scans by querying the AST symbol table directly. "
-        "Paginate with limit (clamped 1..100, default 30) and offset (returns total, has_more, next_offset).",
+        "Paginate with limit (clamped 1..100, default 30) and offset (returns total, has_more, next_offset). "
+        "For a stack trace or error report, diagnose_issue finds the frames and symbols in one call.",
     ),
     (
         "get_architecture",
@@ -120,7 +122,9 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         handle_trace_path,
         f"Use to traverse inbound callers, outbound callees, imports, inheritance, and cross-repo HTTP boundaries via BFS (depth 1..5) across {_SUPPORTED_LANGS}. "
         "Node file/line is the call site; a callee's defined_at (path:line) is where it is defined. "
-        "Paginate with limit (clamped 1..200, default 50) and offset (returns total_callers, total_callees, has_more, next_offset).",
+        "Paginate with limit (clamped 1..200, default 50) and offset (returns total_callers, total_callees, has_more, next_offset). "
+        "To find the cause of an error, stack trace, or failing route, call diagnose_issue first. It returns the fault call chain "
+        "with call-site lines and the arguments that are not passed.",
     ),
 ]
 
