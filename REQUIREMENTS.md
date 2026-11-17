@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1321 Automated Tests** (957 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1322 Automated Tests** (958 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
