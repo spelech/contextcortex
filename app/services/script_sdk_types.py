@@ -161,21 +161,81 @@ def _args_type(schema: Dict[str, Any], indent: str) -> List[str]:
     return lines
 
 
+def _tool_declaration(tool: Any) -> List[str]:
+    schema = getattr(tool, "parameters", None) or {}
+    lines = _doc(getattr(tool, "description", "") or "", "  ")
+    has_required = bool(schema.get("required"))
+    arg_lines = _args_type(schema, "  ")
+    arg_lines[0] = f"  {tool.name}(args{'' if has_required else '?'}: {arg_lines[0]}"
+    arg_lines[-1] = arg_lines[-1] + f"): Promise<{_RESULT_TYPE_NAMES.get(tool.name, 'any')}>;"
+    return lines + arg_lines
+
+
+HELP_DECLARATION = [
+    "  /** tools.help() lists the tools; tools.help('<tool>') gives its arguments and result type. Not a tool call. */",
+    "  help(tool?: string): string;",
+]
+
+
 def build_sdk_declarations(tools: Iterable[Any]) -> str:
     """`declare const tools: {...}` with one async function per tool (objects with name, description, parameters)."""
     lines = [HEADER, RESULT_TYPES, "declare const args: Record<string, any>;", "declare const tools: {"]
     for tool in sorted(tools, key=lambda t: t.name):
-        schema = getattr(tool, "parameters", None) or {}
-        lines += _doc(getattr(tool, "description", "") or "", "  ")
-        has_required = bool(schema.get("required"))
-        arg_lines = _args_type(schema, "  ")
-        arg_lines[0] = f"  {tool.name}(args{'' if has_required else '?'}: {arg_lines[0]}"
-        arg_lines[-1] = arg_lines[-1] + f"): Promise<{_RESULT_TYPE_NAMES.get(tool.name, 'any')}>;"
-        lines += arg_lines
-    lines += [
+        lines += _tool_declaration(tool)
+    lines += HELP_DECLARATION + [
         "  contextcortex: Omit<typeof tools, \"contextcortex\">;",
         "};",
         "declare const cc: { callTool(name: string, args?: Record<string, any>): Promise<any> };",
         "",
     ]
     return "\n".join(lines)
+
+
+HELP_INTRO = ("ContextCortex Code Mode. Call a tool with `await tools.<tool>(args)`; results are parsed JSON. "
+              "tools.help('<tool>') gives the argument docs and the result type of one tool. "
+              "For a bug report, call diagnose_issue first.")
+
+
+def _interface_blocks() -> Dict[str, str]:
+    """Each interface in RESULT_TYPES with the doc comment above it."""
+    blocks: Dict[str, str] = {}
+    doc = ""
+    for line in RESULT_TYPES.splitlines():
+        match = re.match(r"interface (\w+) ", line)
+        if match:
+            blocks[match.group(1)] = doc + line
+            doc = ""
+        elif line.startswith("/**"):
+            doc = line + "\n"
+    return blocks
+
+
+def _result_interfaces(result_type: str, blocks: Dict[str, str]) -> List[str]:
+    """The interfaces that a result type uses, and the interfaces that those use, in order."""
+    order: List[str] = []
+    todo = re.findall(r"[A-Za-z]+", result_type)
+    while todo:
+        name = todo.pop(0)
+        if name in blocks and name not in order:
+            order.append(name)
+            todo += re.findall(r"[A-Za-z]+", blocks[name].split(" { ", 1)[1])
+    return [blocks[name] for name in order]
+
+
+def _signature(tool: Any) -> str:
+    schema = getattr(tool, "parameters", None) or {}
+    required = set(schema.get("required") or [])
+    names = [name if name in required else f"{name}?" for name in (schema.get("properties") or {})]
+    return f"{tool.name}({{{', '.join(names)}}}): {_RESULT_TYPE_NAMES.get(tool.name, 'any')}"
+
+
+def build_help(tools: Iterable[Any]) -> Dict[str, str]:
+    """Texts for tools.help() in a script: key '' is the tool list; each tool name gives that tool's declaration."""
+    ordered = sorted(tools, key=lambda t: t.name)
+    blocks = _interface_blocks()
+    texts = {"": "\n".join([HELP_INTRO] + [_signature(tool) for tool in ordered])}
+    for tool in ordered:
+        parts = ["\n".join(_tool_declaration(tool)).replace("\n  ", "\n").strip()]
+        parts += _result_interfaces(_RESULT_TYPE_NAMES.get(tool.name, ""), blocks)
+        texts[tool.name] = "\n".join(parts)
+    return texts

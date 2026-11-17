@@ -71,9 +71,16 @@ globalThis.cc = {
   },
 };
 globalThis.mcg = globalThis.cc;
+// tools.help() is answered in the isolate from __cc_help_json; it is not a tool call.
+const __cc_help = (tool) => {
+  const h = JSON.parse(__cc_help_json);
+  if (tool === undefined || tool === null || tool === "") { return h[""] || "No help is available."; }
+  return h[String(tool)] || ("Unknown tool '" + String(tool) + "'. " + (h[""] || ""));
+};
 const __cc_tool_proxy = (prefix) => new Proxy({}, {
   get: (_t, prop) => {
     if (typeof prop !== "string" || prop === "then") { return undefined; }
+    if (prop === "help") { return __cc_help; }
     if (prop === "contextcortex" && prefix === "") { return __cc_tool_proxy("contextcortex"); }
     return async (toolArgs) => cc.callTool(prop, toolArgs);
   },
@@ -105,8 +112,12 @@ async def run_script(
     script_args: Dict[str, Any],
     call_tool: Callable[[str, Dict[str, Any]], Awaitable[Any]],
     limits: ScriptLimits,
+    help_texts: Optional[Dict[str, str]] = None,
 ) -> ScriptOutcome:
-    """Runs `script` and returns its result, logs, time, and tool call count. Never raises for script errors."""
+    """Runs `script` and returns its result, logs, time, and tool call count. Never raises for script errors.
+
+    `help_texts` answers `tools.help()` ('' is the tool list) and `tools.help('<tool>')` in the script.
+    """
     from py_mini_racer import JSOOMException, JSTimeoutException, mini_racer
 
     started = time.perf_counter()
@@ -144,6 +155,7 @@ async def run_script(
             global_this = ctx.eval("this")
             global_this["__cc_bridge"] = js_bridge
             global_this["__cc_args_json"] = json.dumps(script_args or {}, default=str)
+            global_this["__cc_help_json"] = json.dumps(help_texts or {})
             try:
                 await asyncio.wait_for(ctx.eval_cancelable(_PRELUDE), timeout=remaining())
                 promise = await asyncio.wait_for(ctx.eval_cancelable(_wrap(script)), timeout=remaining())

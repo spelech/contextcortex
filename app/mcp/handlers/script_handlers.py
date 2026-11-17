@@ -10,6 +10,7 @@ import inspect
 import json
 import logging
 import os
+import re
 from typing import Annotated, Any, Dict, Optional
 
 from pydantic import Field
@@ -23,6 +24,10 @@ TOOL_NAME = "execute_script"
 SDK_URI = "contextcortex://code-mode/sdk.d.ts"
 MAX_SCRIPT_CHARS = 50000
 MAX_RESULT_CHARS = 100000
+# A script that reads a result field with the wrong name fails with one of these TypeErrors.
+_FIELD_ERROR = re.compile(r"Cannot read properties of (undefined|null)|is not a function|is not iterable|is undefined")
+FIELD_HINT = ("Hint: a result field may have another name. Call tools.help('<tool>') for the result type, "
+              "or return Object.keys(<result>) to see the fields.")
 
 
 def _env_number(name: str, default: float, low: float, high: float) -> float:
@@ -95,7 +100,8 @@ async def handle_execute_script(
         "Async JavaScript body. It runs inside an async function, so top-level await and return work. "
         "Call tools with `await tools.<tool>(args)` (for example `await tools.trace_path({symbol: 'A.B', direction: 'callers'})`) "
         "or `await cc.callTool('<tool>', args)`; `tools.contextcortex.<tool>` also works. Results are parsed JSON; "
-        "a tool error throws an Error. Return only what you need. Types: resource " + SDK_URI + "."))] = None,
+        "a tool error throws an Error. Return only what you need. tools.help() lists the tools; tools.help('<tool>') gives "
+        "its arguments and result type (also in resource " + SDK_URI + ")."))] = None,
     arguments: Annotated[Optional[Dict[str, Any]], Field(description="Optional input object, available in the script as `args` (and `arguments`).")] = None,
     code: Annotated[Optional[str], Field(description="Alias for script.")] = None,
     args: Annotated[Optional[Dict[str, Any]], Field(description="Alias for arguments.")] = None,
@@ -116,7 +122,7 @@ async def handle_execute_script(
         if not isinstance(input_args, dict):
             return json.dumps({"error": "invalid_argument", "message": "arguments (or args) must be an object."})
 
-        outcome = await run_script(source, input_args, call_tool_from_script, code_mode_limits())
+        outcome = await run_script(source, input_args, call_tool_from_script, code_mode_limits(), _help_texts())
         payload: Dict[str, Any] = {
             "logs": outcome.logs,
             "executionTimeMs": outcome.execution_time_ms,
@@ -124,7 +130,10 @@ async def handle_execute_script(
         }
         if outcome.ok:
             return _response({"result": outcome.result, **payload})
-        return _response({"error": "script_failed", "message": outcome.error, **payload})
+        message = outcome.error or ""
+        if _FIELD_ERROR.search(message):
+            message = f"{message}\n{FIELD_HINT}"
+        return _response({"error": "script_failed", "message": message, **payload})
     except ForbiddenError as fe:
         return json.dumps({"error": "forbidden", "message": str(fe)})
     except Exception as e:
@@ -132,10 +141,25 @@ async def handle_execute_script(
         return json.dumps({"error": "script_failed", "message": str(e)})
 
 
+def _script_tools() -> list:
+    from app.mcp.mcp_server import mcp_server
+
+    return [t for t in mcp_server._tool_manager.list_tools() if t.name != TOOL_NAME]
+
+
+def _help_texts() -> Optional[Dict[str, str]]:
+    """The texts for tools.help() in a script; None if the tool list is not available."""
+    from app.services.script_sdk_types import build_help
+
+    try:
+        return build_help(_script_tools())
+    except Exception as e:  # help is optional: the script still runs without it
+        logger.warning(f"Code Mode help is not available: {e}")
+        return None
+
+
 async def handle_code_mode_sdk_resource() -> str:
     """TypeScript declarations of every tool that a Code Mode script can call."""
-    from app.mcp.mcp_server import mcp_server
     from app.services.script_sdk_types import build_sdk_declarations
 
-    tools = [t for t in mcp_server._tool_manager.list_tools() if t.name != TOOL_NAME]
-    return build_sdk_declarations(tools)
+    return build_sdk_declarations(_script_tools())

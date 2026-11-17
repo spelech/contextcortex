@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.mcp.handlers.script_handlers import call_tool_from_script, code_mode_limits, handle_execute_script
+from app.mcp.handlers.script_handlers import FIELD_HINT, call_tool_from_script, code_mode_limits, handle_execute_script
 from app.services.script_sandbox import ScriptLimits, ScriptToolError, code_mode_available, run_script
 from app.services.script_sdk_types import build_sdk_declarations, schema_to_ts
 from tests.test_trace_path_di_callers import REPO, di_graph  # noqa: F401  (pytest fixture)
@@ -139,6 +139,7 @@ def test_sdk_declarations_from_tool_schemas():
     sdk = build_sdk_declarations([tool])
     assert "trace_path(args: {" in sdk and "symbol: string;" in sdk and "depth?: number;" in sdk
     assert " * Qualified symbol." in sdk and "): Promise<TracePathResult>;" in sdk and "contextcortex: Omit<typeof tools" in sdk
+    assert "  help(tool?: string): string;" in sdk
 
 
 def test_code_mode_points_bug_reports_to_diagnose_issue_first():
@@ -150,3 +151,32 @@ def test_code_mode_points_bug_reports_to_diagnose_issue_first():
     assert "diagnose_issue first" in tools["execute_script"].description
     assert "Call it FIRST for a bug report" in tools["diagnose_issue"].description
     assert "diagnose_issue(args" in build_sdk_declarations(list(tools.values()))
+
+
+
+@needs_v8
+def test_help_is_answered_in_the_isolate_and_is_not_a_tool_call():
+    texts = {"": "LIST", "trace_path": "TRACE DECL"}
+    out = asyncio.run(run_script("return [tools.help(), tools.help('trace_path'), tools.contextcortex.help('nope')];", {},
+                                 _fake_tool, ScriptLimits(timeout_seconds=5), texts))
+    assert out.ok and out.result == ["LIST", "TRACE DECL", "Unknown tool 'nope'. LIST"] and out.tool_calls_count == 0
+    assert _run("return tools.help();").result == "No help is available."
+
+
+@needs_v8
+def test_execute_script_help_shows_real_arguments_and_result_types():
+    payload = json.loads(asyncio.run(handle_execute_script(script="return [tools.help(), tools.help('diagnose_issue')];")))
+    summary, diagnose = payload["result"]
+    assert "diagnose_issue({issue_text, repo?, context_lines?, limit?, detail?}): DiagnoseResult" in summary
+    assert "trace_path({symbol, repo?, direction?, depth?" in summary and "execute_script" not in summary
+    assert "issue_text: string;" in diagnose and "}): Promise<DiagnoseResult>;" in diagnose
+    assert "interface ChainStep { symbol: string;" in diagnose and "interface CallSite {" in diagnose
+    assert payload["toolCallsCount"] == 0
+
+
+@needs_v8
+def test_field_errors_get_a_hint_and_other_errors_do_not():
+    field = json.loads(asyncio.run(handle_execute_script(script="const r = {items: []};\nreturn r.routes[0].handler;")))
+    assert field["message"].startswith("TypeError: Cannot read properties of undefined") and field["message"].endswith(FIELD_HINT)
+    other = json.loads(asyncio.run(handle_execute_script(script="throw new Error('bad input');")))
+    assert FIELD_HINT not in other["message"]
