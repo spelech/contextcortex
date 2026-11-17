@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.27.0](https://github.com/spelech/contextcortex/compare/v2.26.1...v2.27.0) (2026-11-17)
+
+
+### Features
+
+* **code-mode:** add tools.help() in scripts and a hint on field-name errors ([fc2859b](https://github.com/spelech/contextcortex/commit/fc2859b2d3d828d5738500a616c203c1c255cdb4))
+* **code-mode:** declare result types for diagnose_issue, find_routes, trace_path, find_symbol, and search ([5086f9d](https://github.com/spelech/contextcortex/commit/5086f9d5658a90dd6255e8f75a2c8d15b53038b6))
+* **code-mode:** show the bug-report flow and the main result fields in the execute_script example ([e853d07](https://github.com/spelech/contextcortex/commit/e853d07c382863a3311091cfe8cfd0d9d82ebb93))
+
 ## [2.26.1](https://github.com/spelech/contextcortex/compare/v2.26.0...v2.26.1) (2026-11-17)
 
 
