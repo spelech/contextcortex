@@ -91,7 +91,8 @@ describe('App Component', () => {
     );
 
     expect(screen.getByText('ContextCortex')).toBeInTheDocument();
-    expect(screen.getByText('v2.17.1')).toBeInTheDocument();
+    expect(__APP_VERSION__).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(screen.getByText(`v${__APP_VERSION__}`)).toBeInTheDocument();
 
 
     await waitFor(() => {

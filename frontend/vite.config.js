@@ -1,10 +1,17 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { themeEditorPlugin } from 'vite-plugin-theme-editor'
 
+// release-please sets the version in package.json; the header badge shows it (__APP_VERSION__).
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
+
 // https://vite.dev/config/
 export default defineConfig({
   cacheDir: './.vite',
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
