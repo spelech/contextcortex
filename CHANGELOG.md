@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.27.4](https://github.com/spelech/contextcortex/compare/v2.27.3...v2.27.4) (2026-11-17)
+
+
+### Bug Fixes
+
+* **mcp:** route bug reports to diagnose_issue in the server instructions and tool descriptions ([#168](https://github.com/spelech/contextcortex/issues/168)) ([1092cf5](https://github.com/spelech/contextcortex/commit/1092cf55aa1ebd7bea1d5569186f0536159548cc))
+* **trace-path:** remove duplicate candidates for an unknown symbol ([#167](https://github.com/spelech/contextcortex/issues/167)) ([79de2e0](https://github.com/spelech/contextcortex/commit/79de2e018a79431063b28f71b78b3b117d781f9d))
+
 ## [2.27.3](https://github.com/spelech/contextcortex/compare/v2.27.2...v2.27.3) (2026-11-17)
 
 

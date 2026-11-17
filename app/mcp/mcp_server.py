@@ -7,7 +7,7 @@ warnings.filterwarnings(
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-MCP_SERVER_VERSION = "2.27.3"  # x-release-please-version
+MCP_SERVER_VERSION = "2.27.4"  # x-release-please-version
 
 MCP_SERVER_INSTRUCTIONS = (
     "ContextCortex: code and documentation search across indexed repositories "
