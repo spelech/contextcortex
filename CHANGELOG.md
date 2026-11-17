@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.27.3](https://github.com/spelech/contextcortex/compare/v2.27.2...v2.27.3) (2026-11-17)
+
+
+### Bug Fixes
+
+* **trace-path:** return found false with candidates for an unknown class instead of merging same-named methods ([#165](https://github.com/spelech/contextcortex/issues/165)) ([128c75b](https://github.com/spelech/contextcortex/commit/128c75b9b86fbb96e07688daec2292900029de39))
+
 ## [2.27.2](https://github.com/spelech/contextcortex/compare/v2.27.1...v2.27.2) (2026-11-17)
 
 
