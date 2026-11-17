@@ -61,8 +61,14 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "In a script, `tools.help('<tool>')` gives the arguments and result type of a tool (it is not a tool call). "
         "Send an async JavaScript body; it calls tools with "
         "`await tools.<tool>(args)` (results are parsed JSON, a tool error throws) and returns only what you need. "
-        "Example: `const r = await tools.find_routes({query: 'publish', kind: 'handlers'}); const t = await tools.trace_path({symbol: r.routes[0].handler, "
-        "direction: 'callees', depth: 3}); return t.callees.map(c => c.symbol);`. Typed signatures: resource contextcortex://code-mode/sdk.d.ts. "
+        "Example (bug report, arguments {error, repo}): `const d = await tools.diagnose_issue({issue_text: args.error, repo: args.repo}); "
+        "const last = d.call_chain.steps.at(-1); const code = await tools.read_file({path: last.file, repo: args.repo, "
+        "start_line: last.lines[0], end_line: last.lines[1]}); return {chain: d.call_chain.steps.map(s => [s.symbol, s.call_site?.line, "
+        "s.not_passed]), compare: d.working_path_comparison?.first_divergence, code: code.content};`. "
+        "Main result fields: diagnose_issue {call_chain: {steps: [{symbol, file, lines, call_site, not_passed, evidence}]}, "
+        "working_path_comparison}; find_routes {routes: [{method, path, handler, file, lines}]}; trace_path {target, "
+        "callees/callers: [{symbol, file, line, defined_at, callees}]}; find_symbol {symbols: [{symbol, kind, file, lines}]}; "
+        "search {results: [{file, lines, symbol, content}]}; read_file {content}. Typed signatures: resource contextcortex://code-mode/sdk.d.ts. "
         "Limits: 30 s, 50 tool calls, 64 MB (CODE_MODE_* settings). Returns {result, logs, executionTimeMs, toolCallsCount}.",
     ),
     (
