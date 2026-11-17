@@ -369,21 +369,30 @@ if os.path.exists(assets_dir):
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 
+def _favicon_path(name: str):
+    """The favicon from the built UI, else from frontend/public (a source checkout has no built UI)."""
+    for folder in (www_dir, os.path.join("frontend", "public")):
+        path = os.path.join(folder, name)
+        if os.path.exists(path):
+            return path
+    return None
+
+
 @app.get("/favicon.svg")
 async def favicon_svg():
-    svg_path = os.path.join(www_dir, "favicon.svg")
-    if os.path.exists(svg_path):
+    svg_path = _favicon_path("favicon.svg")
+    if svg_path:
         return FileResponse(svg_path, media_type="image/svg+xml")
     return JSONResponse(status_code=404, content={"detail": "Favicon not found"})
 
 
 @app.get("/favicon.ico")
 async def favicon_ico():
-    ico_path = os.path.join(www_dir, "favicon.ico")
-    if os.path.exists(ico_path):
+    ico_path = _favicon_path("favicon.ico")
+    if ico_path:
         return FileResponse(ico_path)
-    svg_path = os.path.join(www_dir, "favicon.svg")
-    if os.path.exists(svg_path):
+    svg_path = _favicon_path("favicon.svg")
+    if svg_path:
         return FileResponse(svg_path, media_type="image/svg+xml")
     return JSONResponse(status_code=404, content={"detail": "Favicon not found"})
 

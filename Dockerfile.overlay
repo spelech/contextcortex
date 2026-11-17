@@ -14,9 +14,7 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
 
 COPY app/ ./app/
 COPY main.py ./main.py
-# The server prefers frontend/dist over www; keep both on this checkout's UI.
-COPY www/ ./www/
-COPY www/ ./frontend/dist/
+# The dashboard comes from RUNTIME_IMAGE: this overlay has no npm build, and the repository has no built UI.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 

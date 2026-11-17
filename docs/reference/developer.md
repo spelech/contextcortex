@@ -97,6 +97,8 @@ python3 -u benchmarks/run_benchmark.py --tasks-file benchmarks/examples/custom_t
    cd ..
    ```
    Compiled assets are placed in `frontend/dist`. The FastAPI application serves these assets at `/admin/`.
+   The repository does not contain a built bundle (`frontend/dist/` and `www/` are ignored), so run this step
+   before you start the server from source if you need the Admin UI. The Dockerfile and the portable build run it.
 
 2. Build the VitePress documentation site:
    ```bash
