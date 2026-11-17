@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1335 Automated Tests** (971 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1336 Automated Tests** (972 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1591,10 +1591,11 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_a_method_the_class_does_not_declare_stays_bare`
 - `test_trace_reaches_the_repository_through_own_class_calls_and_the_real_implementation`
 
-#### `tests/test_trace_path_unknown_class.py` (3 tests)
+#### `tests/test_trace_path_unknown_class.py` (4 tests)
 - `test_unknown_class_gives_candidates_and_no_merged_graph`
 - `test_known_names_still_trace`
 - `test_unknown_bare_name_has_no_candidates`
+- `test_candidates_merge_copies_of_the_same_source` - _The same source indexed as many repos gives one candidate per symbol, file, and line, not one per copy._
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`
