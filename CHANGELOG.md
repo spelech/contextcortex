@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.26.1](https://github.com/spelech/contextcortex/compare/v2.26.0...v2.26.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **mcp:** tell Code Mode and agents to call diagnose_issue first for a bug report ([#155](https://github.com/spelech/contextcortex/issues/155)) ([e0d0262](https://github.com/spelech/contextcortex/commit/e0d0262d55fd6aed0a37b3e0c0f85ddc91bc10b3))
+* **trace-path:** show where each callee is defined next to the call-site line ([#154](https://github.com/spelech/contextcortex/issues/154)) ([7033f78](https://github.com/spelech/contextcortex/commit/7033f78136b279a7aea35a4f10296d7940995eb9))
+
 ## [2.26.0](https://github.com/spelech/contextcortex/compare/v2.25.0...v2.26.0) (2026-11-16)
 
 
