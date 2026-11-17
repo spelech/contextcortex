@@ -473,6 +473,10 @@ def trace_symbol_path(
                     visited_edges.add(edge_key)
                     total_returned += 1
                     node = _make_edge_node(callee_sym, r, "callees")
+                    # `file`/`line` is the call site in the caller; `defined_at` is where the callee is defined.
+                    defn = next((s for s in syms_by_full.get(callee_sym, []) if not s["_test"]), None)
+                    if defn:
+                        node["defined_at"] = f"{defn['_clean_fp']}:{defn['start_line']}"
                     parent_list.append(node)
                     if curr_depth < depth and callee_sym not in visited_nodes:
                         visited_nodes.add(callee_sym)

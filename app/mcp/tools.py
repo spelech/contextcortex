@@ -109,6 +109,7 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "trace_path",
         handle_trace_path,
         f"Use to traverse inbound callers, outbound callees, imports, inheritance, and cross-repo HTTP boundaries via BFS (depth 1..5) across {_SUPPORTED_LANGS}. "
+        "Node file/line is the call site; a callee's defined_at (path:line) is where it is defined. "
         "Paginate with limit (clamped 1..200, default 50) and offset (returns total_callers, total_callees, has_more, next_offset).",
     ),
 ]

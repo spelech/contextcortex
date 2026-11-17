@@ -197,3 +197,15 @@ def test_mcp_answer_is_smaller_by_default(hub_graph):
     assert json.loads(compact)["total_callees"] == 7
     assert json.loads(full)["total_callees"] > 25
     assert len(compact) < len(full) * 0.6
+
+
+def test_callee_nodes_show_the_call_site_and_where_the_callee_is_defined(hub_graph):
+    nodes = {n["symbol"]: n for n in _trace("ToolService.PublishInstance")["callees"]}
+    get = nodes["ToolService.GetByInstanceId"]
+    assert (get["file"], get["line"]) == (f"{API}/ToolService.cs", 261)
+    assert get["defined_at"] == f"{API}/ToolService.cs:220"
+    parse = nodes["ServiceUtilities.ParseUserName"]
+    assert (parse["file"], parse["line"]) == (f"{API}/ToolService.cs", 260)
+    assert parse["defined_at"] == "server/Hub.API/Utilities/ServiceUtilities.cs:10"
+    reader = {n["symbol"]: n for n in get["callees"]}["ToolInstanceReader.GetByInstanceId"]
+    assert reader["defined_at"] == f"{API}/ToolInstanceReader.cs:20"
