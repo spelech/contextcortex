@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1336 Automated Tests** (972 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1340 Automated Tests** (976 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -663,6 +663,12 @@ classDiagram
 - `test_sync_and_reindex_return_409_while_indexing`
 - `test_sync_dispatches_when_idle`
 - `test_poller_defers_while_full_run_holds_lock`
+
+#### `tests/backend/test_mcp_tool_routing.py` (4 tests)
+- `test_server_publishes_routing_instructions`
+- `test_instructions_name_every_default_tool`
+- `test_routing_list_starts_with_diagnose_issue_for_bug_reports`
+- `test_lookup_tool_descriptions_point_to_diagnose_issue`
 
 #### `tests/backend/test_mcp_v2.py` (9 tests)
 - `test_fastmcp_tools_registered`
