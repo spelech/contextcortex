@@ -154,9 +154,9 @@ def test_read_file_returns_numbered_text_and_minimal_metadata(hub_folder):
 
 def test_code_mode_sdk_types_grep_code_and_read_file_results():
     tools = [SimpleNamespace(name=name, description="", parameters={"type": "object", "properties": {}})
-             for name in ("grep_code", "read_file", "trace_path")]
+             for name in ("grep_code", "read_file", "get_architecture")]
     sdk = build_sdk_declarations(tools)
     assert "grep_code(args?: {\n  }): Promise<GrepCodeResult>;" in sdk
     assert "read_file(args?: {\n  }): Promise<ReadFileResult | ReadFileOutline>;" in sdk
-    assert "trace_path(args?: {\n  }): Promise<any>;" in sdk
+    assert "get_architecture(args?: {\n  }): Promise<any>;" in sdk
     assert "interface GrepCodeFile { file: string; repo?: string; symbols?: Record<string, string>" in sdk
