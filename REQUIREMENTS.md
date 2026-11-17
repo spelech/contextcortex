@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1327 Automated Tests** (963 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1329 Automated Tests** (965 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1591,6 +1591,10 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_real_binary_sample_is_binary`
 - `test_read_file_returns_the_text_of_a_utf16_file`
 - `test_read_file_still_refuses_real_binary_files`
+
+#### `tests/test_version_consistency.py` (2 tests)
+- `test_backend_mcp_and_frontend_versions_match_the_release_manifest`
+- `test_ui_source_has_no_hard_coded_version` - _The header badge reads __APP_VERSION__ (from frontend/package.json at build time), not a literal._
 
 #### `tests/test_webhooks.py` (12 tests)
 - `test_github_webhook_no_secret`
