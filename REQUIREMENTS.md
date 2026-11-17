@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1322 Automated Tests** (958 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1327 Automated Tests** (963 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -978,6 +978,10 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_cobol_end_to_end_indexing_architecture_and_trace_path`
 - `test_local_storage_cobol_persists_language_and_relationships` - _Uploading COBOL programs via LocalStorageService persists language='cobol' and ast_relationships for trace_path & diagnose_issue._
 
+#### `tests/test_code_mode_result_types.py` (2 tests)
+- `test_result_types_agree_with_real_tool_results`
+- `test_sdk_declares_the_result_types_of_the_main_tools`
+
 #### `tests/test_compact_grep_and_read_output.py` (8 tests)
 - `test_matches_group_by_file_with_merged_context_and_block_separators`
 - `test_contiguous_blocks_have_no_separator_and_a_match_line_wins_over_context`
@@ -1123,7 +1127,7 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_all_frontend_and_script_files_under_500_loc` - _Verify every TypeScript, TSX, CSS, shell, and PowerShell file in source/tests/scripts stays <= 500 LOC._
 - `test_semantic_naming_bans_junk_drawer_modules_and_classes` - _Verify case-insensitively that no new *Manager, *Helper, *Util, *Utils, or *Data modules/classes exist._
 
-#### `tests/test_execute_script.py` (14 tests)
+#### `tests/test_execute_script.py` (17 tests)
 - `test_script_calls_tools_and_returns_a_small_result`
 - `test_gateway_form_and_call_tool_work`
 - `test_tool_errors_throw_and_can_be_caught`
@@ -1138,6 +1142,9 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_limits_come_from_the_environment`
 - `test_sdk_declarations_from_tool_schemas`
 - `test_code_mode_points_bug_reports_to_diagnose_issue_first`
+- `test_help_is_answered_in_the_isolate_and_is_not_a_tool_call`
+- `test_execute_script_help_shows_real_arguments_and_result_types`
+- `test_field_errors_get_a_hint_and_other_errors_do_not`
 
 #### `tests/test_field_workup_regressions.py` (9 tests)
 - `test_finding_1_git_env_strips_ambient_git_vars`
