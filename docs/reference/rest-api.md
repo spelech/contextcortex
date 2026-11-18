@@ -48,45 +48,146 @@ All administrative routes are prefixed with `/admin/api` unless otherwise noted.
 ### 1. List Registered Repositories
 - **Method**: `GET`
 - **Path**: `/admin/api/repos`
-- **Response**: Array of registered Git repositories, branches, commit SHAs, `keep_shallow` and `auto_sync_enabled` flags, and sync statuses.
+- **Required Role**: `Role.VIEWER`
+- **Response**: Array of registered Git repositories, branches, commit SHAs, `keep_shallow` and `auto_sync` flags, `retain_commits_count`, `file_count`, and sync statuses.
 
-### 2. Register Repository
+### 2. Register Repository (`POST /admin/api/repos`)
 - **Method**: `POST`
 - **Path**: `/admin/api/repos`
-- **Request Body**:
+- **Required Role**: `Role.ADMIN`
+- **Request Fields (`RepoConfig`)**:
+  - `name` (string, required): Unique repository identifier used across search, navigator, and MCP tools.
+  - `url` (string, required): Remote HTTPS or SSH Git clone URL.
+  - `branch` (string, optional, default `"main"`): Target Git branch to track and index.
+  - `pat` or `auth_token` (string, optional): Personal access token or repository token override (`pat` is accepted as an alias for `auth_token`).
+  - `provider` (string, optional, default `"github"`): Git provider hint (`"github"`, `"gitlab"`, `"gitea"`, `"bitbucket"`, or `"generic"`). Auto-detected from `url` when omitted.
+  - `auth_user` (string, optional): Optional HTTP basic auth username when required by the Git host.
+  - `auto_sync` (boolean, optional, default `true`): Enable periodic background SHA polling for this repository.
+  - `keep_shallow` (boolean, optional, default `false`): Retain the shallow clone on disk under `PERSISTENT_REPOS_DIR` for instant full-file reads and fast incremental fetches.
+  - `retain_commits_count` (integer, optional, default `20`): Number of recent commit metadata records retained in `git_commits` (`0` disables commit history storage).
+  - `webhook_secret` (string, optional): Per-repository HMAC secret for `/api/webhooks/git`.
+- **Scripted `curl` Example**:
+  ```bash
+  curl -X POST http://localhost:3000/admin/api/repos \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer cc_admin_your_key" \
+    -d '{
+      "name": "my-service",
+      "url": "https://github.com/org/my-service.git",
+      "branch": "main",
+      "pat": "ghp_optional_override_token",
+      "provider": "github",
+      "keep_shallow": true,
+      "retain_commits_count": 20
+    }'
+  ```
+- **Response (`200 OK`)**:
   ```json
   {
-    "name": "my-service",
-    "url": "https://github.com/org/my-service.git",
-    "branch": "main",
-    "provider": "github",
-    "keep_shallow": true,
-    "auth_token": "ghp_optional_override_token"
+    "status": "success",
+    "id": 1
   }
   ```
+  Registration immediately spawns a background synchronization thread for the new `id`.
 
-### 3. Toggle Shallow Retention & Auto-Sync
+### 3. Toggle Shallow Retention, Auto-Sync & Commit Retention
 - **Methods**:
-  - `PATCH /admin/api/repos/{repo_id}/keep-shallow`
-  - `PATCH /admin/api/repos/{repo_id}/auto-sync`
-- **Response**: Updates persistent shallow clone retention (`keep_shallow`) or periodic background auto-sync for the repository.
+  - `PATCH /admin/api/repos/{repo_id}/keep-shallow` (`{"keep_shallow": true}`)
+  - `PATCH /admin/api/repos/{repo_id}/auto-sync` (`{"auto_sync": true}`)
+  - `PATCH /admin/api/repos/{repo_id}/retain-commits` (`{"retain_commits_count": 20}`)
+- **Required Role**: `Role.ADMIN`
+- **Response**: Updates persistent shallow clone retention (`keep_shallow`), periodic background auto-sync (`auto_sync`), or stored commit count (`retain_commits_count`) for the repository.
 
 ### 4. Synchronize, Stream Progress & Cancel Sync
 - **Methods**:
-  - `POST /admin/api/repos/{repo_id}/sync`: Triggers background repository synchronization.
-  - `GET /admin/api/repos/sync/stream`: Server-Sent Events (SSE) progress stream for active repository syncs.
-  - `GET /admin/api/repos/{repo_id}/sync-status`: Current sync phase and progress counters.
-  - `POST /admin/api/repos/{repo_id}/cancel-sync`: Cancels an in-flight synchronization run.
-  - `DELETE /admin/api/repos/{repo_id}`: Purges repository metadata, shallow clone cache, and associated vector points.
+  - `POST /admin/api/repos/{repo_id}/sync` (or `POST /admin/api/repos/sync/{repo_id}`): Triggers background repository synchronization (`Role.EDITOR`).
+  - `GET /admin/api/repos/sync/stream`: Server-Sent Events (SSE) progress stream for active repository syncs (`Role.VIEWER`).
+  - `GET /admin/api/repos/sync-status`: Snapshot of all active repository sync jobs (`Role.VIEWER`).
+  - `GET /admin/api/repos/{repo_id}/sync-status`: Current sync phase, file/chunk counters, embedding throughput (`chunks_per_sec`), and HTTP `429` wait telemetry (`rate_limit_429_count`, `rate_limit_wait_seconds`) for a single repository (`Role.VIEWER`).
+  - `POST /admin/api/repos/{repo_id}/cancel-sync`: Cancels an in-flight synchronization run (`Role.EDITOR`).
 
-### 5. Monitored Local Paths & Global Indexing
-- **Methods**:
-  - `GET /admin/api/paths`: Lists monitored local host directories and vaults.
-  - `POST /admin/api/paths`: Registers a new monitored host directory (`path`, `category`, `recursive`).
-  - `DELETE /admin/api/paths/{path_id}`: Removes a monitored local path.
-  - `POST /admin/api/reindex`: Triggers a full re-index across all enabled sources.
+### 5. Delete Repository (`DELETE /admin/api/repos/{repo_id}`)
+- **Method**: `DELETE`
+- **Path**: `/admin/api/repos/{repo_id}`
+- **Required Role**: `Role.ADMIN`
+- **Scripted `curl` Example**:
+  ```bash
+  curl -X DELETE http://localhost:3000/admin/api/repos/1 \
+    -H "Authorization: Bearer cc_admin_your_key"
+  ```
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "status": "success",
+    "name": "my-service",
+    "deleted": "my-service"
+  }
+  ```
+- **What `DELETE /admin/api/repos/{repo_id}` Removes**:
+  1. The repository registration row in `git_repositories`.
+  2. All relational rows where `repo = <name>` across `indexed_files`, `file_summaries`, `ast_symbols`, `ast_relationships`, `api_routes`, `api_client_calls`, and `git_commits`.
+  3. All dense and sparse vector points for `<name>` in the active vector store (`pgvector` or `qdrant`).
+  4. The retained shallow clone directory on disk under `PERSISTENT_REPOS_DIR` (if `keep_shallow` was enabled).
 
-### 6. Interactive Calibrated Hybrid Search Tester
+### 6. Monitored Local Paths & Global Indexing (`GET` / `POST` / `DELETE /admin/api/paths`)
+- **List Monitored Paths (`GET /admin/api/paths`)**:
+  - **Required Role**: `Role.VIEWER`
+  - **Response**: Array of rows from `indexed_paths` (`id`, `path`, `type`, `recursive`, `category`, `repo`, `enabled`).
+- **Register Monitored Path (`POST /admin/api/paths`)**:
+  - **Required Role**: `Role.ADMIN`
+  - **Request Fields (`LocalPathConfig`)**:
+    - `path` (string, required): Existing absolute directory or file path on the host/container filesystem (validated against path traversal and null bytes).
+    - `type` (string, optional, default `"directory"`): Path entry type (`"directory"` or `"file"`).
+    - `recursive` (boolean, optional, default `true`): Recursively traverse subdirectories during indexing.
+    - `category` (string, optional, default `null`): Optional classification tag attached to indexed chunks.
+    - `repo` (string, optional, default `"local"`): Logical repository/source label assigned to files indexed from this path.
+  - **Scripted `curl` Example**:
+    ```bash
+    curl -X POST http://localhost:3000/admin/api/paths \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer cc_admin_your_key" \
+      -d '{
+        "path": "/docs/architecture",
+        "type": "directory",
+        "recursive": true,
+        "category": "runbooks",
+        "repo": "local"
+      }'
+    ```
+  - **Response (`200 OK`)**:
+    ```json
+    {
+      "status": "success",
+      "id": 2,
+      "path": "/docs/architecture"
+    }
+    ```
+    Registration immediately triggers a background `run_full_indexing()` pass.
+- **Delete Monitored Path (`DELETE /admin/api/paths/{path_id}`)**:
+  - **Required Role**: `Role.ADMIN`
+  - **Scripted `curl` Example**:
+    ```bash
+    curl -X DELETE http://localhost:3000/admin/api/paths/2 \
+      -H "Authorization: Bearer cc_admin_your_key"
+    ```
+  - **Response (`200 OK`)**:
+    ```json
+    {
+      "status": "success",
+      "path": "/docs/architecture",
+      "deleted": "/docs/architecture"
+    }
+    ```
+  - **What `DELETE /admin/api/paths/{path_id}` Removes**:
+    1. The monitored path entry in `indexed_paths`.
+    2. All relational rows matching the removed path (or its subpath prefix `<path>/%`, plus `repo`-scoped rows when no other registered path or Git repository shares that `repo` label) across `indexed_files`, `file_summaries`, `ast_symbols`, `ast_relationships`, `api_routes`, and `api_client_calls`.
+    3. All vector points matching the removed path (and unshared `repo` label) in the active vector store (`pgvector` or `qdrant`). Files on the underlying host disk are never deleted.
+- **Trigger Global Re-Index (`POST /admin/api/reindex` or `POST /admin/api/sync`)**:
+  - **Required Role**: `Role.EDITOR`
+  - **Query Parameter**: `force` (boolean, optional, default `false`).
+  - **Response**: Dispatches a background indexing run across all enabled sources (returns `409 Conflict` if an indexing run is already active).
+
+### 7. Interactive Calibrated Hybrid Search Tester
 - **Method**: `POST`
 - **Path**: `/admin/api/search/test`
 - **Request Body**:
