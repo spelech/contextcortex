@@ -135,6 +135,15 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
         ParsedFileItem,
     )
 
+    try:
+        from app.services.chunking.csharp_route_attributes import cache_repo_csharp_attributes
+
+        for target in active_paths:
+            if target.get("type") != "file" and os.path.isdir(target["path"]):
+                cache_repo_csharp_attributes(target["repo"], os.path.abspath(target["path"]))
+    except Exception:
+        pass
+
     all_points = []
     all_symbols = []
     all_routes = []
@@ -219,17 +228,23 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
         logger.error(f"Failed to embed local files in pipeline: {e}")
         return False
 
+    from app.services.indexing.db_write_channel import submit_db_write
+
     # Purge old points for modified files
     store = vs_service.get_vector_store()
     for (fpath, repo) in files_to_delete:
         try:
             store.delete_by_path(fpath)
-            with db_service.get_db_connection() as conn:
-                conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
-                conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
-                conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
-                conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (fpath,))
-                conn.commit()
+
+            def _purge_local_file(target_fp: str = fpath) -> None:
+                with db_service.get_db_connection() as conn:
+                    conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (target_fp,))
+                    conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (target_fp,))
+                    conn.execute("DELETE FROM api_routes WHERE filepath = ?", (target_fp,))
+                    conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (target_fp,))
+                    conn.commit()
+
+            submit_db_write(_purge_local_file)
         except Exception as e:
             logger.error(f"Failed to delete old points for {fpath}: {e}")
 
@@ -247,104 +262,107 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
 
     # Batch update database tables
     try:
-        with db_service.get_db_connection() as conn:
-            if files_to_update_cache:
-                conn.executemany(
-                    """INSERT INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime)
-                       VALUES (?, ?, ?, ?, ?, ?)
-                       ON CONFLICT(filepath) DO UPDATE SET
-                           repo = EXCLUDED.repo,
-                           doc_type = EXCLUDED.doc_type,
-                           language = EXCLUDED.language,
-                           commit_sha = EXCLUDED.commit_sha,
-                           mtime = EXCLUDED.mtime""",
-                    files_to_update_cache
-                )
-            if all_summaries:
-                conn.executemany(
-                    """INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                       ON CONFLICT(filepath) DO UPDATE SET
-                           repo = EXCLUDED.repo,
-                           title = EXCLUDED.title,
-                           folder = EXCLUDED.folder,
-                           category = EXCLUDED.category,
-                           tags = EXCLUDED.tags,
-                           headings = EXCLUDED.headings,
-                           keywords = EXCLUDED.keywords,
-                           summary_text = EXCLUDED.summary_text,
-                           mtime = EXCLUDED.mtime""",
-                    all_summaries
-                )
-            if all_symbols:
-                for s in all_symbols:
-                    cursor = conn.execute(
-                        "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
+        def _persist_local_batch() -> None:
+            with db_service.get_db_connection() as conn:
+                if files_to_update_cache:
+                    conn.executemany(
+                        """INSERT INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime)
+                           VALUES (?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(filepath) DO UPDATE SET
+                               repo = EXCLUDED.repo,
+                               doc_type = EXCLUDED.doc_type,
+                               language = EXCLUDED.language,
+                               commit_sha = EXCLUDED.commit_sha,
+                               mtime = EXCLUDED.mtime""",
+                        files_to_update_cache
                     )
-                    s["inserted_id"] = cursor.lastrowid
+                if all_summaries:
+                    conn.executemany(
+                        """INSERT INTO file_summaries (filepath, repo, title, folder, category, tags, headings, keywords, summary_text, mtime)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(filepath) DO UPDATE SET
+                               repo = EXCLUDED.repo,
+                               title = EXCLUDED.title,
+                               folder = EXCLUDED.folder,
+                               category = EXCLUDED.category,
+                               tags = EXCLUDED.tags,
+                               headings = EXCLUDED.headings,
+                               keywords = EXCLUDED.keywords,
+                               summary_text = EXCLUDED.summary_text,
+                               mtime = EXCLUDED.mtime""",
+                        all_summaries
+                    )
+                if all_symbols:
+                    for s in all_symbols:
+                        cursor = conn.execute(
+                            "INSERT INTO ast_symbols (repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (s["repo"], s["filepath"], s["name"], s["full_symbol"], s["kind"], s["start_line"], s["end_line"], s["signature"], s["language"])
+                        )
+                        s["inserted_id"] = cursor.lastrowid
 
-            if all_relationships:
-                # Map symbol (repo, filepath, name) to inserted_id
-                sym_map = {}
-                syms_by_file = {}
-                for s in all_symbols:
-                    if "inserted_id" in s:
-                        sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
-                        if s.get("full_symbol"):
-                            sym_map[(s["repo"], s["filepath"], s["full_symbol"])] = s["inserted_id"]
-                        syms_by_file.setdefault((s["repo"], s["filepath"]), []).append(s)
+                if all_relationships:
+                    # Map symbol (repo, filepath, name) to inserted_id
+                    sym_map = {}
+                    syms_by_file = {}
+                    for s in all_symbols:
+                        if "inserted_id" in s:
+                            sym_map[(s["repo"], s["filepath"], s["name"])] = s["inserted_id"]
+                            if s.get("full_symbol"):
+                                sym_map[(s["repo"], s["filepath"], s["full_symbol"])] = s["inserted_id"]
+                            syms_by_file.setdefault((s["repo"], s["filepath"]), []).append(s)
 
-                rel_tuples = []
-                for r in all_relationships:
-                    src_id = None
-                    r_line = r.get("line_number")
-                    if r_line is not None:
-                        candidates = [
-                            s for s in syms_by_file.get((r["repo"], r["source_filepath"]), [])
-                            if (s.get("start_line") or 0) <= r_line <= (s.get("end_line") or 0)
-                            and (s.get("name") == r["source_symbol"] or s.get("full_symbol") == r["source_symbol"])
-                        ]
-                        if candidates:
-                            candidates.sort(key=lambda s: (s.get("end_line") or 0) - (s.get("start_line") or 0))
-                            src_id = candidates[0].get("inserted_id")
-                    if src_id is None:
-                        src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
-                    rel_tuples.append((
-                        r["repo"],
-                        src_id,
-                        r["source_filepath"],
-                        r["source_symbol"],
-                        r["target_symbol"],
-                        r["relationship_type"],
-                        r["line_number"]
-                    ))
+                    rel_tuples = []
+                    for r in all_relationships:
+                        src_id = None
+                        r_line = r.get("line_number")
+                        if r_line is not None:
+                            candidates = [
+                                s for s in syms_by_file.get((r["repo"], r["source_filepath"]), [])
+                                if (s.get("start_line") or 0) <= r_line <= (s.get("end_line") or 0)
+                                and (s.get("name") == r["source_symbol"] or s.get("full_symbol") == r["source_symbol"])
+                            ]
+                            if candidates:
+                                candidates.sort(key=lambda s: (s.get("end_line") or 0) - (s.get("start_line") or 0))
+                                src_id = candidates[0].get("inserted_id")
+                        if src_id is None:
+                            src_id = sym_map.get((r["repo"], r["source_filepath"], r["source_symbol"]))
+                        rel_tuples.append((
+                            r["repo"],
+                            src_id,
+                            r["source_filepath"],
+                            r["source_symbol"],
+                            r["target_symbol"],
+                            r["relationship_type"],
+                            r["line_number"]
+                        ))
 
-                conn.executemany(
-                    """INSERT INTO ast_relationships
-                       (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    rel_tuples
-                )
-            if all_routes:
-                route_tuples = [
-                    (r["repo"], r["filepath"], r["framework"], r["http_method"], r["path_pattern"], r.get("handler_symbol"), r["start_line"], r["end_line"])
-                    for r in all_routes
-                ]
-                conn.executemany(
-                    "INSERT INTO api_routes (repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    route_tuples
-                )
-            if all_calls:
-                call_tuples = [
-                    (c["repo"], c["filepath"], c.get("http_method"), c["url_pattern"], c.get("caller_symbol"), c["line_number"])
-                    for c in all_calls
-                ]
-                conn.executemany(
-                    "INSERT INTO api_client_calls (repo, filepath, http_method, url_pattern, caller_symbol, line_number) VALUES (?, ?, ?, ?, ?, ?)",
-                    call_tuples
-                )
-            conn.commit()
+                    conn.executemany(
+                        """INSERT INTO ast_relationships
+                           (repo, source_symbol_id, source_filepath, source_symbol, target_symbol, relationship_type, line_number)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        rel_tuples
+                    )
+                if all_routes:
+                    route_tuples = [
+                        (r["repo"], r["filepath"], r["framework"], r["http_method"], r["path_pattern"], r.get("handler_symbol"), r["start_line"], r["end_line"])
+                        for r in all_routes
+                    ]
+                    conn.executemany(
+                        "INSERT INTO api_routes (repo, filepath, framework, http_method, path_pattern, handler_symbol, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        route_tuples
+                    )
+                if all_calls:
+                    call_tuples = [
+                        (c["repo"], c["filepath"], c.get("http_method"), c["url_pattern"], c.get("caller_symbol"), c["line_number"])
+                        for c in all_calls
+                    ]
+                    conn.executemany(
+                        "INSERT INTO api_client_calls (repo, filepath, http_method, url_pattern, caller_symbol, line_number) VALUES (?, ?, ?, ?, ?, ?)",
+                        call_tuples
+                    )
+                conn.commit()
+
+        submit_db_write(_persist_local_batch)
     except Exception as e:
         logger.error(f"Failed writing local index updates to SQLite: {e}")
         return False

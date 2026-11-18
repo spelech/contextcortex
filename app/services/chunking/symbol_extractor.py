@@ -97,7 +97,7 @@ def extract_symbols_and_chunks(
     def _resolve_container_info(n) -> Optional[Tuple[str, str]]:
         if n.type not in target_types:
             return None
-        if n.type in ("variable_declarator", "pair"):
+        if n.type in ("variable_declarator", "pair", "public_field_definition", "field_definition"):
             return extract_callable_variable_or_pair(n, source_bytes)
         n_name = extract_node_name(n, source_bytes)
         if not n_name:

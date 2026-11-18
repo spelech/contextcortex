@@ -214,21 +214,15 @@ def real_e2e_env(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_e2e_grep_code_survives_broken_venv_symlink_and_enriches_ast(real_e2e_env):
     """Verifies `grep_code` does not crash on broken `.venv/lib64` symlinks and returns AST symbol metadata."""
-    res_raw = await handle_grep_code(
-        pattern="Missing bearer token",
-        repo="platform-core",
-        context_lines=2,
-    )
-    res = json.loads(res_raw)
-    assert "error" not in res, f"grep_code failed: {res}"
-    assert res["total_matches"] == 1
-    assert res["repo"] == "platform-core"
+    res = json.loads(await handle_grep_code(pattern="Missing bearer token", repo="platform-core", context_lines=2))
+    assert "error" not in res and res["total_matches"] == 1 and res["repo"] == "platform-core"
     [group] = res["files"]
-    assert group["file"].endswith("app/api/users.py")
+    assert group["file"].endswith("app/api/users.py") and "permalink" not in group
     [(match_line, symbol)] = group["symbols"].items()
     assert symbol == "validate_token"
     assert any(line.startswith(f"{match_line}:") and "Missing bearer token" in line for line in group["lines"])
-    assert "blob/400ce382" in group.get("permalink", "") and "#L" not in group["permalink"]
+    res_link = json.loads(await handle_grep_code(pattern="Missing bearer token", repo="platform-core", include_permalinks=True))
+    assert "blob/400ce382" in res_link["files"][0].get("permalink", "") and "#L" not in res_link["files"][0]["permalink"]
 
 
 @pytest.mark.asyncio

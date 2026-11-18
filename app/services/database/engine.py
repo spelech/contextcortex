@@ -103,7 +103,7 @@ def get_db_engine(database_url: Optional[str] = None, reset: bool = False, **kwa
     if url.startswith("sqlite"):
         engine = create_engine(
             url,
-            connect_args={"check_same_thread": False, "timeout": 15.0},
+            connect_args={"check_same_thread": False, "timeout": 60.0},
             pool_pre_ping=True,
             **kwargs,
         )
@@ -113,7 +113,7 @@ def get_db_engine(database_url: Optional[str] = None, reset: bool = False, **kwa
             if isinstance(dbapi_connection, sqlite3.Connection):
                 cursor = dbapi_connection.cursor()
                 try:
-                    cursor.execute("PRAGMA busy_timeout=15000;")
+                    cursor.execute("PRAGMA busy_timeout=60000;")
                 except Exception as e:
                     logger.debug(f"Failed to set busy_timeout: {e}")
                 try:

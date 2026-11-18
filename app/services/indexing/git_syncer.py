@@ -235,28 +235,39 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             except Exception as qe:
                 logger.error(f"Error deleting vector for {fpath}: {qe}")
 
+        from app.services.indexing.channel_pipeline import (
+            BoundedChannel,
+            ChannelIngestionPipeline,
+            ParsedFileItem,
+        )
+        from app.services.indexing.db_write_channel import submit_db_write
+
         if db_paths_to_clean:
-            with db_service.get_db_connection() as conn:
-                for fpath in db_paths_to_clean:
-                    conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
-                    conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
-                    conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
-                    conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (fpath,))
-                    conn.execute("DELETE FROM file_summaries WHERE filepath = ?", (fpath,))
-                for fpath in deleted_filepaths:
-                    conn.execute("DELETE FROM indexed_files WHERE filepath = ?", (fpath,))
-                conn.commit()
+            def _clean_stale_paths() -> None:
+                with db_service.get_db_connection() as conn:
+                    for fpath in db_paths_to_clean:
+                        conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
+                        conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
+                        conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
+                        conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (fpath,))
+                        conn.execute("DELETE FROM file_summaries WHERE filepath = ?", (fpath,))
+                    for fpath in deleted_filepaths:
+                        conn.execute("DELETE FROM indexed_files WHERE filepath = ?", (fpath,))
+                    conn.commit()
+
+            submit_db_write(_clean_stale_paths)
 
         files_to_sync = added_files + modified_files
         total_files = len(files_to_sync)
         logger.info(f"Ingesting {total_files} added/modified files for repo '{repo_name}'...")
         progress_tracker.log(repo_id, "INFO", f"Ingesting {total_files} added/modified files...")
 
-        from app.services.indexing.channel_pipeline import (
-            BoundedChannel,
-            ChannelIngestionPipeline,
-            ParsedFileItem,
-        )
+        try:
+            from app.services.chunking.csharp_route_attributes import cache_repo_csharp_attributes
+
+            cache_repo_csharp_attributes(repo_name, temp_dir)
+        except Exception:
+            pass
 
         BATCH_SIZE = 25
         total_vectors_count = 0
@@ -361,16 +372,19 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     raise RuntimeError(f"Vector store upsert failed during git indexing for repo '{repo_name}'")
                 total_vectors_count += len(batch_points)
 
-            with db_service.get_db_connection() as conn:
-                total_symbols_count += persist_sync_batch(
-                    conn,
-                    batch_indexed_files,
-                    batch_summaries,
-                    batch_symbols,
-                    batch_relationships,
-                    batch_routes,
-                    batch_calls,
-                )
+            def _write_relational_batch() -> int:
+                with db_service.get_db_connection() as conn:
+                    return persist_sync_batch(
+                        conn,
+                        batch_indexed_files,
+                        batch_summaries,
+                        batch_symbols,
+                        batch_relationships,
+                        batch_routes,
+                        batch_calls,
+                    )
+
+            total_symbols_count += submit_db_write(_write_relational_batch)
             trim_memory()
 
         pipeline = ChannelIngestionPipeline(

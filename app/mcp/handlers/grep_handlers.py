@@ -69,7 +69,7 @@ def _sanitize_match_lines(match: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def handle_grep_code(
-    pattern: Annotated[str, Field(description="Exact literal string or regular expression to match across source files (Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, configs).")],
+    pattern: Annotated[Optional[str], Field(description="Exact literal string or regular expression to match across source files (Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, configs).")] = None,
     repo: Annotated[Optional[str], Field(description="Optional repository name or 'local_storage' to scope search. Omit to scan all indexed sources.")] = None,
     path_glob: Annotated[Optional[str], Field(description="Optional path filter. With wildcards it is an fnmatch glob ('*.cs', 'app/services/*'); without wildcards it is a file or folder ('Services_V2', 'src/app/main.py').")] = None,
     is_regex: Annotated[bool, Field(description="Set True to evaluate pattern as a Python regular expression; False (default) matches literal text. If a literal search finds nothing and the pattern looks like a regex (for example 'A|B'), the search runs again as a regex and pattern_mode says so.")] = False,
@@ -78,10 +78,15 @@ async def handle_grep_code(
     limit: Annotated[int, Field(description="Maximum matched lines per page, clamped to 1..100 (default 30).")] = 30,
     offset: Annotated[int, Field(description="0-based match offset for pagination (default 0). Advance by next_offset when has_more is True.")] = 0,
     path: Annotated[Optional[str], Field(description="Alias for path_glob (a file, folder, or glob). path_glob wins when both are given.")] = None,
+    include_permalinks: Annotated[bool, Field(description="Include file-level Git web permalinks on matched file groups (default False keeps output compact).")] = False,
+    query: Annotated[Optional[str], Field(description="Alias for `pattern`. `pattern` wins when both are given.")] = None,
+    filepath: Annotated[Optional[str], Field(description="Alias for `path_glob` (a file, folder, or glob). `path_glob` wins when both are given.")] = None,
+    file: Annotated[Optional[str], Field(description="Alias for `path_glob` (a file, folder, or glob). `path_glob` wins when both are given.")] = None,
 ) -> str:
     """Deterministic literal and regex pattern search across indexed repositories with bounded line lengths and pagination."""
     try:
         enforce_tool_permission(Role.VIEWER)
+        eff_pattern = pattern if (pattern is not None and pattern != "") else (query if query is not None else "")
         reader_fn = _resolve_reader_factory()
         reader = reader_fn()
 
@@ -89,12 +94,12 @@ async def handle_grep_code(
         safe_offset = max(0, int(offset if offset is not None else 0))
         safe_context = max(0, min(int(context_lines if context_lines is not None else 2), 10))
         needed = safe_offset + safe_limit + 1
-        path_filter = path_glob or path
+        path_filter = path_glob or path or filepath or file
 
         def _search(as_regex: bool) -> List[Dict[str, Any]]:
             if needed <= 100:
                 raw_result = reader.grep_code(
-                    pattern=pattern,
+                    pattern=eff_pattern,
                     repo=repo,
                     path_glob=path_filter,
                     is_regex=as_regex,
@@ -104,7 +109,7 @@ async def handle_grep_code(
                 )
                 return raw_result.get("matches", [])
             raw_result = execute_code_grep(
-                pattern=pattern,
+                pattern=eff_pattern,
                 storage_root=reader.storage_root,
                 indexed_paths=reader._get_authorized_indexed_paths(),
                 persistent_repos=reader._get_authorized_persistent_repos(),
@@ -122,7 +127,7 @@ async def handle_grep_code(
 
         pattern_mode = "regex" if is_regex else "literal"
         all_matches = _search(is_regex)
-        if not all_matches and not is_regex and looks_like_regex(pattern):
+        if not all_matches and not is_regex and looks_like_regex(eff_pattern):
             all_matches = _search(True)
             pattern_mode = "regex (the literal text had no matches, so the pattern ran as a regex)"
 
@@ -131,7 +136,11 @@ async def handle_grep_code(
         sanitized_matches = [_sanitize_match_lines(m) for m in page_slice]
         next_offset = (safe_offset + safe_limit) if has_more else None
 
-        shared_repo, files = group_grep_matches(sanitized_matches, block_separators=safe_context > 0)
+        shared_repo, files = group_grep_matches(
+            sanitized_matches,
+            block_separators=safe_context > 0,
+            include_permalinks=bool(include_permalinks),
+        )
         payload: Dict[str, Any] = {"total_matches": len(all_matches)}
         if pattern_mode != ("regex" if is_regex else "literal"):
             payload["pattern_mode"] = pattern_mode

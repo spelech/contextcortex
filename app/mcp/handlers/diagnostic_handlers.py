@@ -16,17 +16,20 @@ def _get_tools_attr(name, default):
 
 
 async def handle_diagnose_issue(
-    issue_text: Annotated[str, Field(description="Raw stack trace, exception log, HTTP failure payload, or bug symptom report across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")],
+    issue_text: Annotated[Optional[str], Field(description="Raw stack trace, exception log, HTTP failure payload, or bug symptom report across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")] = None,
     repo: Annotated[Optional[str], Field(description="Optional repository name to scope stack frame, route, and semantic candidate resolution.")] = None,
     context_lines: Annotated[int, Field(description="Surrounding source lines returned per resolved stack frame, clamped to 1..15 (default 5).")] = 5,
     limit: Annotated[int, Field(description="Maximum semantic code candidates returned alongside resolved stack frames, clamped to 1..20 (default 5).")] = 5,
     detail: Annotated[bool, Field(description="Set True to add full method bodies to call_chain steps and code, permalinks, callers, and callees to semantic_candidates (default False keeps the answer compact).")] = False,
+    query: Annotated[Optional[str], Field(description="Alias for `issue_text`. `issue_text` wins when both are given.")] = None,
+    error: Annotated[Optional[str], Field(description="Alias for `issue_text`. `issue_text` wins when both are given.")] = None,
 ) -> str:
     """Forensic triage: a ranked call chain with evidence lines, plus stack frames, routes, symbols, and semantic candidates."""
     try:
         enforce_tool_permission(Role.VIEWER)
 
-        text = (issue_text or "").strip()
+        raw_text = issue_text if (issue_text is not None and issue_text.strip()) else (query or error or "")
+        text = raw_text.strip()
         if not text:
             return json.dumps({
                 "call_chain": {"entry": None, "terms": [], "steps": [], "other_hits": [], "nodes_read": 0},

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1352 Automated Tests** (988 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1357 Automated Tests** (993 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1021,6 +1021,13 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_is_postgres_detection`
 - `test_wait_for_db_retries_and_success`
 - `test_wait_for_db_exhausts_retries`
+
+#### `tests/test_db_write_channel_and_custom_routes.py` (5 tests)
+- `test_database_write_channel_serializes_concurrent_sqlite_writers` - _Verifies DatabaseWriteChannel queues concurrent producers through a single writer thread without SQLite lock errors or interleaving._
+- `test_general_csharp_custom_route_and_verb_attributes` - _Verifies custom C# route and HTTP verb attributes are resolved generically from class declarations and inheritance chains._
+- `test_typescript_class_field_arrow_methods_and_axios_api_prefix_matching` - _Verifies TS class field arrow functions are extracted as Class.method symbols and their relative axios calls match /api/v{n} routes._
+- `test_permalinks_are_opt_in_and_direct_tool_aliases_work` - _Verifies find_routes and search omit permalinks by default (until include_permalinks=True) and direct tool calls accept common parameter aliases._
+- `test_code_mode_disabled_omits_execute_script_and_sse_post_routes_to_mcp` - _Verifies CODE_MODE_ENABLED=false omits execute_script from get_tool_definitions() and McpPingMiddleware routes POST /sse to /mcp._
 
 #### `tests/test_delete_local_path.py` (4 tests)
 - `test_delete_local_path_cleans_all_relational_tables_and_vectors` - _Verify DELETE /admin/api/paths/{id} removes rows from all 6 file-scoped tables and the vector store._

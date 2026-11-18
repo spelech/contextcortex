@@ -50,6 +50,7 @@ async def handle_search(
     limit: Annotated[int, Field(description="Maximum chunks per page, clamped to 1..25 (default 5).")] = 5,
     offset: Annotated[int, Field(description="0-based result offset for pagination (default 0). Advance using next_offset when has_more is True.")] = 0,
     max_snippet_chars: Annotated[int, Field(description="Maximum characters per returned snippet, clamped to 200..6000 (default 2000).")] = 2000,
+    include_permalinks: Annotated[bool, Field(description="Include Git web permalinks on search hits (default False keeps results compact).")] = False,
 ) -> str:
     """Hybrid semantic + BM25 search across AST-chunked source code and documentation with bounded snippets and pagination."""
     clean_query = query.strip() if query else ""
@@ -113,10 +114,11 @@ async def handle_search(
                 "score": score_val,
                 "dense_score": d_val,
                 "sparse_score": s_val,
-                "permalink": permalink,
                 "content_truncated": was_truncated,
                 "content": snippet_text,
             }
+            if include_permalinks:
+                item["permalink"] = permalink
             results.append(item)
 
         return json.dumps({
