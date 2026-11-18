@@ -252,7 +252,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         logger.info(f"Ingesting {total_files} added/modified files for repo '{repo_name}'...")
         progress_tracker.log(repo_id, "INFO", f"Ingesting {total_files} added/modified files...")
 
-        BATCH_SIZE = 25
+        BATCH_SIZE = 50
         batch_points = []
         batch_symbols = []
         batch_routes = []
@@ -283,16 +283,29 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                 content = read_source_text(full_path)
                 file_hash = proc_service.compute_text_hash(content)
 
-                points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                    filepath=db_filepath,
-                    rel_path=rel_path,
-                    content=content,
-                    repo=repo_name,
-                    doc_type=doc_type,
-                    git_url=git_url,
-                    commit_sha=commit_sha,
-                    provider=provider,
-                )
+                try:
+                    points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                        filepath=db_filepath,
+                        rel_path=rel_path,
+                        content=content,
+                        repo=repo_name,
+                        doc_type=doc_type,
+                        git_url=git_url,
+                        commit_sha=commit_sha,
+                        provider=provider,
+                        embed=False,
+                    )
+                except TypeError:
+                    points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                        filepath=db_filepath,
+                        rel_path=rel_path,
+                        content=content,
+                        repo=repo_name,
+                        doc_type=doc_type,
+                        git_url=git_url,
+                        commit_sha=commit_sha,
+                        provider=provider,
+                    )
                 batch_points.extend(points)
                 batch_symbols.extend(symbols)
                 batch_routes.extend(routes)
@@ -311,6 +324,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
             if (idx + 1) % BATCH_SIZE == 0 or (idx + 1) == total_files:
                 if batch_points:
+                    proc_service.embed_points_across_files(batch_points)
                     upsert_ok = store.upsert_documents(batch_points)
                     if not upsert_ok:
                         logger.error(f"Failed to upsert points to vector store during git indexing for repo '{repo_name}'.")

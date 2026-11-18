@@ -289,8 +289,6 @@ def _seed_defaults(engine: Engine, vault_path: str = "/docs") -> None:
                 ("embedding_provider", emb_cfg["provider"]),
                 ("embedding_dense_model", emb_cfg["dense_model"]),
                 ("embedding_sparse_model", emb_cfg["sparse_model"]),
-                ("embedding_num_threads", str(emb_cfg["threads"])),
-                ("embedding_batch_size", str(emb_cfg["batch_size"])),
                 ("openai_api_url", emb_cfg["litellm_url"]),
                 ("embedding_litellm_url", emb_cfg["litellm_url"]),
             ]:

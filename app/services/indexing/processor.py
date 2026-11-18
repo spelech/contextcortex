@@ -109,75 +109,101 @@ def get_dynamic_catalog_description() -> str:
 # FILE & REPOSITORY PROCESSORS
 # ----------------------------------------------------
 
+def _extract_sparse_tuple(sparse_obj: Any) -> Tuple[Optional[List[int]], Optional[List[float]]]:
+    if sparse_obj is None:
+        return None, None
+    if hasattr(sparse_obj, "indices") and hasattr(sparse_obj, "values"):
+        return list(sparse_obj.indices), list(sparse_obj.values)
+    if isinstance(sparse_obj, dict):
+        return list(sparse_obj.get("indices", [])), list(sparse_obj.get("values", []))
+    return None, None
+
+
 def _resolve_cached_or_compute_embeddings(
-    chunks: List[Dict[str, Any]], 
-    texts_to_embed: List[str]
+    chunks: List[Dict[str, Any]],
+    texts_to_embed: List[str],
 ) -> List[Dict[str, Any]]:
     """Resolves embeddings for chunks using SQLite cache, computing only cache misses."""
     if not chunks:
         return []
-    
+
     active_model = _get_indexer_attr("DENSE_MODEL_NAME", DENSE_MODEL_NAME)
     chunk_hashes = [compute_text_hash(c.get("content", "").strip()) for c in chunks]
     cached_map = get_cached_embeddings_batch(chunk_hashes, model_name=active_model)
-    
-    # Collect unique missing hashes
+
     missing_hash_to_text = {}
     for idx, h in enumerate(chunk_hashes):
         if h not in cached_map and h not in missing_hash_to_text:
             missing_hash_to_text[h] = texts_to_embed[idx]
-            
+
     if missing_hash_to_text:
         unseen_hashes = list(missing_hash_to_text.keys())
         unseen_texts = list(missing_hash_to_text.values())
         embed_fn = _get_indexer_attr("get_hybrid_embeddings_batch", get_hybrid_embeddings_batch)
         new_vectors = embed_fn(unseen_texts)
-        
+
         items_to_cache = []
         for i, h in enumerate(unseen_hashes):
             nv = new_vectors[i] if i < len(new_vectors) and isinstance(new_vectors[i], dict) else {}
             dense_v = nv.get("dense")
-            sparse_obj = nv.get("sparse")
-            s_indices = None
-            s_values = None
-            if sparse_obj is not None:
-                if hasattr(sparse_obj, "indices") and hasattr(sparse_obj, "values"):
-                    s_indices = list(sparse_obj.indices)
-                    s_values = list(sparse_obj.values)
-                elif isinstance(sparse_obj, dict):
-                    s_indices = list(sparse_obj.get("indices", []))
-                    s_values = list(sparse_obj.get("values", []))
-            
-            cached_map[h] = {
-                "dense": dense_v,
-                "sparse_indices": s_indices,
-                "sparse_values": s_values
-            }
+            s_indices, s_values = _extract_sparse_tuple(nv.get("sparse"))
+            cached_map[h] = {"dense": dense_v, "sparse_indices": s_indices, "sparse_values": s_values}
             items_to_cache.append({
                 "chunk_hash": h,
                 "dense_vector": dense_v,
                 "sparse_indices": s_indices,
                 "sparse_values": s_values,
-                "model_name": active_model
+                "model_name": active_model,
             })
-            
+
         if items_to_cache:
             set_cached_embeddings_batch(items_to_cache)
             trim_memory()
-            
+
     return [cached_map.get(h, {}) for h in chunk_hashes]
 
 
+def embed_points_across_files(points: List[VectorDocument]) -> None:
+    """Computes and populates dense/sparse embeddings across a multi-file batch of VectorDocuments."""
+    if not points:
+        return
+
+    pending: List[Tuple[VectorDocument, str, str]] = []
+    for pt in points:
+        embed_text = pt.metadata.pop("_embed_text", None) if isinstance(pt.metadata, dict) else None
+        if pt.dense_vector is not None:
+            continue
+        raw_content = (pt.text or "").strip()
+        formatted = embed_text or raw_content
+        if not formatted:
+            continue
+        pending.append((pt, compute_text_hash(raw_content), formatted))
+
+    if not pending:
+        return
+
+    chunks = [{"content": pt.text} for pt, _, _ in pending]
+    texts_to_embed = [fmt for _, _, fmt in pending]
+    resolved = _resolve_cached_or_compute_embeddings(chunks, texts_to_embed)
+
+    for idx, (pt, _, _) in enumerate(pending):
+        bv = resolved[idx] if idx < len(resolved) and isinstance(resolved[idx], dict) else {}
+        pt.dense_vector = bv.get("dense")
+        pt.sparse_indices = bv.get("sparse_indices")
+        pt.sparse_values = bv.get("sparse_values")
+
+
 def process_file_content(
-    filepath: str, 
-    rel_path: str, 
-    content: str, 
-    repo: str, 
-    doc_type: str, 
-    git_url: Optional[str] = None, 
+    filepath: str,
+    rel_path: str,
+    content: str,
+    repo: str,
+    doc_type: str,
+    git_url: Optional[str] = None,
     commit_sha: Optional[str] = None,
     category_override: Optional[str] = None,
-    provider: Optional[str] = None
+    provider: Optional[str] = None,
+    embed: bool = True,
 ) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple, List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Processes a single file into vector documents, AST symbols, summary metadata, AST relationships, API routes, and client calls."""
     points: List[VectorDocument] = []
@@ -241,23 +267,14 @@ def process_file_content(
                 logger.warning(f"Auto-summarization failed for {filepath}: {se}")
 
         summary_tuple = (
-            filepath,
-            repo,
-            title,
-            folder,
-            category,
-            json.dumps([]),
-            json.dumps([]),
-            json.dumps([]),
-            summary_text,
-            mtime
+            filepath, repo, title, folder, category,
+            json.dumps([]), json.dumps([]), json.dumps([]), summary_text, mtime
         )
         return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls
 
     if doc_type in ("doc", "pdf"):
         body_line_offset = 0
         if filepath.endswith((".md", ".txt")):
-            # Check if file is in standard ADR directories or follows ADR naming
             norm_rel = rel_path.replace("\\", "/").lower()
             if any(adr_dir in norm_rel for adr_dir in ["docs/adr/", "docs/decisions/", ".adr/", "doc/architecture/decisions/", "/adr/"]):
                 try:
@@ -278,14 +295,13 @@ def process_file_content(
                     tags = [t.strip() for t in raw_tags.split(",")] if isinstance(raw_tags, str) else raw_tags
             except Exception:
                 pass
-        
+
         doc_relationships = extract_markdown_doc_links(content, filepath=filepath, repo=repo)
         ast_relationships = [r.model_dump() for r in doc_relationships]
 
         chunks_models = chunk_markdown(content, max_chars=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
         chunks = [c.model_dump() for c in chunks_models]
         if body_line_offset:
-            # Chunk lines count from the body; shift them so they are file line numbers.
             for item in chunks + ast_relationships:
                 for line_key in ("start_line", "end_line", "line_number"):
                     if isinstance(item.get(line_key), int):
@@ -294,31 +310,23 @@ def process_file_content(
         headings = [c["heading"] for c in valid_chunks if c.get("heading") and c["heading"] != "Root"]
         keywords = extract_keywords_from_text(content, title, headings, tags)
 
-        texts_to_embed = []
-        for chunk in valid_chunks:
-            texts_to_embed.append(
-                f"Repo: {repo}\n"
-                f"Document: {rel_path}\n"
-                f"Category: {category}\n"
-                f"Heading: {chunk.get('heading', 'Root')}\n"
-                f"Content:\n{chunk['content'].strip()}"
-            )
+        texts_to_embed = [
+            f"Repo: {repo}\nDocument: {rel_path}\nCategory: {category}\n"
+            f"Heading: {chunk.get('heading', 'Root')}\nContent:\n{chunk['content'].strip()}"
+            for chunk in valid_chunks
+        ]
 
         if texts_to_embed:
-            batch_vecs = _resolve_cached_or_compute_embeddings(valid_chunks, texts_to_embed)
+            batch_vecs = _resolve_cached_or_compute_embeddings(valid_chunks, texts_to_embed) if embed else []
             total_pages_list = [int(m) for m in re.findall(r"^# Page (\d+)", content, re.MULTILINE)]
             max_page = max(total_pages_list) if total_pages_list else 1
 
             for idx, chunk in enumerate(valid_chunks):
                 point_id = get_chunk_uuid(repo, rel_path, idx)
                 github_url = format_git_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"), provider=provider)
-                
-                bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
-                dense_v = bv.get("dense")
-                s_indices = bv.get("sparse_indices")
-                s_values = bv.get("sparse_values")
 
-                chunk_meta = {}
+                bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
+                chunk_meta: Dict[str, Any] = {}
                 if is_pdf_file:
                     page_match = re.search(r"Page\s+(\d+)", chunk.get("heading", ""))
                     page_num = int(page_match.group(1)) if page_match else 1
@@ -328,13 +336,15 @@ def process_file_content(
                         "headings": headings,
                         "doc_type": "pdf"
                     }
+                if not embed:
+                    chunk_meta["_embed_text"] = texts_to_embed[idx]
 
                 points.append(VectorDocument(
                     id=point_id,
                     text=chunk["content"].strip(),
-                    dense_vector=dense_v,
-                    sparse_indices=s_indices,
-                    sparse_values=s_values,
+                    dense_vector=bv.get("dense"),
+                    sparse_indices=bv.get("sparse_indices"),
+                    sparse_values=bv.get("sparse_values"),
                     repo=repo,
                     doc_type="pdf" if is_pdf_file else "doc",
                     path=filepath,
@@ -351,7 +361,7 @@ def process_file_content(
                     metadata=chunk_meta,
                 ))
 
-    else: # Code file
+    else:
         ast_result = extract_symbols_and_chunks(content, filepath, repo=repo, max_chunk_chars=CODE_CHUNK_SIZE)
         chunks = [c.model_dump() for c in ast_result.chunks]
         ast_symbols = [s.model_dump() for s in ast_result.symbols]
@@ -362,36 +372,31 @@ def process_file_content(
         headings = [s["name"] for s in ast_symbols]
         keywords = extract_keywords_from_text(content, title, headings, [language])
 
-        texts_to_embed = []
-        for chunk in valid_chunks:
-            symbol_label = chunk.get("symbol") or title
-            texts_to_embed.append(
-                f"Repo: {repo}\n"
-                f"File: {rel_path}\n"
-                f"Language: {language}\n"
-                f"Symbol: {symbol_label}\n"
-                f"Lines: {chunk.get('start_line')}-{chunk.get('end_line')}\n"
-                f"Code:\n{chunk['content'].strip()}"
-            )
+        texts_to_embed = [
+            f"Repo: {repo}\nFile: {rel_path}\nLanguage: {language}\n"
+            f"Symbol: {chunk.get('symbol') or title}\nLines: {chunk.get('start_line')}-{chunk.get('end_line')}\n"
+            f"Code:\n{chunk['content'].strip()}"
+            for chunk in valid_chunks
+        ]
 
         if texts_to_embed:
-            batch_vecs = _resolve_cached_or_compute_embeddings(valid_chunks, texts_to_embed)
+            batch_vecs = _resolve_cached_or_compute_embeddings(valid_chunks, texts_to_embed) if embed else []
             for idx, chunk in enumerate(valid_chunks):
                 point_id = get_chunk_uuid(repo, rel_path, idx)
                 github_url = format_git_permalink(git_url, commit_sha, rel_path, chunk.get("start_line"), chunk.get("end_line"), provider=provider)
                 symbol_label = chunk.get("symbol") or title
 
                 bv = batch_vecs[idx] if idx < len(batch_vecs) and isinstance(batch_vecs[idx], dict) else {}
-                dense_v = bv.get("dense")
-                s_indices = bv.get("sparse_indices")
-                s_values = bv.get("sparse_values")
+                chunk_meta = {"kind": chunk.get("kind", "code")}
+                if not embed:
+                    chunk_meta["_embed_text"] = texts_to_embed[idx]
 
                 points.append(VectorDocument(
                     id=point_id,
                     text=chunk["content"].strip(),
-                    dense_vector=dense_v,
-                    sparse_indices=s_indices,
-                    sparse_values=s_values,
+                    dense_vector=bv.get("dense"),
+                    sparse_indices=bv.get("sparse_indices"),
+                    sparse_values=bv.get("sparse_values"),
                     repo=repo,
                     doc_type="code",
                     language=language,
@@ -405,22 +410,14 @@ def process_file_content(
                     end_line=chunk.get("end_line", 1),
                     github_url=github_url,
                     permalink_url=github_url,
-                    metadata={"kind": chunk.get("kind", "code")}
+                    metadata=chunk_meta,
                 ))
 
     filepath_norm = os.path.normpath(os.path.abspath(filepath))
     mtime = os.path.getmtime(filepath_norm) if os.path.exists(filepath_norm) else 0.0
     summary_tuple = (
-        filepath,
-        repo,
-        title,
-        folder,
-        category,
-        json.dumps(tags),
-        json.dumps(list(set(headings[:20]))),
-        json.dumps(keywords),
-        None,
-        mtime
+        filepath, repo, title, folder, category,
+        json.dumps(tags), json.dumps(list(set(headings[:20]))), json.dumps(keywords), None, mtime
     )
 
     return points, ast_symbols, summary_tuple, ast_relationships, api_routes, api_calls

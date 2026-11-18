@@ -153,14 +153,25 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
 
             content = read_source_text(filepath)
 
-            points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                filepath=filepath,
-                rel_path=rel_path,
-                content=content,
-                repo=repo,
-                doc_type=doc_type,
-                category_override=category
-            )
+            try:
+                points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                    filepath=filepath,
+                    rel_path=rel_path,
+                    content=content,
+                    repo=repo,
+                    doc_type=doc_type,
+                    category_override=category,
+                    embed=False,
+                )
+            except TypeError:
+                points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                    filepath=filepath,
+                    rel_path=rel_path,
+                    content=content,
+                    repo=repo,
+                    doc_type=doc_type,
+                    category_override=category,
+                )
 
             files_to_delete.append((filepath, repo))
             all_points.extend(points)
@@ -191,6 +202,7 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
     if all_points:
         logger.info(f"Upserting {len(all_points)} vector documents to vector store...")
         try:
+            proc_service.embed_points_across_files(all_points)
             upsert_ok = store.upsert_documents(all_points)
             if not upsert_ok:
                 logger.error("Failed to upsert points to vector store during local indexing.")

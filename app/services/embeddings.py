@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import threading
 from types import SimpleNamespace
@@ -13,7 +14,10 @@ except ImportError:
 
     qmodels = SimpleNamespace(SparseVector=_SparseVectorFallback)  # type: ignore
 
+from app.services.embedding_batcher import execute_api_embeddings_batch, telemetry_tracker
+
 logger = logging.getLogger("contextcortex.embeddings")
+
 
 def _get_db_emb_config() -> Dict[str, Any]:
     try:
@@ -22,6 +26,7 @@ def _get_db_emb_config() -> Dict[str, Any]:
     except Exception:
         from app.services.database.connection import _resolve_default_embedding_config
         return _resolve_default_embedding_config()
+
 
 _initial_cfg = _get_db_emb_config()
 
@@ -32,6 +37,9 @@ DENSE_MODEL_NAME = _initial_cfg["dense_model"]
 SPARSE_MODEL_NAME = _initial_cfg["sparse_model"]
 EMBEDDING_NUM_THREADS = _initial_cfg["threads"]
 EMBEDDING_BATCH_SIZE = _initial_cfg["batch_size"]
+EMBEDDING_API_CONCURRENCY = _initial_cfg.get("api_concurrency", 4)
+EMBEDDING_MAX_TOKENS_PER_REQUEST = _initial_cfg.get("max_tokens_per_request", 100000)
+EMBEDDING_TPM_LIMIT = _initial_cfg.get("tpm_limit", 0)
 LITELLM_URL = _initial_cfg["litellm_url"]
 LITELLM_API_KEY = _initial_cfg.get(
     "litellm_api_key",
@@ -48,12 +56,16 @@ _dense_lock = threading.Lock()
 _sparse_lock = threading.Lock()
 _openai_client = None
 
+
 def init_embeddings(
     provider: Optional[str] = None,
     dense_model: Optional[str] = None,
     sparse_model: Optional[str] = None,
     threads: Optional[int] = None,
     batch_size: Optional[int] = None,
+    api_concurrency: Optional[int] = None,
+    max_tokens_per_request: Optional[int] = None,
+    tpm_limit: Optional[int] = None,
     litellm_url: Optional[str] = None,
     litellm_api_key: Optional[str] = None,
     vision_ocr_model: Optional[str] = None,
@@ -65,6 +77,7 @@ def init_embeddings(
     global REQUESTED_PROVIDER, EMBEDDING_PROVIDER
     global REQUESTED_DENSE_MODEL, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
     global EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, LITELLM_URL, LITELLM_API_KEY
+    global EMBEDDING_API_CONCURRENCY, EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_TPM_LIMIT
     global VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL
 
     cfg = _get_db_emb_config()
@@ -75,7 +88,20 @@ def init_embeddings(
     DENSE_MODEL_NAME = REQUESTED_DENSE_MODEL
     SPARSE_MODEL_NAME = (sparse_model if sparse_model is not None else (cfg.get("sparse_model") or "Qdrant/bm25")).strip()
     EMBEDDING_NUM_THREADS = int(threads if threads is not None else cfg.get("threads", 2))
-    EMBEDDING_BATCH_SIZE = int(batch_size if batch_size is not None else cfg.get("batch_size", 32))
+    default_bs = 128 if REQUESTED_PROVIDER == "api" else 32
+    if batch_size is not None:
+        EMBEDDING_BATCH_SIZE = int(batch_size)
+    else:
+        cfg_bs = cfg.get("batch_size")
+        if REQUESTED_PROVIDER == "api" and not os.getenv("EMBEDDING_BATCH_SIZE") and cfg_bs in (None, 32):
+            EMBEDDING_BATCH_SIZE = 128
+        else:
+            EMBEDDING_BATCH_SIZE = int(cfg_bs or default_bs)
+    EMBEDDING_API_CONCURRENCY = int(api_concurrency if api_concurrency is not None else cfg.get("api_concurrency", 4))
+    EMBEDDING_MAX_TOKENS_PER_REQUEST = int(
+        max_tokens_per_request if max_tokens_per_request is not None else cfg.get("max_tokens_per_request", 100000)
+    )
+    EMBEDDING_TPM_LIMIT = int(tpm_limit if tpm_limit is not None else cfg.get("tpm_limit", 0))
     LITELLM_URL = (litellm_url or cfg.get("litellm_url") or "http://litellm:4000/v1").strip()
     LITELLM_API_KEY = (litellm_api_key or cfg.get("litellm_api_key") or "dummy").strip()
     VISION_OCR_MODEL = (vision_ocr_model if vision_ocr_model is not None else (cfg.get("vision_ocr_model") or os.getenv("VISION_OCR_MODEL", ""))).strip()
@@ -86,24 +112,24 @@ def init_embeddings(
     # Set underlying OpenMP / BLAS thread guard
     os.environ["OMP_NUM_THREADS"] = str(EMBEDDING_NUM_THREADS)
 
-    with _dense_lock:
-        _dense_model = None
-    with _sparse_lock:
-        _sparse_model = None
-    _openai_client = None
-
     sparse_disabled = SPARSE_MODEL_NAME.lower() in ("", "none", "off", "disabled", "false")
 
     if REQUESTED_PROVIDER == "local":
+        _openai_client = None
         try:
             from fastembed import TextEmbedding, SparseTextEmbedding
             logger.info(f"Initializing FastEmbed dense model: {DENSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
+            new_dense = TextEmbedding(model_name=DENSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
             with _dense_lock:
-                _dense_model = TextEmbedding(model_name=DENSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
+                _dense_model = new_dense
             if not sparse_disabled:
                 logger.info(f"Initializing FastEmbed sparse model: {SPARSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
+                new_sparse = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
                 with _sparse_lock:
-                    _sparse_model = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
+                    _sparse_model = new_sparse
+            else:
+                with _sparse_lock:
+                    _sparse_model = None
             logger.info("FastEmbed dense & sparse models initialized successfully with resource limits.")
         except Exception as e:
             logger.error(f"Failed to initialize local FastEmbed models: {e}")
@@ -130,27 +156,35 @@ def init_embeddings(
                 DENSE_MODEL_NAME = FALLBACK_DENSE_MODEL
 
     if EMBEDDING_PROVIDER == "api":
+        with _dense_lock:
+            _dense_model = None
         try:
             from openai import OpenAI
             from app.services.llm_client import get_llm_extra_headers
             logger.info(f"Using OpenAI/LiteLLM API embeddings at {LITELLM_URL} model {DENSE_MODEL_NAME}")
-            _openai_client = OpenAI(
+            new_client = OpenAI(
                 base_url=LITELLM_URL,
                 api_key=LITELLM_API_KEY,
                 default_headers=get_llm_extra_headers(),
             )
-            # Try initializing sparse model locally only if not explicitly disabled
+            _openai_client = new_client
             if not sparse_disabled:
                 try:
                     from fastembed import SparseTextEmbedding
+                    new_sparse = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
                     with _sparse_lock:
-                        _sparse_model = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
+                        _sparse_model = new_sparse
                 except Exception:
+                    with _sparse_lock:
+                        _sparse_model = None
+            else:
+                with _sparse_lock:
                     _sparse_model = None
         except Exception as oe:
             logger.error(f"Failed to initialize API client: {oe}")
             if REQUESTED_PROVIDER == "local" and ALLOW_FALLBACK:
                 raise RuntimeError(f"Fallback to API failed: {oe}") from oe
+
 
 # Auto-initialize on import safely
 try:
@@ -158,8 +192,9 @@ try:
 except Exception as _e:
     logger.warning(f"Initial embedding auto-init failed: {_e}")
 
+
 def get_embedding_config() -> Dict[str, Any]:
-    """Returns current active embedding configuration along with system hardware stats."""
+    """Returns current active embedding configuration along with system hardware stats and telemetry."""
     try:
         from app.services.database import detect_system_resources
         sys_res = detect_system_resources()
@@ -189,6 +224,8 @@ def get_embedding_config() -> Dict[str, Any]:
         else SPARSE_MODEL_NAME
     )
 
+    telemetry = telemetry_tracker.get_telemetry_snapshot(EMBEDDING_API_CONCURRENCY)
+
     return {
         "provider": EMBEDDING_PROVIDER,
         "requested_provider": REQUESTED_PROVIDER,
@@ -201,6 +238,9 @@ def get_embedding_config() -> Dict[str, Any]:
         "effective_sparse_model": effective_sparse,
         "threads": EMBEDDING_NUM_THREADS,
         "batch_size": EMBEDDING_BATCH_SIZE,
+        "api_concurrency": EMBEDDING_API_CONCURRENCY,
+        "max_tokens_per_request": EMBEDDING_MAX_TOKENS_PER_REQUEST,
+        "tpm_limit": EMBEDDING_TPM_LIMIT,
         "litellm_url": LITELLM_URL,
         "vision_ocr_model": VISION_OCR_MODEL,
         "chat_model": CHAT_MODEL,
@@ -208,7 +248,9 @@ def get_embedding_config() -> Dict[str, Any]:
         "fallback_dense_model": FALLBACK_DENSE_MODEL,
         "system_cpus": sys_res["cpus"],
         "system_memory_gb": sys_res["memory_gb"],
+        **telemetry,
     }
+
 
 def get_dense_dim_for_config(
     provider: Optional[str] = None,
@@ -257,6 +299,9 @@ def update_embedding_config(
     sparse_model: Optional[str] = None,
     threads: Optional[int] = None,
     batch_size: Optional[int] = None,
+    api_concurrency: Optional[int] = None,
+    max_tokens_per_request: Optional[int] = None,
+    tpm_limit: Optional[int] = None,
     litellm_url: Optional[str] = None,
     litellm_api_key: Optional[str] = None,
     vision_ocr_model: Optional[str] = None,
@@ -265,18 +310,13 @@ def update_embedding_config(
     fallback_dense_model: Optional[str] = None,
     rebuild_index: bool = False,
 ) -> Dict[str, Any]:
-    """Updates embedding configuration in SQLite and hot-reloads models in memory.
-
-    If model or dimensions change and existing vector points/indexed files exist,
-    requires rebuild_index=True to perform a coordinated reset and reindex.
-    """
+    """Updates embedding configuration in SQLite and hot-reloads models in memory."""
     from app.services.database import set_embedding_db_config, clear_indexing_metadata, get_db_connection
     from app.services.vector_store import get_vector_store
 
     target_provider = (provider or EMBEDDING_PROVIDER).lower().strip()
     target_dense = (dense_model or DENSE_MODEL_NAME).strip()
 
-    # Check if active index contains indexed content
     has_indexed_content = False
     try:
         store = get_vector_store()
@@ -289,7 +329,6 @@ def update_embedding_config(
     except Exception as e:
         logger.debug(f"Error checking active index count: {e}")
 
-    # Calculate candidate dimension and check for changes
     new_dim = None
     try:
         new_dim = get_dense_dim_for_config(
@@ -319,33 +358,24 @@ def update_embedding_config(
         )
         raise ValueError(msg)
 
-    # Apply configuration update
-    set_embedding_db_config(
-        provider=provider,
-        dense_model=dense_model,
-        sparse_model=sparse_model,
-        threads=threads,
-        batch_size=batch_size,
-        litellm_url=litellm_url,
-        litellm_api_key=litellm_api_key,
-        vision_ocr_model=vision_ocr_model,
-        chat_model=chat_model,
-        allow_fallback=allow_fallback,
-        fallback_dense_model=fallback_dense_model,
-    )
-    init_embeddings(
-        provider=provider,
-        dense_model=dense_model,
-        sparse_model=sparse_model,
-        threads=threads,
-        batch_size=batch_size,
-        litellm_url=litellm_url,
-        litellm_api_key=litellm_api_key,
-        vision_ocr_model=vision_ocr_model,
-        chat_model=chat_model,
-        allow_fallback=allow_fallback,
-        fallback_dense_model=fallback_dense_model,
-    )
+    cfg_kwargs = {
+        "provider": provider,
+        "dense_model": dense_model,
+        "sparse_model": sparse_model,
+        "threads": threads,
+        "batch_size": batch_size,
+        "api_concurrency": api_concurrency,
+        "max_tokens_per_request": max_tokens_per_request,
+        "tpm_limit": tpm_limit,
+        "litellm_url": litellm_url,
+        "litellm_api_key": litellm_api_key,
+        "vision_ocr_model": vision_ocr_model,
+        "chat_model": chat_model,
+        "allow_fallback": allow_fallback,
+        "fallback_dense_model": fallback_dense_model,
+    }
+    set_embedding_db_config(**cfg_kwargs)
+    init_embeddings(**cfg_kwargs)
 
     if (dim_changed or model_changed or rebuild_index) and has_indexed_content:
         logger.info("Coordinating safe index rebuild for embedding model change...")
@@ -364,52 +394,62 @@ def update_embedding_config(
 
     return get_embedding_config()
 
+
 def get_dense_embedding(text: str) -> List[float]:
     """Generates dense vector embedding (e.g. 384 dimensions)."""
     res = get_dense_embeddings_batch([text])
     return res[0] if res else [0.0] * 384
 
+
 def get_dense_embeddings_batch(texts: List[str], batch_size: Optional[int] = None) -> List[List[float]]:
-    """Generates a batch of dense vector embeddings efficiently in ONNX."""
+    """Generates a batch of dense vector embeddings in ONNX or via parallel API slices."""
     if not texts:
         return []
     bs = batch_size or EMBEDDING_BATCH_SIZE
     if EMBEDDING_PROVIDER == "local":
-        if _dense_model is None:
+        model = _dense_model
+        if model is None:
             raise RuntimeError("Local dense embedding model is not initialized.")
+        start_t = time.monotonic()
         with _dense_lock:
-            embeddings = list(_dense_model.embed(texts, batch_size=bs))
-            return [e.tolist() for e in embeddings]
+            embeddings = list(model.embed(texts, batch_size=bs))
+            res = [e.tolist() for e in embeddings]
+        telemetry_tracker.record_batch_completion(len(texts), time.monotonic() - start_t)
+        return res
     elif EMBEDDING_PROVIDER == "api":
-        if _openai_client is None:
+        client = _openai_client
+        if client is None:
             raise RuntimeError("API Embedding client not initialized.")
-        api_bs = max(1, min(int(bs or 64), 128))
-        all_embeddings: List[List[float]] = []
-        for start in range(0, len(texts), api_bs):
-            batch_slice = texts[start:start + api_bs]
-            response = _openai_client.embeddings.create(
-                input=batch_slice,
-                model=DENSE_MODEL_NAME
-            )
-            all_embeddings.extend([d.embedding for d in response.data])
-        return all_embeddings
+        api_bs = max(1, min(int(bs or 128), 256))
+        return execute_api_embeddings_batch(
+            client=client,
+            texts=texts,
+            model_name=DENSE_MODEL_NAME,
+            batch_size=api_bs,
+            max_concurrency=EMBEDDING_API_CONCURRENCY,
+            max_tokens_per_request=EMBEDDING_MAX_TOKENS_PER_REQUEST,
+            tpm_limit=EMBEDDING_TPM_LIMIT,
+        )
     else:
         raise RuntimeError(f"Unknown embedding provider: {EMBEDDING_PROVIDER}")
+
 
 def get_sparse_embedding(text: str) -> Optional[qmodels.SparseVector]:
     """Generates BM25 sparse vector embedding for a single text."""
     res = get_sparse_embeddings_batch([text])
     return res[0] if res else None
 
+
 def get_sparse_embeddings_batch(texts: List[str], batch_size: Optional[int] = None) -> List[Optional[qmodels.SparseVector]]:
     """Generates a batch of BM25 sparse vector embeddings."""
     if not texts:
         return []
     bs = batch_size or EMBEDDING_BATCH_SIZE
-    if _sparse_model is not None:
+    model = _sparse_model
+    if model is not None:
         try:
             with _sparse_lock:
-                sparse_res = list(_sparse_model.embed(texts, batch_size=bs))
+                sparse_res = list(model.embed(texts, batch_size=bs))
                 return [
                     qmodels.SparseVector(
                         indices=s.indices.tolist(),
@@ -421,10 +461,12 @@ def get_sparse_embeddings_batch(texts: List[str], batch_size: Optional[int] = No
             return [None] * len(texts)
     return [None] * len(texts)
 
+
 def get_hybrid_embeddings(text: str) -> Dict[str, Any]:
     """Returns a dict with dense vector and optional sparse vector for Qdrant named vectors."""
     res = get_hybrid_embeddings_batch([text])
     return res[0] if res else {}
+
 
 def get_hybrid_embeddings_batch(texts: List[str]) -> List[Dict[str, Any]]:
     """Returns a list of dicts with dense vector and optional sparse vector for batch upserts."""
@@ -432,7 +474,7 @@ def get_hybrid_embeddings_batch(texts: List[str]) -> List[Dict[str, Any]]:
         return []
     dense_vecs = get_dense_embeddings_batch(texts)
     sparse_vecs = get_sparse_embeddings_batch(texts)
-    
+
     results = []
     for i, dense in enumerate(dense_vecs):
         vec_dict = {"dense": dense}
@@ -440,6 +482,7 @@ def get_hybrid_embeddings_batch(texts: List[str]) -> List[Dict[str, Any]]:
             vec_dict["sparse"] = sparse_vecs[i]
         results.append(vec_dict)
     return results
+
 
 def get_dense_dim() -> int:
     """Calculates embedding dimension from a sample text."""
