@@ -255,10 +255,18 @@ async def api_cancel_repo_sync(repo_id: int):
         return JSONResponse(status_code=400, content={"error": f"Repo {repo_id} is not currently syncing"})
     return {"status": "cancelled", "repo_id": repo_id}
 
-@router.delete(
-    "/admin/api/repos/{repo_id}",
-    dependencies=[Depends(require_role(Role.ADMIN))],
+_FILE_SCOPED_TABLES = (
+    ("indexed_files", "filepath"),
+    ("file_summaries", "filepath"),
+    ("ast_symbols", "filepath"),
+    ("ast_relationships", "source_filepath"),
+    ("api_routes", "filepath"),
+    ("api_client_calls", "filepath"),
 )
+_REPO_SCOPED_TABLES = tuple(t for t, _ in _FILE_SCOPED_TABLES) + ("git_commits",)
+
+
+@router.delete("/admin/api/repos/{repo_id}", dependencies=[Depends(require_role(Role.ADMIN))])
 async def api_delete_repo(repo_id: int):
     try:
         with db_service.get_db_connection() as conn:
@@ -268,7 +276,7 @@ async def api_delete_repo(repo_id: int):
             name = row["name"]
 
             conn.execute("DELETE FROM git_repositories WHERE id = ?", (repo_id,))
-            for table in ("indexed_files", "ast_symbols", "ast_relationships", "api_routes", "git_commits"):
+            for table in _REPO_SCOPED_TABLES:
                 try:
                     conn.execute(f"DELETE FROM {table} WHERE repo = ?", (name,))
                 except Exception:
@@ -291,10 +299,7 @@ async def api_delete_repo(repo_id: int):
         logger.error(f"Error deleting repo {repo_id}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to delete repository."})
 
-@router.get(
-    "/admin/api/paths",
-    dependencies=[Depends(require_role(Role.VIEWER))],
-)
+@router.get("/admin/api/paths", dependencies=[Depends(require_role(Role.VIEWER))])
 async def api_get_paths():
     try:
         with db_service.get_db_connection() as conn:
@@ -304,10 +309,7 @@ async def api_get_paths():
         logger.error(f"Error getting paths: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to get paths."})
 
-@router.post(
-    "/admin/api/paths",
-    dependencies=[Depends(require_role(Role.ADMIN))],
-)
+@router.post("/admin/api/paths", dependencies=[Depends(require_role(Role.ADMIN))])
 async def api_add_path(config: LocalPathConfig):
     try:
         raw_path = config.path.strip() if config.path else ""
@@ -343,25 +345,51 @@ async def api_add_path(config: LocalPathConfig):
         logger.error(f"Error adding path: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to add path."})
 
-@router.delete(
-    "/admin/api/paths/{path_id}",
-    dependencies=[Depends(require_role(Role.ADMIN))],
-)
+@router.delete("/admin/api/paths/{path_id}", dependencies=[Depends(require_role(Role.ADMIN))])
 async def api_delete_path(path_id: int):
     try:
         with db_service.get_db_connection() as conn:
-            row = conn.execute("SELECT path FROM indexed_paths WHERE id = ?", (path_id,)).fetchone()
+            row = conn.execute("SELECT path, repo FROM indexed_paths WHERE id = ?", (path_id,)).fetchone()
             if not row:
                 return JSONResponse(status_code=404, content={"error": "Path not found"})
             path_val = row["path"]
+            repo_val = (row["repo"] or "").strip() if "repo" in row.keys() else ""
+            norm_path = (path_val or "").replace("\\", "/").rstrip("/")
 
             conn.execute("DELETE FROM indexed_paths WHERE id = ?", (path_id,))
-            conn.execute("DELETE FROM indexed_files WHERE filepath LIKE ?", (f"{path_val}%",))
+            repo_shared = False
+            if repo_val:
+                rem_paths = conn.execute("SELECT COUNT(*) FROM indexed_paths WHERE repo = ?", (repo_val,)).fetchone()[0]
+                try:
+                    rem_repos = conn.execute("SELECT COUNT(*) FROM git_repositories WHERE name = ?", (repo_val,)).fetchone()[0]
+                except Exception:
+                    rem_repos = 0
+                repo_shared = (rem_paths + rem_repos) > 0
+                if not repo_shared:
+                    for table, _ in _FILE_SCOPED_TABLES:
+                        try:
+                            conn.execute(f"DELETE FROM {table} WHERE repo = ?", (repo_val,))
+                        except Exception:
+                            pass
+
+            for table, col in _FILE_SCOPED_TABLES:
+                try:
+                    if norm_path:
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE {col} = ? OR REPLACE({col}, '\\', '/') = ? OR REPLACE({col}, '\\', '/') LIKE ?",
+                            (path_val, norm_path, f"{norm_path}/%"),
+                        )
+                    else:
+                        conn.execute(f"DELETE FROM {table} WHERE {col} = ?", (path_val,))
+                except Exception:
+                    pass
             conn.commit()
 
         try:
             store = vs_service.get_vector_store()
-            store.delete_by_path(path_val)
+            if repo_val and not repo_shared:
+                store.delete_by_repo(repo_val)
+            store.delete_by_path(norm_path or path_val)
         except Exception as e:
             logger.error(f"Error removing points from vector DB for path {path_val}: {e}")
 
@@ -370,14 +398,8 @@ async def api_delete_path(path_id: int):
         logger.error(f"Error deleting path {path_id}: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to delete path."})
 
-@router.post(
-    "/admin/api/sync",
-    dependencies=[Depends(require_role(Role.EDITOR))],
-)
-@router.post(
-    "/admin/api/reindex",
-    dependencies=[Depends(require_role(Role.EDITOR))],
-)
+@router.post("/admin/api/sync", dependencies=[Depends(require_role(Role.EDITOR))])
+@router.post("/admin/api/reindex", dependencies=[Depends(require_role(Role.EDITOR))])
 async def api_trigger_sync(force: bool = False):
     if idx_service.is_indexing():
         return JSONResponse(status_code=409, content={"status": "error", "error": "Indexing in progress", "message": "Indexing is already in progress."})
@@ -386,10 +408,7 @@ async def api_trigger_sync(force: bool = False):
     threading.Thread(target=idx_service.run_full_indexing, kwargs=kwargs, daemon=True).start()
     return {"status": "success", "force": force, "message": "Background ingestion pipeline dispatched."}
 
-@router.post(
-    "/admin/api/search/test",
-    dependencies=[Depends(require_role(Role.VIEWER))],
-)
+@router.post("/admin/api/search/test", dependencies=[Depends(require_role(Role.VIEWER))])
 async def api_test_search(payload: SearchRequest):
     try:
         query = payload.query.strip() if payload.query else ""
@@ -398,33 +417,19 @@ async def api_test_search(payload: SearchRequest):
 
         search_mode = (payload.search_mode or "hybrid").lower().strip()
         hits = search_service.execute_hybrid_search(
-            query_text=query,
-            doc_type=payload.type,
-            repo=payload.repo,
-            language=payload.language,
-            category=payload.category,
-            tag=payload.tag,
-            limit=payload.limit or 6,
-            dense_weight=payload.dense_weight,
-            search_mode=search_mode
+            query_text=query, doc_type=payload.type, repo=payload.repo,
+            language=payload.language, category=payload.category, tag=payload.tag,
+            limit=payload.limit or 6, dense_weight=payload.dense_weight, search_mode=search_mode,
         )
-        results = []
-        for h in hits:
-            results.append({
-                "score": round(getattr(h, "score", 0.0), 4),
-                "dense_score": getattr(h, "dense_score", None),
-                "sparse_score": getattr(h, "sparse_score", None),
-                "dense_rank": getattr(h, "dense_rank", None),
-                "sparse_rank": getattr(h, "sparse_rank", None),
-                "payload": getattr(h, "payload", {})
-            })
-        return {
-            "query": query,
-            "type": payload.type,
-            "search_mode": search_mode,
-            "dense_weight": payload.dense_weight,
-            "results": results
-        }
+        results = [{
+            "score": round(getattr(h, "score", 0.0), 4),
+            "dense_score": getattr(h, "dense_score", None),
+            "sparse_score": getattr(h, "sparse_score", None),
+            "dense_rank": getattr(h, "dense_rank", None),
+            "sparse_rank": getattr(h, "sparse_rank", None),
+            "payload": getattr(h, "payload", {}),
+        } for h in hits]
+        return {"query": query, "type": payload.type, "search_mode": search_mode, "dense_weight": payload.dense_weight, "results": results}
     except ValueError as ve:
         logger.warning(f"Vector search rejected due to dimension or configuration error: {ve}")
         return JSONResponse(status_code=400, content={"status": "error", "error": str(ve), "message": str(ve)})
@@ -432,10 +437,7 @@ async def api_test_search(payload: SearchRequest):
         logger.error(f"Error testing search: {e}")
         return JSONResponse(status_code=500, content={"error": "Failed to execute search test.", "message": str(e)})
 
-@router.get(
-    "/admin/api/browse",
-    dependencies=[Depends(require_role(Role.VIEWER))],
-)
+@router.get("/admin/api/browse", dependencies=[Depends(require_role(Role.VIEWER))])
 async def api_browse_dir(path: str = "/"):
     cleaned = path.strip() if path else "/"
     if "\x00" in cleaned or any(part in ("..", ".") for part in cleaned.replace("\\", "/").split("/") if part):
@@ -454,22 +456,19 @@ async def api_browse_dir(path: str = "/"):
         resolved = root_dir
     try:
         entries = os.scandir(resolved)
-        dirs = []
-        files = []
+        dirs, files = [], []
         for e in entries:
             if e.name.startswith("."):
                 continue
-            if e.is_dir():
-                dirs.append({"name": e.name, "path": os.path.abspath(e.path)})
-            else:
-                files.append({"name": e.name, "path": os.path.abspath(e.path)})
+            item = {"name": e.name, "path": os.path.abspath(e.path)}
+            (dirs if e.is_dir() else files).append(item)
         dirs.sort(key=lambda x: x["name"].lower())
         files.sort(key=lambda x: x["name"].lower())
         return {
             "current_path": resolved,
             "parent_path": os.path.dirname(resolved) if resolved != "/" else "",
             "directories": dirs,
-            "files": files
+            "files": files,
         }
     except Exception as e:
         logger.error(f"Error browsing dir {path}: {e}")

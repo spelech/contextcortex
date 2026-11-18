@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from sqlalchemy import Engine, text
 
 from app.services.database.engine import get_db_engine, is_postgres
-from app.services.embeddings import get_dense_dim, get_dense_embedding
+from app.services.embeddings import get_dense_dim, get_dense_embedding, get_dense_embeddings_batch
 from app.services.text_decoding import strip_nul
 from app.services.vector_store.base import VectorDocument, VectorSearchResult, VectorStore
 from app.services.vector_store.pgvector_queries import (
@@ -185,6 +185,7 @@ class PgVectorStore(VectorStore):
 
         is_sqlite = getattr(self.engine.dialect, "name", "") == "sqlite"
         records = []
+        missing_embed: List[Tuple[int, str]] = []
         for doc in documents:
             if isinstance(doc, VectorDocument):
                 doc_id = str(doc.id)
@@ -226,7 +227,7 @@ class PgVectorStore(VectorStore):
                         payload[pk] = payload[pk].replace("\x00", "").replace("\\", "/")
 
             if dense_vec is None and text_content:
-                dense_vec = get_dense_embedding(text_content)
+                missing_embed.append((len(records), text_content))
 
             if "content" not in payload and text_content:
                 payload["content"] = text_content
@@ -257,6 +258,14 @@ class PgVectorStore(VectorStore):
                 "embedding": embedding_str,
                 "payload": json.dumps(payload),
             }))
+
+        if missing_embed:
+            try:
+                batch_vecs = get_dense_embeddings_batch([t for _, t in missing_embed])
+            except Exception:
+                batch_vecs = [get_dense_embedding(t) for _, t in missing_embed]
+            for (rec_idx, _), vec in zip(missing_embed, batch_vecs):
+                records[rec_idx]["embedding"] = (json.dumps(vec) if is_sqlite else str(vec)) if vec is not None else None
 
         upsert_sql = text(f"""
         INSERT INTO {self.table_name} (
@@ -323,13 +332,17 @@ class PgVectorStore(VectorStore):
         return failed
 
     def delete_by_path(self, filepath: str) -> bool:
-        """Purges vectors associated with a specific file path."""
-        norm_fp = (filepath or "").replace("\\", "/")
+        """Purges vectors associated with a specific file or directory path."""
+        norm_fp = (filepath or "").replace("\\", "/").rstrip("/")
+        prefix = f"{norm_fp}/%" if norm_fp else ""
         try:
             with self.engine.connect() as conn:
                 conn.execute(
-                    text(f"DELETE FROM {self.table_name} WHERE collection_name = :collection_name AND (path = :path OR path = :norm_path)"),
-                    {"collection_name": self.collection_name, "path": filepath, "norm_path": norm_fp},
+                    text(
+                        f"DELETE FROM {self.table_name} WHERE collection_name = :collection_name "
+                        "AND (path = :path OR path = :norm_path OR (:prefix != '' AND path LIKE :prefix))"
+                    ),
+                    {"collection_name": self.collection_name, "path": filepath, "norm_path": norm_fp, "prefix": prefix},
                 )
                 conn.commit()
             return True
