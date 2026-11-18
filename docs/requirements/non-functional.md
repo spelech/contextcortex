@@ -36,8 +36,9 @@ This section specifies the non-functional requirements and quality attributes fo
 ---
 
 ### NFR-06: Resource Boundaries and Batch Capping
-- **Requirement**: Embedding generation and background indexing must not starve host CPU or memory resources.
-- **Batch & Thread Cap**: Embedding requests must be batched according to `EMBEDDING_BATCH_SIZE` (default `32`), and any local worker thread count must default to `min(2, N_cpu)`.
+- **Requirement**: Embedding generation and background indexing must not starve host CPU, memory, or upstream gateway rate limits.
+- **Local Thread Cap**: `EMBEDDING_NUM_THREADS` (default `min(2, N_cpu)`) caps ONNX Runtime CPU worker threads per local FastEmbed model (`EMBEDDING_PROVIDER=local` and local sparse BM25 tokenization). It has no effect on remote dense embeddings when `EMBEDDING_PROVIDER=api`.
+- **Cross-File Batching & API Concurrency**: Embedding requests batch chunks across files according to `EMBEDDING_BATCH_SIZE` (default `32` for `local`, `128` for `api`, clamped to `256` per API request) and `EMBEDDING_MAX_TOKENS_PER_REQUEST` (default `100000`). When `EMBEDDING_PROVIDER=api`, up to `EMBEDDING_API_CONCURRENCY` (default `4`) batches execute in parallel with automatic HTTP `429` `Retry-After` backoff, AIMD concurrency scaling, and optional `EMBEDDING_TPM_LIMIT` (default `0` / disabled) token-bucket pacing.
 
 ---
 

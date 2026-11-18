@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1348 Automated Tests** (984 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1352 Automated Tests** (988 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1021,6 +1021,12 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_is_postgres_detection`
 - `test_wait_for_db_retries_and_success`
 - `test_wait_for_db_exhausts_retries`
+
+#### `tests/test_delete_local_path.py` (4 tests)
+- `test_delete_local_path_cleans_all_relational_tables_and_vectors` - _Verify DELETE /admin/api/paths/{id} removes rows from all 6 file-scoped tables and the vector store._
+- `test_delete_local_path_with_shared_repo_only_purges_deleted_path_prefix` - _Verify deleting one local path that shares a repo name ('local') removes only its own files and vectors._
+- `test_delete_git_repo_cleans_file_summaries_and_api_client_calls` - _Verify DELETE /admin/api/repos/{id} deletes file_summaries, api_client_calls, and all repo-scoped tables._
+- `test_pgvector_upsert_batches_missing_embeddings_and_deletes_by_folder_prefix` - _Verify PgVectorStore.upsert_documents batches missing dense vectors and delete_by_path supports prefixes._
 
 #### `tests/test_diagnose_evidence_chain.py` (8 tests)
 - `test_chain_follows_the_call_path_to_the_query_that_drops_the_transaction`

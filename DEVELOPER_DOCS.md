@@ -93,11 +93,13 @@ cd contextcortex
 6. **Set Environment Variables (Optional):**
    ```bash
    export VECTOR_STORE_PROVIDER="pgvector" # "pgvector" or "qdrant"
-   export COLLECTION_NAME="knowledge_rag_v1"
+   export VECTOR_STORE_COLLECTION="knowledge_rag_v1" # Alias: COLLECTION_NAME
    export OPENAI_API_URL="http://litellm:4000/v1" # OpenAI-compatible gateway endpoint
    export OPENAI_API_KEY="sk-your-key" # Gateway API key / Bearer token
-   export EMBEDDING_NUM_THREADS=2 # CPU thread cap (defaults to min(2, system_cpus))
-   export EMBEDDING_BATCH_SIZE=32 # Batch size for embedding requests (defaults to 32)
+   export EMBEDDING_PROVIDER="local" # "local" (FastEmbed ONNX) or "api" (OpenAI-compatible gateway)
+   export EMBEDDING_NUM_THREADS=2 # CPU thread cap for local FastEmbed ONNX only (defaults to min(2, system_cpus); no effect when EMBEDDING_PROVIDER=api)
+   export EMBEDDING_BATCH_SIZE=32 # Texts per embedding call (defaults to 32 for local, 128 for api, max 256 per API request)
+   export EMBEDDING_API_CONCURRENCY=4 # Max concurrent in-flight API embedding requests when EMBEDDING_PROVIDER=api
    export LLM_EXTRA_HEADERS='{"X-User-Agent":"contextcortex"}' # Optional JSON extra headers for LLM gateway requests
    export EXTRA_CA_CERTS_DIR="/certs" # Optional directory of private CA certificates (*.crt)
    export GITHUB_TOKEN="ghp_your_token" # Optional: For higher rate limits & private repos
@@ -171,25 +173,54 @@ npm run docs:preview
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
+| `HOST` | Listen address (`0.0.0.0` in Docker, `localhost` in Windows portable bundle) | `0.0.0.0` |
+| `PORT` | HTTP server port for FastAPI, Admin UI, and MCP endpoints | `3000` |
+| `LOG_LEVEL` | Application log verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
 | `DATABASE_URL` | SQLAlchemy connection string (e.g. `postgresql+psycopg://...` or `sqlite:///...`) | `sqlite:////app/data/index_cache.db` |
+| `DATA_DIR` | Root data directory for persistent application state | `/app/data` |
+| `CACHE_DB_PATH` | Path to persistent SQLite cache database | `/app/data/index_cache.db` |
 | `LOCAL_STORAGE_PATH` | Storage directory for managed local storage file uploads | `/app/data/storage` |
-| `PERSISTENT_REPOS_DIR` | Storage directory for retained shallow git clones (`keep_shallow`) | `/app/data/repos` |
-| `AUTH_ENABLED` | Enable MCP 2026-07-28 OAuth 2.1 & API Key RBAC | `false` |
+| `VAULT_PATH` | Default path to the Markdown documentation directory | `/docs` |
+| `TMP_REPOS_DIR` | Ephemeral workspace directory for shallow Git clones during sync | `/tmp/contextcortex_repos` |
+| `PERSISTENT_REPOS_DIR` | Storage directory for retained shallow Git clones (`keep_shallow`) | `/app/data/repos` |
+| `GIT_CLONE_TIMEOUT_SECONDS` | Timeout in seconds for `git clone` / `git fetch` operations | `300` |
 | `VECTOR_STORE_PROVIDER` | Vector database backend (`pgvector` or `qdrant`) | `pgvector` (Postgres) / `qdrant` (SQLite) |
 | `VECTOR_STORE_MODE` | Vector store mode (`embedded` or `remote`) | `embedded` |
-| `COLLECTION_NAME` | Vector collection name | `knowledge_rag_v1` |
+| `VECTOR_STORE_STORAGE_PATH` | Storage directory for embedded Qdrant (`QDRANT_STORAGE_PATH` alias) | `/app/data/qdrant_storage` |
+| `VECTOR_STORE_COLLECTION` | Vector collection name (`COLLECTION_NAME` alias) | `knowledge_rag_v1` |
 | `QDRANT_URL` | URL to the remote Qdrant vector database | `http://localhost:6333` |
-| `QDRANT_STORAGE_PATH` | Storage directory for embedded Qdrant | `/app/data/qdrant_storage` |
+| `HYBRID_DENSE_WEIGHT` | Default dense semantic weight (`0.0` to `1.0`) for hybrid search fusion | `0.5` |
 | `OPENAI_API_URL` | OpenAI-compatible gateway base URL passed to the OpenAI SDK | `http://litellm:4000/v1` |
 | `OPENAI_API_KEY` | API key for the OpenAI-compatible gateway | `dummy` |
 | `LLM_EXTRA_HEADERS` | JSON object of extra HTTP headers sent on every gateway request | `None` |
+| `EMBEDDING_PROVIDER` | Dense embedding execution backend (`local` FastEmbed ONNX or `api` gateway) | `local` |
+| `EMBEDDING_MODEL` | Active dense embedding model identifier | `BAAI/bge-small-en-v1.5` (`local`) / `text-embedding-3-small` (`api`) |
+| `SPARSE_MODEL` | Local FastEmbed sparse lexical model for BM25 token weights | `Qdrant/bm25` |
+| `EMBEDDING_ALLOW_FALLBACK` | Allow fallback to local dense model if API embedding initialization fails | `false` |
+| `EMBEDDING_FALLBACK_DENSE_MODEL` | Local dense model used when `EMBEDDING_ALLOW_FALLBACK=true` | `BAAI/bge-small-en-v1.5` |
+| `EMBEDDING_NUM_THREADS` | ONNX Runtime CPU threads per local FastEmbed model (`EMBEDDING_PROVIDER=local` only; no effect when `EMBEDDING_PROVIDER=api`) | `min(2, system_cpus)` |
+| `EMBEDDING_BATCH_SIZE` | Texts per embedding call across files (clamped to `256` per API request) | `32` (`local`) / `128` (`api`) |
+| `EMBEDDING_API_CONCURRENCY` | Maximum concurrent in-flight API embedding requests during indexing (`EMBEDDING_PROVIDER=api`) | `4` |
+| `EMBEDDING_MAX_TOKENS_PER_REQUEST` | Estimated token budget cap per API embedding request batch | `100000` |
+| `EMBEDDING_TPM_LIMIT` | Client-side tokens-per-minute pacing limit (`0` = disabled, reactive `429` handling only) | `0` |
+| `VISION_OCR_MODEL` | Multimodal vision model for scanned PDF / diagram OCR fallback | `gpt-4o-mini` |
+| `CHAT_MODEL` | Default chat completion model for large-file executive summarization | `gpt-4o-mini` |
 | `EXTRA_CA_CERTS_DIR` | Directory of private CA certificates (`*.crt`) trusted at container start | `/certs` |
+| `MCP_ENABLE_WRITE_TOOLS` | Expose the state-mutating `manage` MCP tool (`sync_repo`, `upload`, `replace`, `delete`) | `false` |
+| `CODE_MODE_ENABLED` | Enable the sandboxed `execute_script` Code Mode MCP tool | `true` |
+| `CODE_MODE_TIMEOUT_SECONDS` | Maximum wall-clock execution time in seconds for a single `execute_script` call | `10.0` |
+| `CODE_MODE_MAX_TOOL_CALLS` | Maximum inner `tools.*()` invocations allowed per `execute_script` run | `50` |
+| `CODE_MODE_MAX_MEMORY_MB` | Maximum QuickJS heap memory in megabytes per `execute_script` sandbox | `64` |
+| `AUTH_ENABLED` | Enable MCP OAuth 2.1 (RFC 9728) & `cc_` API Key RBAC | `false` |
+| `AUTH_OIDC_ISSUER` | OpenID Connect Identity Provider issuer URL | `None` |
+| `AUTH_JWKS_URI` | Custom JSON Web Key Set URL override for JWT verification | `None` |
+| `AUTH_RESOURCE_INDICATOR` | RFC 8707 / RFC 9728 OAuth 2.1 Resource Indicator URI | `https://contextcortex.local` |
+| `ADMIN_INITIAL_KEY` | Initial Admin API key seeded on first startup | `None` |
+| `GLOBAL_WEBHOOK_SECRET` | Fallback HMAC secret for `/api/webhooks/git` when a repo has no per-repo secret | `None` |
 | `GITHUB_TOKEN` | Optional GitHub Personal Access Token for rate limits & private repos | `None` |
-| `VAULT_PATH` | Default path to the markdown documentation directory | `/docs` |
-| `CACHE_DB_PATH` | Path to persistent SQLite cache database | `/app/data/index_cache.db` |
-| `CHUNK_SIZE` | Maximum character length per Markdown/doc chunk | `1500` |
-| `CODE_CHUNK_SIZE` | Maximum character length per AST code symbol/function chunk | `4000` |
-| `CHUNK_OVERLAP` | Character overlap between consecutive chunks | `200` |
+| `GITLAB_TOKEN` | Optional GitLab Personal Access Token | `None` |
+| `GITEA_TOKEN` | Optional Gitea / Forgejo Access Token | `None` |
+| `BITBUCKET_TOKEN` | Optional Bitbucket App Password / Token | `None` |
 
 ---
 
@@ -311,33 +342,34 @@ Example configuration:
 }
 ```
 
-### Available MCP Tools (19 Tools):
-- `search_code(query="JWT authentication handler", repo="backend-api")` [Role: `viewer`]
-- `search_docs(query="caddy reverse proxy configuration")` [Role: `viewer`]
-- `grep_code(pattern="enforce_tool_permission", repo="backend-api", path_glob="*.py")` [Role: `viewer`]
-- `diagnose_issue(issue_text="Traceback (most recent call last): ...", repo="backend-api")` [Role: `viewer`]
-- `find_symbol(symbol="extract_symbols_and_chunks", exact=true)` [Role: `viewer`]
-- `trace_path(symbol="authenticate_user", repo="backend-api")` [Role: `viewer`]
-- `find_routes(repo="backend-api")` [Role: `viewer`]
-- `find_api_callers(path="/api/v1/auth/login")` [Role: `viewer`]
-- `get_file_outline(filepath="app/services/search.py")` [Role: `viewer`]
-- `list_repositories()` [Role: `viewer`]
-- `get_recent_changes(repo="backend-api", filepath="app/services/search.py", limit=10)` [Role: `viewer`]
-- `sync_repository(repo="backend-api")` [Role: `editor`]
-- `index_status()` [Role: `viewer`]
-- `get_architecture(repo="backend-api")` [Role: `viewer`]
-- `manage_adr(action="list", repo="backend-api")` [Role: `editor` for mutations, `viewer` for list/get]
-- `manage_local_file(action="upload", file_path="notes/spec.md", content="# Spec")` [Role: `editor` for mutations, `viewer` for read]
-- `what_is_ingested(source_type="all", detail_level="summary")` [Role: `viewer`]
-- `read_file(path="app/services/search.py", repo="backend-api", start_line=1, end_line=120)` [Role: `viewer`]
-- `summarize_file(path="app/services/search.py", repo="backend-api")` [Role: `viewer`]
+### Available MCP Tools (10 Default Tools + Optional `manage` Write Tool):
+- `diagnose_issue(issue_text="Traceback (most recent call last): ...", repo="backend-api")` [Role: `viewer`] — First tool to call on bug reports, stack traces, or regressions; correlates candidate symbols, recent commits, `call_chain`, and `working_path_comparison`.
+- `search(query="JWT authentication handler", repo="backend-api", content_type="code", mode="hybrid", dense_weight=0.5)` [Role: `viewer`] — Calibrated hybrid semantic + BM25 search across code and documentation (`content_type`: `"all"`, `"code"`, or `"docs"`).
+- `grep_code(pattern="enforce_tool_permission", repo="backend-api", path_glob="*.py")` [Role: `viewer`] — Exact or regex source code search with context lines.
+- `find_symbol(symbol="extract_symbols_and_chunks", exact=true)` [Role: `viewer`] — Locate function, class, or method definitions via the AST index.
+- `trace_path(symbol="authenticate_user", repo="backend-api", direction="both", depth=1)` [Role: `viewer`] — Multi-hop caller, callee, import, and inheritance graph traversal (`depth` `1` to `5`).
+- `find_routes(repo="backend-api", direction="both")` [Role: `viewer`] — Discover declared HTTP/REST API routes and outbound client HTTP calls.
+- `read_file(path="app/services/search.py", repo="backend-api", start_line=1, end_line=120, outline_only=false, summarize=false)` [Role: `viewer`] — Read line-bounded source files, AST symbol outlines (`outline_only=True`), or LLM executive summaries (`summarize=True`).
+- `list_repositories(include_status=false, include_catalog=false, recent_commits=0)` [Role: `viewer`] — List indexed repositories alongside optional sync status, ingestion catalog counts, and recent commits.
+- `get_architecture(repo="backend-api", include_adrs=true)` [Role: `viewer`] — Synthesize repository entry points, language distribution, directory hotspots, and Architectural Decision Records (ADRs).
+- `execute_script(code="const h = await tools.help('search'); return h;")` [Role: `viewer`, enabled when `CODE_MODE_ENABLED=true`] — Execute sandboxed JavaScript in QuickJS with `await tools.<name>(args)` and `await tools.help('<name>')` to chain multiple read-only MCP calls in one round-trip.
+- `manage(action="sync_repo", repo="backend-api")` [Role: `editor` for `sync_repo`, `upload`, `replace`, `delete`; `viewer` for `read`, `preview`; registered only when `MCP_ENABLE_WRITE_TOOLS=true`] — Unified administrative tool for repository sync and managed local storage mutations.
 
-### Available MCP Resources:
-- `knowledge://catalog/summary`
+### Available MCP Resources & Resource Templates:
+- `knowledge://catalog/summary` — Global ingestion catalog and vector index summary (`application/json`).
+- `contextcortex://code-mode/sdk.d.ts` — TypeScript ambient declarations (`declare namespace tools`) and return-shape contracts for the `execute_script` sandbox (`text/plain`).
+- `knowledge://repo/{repo}/summary` — Repository metadata, branch, commit SHA, and file/symbol counts.
+- `knowledge://repo/{repo}/architecture` — Synthesized repository architecture overview.
+- `knowledge://repo/{repo}/files/{page}` — Paginated list of indexed files (`100` files per page).
+- `knowledge://repo/{repo}/routes/{page}` — Paginated list of discovered API routes (`100` routes per page).
+- `knowledge://repo/{repo}/adrs` — Architectural Decision Records for the specified repository.
 
 ### Available MCP Prompts:
 - `search_infrastructure_docs(topic="docker-compose network topology")`
-- `find_implementation_symbol(symbol="execute_hybrid_search")`
+- `find_implementation_symbol(symbol="execute_hybrid_search", repo="backend-api")`
+- `onboard_repository(repo="backend-api")`
+- `triage_error(issue_text="KeyError: 'user_id'", repo="backend-api")`
+- `investigate_change_impact(symbol="authenticate_user", repo="backend-api")`
 
 ---
 
@@ -348,18 +380,21 @@ Example configuration:
 | :--- | :--- | :--- | :---: |
 | List / Search API Keys | `GET /admin/api/auth/keys` | - | `Role.ADMIN` |
 | Create / Revoke API Keys | `POST/DELETE /admin/api/auth/keys` | - | `Role.ADMIN` |
-| Upload Local Storage File | `POST /admin/api/storage/upload` | `manage_local_file (upload)` | `Role.EDITOR` |
-| Replace Local Storage File | `PUT /admin/api/storage/file` | `manage_local_file (replace)` | `Role.EDITOR` |
-| Delete Local Storage File | `DELETE /admin/api/storage/file` | `manage_local_file (delete)` | `Role.EDITOR` |
-| Read Local Storage File | `GET /admin/api/storage/file` | `manage_local_file (read)` | `Role.VIEWER` |
+| Add / Delete Git Repository | `POST/DELETE /admin/api/repos` | - | `Role.ADMIN` |
+| Add / Delete Monitored Path | `POST/DELETE /admin/api/paths` | - | `Role.ADMIN` |
+| Upload Local Storage File | `POST /admin/api/storage/upload` | `manage (action="upload")` | `Role.EDITOR` |
+| Replace Local Storage File | `PUT /admin/api/storage/file` | `manage (action="replace")` | `Role.EDITOR` |
+| Delete Local Storage File | `DELETE /admin/api/storage/file` | `manage (action="delete")` | `Role.EDITOR` |
+| Read Local Storage File | `GET /admin/api/storage/file` | `manage (action="read")` | `Role.VIEWER` |
 | Browse Storage Directory Tree | `GET /admin/api/storage/tree` | - | `Role.VIEWER` |
-| Query Ingestion Catalog | `GET /admin/api/ingestion/catalog` | `what_is_ingested` | `Role.VIEWER` |
+| Query Ingestion Catalog | `GET /admin/api/ingestion/catalog` | `list_repositories(include_catalog=True)` | `Role.VIEWER` |
 | Repository Navigator Tree | `GET /admin/api/navigator/tree` | - | `Role.VIEWER` |
-| File Symbol Outline | `GET /admin/api/navigator/file-outline` | - | `Role.VIEWER` |
-| Symbol Impact Intelligence | `GET /admin/api/navigator/symbol-impact` | - | `Role.VIEWER` |
-| Sync Git Repository | `POST /admin/api/repositories/{id}/sync`| `sync_repository` | `Role.EDITOR` |
-| Manage ADRs | - | `manage_adr` (create/update) | `Role.EDITOR` |
-| Code & Document Searches | `POST /admin/api/search` | `search_code`, `search_docs` | `Role.VIEWER` |
+| File Symbol Outline | `GET /admin/api/navigator/file-outline` | `read_file(outline_only=True)` | `Role.VIEWER` |
+| Symbol Impact Intelligence | `GET /admin/api/navigator/symbol-impact` | `trace_path` | `Role.VIEWER` |
+| Sync Git Repository | `POST /admin/api/repos/{id}/sync` | `manage (action="sync_repo")` | `Role.EDITOR` |
+| Read Architecture & ADRs | - | `get_architecture` | `Role.VIEWER` |
+| Code, Doc & Issue Searches | `POST /admin/api/search/test` | `search`, `grep_code`, `diagnose_issue` | `Role.VIEWER` |
+| Sandboxed Multi-Tool Script | - | `execute_script` | `Role.VIEWER` |
 
 ### Codebase Navigator Component Hierarchy
 The frontend architecture implements a modular 3-pane layout under `frontend/src/components/navigator/`:
