@@ -230,9 +230,13 @@ def test_cross_file_batch_embedding_in_git_and_local_syncer(tmp_path, monkeypatc
 def test_atomic_openai_client_swap_during_concurrent_embeddings(monkeypatch):
     """Verifies init_embeddings replaces _openai_client atomically without ever setting it to None while concurrent embedding calls are active."""
     monkeypatch.setenv("EMBEDDING_PROVIDER", "api")
+    monkeypatch.setattr(emb_service, "EMBEDDING_PROVIDER", "api")
+    monkeypatch.setattr(emb_service, "DENSE_MODEL_NAME", emb_service.DENSE_MODEL_NAME)
+    monkeypatch.setattr(emb_service, "_dense_model", emb_service._dense_model)
+    monkeypatch.setattr(emb_service, "_sparse_model", emb_service._sparse_model)
+
     client_v1 = MagicMock()
     client_v1.embeddings.create.side_effect = lambda input, model: _make_fake_embedding_response(input)
-    monkeypatch.setattr(emb_service, "EMBEDDING_PROVIDER", "api")
     monkeypatch.setattr(emb_service, "_openai_client", client_v1)
 
     errors = []
@@ -298,3 +302,111 @@ def test_env_embedding_batch_size_takes_effect_across_restarts(tmp_path, monkeyp
     set_embedding_db_config(batch_size=64)
     assert get_metadata("embedding_batch_size") == "64"
     assert get_embedding_db_config()["batch_size"] == 64
+
+
+def test_bounded_channel_pipeline_producer_consumer_backpressure(tmp_path, monkeypatch):
+    """Verifies BoundedChannel and ChannelIngestionPipeline stream parsed files through coalescing, parallel API embedding slices, and persistence."""
+    from app.services.indexing.channel_pipeline import (
+        BoundedChannel,
+        ChannelIngestionPipeline,
+        ParsedFileItem,
+    )
+    from app.services.vector_store import VectorDocument
+
+    db_file = str(tmp_path / "test_channel_pipeline.db")
+    monkeypatch.setenv("CACHE_DB_PATH", db_file)
+    monkeypatch.setattr("app.services.database.CACHE_DB_PATH", db_file)
+    monkeypatch.setattr("app.services.database.connection.CACHE_DB_PATH", db_file)
+    init_db()
+
+    mock_client = MagicMock()
+    mock_client.embeddings.create.side_effect = lambda input, model: _make_fake_embedding_response(input)
+
+    monkeypatch.setattr(emb_service, "EMBEDDING_PROVIDER", "api")
+    monkeypatch.setattr(emb_service, "_openai_client", mock_client)
+    monkeypatch.setattr(emb_service, "EMBEDDING_BATCH_SIZE", 4)
+    monkeypatch.setattr(emb_service, "EMBEDDING_API_CONCURRENCY", 2)
+
+    persisted_batches = []
+
+    def _produce(channel: BoundedChannel[ParsedFileItem]) -> None:
+        for i in range(6):
+            pt = VectorDocument(
+                id=f"doc-{i}",
+                dense_vector=None,
+                sparse_indices=None,
+                sparse_values=None,
+                text=f"def fn_{i}(): return {i}",
+                metadata={"_embed_text": f"chunk-{i}"},
+            )
+            channel.write(ParsedFileItem(filepath=f"repo://f{i}.py", rel_path=f"f{i}.py", repo="repo", points=[pt]))
+
+    pipeline = ChannelIngestionPipeline(
+        persist_batch_fn=lambda items: persisted_batches.append(list(items)),
+        file_batch_size=3,
+        parsed_channel_capacity=2,
+        persist_channel_capacity=2,
+    )
+    pipeline.run(_produce)
+
+    assert len(persisted_batches) == 2
+    all_pts = [pt for batch in persisted_batches for item in batch for pt in item.points]
+    assert len(all_pts) == 6
+    assert all(pt.dense_vector is not None for pt in all_pts)
+    assert all("_embed_text" not in pt.metadata for pt in all_pts)
+
+
+def test_class_and_methods_do_not_double_chunk():
+    """Verifies extract_symbols_and_chunks does not duplicate method bodies inside parent class chunks and keeps method chunk hashes stable when sibling methods change."""
+    from app.services.chunking.symbol_extractor import extract_symbols_and_chunks
+
+    code_v1 = (
+        "class OrderProcessor:\n"
+        "    DEFAULT_TAX = 0.07\n"
+        "\n"
+        "    def calculate_subtotal(self, items):\n"
+        "        return sum(x.price for x in items)\n"
+        "\n"
+        "    def calculate_total(self, items):\n"
+        "        sub = self.calculate_subtotal(items)\n"
+        "        return sub * (1.0 + self.DEFAULT_TAX)\n"
+    )
+    res_v1 = extract_symbols_and_chunks(code_v1, "order.py", repo="repo")
+    symbol_names = {s.name for s in res_v1.symbols}
+    assert {"OrderProcessor", "calculate_subtotal", "calculate_total"} <= symbol_names
+
+    class_chunks = [c for c in res_v1.chunks if c.symbol == "OrderProcessor"]
+    subtotal_chunks = [c for c in res_v1.chunks if c.symbol == "OrderProcessor.calculate_subtotal"]
+    total_chunks = [c for c in res_v1.chunks if c.symbol == "OrderProcessor.calculate_total"]
+
+    assert len(class_chunks) == 1
+    assert len(subtotal_chunks) == 1
+    assert len(total_chunks) == 1
+
+    # Parent class chunk contains class header & attribute, NOT the method bodies
+    assert "DEFAULT_TAX = 0.07" in class_chunks[0].content
+    assert "def calculate_subtotal" not in class_chunks[0].content
+    assert "def calculate_total" not in class_chunks[0].content
+
+    # Editing calculate_total (and shifting lines) does not alter calculate_subtotal's chunk content hash
+    code_v2 = (
+        "# Added header comment shifting all line numbers down\n"
+        "# Second comment line\n"
+        "class OrderProcessor:\n"
+        "    DEFAULT_TAX = 0.07\n"
+        "\n"
+        "    def calculate_subtotal(self, items):\n"
+        "        return sum(x.price for x in items)\n"
+        "\n"
+        "    def calculate_total(self, items):\n"
+        "        sub = self.calculate_subtotal(items)\n"
+        "        discount = 5.0\n"
+        "        return max(0.0, sub - discount) * (1.0 + self.DEFAULT_TAX)\n"
+    )
+    res_v2 = extract_symbols_and_chunks(code_v2, "order.py", repo="repo")
+    subtotal_v2 = [c for c in res_v2.chunks if c.symbol == "OrderProcessor.calculate_subtotal"][0]
+    assert proc_service.compute_text_hash(subtotal_chunks[0].content.strip()) == proc_service.compute_text_hash(
+        subtotal_v2.content.strip()
+    )
+
+

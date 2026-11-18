@@ -252,97 +252,134 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         logger.info(f"Ingesting {total_files} added/modified files for repo '{repo_name}'...")
         progress_tracker.log(repo_id, "INFO", f"Ingesting {total_files} added/modified files...")
 
-        BATCH_SIZE = 50
-        batch_points = []
-        batch_symbols = []
-        batch_routes = []
-        batch_calls = []
-        batch_summaries = []
-        batch_relationships = []
-        batch_indexed_files = []
+        from app.services.indexing.channel_pipeline import (
+            BoundedChannel,
+            ChannelIngestionPipeline,
+            ParsedFileItem,
+        )
+
+        BATCH_SIZE = 25
         total_vectors_count = 0
         total_symbols_count = 0
+        was_cancelled = False
 
-        # Stage 4: Parsing AST & Routes
-        for idx, full_path in enumerate(files_to_sync):
-            if progress_tracker.is_cancelled(repo_id):
-                logger.info(f"Sync cancelled for repo '{repo_name}' during file ingestion at file {idx + 1}/{total_files}")
-                progress_tracker.log(repo_id, "WARN", f"Sync cancelled by user at file {idx + 1}/{total_files}")
-                return
+        def _produce_parsed_files(channel: BoundedChannel[ParsedFileItem]) -> None:
+            nonlocal was_cancelled
+            for idx, full_path in enumerate(files_to_sync):
+                if progress_tracker.is_cancelled(repo_id):
+                    logger.info(f"Sync cancelled for repo '{repo_name}' during file ingestion at file {idx + 1}/{total_files}")
+                    progress_tracker.log(repo_id, "WARN", f"Sync cancelled by user at file {idx + 1}/{total_files}")
+                    was_cancelled = True
+                    channel.cancel()
+                    return
 
-            rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
-            progress_tracker.update_step(
-                repo_id, 4, f"Parsing Files ({idx + 1}/{total_files})",
-                current_file=rel_path, processed=idx + 1, total=total_files,
-            )
-            doc_type = "code" if is_code_file(full_path) else "doc"
-            lang = detect_language(full_path)
-            db_filepath = f"{repo_name}://{rel_path}"
-
-            try:
-                content = read_source_text(full_path)
-                file_hash = proc_service.compute_text_hash(content)
+                rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
+                progress_tracker.update_step(
+                    repo_id, 4, f"Parsing Files ({idx + 1}/{total_files})",
+                    current_file=rel_path, processed=idx + 1, total=total_files,
+                )
+                doc_type = "code" if is_code_file(full_path) else "doc"
+                lang = detect_language(full_path)
+                db_filepath = f"{repo_name}://{rel_path}"
 
                 try:
-                    points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                        filepath=db_filepath,
-                        rel_path=rel_path,
-                        content=content,
-                        repo=repo_name,
-                        doc_type=doc_type,
-                        git_url=git_url,
-                        commit_sha=commit_sha,
-                        provider=provider,
-                        embed=False,
-                    )
-                except TypeError:
-                    points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                        filepath=db_filepath,
-                        rel_path=rel_path,
-                        content=content,
-                        repo=repo_name,
-                        doc_type=doc_type,
-                        git_url=git_url,
-                        commit_sha=commit_sha,
-                        provider=provider,
-                    )
-                batch_points.extend(points)
-                batch_symbols.extend(symbols)
-                batch_routes.extend(routes)
-                batch_calls.extend(calls)
-                batch_summaries.append(summary_tuple)
-                batch_relationships.extend(rels)
-                batch_indexed_files.append((db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash))
+                    content = read_source_text(full_path)
+                    file_hash = proc_service.compute_text_hash(content)
 
-                progress_tracker.log(repo_id, "INFO", f"[{idx + 1}/{total_files}] Ingested {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
-                if (idx + 1) % 10 == 0 or (idx + 1) == total_files:
-                    pct = int(((idx + 1) / total_files) * 100)
-                    logger.info(f"[{idx + 1}/{total_files}] ({pct}%) Ingesting {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
-            except Exception as fe:
-                logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
-                progress_tracker.log(repo_id, "ERROR", f"Error parsing {rel_path}: {fe}")
+                    try:
+                        points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                            filepath=db_filepath,
+                            rel_path=rel_path,
+                            content=content,
+                            repo=repo_name,
+                            doc_type=doc_type,
+                            git_url=git_url,
+                            commit_sha=commit_sha,
+                            provider=provider,
+                            embed=False,
+                        )
+                    except TypeError:
+                        points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                            filepath=db_filepath,
+                            rel_path=rel_path,
+                            content=content,
+                            repo=repo_name,
+                            doc_type=doc_type,
+                            git_url=git_url,
+                            commit_sha=commit_sha,
+                            provider=provider,
+                        )
 
-            if (idx + 1) % BATCH_SIZE == 0 or (idx + 1) == total_files:
-                if batch_points:
-                    proc_service.embed_points_across_files(batch_points)
-                    upsert_ok = store.upsert_documents(batch_points)
-                    if not upsert_ok:
-                        logger.error(f"Failed to upsert points to vector store during git indexing for repo '{repo_name}'.")
-                        raise RuntimeError(f"Vector store upsert failed during git indexing for repo '{repo_name}'")
-                    total_vectors_count += len(batch_points)
-                    batch_points.clear()
-
-                with db_service.get_db_connection() as conn:
-                    total_symbols_count += persist_sync_batch(
-                        conn,
-                        batch_indexed_files,
-                        batch_summaries,
-                        batch_symbols,
-                        batch_relationships,
-                        batch_routes,
-                        batch_calls,
+                    channel.write(
+                        ParsedFileItem(
+                            filepath=db_filepath,
+                            rel_path=rel_path,
+                            repo=repo_name,
+                            points=points,
+                            symbols=symbols,
+                            summary_tuple=summary_tuple,
+                            relationships=rels,
+                            routes=routes,
+                            calls=calls,
+                            indexed_file_row=(db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash),
+                        )
                     )
-                trim_memory()
+
+                    progress_tracker.log(repo_id, "INFO", f"[{idx + 1}/{total_files}] Ingested {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
+                    if (idx + 1) % 10 == 0 or (idx + 1) == total_files:
+                        pct = int(((idx + 1) / total_files) * 100)
+                        logger.info(f"[{idx + 1}/{total_files}] ({pct}%) Ingesting {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
+                except Exception as fe:
+                    logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
+                    progress_tracker.log(repo_id, "ERROR", f"Error parsing {rel_path}: {fe}")
+
+        def _persist_parsed_batch(batch_items: list[ParsedFileItem]) -> None:
+            nonlocal total_vectors_count, total_symbols_count
+            batch_points = []
+            batch_symbols = []
+            batch_routes = []
+            batch_calls = []
+            batch_summaries = []
+            batch_relationships = []
+            batch_indexed_files = []
+
+            for item in batch_items:
+                batch_points.extend(item.points)
+                batch_symbols.extend(item.symbols)
+                batch_routes.extend(item.routes)
+                batch_calls.extend(item.calls)
+                if item.summary_tuple is not None:
+                    batch_summaries.append(item.summary_tuple)
+                batch_relationships.extend(item.relationships)
+                if item.indexed_file_row is not None:
+                    batch_indexed_files.append(item.indexed_file_row)
+
+            if batch_points:
+                upsert_ok = store.upsert_documents(batch_points)
+                if not upsert_ok:
+                    logger.error(f"Failed to upsert points to vector store during git indexing for repo '{repo_name}'.")
+                    raise RuntimeError(f"Vector store upsert failed during git indexing for repo '{repo_name}'")
+                total_vectors_count += len(batch_points)
+
+            with db_service.get_db_connection() as conn:
+                total_symbols_count += persist_sync_batch(
+                    conn,
+                    batch_indexed_files,
+                    batch_summaries,
+                    batch_symbols,
+                    batch_relationships,
+                    batch_routes,
+                    batch_calls,
+                )
+            trim_memory()
+
+        pipeline = ChannelIngestionPipeline(
+            persist_batch_fn=_persist_parsed_batch,
+            file_batch_size=BATCH_SIZE,
+        )
+        pipeline.run(_produce_parsed_files)
+        if was_cancelled or progress_tracker.is_cancelled(repo_id):
+            return
 
         # Stage 5: Vector Indexing & Cleanup
         progress_tracker.update_step(repo_id, 5, "Upserting Embeddings & Finalizing", pct=90)

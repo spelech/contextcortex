@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1346 Automated Tests** (982 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1348 Automated Tests** (984 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1127,13 +1127,15 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_restart_clears_relational_metadata_on_collection_recreate` - _Verifies that on app restart, if ensure_collection detects a dimension mismatch and recreates the collection, relational metadata is cleared._
 - `test_rollback_and_complete_rebuild` - _Tests model transition, rollback, and complete rebuild across local paths._
 
-#### `tests/test_embedding_parallel_batch.py` (6 tests)
+#### `tests/test_embedding_parallel_batch.py` (8 tests)
 - `test_parallel_slices_execution_and_deterministic_ordering` - _Verifies get_dense_embeddings_batch dispatches slices in parallel across EMBEDDING_API_CONCURRENCY threads and reassembles results in exact input order._
 - `test_token_limit_slicing_respects_max_tokens_per_request` - _Verifies partition_texts_into_slices splits batches when estimated tokens exceed EMBEDDING_MAX_TOKENS_PER_REQUEST even if item count is below batch_size._
 - `test_http_429_retry_after_aimd_and_telemetry` - _Verifies HTTP 429 rate-limit responses parse Retry-After headers, log a warning, multiplicatively reduce concurrency, and record rate_limit_wait_seconds in telemetry and progress_tracker._
 - `test_cross_file_batch_embedding_in_git_and_local_syncer` - _Verifies git_syncer and local_syncer collect chunks across multiple files and call get_hybrid_embeddings_batch once per multi-file batch instead of once per file._
 - `test_atomic_openai_client_swap_during_concurrent_embeddings` - _Verifies init_embeddings replaces _openai_client atomically without ever setting it to None while concurrent embedding calls are active._
 - `test_env_embedding_batch_size_takes_effect_across_restarts` - _Verifies init_db does not freeze embedding_batch_size or embedding_num_threads in system_metadata, allowing .env changes to take effect on restart._
+- `test_bounded_channel_pipeline_producer_consumer_backpressure` - _Verifies BoundedChannel and ChannelIngestionPipeline stream parsed files through coalescing, parallel API embedding slices, and persistence._
+- `test_class_and_methods_do_not_double_chunk` - _Verifies extract_symbols_and_chunks does not duplicate method bodies inside parent class chunks and keeps method chunk hashes stable when sibling methods change._
 
 #### `tests/test_engineering_style_guardrails.py` (4 tests)
 - `test_repository_root_structure_hygiene` - _Verify repository root contains required living docs, no stray test_*.py files, and no committed UI build._

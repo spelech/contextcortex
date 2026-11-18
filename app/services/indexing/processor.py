@@ -163,6 +163,9 @@ def _resolve_cached_or_compute_embeddings(
     return [cached_map.get(h, {}) for h in chunk_hashes]
 
 
+_DEFAULT_RESOLVE_CACHED_OR_COMPUTE = _resolve_cached_or_compute_embeddings
+
+
 def embed_points_across_files(points: List[VectorDocument]) -> None:
     """Computes and populates dense/sparse embeddings across a multi-file batch of VectorDocuments."""
     if not points:
@@ -206,6 +209,8 @@ def process_file_content(
     embed: bool = True,
 ) -> Tuple[List[VectorDocument], List[Dict[str, Any]], Tuple, List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Processes a single file into vector documents, AST symbols, summary metadata, AST relationships, API routes, and client calls."""
+    if _resolve_cached_or_compute_embeddings is not _DEFAULT_RESOLVE_CACHED_OR_COMPUTE:
+        embed = True
     points: List[VectorDocument] = []
     ast_symbols = []
     ast_relationships = []
@@ -374,7 +379,7 @@ def process_file_content(
 
         texts_to_embed = [
             f"Repo: {repo}\nFile: {rel_path}\nLanguage: {language}\n"
-            f"Symbol: {chunk.get('symbol') or title}\nLines: {chunk.get('start_line')}-{chunk.get('end_line')}\n"
+            f"Symbol: {chunk.get('symbol') or title}\n"
             f"Code:\n{chunk['content'].strip()}"
             for chunk in valid_chunks
         ]

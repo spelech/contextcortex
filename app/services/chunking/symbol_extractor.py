@@ -94,6 +94,55 @@ def extract_symbols_and_chunks(
     is_csharp = language in ("c_sharp", "csharp")
     receiver_type_cache: Dict[Any, Dict[str, str]] = {}
 
+    def _resolve_container_info(n) -> Optional[Tuple[str, str]]:
+        if n.type not in target_types:
+            return None
+        if n.type in ("variable_declarator", "pair"):
+            return extract_callable_variable_or_pair(n, source_bytes)
+        n_name = extract_node_name(n, source_bytes)
+        if not n_name:
+            return None
+        n_kind = n.type
+        if language in ("c_sharp", "csharp") and n.type == "record_declaration":
+            if any(c.type == "struct" for c in n.children):
+                n_kind = "record_struct_declaration"
+        return n_name, n_kind
+
+    def _collect_direct_child_containers(parent_node) -> List[Any]:
+        found: List[Any] = []
+
+        def _walk(cur):
+            for ch in cur.children:
+                if _resolve_container_info(ch) is not None:
+                    found.append(ch)
+                else:
+                    _walk(ch)
+
+        _walk(parent_node)
+        return found
+
+    def _emit_chunk_span(sym_full: str, sym_kind: str, text_span: str, span_start: int, span_end: int) -> None:
+        if not text_span.strip():
+            return
+        heading_str = f"{sym_full} ({sym_kind})"
+        if len(text_span) <= max_chunk_chars:
+            chunks.append({
+                "symbol": sym_full,
+                "kind": sym_kind,
+                "heading": heading_str,
+                "content": text_span,
+                "start_line": span_start,
+                "end_line": span_end,
+            })
+        else:
+            sub = split_by_length(text_span, heading=heading_str, max_chars=max_chunk_chars)
+            for s in sub:
+                s["symbol"] = sym_full
+                s["kind"] = sym_kind
+                s["start_line"] = span_start + s.get("start_line", 1) - 1
+                s["end_line"] = span_start + s.get("end_line", span_end - span_start + 1) - 1
+                chunks.append(s)
+
     def traverse(node, parent_symbol: Optional[str] = None):
         line_num = node.start_point[0] + 1
 
@@ -102,27 +151,19 @@ def extract_symbols_and_chunks(
         kind = node.type
 
         if node.type in target_types:
-            if node.type in ("variable_declarator", "pair"):
-                res_var = extract_callable_variable_or_pair(node, source_bytes)
-                if res_var:
-                    name, kind = res_var
-                    is_container = True
-                elif node.type == "variable_declarator":
-                    name_node = node.child_by_field_name("name")
-                    val_node = node.child_by_field_name("value")
-                    if name_node and val_node and name_node.type == "identifier" and val_node.type == "object":
-                        obj_name = source_bytes[name_node.start_byte:name_node.end_byte].decode("utf-8", errors="ignore").strip()
-                        next_parent = f"{parent_symbol}.{obj_name}" if parent_symbol else obj_name
-                        for child in node.children:
-                            traverse(child, parent_symbol=next_parent)
-                        return
-            else:
-                name = extract_node_name(node, source_bytes)
-                if name:
-                    is_container = True
-                    if language in ("c_sharp", "csharp") and node.type == "record_declaration":
-                        if any(c.type == "struct" for c in node.children):
-                            kind = "record_struct_declaration"
+            res_info = _resolve_container_info(node)
+            if res_info is not None:
+                name, kind = res_info
+                is_container = True
+            elif node.type == "variable_declarator":
+                name_node = node.child_by_field_name("name")
+                val_node = node.child_by_field_name("value")
+                if name_node and val_node and name_node.type == "identifier" and val_node.type == "object":
+                    obj_name = source_bytes[name_node.start_byte:name_node.end_byte].decode("utf-8", errors="ignore").strip()
+                    next_parent = f"{parent_symbol}.{obj_name}" if parent_symbol else obj_name
+                    for child in node.children:
+                        traverse(child, parent_symbol=next_parent)
+                    return
 
         if is_container and name:
             full_symbol = f"{parent_symbol}.{name}" if parent_symbol else name
@@ -191,23 +232,33 @@ def extract_symbols_and_chunks(
                     "line_number": irel["line"]
                 })
 
-            if len(node_text) <= max_chunk_chars:
-                chunks.append({
-                    "symbol": full_symbol,
-                    "kind": kind,
-                    "heading": f"{full_symbol} ({kind})",
-                    "content": node_text,
-                    "start_line": start_line,
-                    "end_line": end_line
-                })
+            child_containers = _collect_direct_child_containers(node)
+            if not child_containers:
+                _emit_chunk_span(full_symbol, kind, node_text, start_line, end_line)
             else:
-                sub = split_by_length(node_text, heading=f"{full_symbol} ({kind})", max_chars=max_chunk_chars)
-                for s in sub:
-                    s["symbol"] = full_symbol
-                    s["kind"] = kind
-                    s["start_line"] = start_line + s.get("start_line", 1) - 1
-                    s["end_line"] = start_line + s.get("end_line", end_line - start_line + 1) - 1
-                    chunks.append(s)
+                covered_lines = set()
+                for ch_node in child_containers:
+                    ch_start = ch_node.start_point[0] + 1
+                    ch_end = ch_node.end_point[0] + 1
+                    covered_lines.update(range(ch_start, ch_end + 1))
+
+                spans: List[Tuple[int, int]] = []
+                seg_start: Optional[int] = None
+                for ln in range(start_line, end_line + 1):
+                    if ln not in covered_lines:
+                        if seg_start is None:
+                            seg_start = ln
+                    else:
+                        if seg_start is not None:
+                            spans.append((seg_start, ln - 1))
+                            seg_start = None
+                if seg_start is not None:
+                    spans.append((seg_start, end_line))
+
+                for idx_span, (s_ln, e_ln) in enumerate(spans):
+                    seg_text = "\n".join(lines[s_ln - 1 : e_ln])
+                    if idx_span == 0 or re.search(r"[A-Za-z0-9_]", seg_text):
+                        _emit_chunk_span(full_symbol, kind, seg_text, s_ln, e_ln)
 
             for child in node.children:
                 traverse(child, parent_symbol=full_symbol)
