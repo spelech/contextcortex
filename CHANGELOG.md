@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.28.0](https://github.com/spelech/contextcortex/compare/v2.27.4...v2.28.0) (2026-11-18)
+
+
+### Features
+
+* **embeddings:** batch chunks across files and run API embedding requests in parallel ([#175](https://github.com/spelech/contextcortex/issues/175)) ([9a37f4a](https://github.com/spelech/contextcortex/commit/9a37f4abe483f46da0a62d68268ffeb041297d94))
+* **mcp:** make permalinks opt-in, add tool parameter aliases, and resolve custom C#/TS/Python routes ([#177](https://github.com/spelech/contextcortex/issues/177)) ([b02ebb4](https://github.com/spelech/contextcortex/commit/b02ebb41cc3aac4238e9d577afb66104d37ca596))
+
+
+### Bug Fixes
+
+* **repositories:** purge all relational tables and vectors when deleting a local path or repo ([#170](https://github.com/spelech/contextcortex/issues/170)) ([#173](https://github.com/spelech/contextcortex/issues/173)) ([00002fc](https://github.com/spelech/contextcortex/commit/00002fc2d35ced66c731ecb30542712b2ee72edd))
+
 ## [2.27.4](https://github.com/spelech/contextcortex/compare/v2.27.3...v2.27.4) (2026-11-17)
 
 
