@@ -77,11 +77,12 @@ async def handle_find_symbol(
     limit: Annotated[int, Field(description="Maximum AST symbols per page, clamped to 1..100 (default 30).")] = 30,
     offset: Annotated[int, Field(description="0-based symbol offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
     name: Annotated[Optional[str], Field(description="Deprecated alias of `symbol`, kept for older callers. Use `symbol`; it wins when both are given.")] = None,
+    query: Annotated[Optional[str], Field(description="Alias for `symbol`. `symbol` wins when both are given.")] = None,
 ) -> str:
     """Instant deterministic AST symbol lookup (functions, classes, methods, interfaces) without token-heavy full-file scans."""
-    # `symbol` is optional here only so that a call with the deprecated `name` alias still validates.
+    # `symbol` is optional here only so that a call with the deprecated `name` or `query` alias still validates.
     # The published schema marks `symbol` as required (see app/mcp/tools.py `_SCHEMA_REQUIRED_OVERRIDES`).
-    sym_name = (symbol or name or "").strip()
+    sym_name = (symbol or name or query or "").strip()
     if not sym_name:
         return json.dumps({"error": "symbol name cannot be empty: pass 'symbol' (the alias 'name' is also accepted)."})
 
@@ -93,24 +94,24 @@ async def handle_find_symbol(
         safe_offset = max(0, int(offset if offset is not None else 0))
 
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
-            query = (
+            sql_query = (
                 "SELECT repo, filepath, name, full_symbol, kind, start_line, end_line, signature, language "
                 "FROM ast_symbols WHERE "
             )
             params: List[Any] = []
             if exact:
-                query += "(name = ? OR full_symbol = ?)"
+                sql_query += "(name = ? OR full_symbol = ?)"
                 params.extend([sym_name, sym_name])
             else:
-                query += "(name LIKE ? OR full_symbol LIKE ?)"
+                sql_query += "(name LIKE ? OR full_symbol LIKE ?)"
                 params.extend([f"%{sym_name}%", f"%{sym_name}%"])
 
             if repo:
-                query += " AND repo = ?"
+                sql_query += " AND repo = ?"
                 params.append(repo)
 
-            query += " ORDER BY repo ASC, filepath ASC, start_line ASC, name ASC"
-            rows = conn.execute(query, params).fetchall()
+            sql_query += " ORDER BY repo ASC, filepath ASC, start_line ASC, name ASC"
+            rows = conn.execute(sql_query, params).fetchall()
             local_roots = LocalSourceRoots.load(conn)
 
         all_symbols = []
@@ -157,7 +158,7 @@ async def handle_find_symbol(
 
 
 async def handle_trace_path(
-    symbol: Annotated[str, Field(description="Target function, method, or qualified class member (e.g. 'OrderService.create_order') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")],
+    symbol: Annotated[Optional[str], Field(description="Target function, method, or qualified class member (e.g. 'OrderService.create_order') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")] = None,
     repo: Annotated[Optional[str], Field(description="Optional repository name to scope intra-repo AST traversal (cross-repo HTTP boundaries still resolve automatically).")] = None,
     direction: Annotated[str, Field(description="Traversal direction: 'callers' (inbound), 'callees' (outbound), or 'both' (default 'both').")] = "both",
     depth: Annotated[int, Field(description="Maximum BFS hop depth, clamped to 1..5 (default 2).")] = 2,
@@ -165,8 +166,11 @@ async def handle_trace_path(
     offset: Annotated[int, Field(description="0-based relationship offset per direction for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
     include_permalinks: Annotated[bool, Field(description="Include a Git permalink on every caller/callee node (default False keeps answers compact; the target always has its permalink).")] = False,
     include_unresolved: Annotated[bool, Field(description="Show library calls (no indexed symbol) and calls into test code as tree nodes. Default False lists unresolved call names in a compact 'unresolved' list per node and drops test code for a production target.")] = False,
+    name: Annotated[Optional[str], Field(description="Alias for `symbol`. `symbol` wins when both are given.")] = None,
+    query: Annotated[Optional[str], Field(description="Alias for `symbol`. `symbol` wins when both are given.")] = None,
 ) -> str:
     """Traverse AST call graphs, imports, inheritance, and cross-repo HTTP route/client boundaries via bounded BFS."""
+    eff_symbol = (symbol if (symbol is not None and symbol.strip()) else (name or query or ""))
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
@@ -177,7 +181,7 @@ async def handle_trace_path(
 
         trace_fn = _get_tools_attr("trace_symbol_path", trace_symbol_path)
         raw_res = trace_fn(
-            symbol=symbol,
+            symbol=eff_symbol,
             repo=repo,
             direction=direction,
             depth=depth,
@@ -198,7 +202,7 @@ async def handle_trace_path(
                 return json.dumps({"error": stripped})
             else:
                 return json.dumps({
-                    "symbol": (symbol or "").strip(),
+                    "symbol": (eff_symbol or "").strip(),
                     "repo": repo,
                     "direction": direction,
                     "depth": depth,

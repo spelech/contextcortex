@@ -60,7 +60,9 @@ def test_result_types_agree_with_real_tool_results(chain_db):  # noqa: F811
             _check(result, "DiagnoseResult", "diagnose_issue", seen)
         assert result["call_chain"]["steps"] and result["working_path_comparison"]["steps"]
     for kind in ("both", "handlers", "callers"):
-        _check(_call("find_routes", query="publish", kind=kind, repo=REPO), "FindRoutesResult", f"find_routes({kind})", seen)
+        for permalinks in (False, True):
+            res_routes = _call("find_routes", query="publish", kind=kind, repo=REPO, include_permalinks=permalinks)
+            _check(res_routes, "FindRoutesResult", f"find_routes({kind}, permalinks={permalinks})", seen)
     for permalinks in (False, True):
         trace = _call("trace_path", symbol="ToolService.PublishInstance", repo=REPO, depth=3, include_permalinks=permalinks)
         _check(trace, "TracePathResult", "trace_path", seen)
@@ -68,7 +70,8 @@ def test_result_types_agree_with_real_tool_results(chain_db):  # noqa: F811
     _check(_call("trace_path", symbol="Nope.Missing", repo=REPO), "TracePathResult", "trace_path(missing)", seen)
     _check(_call("find_symbol", symbol="GetByInstanceId", repo=REPO, exact=False), "FindSymbolResult", "find_symbol", seen)
     with patch("app.mcp.tools.execute_hybrid_search", _fake_search):
-        _check(_call("search", query="publish", repo=REPO), "SearchResult", "search", seen)
+        for permalinks in (False, True):
+            _check(_call("search", query="publish", repo=REPO, include_permalinks=permalinks), "SearchResult", "search", seen)
     assert seen == set(RESULT_INTERFACES), f"not checked: {sorted(set(RESULT_INTERFACES) - seen)}"
 
 

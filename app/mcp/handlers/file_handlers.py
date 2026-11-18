@@ -144,26 +144,29 @@ def _read_file_outline_payload(
 
 
 async def handle_read_file(
-    path: Annotated[str, Field(description="Relative or absolute file path within an indexed repository, watched directory, or local storage (supports Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, and config files).")],
+    path: Annotated[Optional[str], Field(description="Relative or absolute file path within an indexed repository, watched directory, or local storage (supports Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, and config files).")] = None,
     repo: Annotated[Optional[str], Field(description="Optional repository name or 'local_storage' namespace. Recommended for relative paths or reconstructing ephemeral Git files from vector chunks.")] = None,
     start_line: Annotated[Optional[int], Field(description="1-based inclusive starting line number (default 1). Pass next_start_line from a prior call to paginate long files.")] = None,
     end_line: Annotated[Optional[int], Field(description="1-based inclusive ending line number (default end of file, bounded by read_file_max_lines=2000 per call).")] = None,
     outline_only: Annotated[bool, Field(description="Set True to return the file's AST symbol outline (classes, methods, functions, signatures, line ranges) instead of full source text.")] = False,
     limit: Annotated[int, Field(description="Maximum AST symbols returned per page when outline_only=True, clamped to 1..500 (default 150).")] = 150,
     offset: Annotated[int, Field(description="0-based AST symbol offset when outline_only=True (default 0). Advance via next_offset when has_more is True.")] = 0,
+    filepath: Annotated[Optional[str], Field(description="Alias for `path`. `path` wins when both are given.")] = None,
+    file: Annotated[Optional[str], Field(description="Alias for `path`. `path` wins when both are given.")] = None,
 ) -> str:
     """Read bounded 1-based line slices or inspect the AST symbol outline (outline_only=True) for an indexed file."""
+    eff_path = path if (path is not None and path.strip()) else (filepath or file or "")
     try:
         enforce_tool_permission(Role.VIEWER)
 
         if outline_only:
-            return json.dumps(_read_file_outline_payload(path=path, repo=repo, limit=limit, offset=offset))
+            return json.dumps(_read_file_outline_payload(path=eff_path, repo=repo, limit=limit, offset=offset))
 
         reader_fn = _get_tools_attr("get_file_reader_service", get_file_reader_service)
         reader = reader_fn()
 
         result = reader.read_file(
-            path=path,
+            path=eff_path,
             repo=repo,
             start_line=start_line,
             end_line=end_line,
@@ -182,7 +185,7 @@ async def handle_read_file(
         next_start_line = (e_line + 1) if (has_more and e_line is not None) else None
 
         payload: Dict[str, Any] = {
-            "file": _strip_repo_prefix(result.get("filepath") or path),
+            "file": _strip_repo_prefix(result.get("filepath") or eff_path),
             "lines": [s_line, e_line],
             "total_lines": t_lines,
         }
@@ -196,14 +199,14 @@ async def handle_read_file(
         return json.dumps(payload, separators=(",", ":"))
 
     except ForbiddenError as fe:
-        logger.warning(f"Forbidden error in handle_read_file ({path}): {fe}")
+        logger.warning(f"Forbidden error in handle_read_file ({eff_path}): {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except FileNotFoundError as fne:
         return json.dumps({"error": f"File not found: {str(fne)}"})
     except ValueError as ve:
         return json.dumps({"error": str(ve)})
     except Exception as e:
-        logger.error(f"Error reading file '{path}': {e}")
+        logger.error(f"Error reading file '{eff_path}': {e}")
         return json.dumps({"error": f"Error reading file: {str(e)}"})
 
 

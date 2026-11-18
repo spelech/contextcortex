@@ -27,7 +27,7 @@ _JS_CONST = re.compile(
     r'^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*string\s*)?=\s*(["\'`])([^"\'`\n]*)\2\s*;?\s*$'
 )
 _CS_CONST = re.compile(
-    r'\b(?:const\s+string|static\s+readonly\s+string|readonly\s+static\s+string)\s+([A-Za-z_]\w*)\s*=\s*@?"([^"\n]*)"\s*;'
+    r'\b(?:const\s+string|static\s+readonly\s+string|readonly\s+static\s+string)\s+([A-Za-z_]\w*)\s*=\s*(?:\$@|@\$|\$|@)?"([^"\n]*)"\s*;'
 )
 _JS_PLACEHOLDER = re.compile(r'\$\{\s*([A-Za-z_$][\w$]*)\s*\}')
 _CS_PLACEHOLDER = re.compile(r'\{([A-Za-z_]\w*)\}')

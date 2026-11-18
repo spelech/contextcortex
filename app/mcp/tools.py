@@ -147,9 +147,15 @@ def write_tools_enabled() -> bool:
 
 def get_tool_definitions() -> List[Tuple[str, Any, str]]:
     """Returns active MCP tool definitions (10 default read/search/code-mode tools, plus `manage` if enabled)."""
+    from app.mcp.handlers.script_handlers import code_mode_enabled
+
+    defs = [
+        item for item in _DEFAULT_TOOL_DEFINITIONS
+        if item[0] != "execute_script" or code_mode_enabled()
+    ]
     if write_tools_enabled():
-        return list(_DEFAULT_TOOL_DEFINITIONS) + list(_WRITE_TOOL_DEFINITIONS)
-    return list(_DEFAULT_TOOL_DEFINITIONS)
+        return defs + list(_WRITE_TOOL_DEFINITIONS)
+    return defs
 
 
 _RESOURCE_TEMPLATE_DEFINITIONS = [
@@ -187,18 +193,37 @@ _RESOURCE_TEMPLATE_DEFINITIONS = [
 
 
 # Parameters that the published inputSchema marks as required, although the handler signature keeps them optional
-# so that a deprecated alias (find_symbol `name`) still validates. FastMCP validates calls with the handler's
-# pydantic model, not with this schema, so the alias keeps working on the server.
-_SCHEMA_REQUIRED_OVERRIDES = {"find_symbol": ["symbol"]}
+# so that deprecated or convenience aliases (e.g. find_symbol `name`/`query`, read_file `filepath`) still validate.
+# FastMCP validates calls with the handler's pydantic model, not with this schema, so aliases keep working on the server.
+_SCHEMA_REQUIRED_OVERRIDES = {
+    "find_symbol": ["symbol"],
+    "trace_path": ["symbol"],
+    "read_file": ["path"],
+    "grep_code": ["pattern"],
+    "diagnose_issue": ["issue_text"],
+}
+
+# Convenience aliases accepted by handler pydantic models on direct calls, but omitted from the published
+# JSON Schema / tools.help() so tool schemas stay compact (`find_symbol.name` is intentionally kept published).
+_SCHEMA_HIDDEN_ALIAS_PROPERTIES = {
+    "find_routes": ("path", "path_query", "route"),
+    "find_symbol": ("query",),
+    "trace_path": ("name", "query"),
+    "read_file": ("filepath", "file"),
+    "grep_code": ("query", "filepath", "file"),
+    "diagnose_issue": ("query", "error"),
+}
 
 
 def _apply_schema_required_overrides(server) -> None:
     for tool in server._tool_manager.list_tools():
+        schema = tool.parameters
+        props = schema.get("properties", {})
+        for hidden_prop in _SCHEMA_HIDDEN_ALIAS_PROPERTIES.get(tool.name, ()):
+            props.pop(hidden_prop, None)
         required = _SCHEMA_REQUIRED_OVERRIDES.get(tool.name)
         if not required:
             continue
-        schema = tool.parameters
-        props = schema.get("properties", {})
         for param in required:
             prop = props.get(param)
             if prop is None:

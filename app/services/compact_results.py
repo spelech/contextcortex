@@ -38,12 +38,14 @@ def _file_lines(matches: List[Dict[str, Any]], block_separators: bool) -> List[s
 
 
 def group_grep_matches(
-    matches: Iterable[Dict[str, Any]], block_separators: bool = True
+    matches: Iterable[Dict[str, Any]],
+    block_separators: bool = True,
+    include_permalinks: bool = False,
 ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     """
     Groups grep matches by (repo, file) in first-seen order. Returns the repo that all groups share (or None) and the
     file groups. A group has `file`, `repo` (only when the repos are different), `lines`, and, when known,
-    `symbols` ({line: enclosing symbol}) and `permalink` (the file permalink; add `#L<line>`).
+    `symbols` ({line: enclosing symbol}) and `permalink` (the file permalink when include_permalinks=True; add `#L<line>`).
     Set block_separators=False when there are no context lines (ripgrep writes no `--` then).
     """
     groups: Dict[Tuple[Any, Any], List[Dict[str, Any]]] = {}
@@ -57,9 +59,10 @@ def group_grep_matches(
         group: Dict[str, Any] = {"file": file_path}
         if shared_repo is None and repo:
             group["repo"] = repo
-        permalink = next((_permalink_base(m.get("permalink")) for m in file_matches if m.get("permalink")), None)
-        if permalink:
-            group["permalink"] = permalink
+        if include_permalinks:
+            permalink = next((_permalink_base(m.get("permalink")) for m in file_matches if m.get("permalink")), None)
+            if permalink:
+                group["permalink"] = permalink
         symbols = {str(m["line"]): m["symbol"] for m in file_matches if m.get("symbol")}
         if symbols:
             group["symbols"] = symbols

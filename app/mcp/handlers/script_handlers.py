@@ -57,6 +57,17 @@ def _tool_handlers() -> Dict[str, Any]:
     return {name: handler for name, handler, _desc in get_tool_definitions() if name != TOOL_NAME}
 
 
+_SCRIPT_ARG_ALIASES: Dict[str, Dict[str, str]] = {
+    "find_routes": {"path": "query", "path_query": "query", "route": "query", "top_k": "limit"},
+    "find_symbol": {"query": "symbol", "top_k": "limit"},
+    "trace_path": {"name": "symbol", "query": "symbol", "top_k": "limit"},
+    "read_file": {"filepath": "path", "file": "path"},
+    "grep_code": {"query": "pattern", "filepath": "path_glob", "file": "path_glob", "top_k": "limit"},
+    "diagnose_issue": {"query": "issue_text", "error": "issue_text", "top_k": "limit"},
+    "search": {"top_k": "limit"},
+}
+
+
 async def call_tool_from_script(name: str, tool_args: Dict[str, Any]) -> Any:
     """Runs one tool for a script: checks the name and arguments, calls the handler, and unboxes the JSON result."""
     if name == TOOL_NAME:
@@ -65,11 +76,27 @@ async def call_tool_from_script(name: str, tool_args: Dict[str, Any]) -> Any:
     handler = handlers.get(name)
     if handler is None:
         raise ScriptToolError(f"Unknown tool '{name}'. Tools: {', '.join(sorted(handlers))}")
+    alias_map = _SCRIPT_ARG_ALIASES.get(name)
+    if alias_map and isinstance(tool_args, dict):
+        normalized_args: Dict[str, Any] = {}
+        for k, v in tool_args.items():
+            target = alias_map.get(k)
+            if target and target not in tool_args and target not in normalized_args:
+                normalized_args[target] = v
+            else:
+                normalized_args[k] = v
+        tool_args = normalized_args
     params = inspect.signature(handler).parameters
     unknown = sorted(set(tool_args) - set(params))
     if unknown:
         raise ScriptToolError(f"Unknown arguments for {name}: {', '.join(unknown)}. Valid: {', '.join(params)}")
-    missing = [p for p, spec in params.items() if spec.default is inspect.Parameter.empty and p not in tool_args]
+    from app.mcp.tools import _SCHEMA_REQUIRED_OVERRIDES
+
+    schema_req = _SCHEMA_REQUIRED_OVERRIDES.get(name, []) if name != "find_symbol" else []
+    missing = [
+        p for p in params
+        if (params[p].default is inspect.Parameter.empty or p in schema_req) and p not in tool_args
+    ]
     if missing:
         raise ScriptToolError(f"Missing arguments for {name}: {', '.join(missing)}")
     raw = await handler(**tool_args)

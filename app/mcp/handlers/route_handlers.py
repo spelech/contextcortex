@@ -46,7 +46,14 @@ def _target_ownership(target_path: str, target_method: Optional[str], route_rows
     return belongs
 
 
-def _query_route_handlers(conn, local_roots: LocalSourceRoots, clean_q: Optional[str], method_clean: Optional[str], repo_clean: Optional[str]) -> List[Dict[str, Any]]:
+def _query_route_handlers(
+    conn,
+    local_roots: LocalSourceRoots,
+    clean_q: Optional[str],
+    method_clean: Optional[str],
+    repo_clean: Optional[str],
+    include_permalinks: bool = False,
+) -> List[Dict[str, Any]]:
     sql = (
         "SELECT r.id, r.repo, r.filepath, r.framework, r.http_method, r.path_pattern, "
         "r.handler_symbol, r.start_line, r.end_line, g.url as git_url, g.commit_sha, g.provider "
@@ -75,10 +82,7 @@ def _query_route_handlers(conn, local_roots: LocalSourceRoots, clean_q: Optional
         if dedup_key in seen_routes:
             continue
         seen_routes.add(dedup_key)
-        permalink = format_git_permalink(
-            r["git_url"], r["commit_sha"], rel_path, r["start_line"], r["end_line"], provider=r["provider"]
-        )
-        all_routes.append({
+        item: Dict[str, Any] = {
             "repo": r["repo"],
             "method": r["http_method"],
             "path": r["path_pattern"],
@@ -86,12 +90,23 @@ def _query_route_handlers(conn, local_roots: LocalSourceRoots, clean_q: Optional
             "handler": r["handler_symbol"],
             "file": rel_path,
             "lines": [r["start_line"], r["end_line"]],
-            "permalink": permalink,
-        })
+        }
+        if include_permalinks:
+            item["permalink"] = format_git_permalink(
+                r["git_url"], r["commit_sha"], rel_path, r["start_line"], r["end_line"], provider=r["provider"]
+            )
+        all_routes.append(item)
     return all_routes
 
 
-def _query_route_callers(conn, local_roots: LocalSourceRoots, clean_q: Optional[str], method_clean: Optional[str], repo_clean: Optional[str]) -> List[Dict[str, Any]]:
+def _query_route_callers(
+    conn,
+    local_roots: LocalSourceRoots,
+    clean_q: Optional[str],
+    method_clean: Optional[str],
+    repo_clean: Optional[str],
+    include_permalinks: bool = False,
+) -> List[Dict[str, Any]]:
     sql = (
         "SELECT c.id, c.repo, c.filepath, c.http_method, c.url_pattern, c.caller_symbol, "
         "c.line_number, g.url as git_url, g.commit_sha, g.provider "
@@ -135,18 +150,19 @@ def _query_route_callers(conn, local_roots: LocalSourceRoots, clean_q: Optional[
             continue
         seen_callers.add(dedup_key)
 
-        permalink = format_git_permalink(
-            c["git_url"], c["commit_sha"], rel_path, c["line_number"], c["line_number"], provider=c["provider"]
-        )
-        all_callers.append({
+        item: Dict[str, Any] = {
             "repo": c["repo"],
             "method": c["http_method"],
             "url": url_pat,
             "caller": caller_sym,
             "file": rel_path,
             "line": c["line_number"],
-            "permalink": permalink,
-        })
+        }
+        if include_permalinks:
+            item["permalink"] = format_git_permalink(
+                c["git_url"], c["commit_sha"], rel_path, c["line_number"], c["line_number"], provider=c["provider"]
+            )
+        all_callers.append(item)
     return all_callers
 
 
@@ -157,6 +173,10 @@ async def handle_find_routes(
     repo: Annotated[Optional[str], Field(description="Optional repository name filter.")] = None,
     limit: Annotated[int, Field(description="Maximum results per section per page, clamped to 1..200 (default 50).")] = 50,
     offset: Annotated[int, Field(description="0-based offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
+    include_permalinks: Annotated[bool, Field(description="Include Git web permalinks on returned routes and callers (default False keeps answers compact).")] = False,
+    path: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
+    path_query: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
+    route: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
 ) -> str:
     """Discover HTTP/API route endpoints and/or client HTTP callers across indexed repositories with bounded pagination."""
     try:
@@ -167,7 +187,8 @@ async def handle_find_routes(
         if clean_kind not in ("handlers", "callers", "both"):
             return json.dumps({"error": f"Unsupported kind '{kind}'. Valid kinds are 'handlers', 'callers', or 'both'."})
 
-        clean_q = query.strip() if query and query.strip() else None
+        raw_q = query if (query and query.strip()) else (path or path_query or route or "")
+        clean_q = raw_q.strip() if raw_q and raw_q.strip() else None
         method_clean = method.strip().upper() if method and method.strip() else None
         repo_clean = repo.strip() if repo and repo.strip() else None
         safe_limit = max(1, min(int(limit if limit is not None else 50), 200))
@@ -176,12 +197,12 @@ async def handle_find_routes(
         with _get_tools_attr("get_db_connection", get_db_connection)() as conn:
             local_roots = LocalSourceRoots.load(conn)
             all_routes = (
-                _query_route_handlers(conn, local_roots, clean_q, method_clean, repo_clean)
+                _query_route_handlers(conn, local_roots, clean_q, method_clean, repo_clean, include_permalinks=bool(include_permalinks))
                 if clean_kind in ("handlers", "both")
                 else []
             )
             all_callers = (
-                _query_route_callers(conn, local_roots, clean_q, method_clean, repo_clean)
+                _query_route_callers(conn, local_roots, clean_q, method_clean, repo_clean, include_permalinks=bool(include_permalinks))
                 if clean_kind in ("callers", "both")
                 else []
             )

@@ -428,7 +428,9 @@ class ChannelIngestionPipeline:
                         })
 
             if items_to_cache:
-                set_cached_embeddings_batch(items_to_cache)
+                from app.services.indexing.db_write_channel import submit_db_write
+
+                submit_db_write(lambda: set_cached_embeddings_batch(items_to_cache))
                 trim_memory()
 
             for pt, h in batch.point_hashes:

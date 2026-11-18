@@ -177,9 +177,9 @@ def extract_markdown_doc_links(content: str, filepath: str, repo: str) -> List[C
 # Tree-sitter node type queries per language for AST chunking & outline
 CODE_CONTAINER_TYPES = {
     "python": {"class_definition", "function_definition", "async_function_definition"},
-    "javascript": {"class_declaration", "function_declaration", "method_definition", "variable_declarator", "pair"},
-    "typescript": {"class_declaration", "interface_declaration", "function_declaration", "method_definition", "type_alias_declaration", "enum_declaration", "variable_declarator", "pair"},
-    "tsx": {"class_declaration", "interface_declaration", "function_declaration", "method_definition", "type_alias_declaration", "enum_declaration", "variable_declarator", "pair"},
+    "javascript": {"class_declaration", "function_declaration", "method_definition", "field_definition", "public_field_definition", "variable_declarator", "pair"},
+    "typescript": {"class_declaration", "interface_declaration", "function_declaration", "method_definition", "public_field_definition", "field_definition", "type_alias_declaration", "enum_declaration", "variable_declarator", "pair"},
+    "tsx": {"class_declaration", "interface_declaration", "function_declaration", "method_definition", "public_field_definition", "field_definition", "type_alias_declaration", "enum_declaration", "variable_declarator", "pair"},
     "go": {"function_declaration", "method_declaration", "type_declaration"},
     "rust": {"function_item", "impl_item", "struct_item", "trait_item", "enum_item"},
     "c_sharp": {"class_declaration", "interface_declaration", "method_declaration", "struct_declaration", "enum_declaration", "record_declaration", "record_struct_declaration", "constructor_declaration"},
@@ -199,10 +199,10 @@ _JS_WRAPPED_COMPONENT_CALLS = frozenset({
 
 def extract_callable_variable_or_pair(node, source_bytes: bytes) -> Optional[Tuple[str, str]]:
     """
-    For JS/TS/TSX `variable_declarator` or `pair` nodes, returns `(name, kind)`
-    only when the assigned value is an arrow function, function expression, or
+    For JS/TS/TSX `variable_declarator`, `pair`, or `public_field_definition`/`field_definition` nodes,
+    returns `(name, kind)` only when the assigned value is an arrow function, function expression, or
     a recognized React/store higher-order wrapper (memo, forwardRef, create, etc.).
-    Returns None for plain data variables or object literal properties.
+    Returns None for plain data variables, class fields, or object literal properties.
     """
     if node.type == "variable_declarator":
         name_node = node.child_by_field_name("name")
@@ -221,6 +221,20 @@ def extract_callable_variable_or_pair(node, source_bytes: bytes) -> Optional[Tup
             if fn_base in _JS_WRAPPED_COMPONENT_CALLS or fn_base.endswith((".memo", ".forwardRef", ".lazy")):
                 return (name, "function_declaration")
         return None
+
+    if node.type in ("public_field_definition", "field_definition"):
+        name_node = node.child_by_field_name("name") or node.child_by_field_name("property")
+        val_node = node.child_by_field_name("value")
+        if not name_node or not val_node:
+            return None
+        if val_node.type not in ("arrow_function", "function_expression", "function", "generator_function"):
+            return None
+        if name_node.type not in ("property_identifier", "identifier", "private_property_identifier"):
+            return None
+        name = source_bytes[name_node.start_byte:name_node.end_byte].decode("utf-8", errors="ignore").strip()
+        if not name:
+            return None
+        return (name, "method_definition")
 
     if node.type == "pair":
         key_node = node.child_by_field_name("key")

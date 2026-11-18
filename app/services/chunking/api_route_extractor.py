@@ -55,23 +55,43 @@ def _segment_regex(segment: str) -> re.Pattern:
     return re.compile('^' + ''.join('[^/]+' if p.startswith('{') else re.escape(p) for p in parts) + '$', re.IGNORECASE)
 
 
+_API_PREFIX_SEGMENTS = re.compile(r"^(?:api|v\d+|v\{[^{}]+\})$", re.IGNORECASE)
+
+
 def _match_base_relative_call(norm_route: str, norm_call: str) -> bool:
     """
     A client URL that starts with a base it could not resolve (`{baseUrl}/api/v2/items/{id}`, `{API_HOST}/v2/items`)
     matches when the rest of its path matches the end of the route, segment by segment, with at least two literal
     segments (so `{base}/{id}` alone matches nothing).
+    Also matches an axios/SDK client path whose baseURL already includes `/api` or `/api/v{n}` (e.g. `/movie/{id}`
+    matching `/api/v3/movie/{id}`) when the route's leading segments are `api`/`v*` and the remaining suffix has at
+    least one literal segment.
     """
     call_segs = [s for s in norm_call.split("?", 1)[0].strip("/").split("/") if s]
+    route_segs = [s for s in norm_route.strip("/").split("/") if s]
     lead = 0
     while lead < len(call_segs) and _PARAM_SEGMENT.match(call_segs[lead]):
         lead += 1
-    tail = call_segs[lead:]
-    if lead == 0 or sum(1 for s in tail if not _PARAM_SEGMENT.match(s)) < _MIN_LITERAL_SEGMENTS_FOR_SUFFIX:
-        return False
-    route_segs = [s for s in norm_route.strip("/").split("/") if s]
-    if len(tail) > len(route_segs):
-        return False
-    for call_seg, route_seg in zip(tail, route_segs[len(route_segs) - len(tail):]):
+    if lead > 0:
+        tail = call_segs[lead:]
+        if sum(1 for s in tail if not _PARAM_SEGMENT.match(s)) < _MIN_LITERAL_SEGMENTS_FOR_SUFFIX:
+            return False
+        if len(tail) > len(route_segs):
+            return False
+        target_route_segs = route_segs[len(route_segs) - len(tail):]
+    else:
+        # Check if route starts with /api(/vN) and call_segs matches the remaining route segments
+        api_lead = 0
+        while api_lead < len(route_segs) and _API_PREFIX_SEGMENTS.match(route_segs[api_lead]):
+            api_lead += 1
+        if api_lead == 0 or len(call_segs) != len(route_segs) - api_lead:
+            return False
+        if sum(1 for s in call_segs if not _PARAM_SEGMENT.match(s)) < 1:
+            return False
+        tail = call_segs
+        target_route_segs = route_segs[api_lead:]
+
+    for call_seg, route_seg in zip(tail, target_route_segs):
         if _PARAM_SEGMENT.match(route_seg):
             continue
         # A client parameter ({eid}) only fills a route parameter, never a literal segment such as `publish`.
@@ -201,6 +221,20 @@ def extract_api_routes_and_calls(
                     ))
                 continue
 
+            # Starlette / custom route decorator: @secured_expose(route="/api", methods=["GET", "POST"])
+            m_py_route_dec = re.search(r'@\w+\s*\([^()]*\broute\s*=\s*["\']([^"\']+)["\']', window_text) if line.lstrip().startswith("@") else None
+            if m_py_route_dec:
+                path = normalize_path_pattern(m_py_route_dec.group(1))
+                m_methods = re.search(r'\bmethods\s*=\s*[\[\(]([^\]\)]+)[\]\)]', window_text)
+                methods = [m.strip(" \"'").upper() for m in m_methods.group(1).split(",") if m.strip(" \"'")] if m_methods else ["GET", "POST"]
+                handler = find_enclosing_symbol(i + 1, symbols) or find_enclosing_symbol(i + 2, symbols) or find_enclosing_symbol(i, symbols)
+                for m in methods:
+                    routes.append(ApiRouteRecord(
+                        repo=repo, filepath=filepath, framework="starlette",
+                        http_method=m, path_pattern=path, handler_symbol=handler, start_line=i, end_line=i
+                    ))
+                continue
+
             # Django
             m_django = re.search(r'(?:path|re_path)\s*\(\s*["\']([^"\']+)["\']\s*,\s*([\w\.]+)', line)
             if m_django:
@@ -214,18 +248,28 @@ def extract_api_routes_and_calls(
 
     # JavaScript / TypeScript / TSX
     elif language in ("javascript", "typescript", "tsx"):
-        # Express.js
+        express_routers = {"app", "router", "server", "express"}
+        for m_er in re.finditer(r'\b(?:const|let|var)\s+(\w+)\s*=\s*(?:express\.)?Router\s*\(', code):
+            express_routers.add(m_er.group(1))
+        # Express.js (including custom Router() vars and TS generic type parameters across lines)
         for i, line in enumerate(lines, start=1):
-            m_express = re.search(r'(?:app|router|server|express)\.(get|post|put|delete|patch|all|options|head)\s*\(\s*["\'`]([^"\'`]+)["\'`]', line, re.IGNORECASE)
-            if m_express:
-                method = m_express.group(1).upper()
-                path = normalize_path_pattern(m_express.group(2))
-                handler = find_enclosing_symbol(i, symbols)
-                routes.append(ApiRouteRecord(
-                    repo=repo, filepath=filepath, framework="express",
-                    http_method=method, path_pattern=path, handler_symbol=handler,
-                    start_line=i, end_line=i
-                ))
+            m_exp_head = re.search(r'\b(\w+)\.(get|post|put|delete|patch|all|options|head)\s*(?:<|\()', line, re.IGNORECASE)
+            if m_exp_head and (m_exp_head.group(1) in express_routers or m_exp_head.group(1).lower().endswith(("router", "routes"))):
+                win = " ".join(l.strip() for l in lines[i - 1:min(len(lines), i + 5)])
+                m_express = re.search(
+                    rf'\b{re.escape(m_exp_head.group(1))}\.(get|post|put|delete|patch|all|options|head)\s*(?:<[\s\S]*?>)?\s*\(\s*["\'`]([^"\'`]+)["\'`]',
+                    win,
+                    re.IGNORECASE,
+                )
+                if m_express:
+                    method = m_express.group(1).upper()
+                    path = normalize_path_pattern(m_express.group(2))
+                    handler = find_enclosing_symbol(i, symbols)
+                    routes.append(ApiRouteRecord(
+                        repo=repo, filepath=filepath, framework="express",
+                        http_method=method, path_pattern=path, handler_symbol=handler,
+                        start_line=i, end_line=i
+                    ))
 
         # NestJS: Controller prefix + decorators
         nest_prefix = ""
@@ -310,32 +354,51 @@ def extract_api_routes_and_calls(
 
     # C# / ASP.NET Core Controllers & Minimal APIs
     elif language in ("c_sharp", "csharp"):
+        from app.services.chunking.csharp_route_attributes import (
+            get_cached_csharp_attributes,
+            resolve_controller_route_from_attributes,
+            resolve_method_route_from_attribute_line,
+        )
+
+        cs_attr_specs = get_cached_csharp_attributes(repo, filepath, code)
         controller_route = ""
         controller_name = ""
+        is_abstract_controller = False
         group_prefixes: Dict[str, str] = {}
         for i, line in enumerate(lines, start=1):
-            m_class = re.search(r'class\s+([a-zA-Z0-9_]+Controller)\b', line)
-            if m_class:
-                c_full = m_class.group(1)
-                controller_name = c_full[:-10].lower() if c_full.endswith("Controller") else c_full.lower()
-
-            m_croute = re.search(r'\[Route\s*\(\s*["\']([^"\']+)["\']\s*\)\]', line, re.IGNORECASE)
-            if m_croute and not controller_route:
-                controller_route = m_croute.group(1)
-
             m_grp = re.search(r'\b(\w+)\s*=\s*(\w+)\.MapGroup\s*\(\s*["\']([^"\']*)["\']', line, re.IGNORECASE)
             if m_grp:
                 grp_var, parent_var, grp_path = m_grp.group(1), m_grp.group(2), m_grp.group(3)
                 parent_prefix = group_prefixes.get(parent_var, "")
                 group_prefixes[grp_var] = _join_route_prefix(parent_prefix, grp_path)
 
+        pending_route = ""
         for i, line in enumerate(lines, start=1):
-            # Attribute routes [HttpGet("save")], [HttpGet("{id:guid}")], [HttpPost], etc.
+            m_croute = re.search(r'\[Route\s*\(\s*["\']([^"\']+)["\']\s*\)\]', line, re.IGNORECASE)
+            if m_croute:
+                pending_route = m_croute.group(1)
+
+            m_class = re.search(r'class\s+([a-zA-Z0-9_]*Controller[a-zA-Z0-9_]*)\b', line)
+            if m_class:
+                c_full = m_class.group(1)
+                controller_name = c_full[:-10].lower() if c_full.endswith("Controller") else c_full.lower()
+                resolved_croute = resolve_controller_route_from_attributes(lines, i - 1, cs_attr_specs)
+                controller_route = resolved_croute or pending_route
+                is_abstract_controller = bool(re.search(r'\babstract\s+class\b', line))
+                pending_route = ""
+
+            # Attribute routes [HttpGet("save")], [HttpGet("{id:guid}")], [HttpPost], or custom HTTP verb attributes
             m_asp = re.search(r'\[(HttpGet|HttpPost|HttpPut|HttpDelete|HttpPatch)\s*(?:\(\s*["\']([^"\']*)["\']\s*\))?\]', line, re.IGNORECASE)
-            if m_asp:
-                method = m_asp.group(1)[4:].upper()
-                sub_path = m_asp.group(2) or ""
-                c_route_resolved = controller_route.replace("[controller]", controller_name) if controller_route else ""
+            custom_method_route = (
+                (m_asp.group(1)[4:].upper(), m_asp.group(2) or "")
+                if m_asp
+                else resolve_method_route_from_attribute_line(line, cs_attr_specs)
+            )
+            if custom_method_route:
+                method, sub_path = custom_method_route
+                if is_abstract_controller and not controller_route and not sub_path.startswith("/"):
+                    continue
+                c_route_resolved = re.sub(r"\[controller\]", controller_name, controller_route, flags=re.IGNORECASE) if controller_route else ""
                 if sub_path.startswith("/"):
                     full_p = sub_path
                 elif c_route_resolved:
@@ -355,6 +418,12 @@ def extract_api_routes_and_calls(
                     http_method=method, path_pattern=path, handler_symbol=handler,
                     start_line=i, end_line=i
                 ))
+                if c_route_resolved and re.fullmatch(r"\{[a-zA-Z_]\w*(?::[^{}]*)?\?\}", sub_path.strip("/")):
+                    routes.append(ApiRouteRecord(
+                        repo=repo, filepath=filepath, framework="aspnet",
+                        http_method=method, path_pattern=normalize_path_pattern(c_route_resolved), handler_symbol=handler,
+                        start_line=i, end_line=i
+                    ))
                 continue
 
             # Chained Minimal API: app.MapGroup("/api/v1").MapGet("/{id:guid}", ...)

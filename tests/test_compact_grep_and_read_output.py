@@ -39,13 +39,16 @@ def _match(repo, file, line, symbol=None, permalink=None, context=1, lines=SOURC
 
 def test_matches_group_by_file_with_merged_context_and_block_separators():
     link = "https://git.example/org/hub/blob/abc/Reader.cs"
-    shared_repo, files = group_grep_matches([
+    matches = [
         _match("hub", "Reader.cs", 3, "Reader.GetAccessPreflightAsync", f"{link}#L3"),
         _match("hub", "Reader.cs", 6, "Reader.GetByInstanceId", f"{link}#L6"),
         _match("hub", "Reader.cs", 12),
-    ])
+    ]
+    shared_repo, files = group_grep_matches(matches)
     assert shared_repo == "hub"
-    assert files == [{
+    assert "permalink" not in files[0]
+    shared_repo, files_with_link = group_grep_matches(matches, include_permalinks=True)
+    assert files_with_link == [{
         "file": "Reader.cs",
         "permalink": link,
         "symbols": {"3": "Reader.GetAccessPreflightAsync", "6": "Reader.GetByInstanceId"},
