@@ -18,6 +18,11 @@ class GitSyncJob:
     processed_files: int = 0
     total_files: int = 0
     percent: int = 0
+    chunks_embedded: int = 0
+    embedding_seconds: float = 0.0
+    embedding_chunks_per_sec: float = 0.0
+    rate_limit_wait_seconds: float = 0.0
+    rate_limit_hits: int = 0
     started_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     error: Optional[str] = None
@@ -60,6 +65,11 @@ class GitProgressTracker:
                 job.processed_files = 0
                 job.total_files = 0
                 job.percent = 0
+                job.chunks_embedded = 0
+                job.embedding_seconds = 0.0
+                job.embedding_chunks_per_sec = 0.0
+                job.rate_limit_wait_seconds = 0.0
+                job.rate_limit_hits = 0
                 job.error = None
                 job.cancelled = False
                 job.started_at = time.time()
@@ -68,6 +78,25 @@ class GitProgressTracker:
             job_obj = self.jobs[repo_id]
         self._broadcast({"type": "progress", "data": payload})
         return job_obj
+
+    def update_embedding_telemetry(self, telemetry: Dict[str, Any], repo_id: Optional[int] = None) -> None:
+        with self._lock:
+            targets = (
+                [self.jobs[repo_id]]
+                if repo_id is not None and repo_id in self.jobs
+                else [j for j in self.jobs.values() if j.status == "syncing"]
+            )
+            for job in targets:
+                job.chunks_embedded = int(telemetry.get("chunks_embedded", job.chunks_embedded))
+                job.embedding_seconds = float(telemetry.get("embedding_seconds", job.embedding_seconds))
+                job.embedding_chunks_per_sec = float(
+                    telemetry.get("embedding_chunks_per_sec", job.embedding_chunks_per_sec)
+                )
+                job.rate_limit_wait_seconds = float(
+                    telemetry.get("rate_limit_wait_seconds", job.rate_limit_wait_seconds)
+                )
+                job.rate_limit_hits = int(telemetry.get("rate_limit_hits", job.rate_limit_hits))
+                job.updated_at = time.time()
 
     def update_step(
         self,

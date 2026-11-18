@@ -206,10 +206,20 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
     env_threads = os.getenv("EMBEDDING_NUM_THREADS") or os.getenv("EMBEDDING_THREADS")
     threads = int(env_threads) if env_threads and env_threads.isdigit() else default_threads
 
-    env_batch = os.getenv("EMBEDDING_BATCH_SIZE")
-    batch_size = int(env_batch) if env_batch and env_batch.isdigit() else 32
-
     provider = os.getenv("EMBEDDING_PROVIDER", "local").lower().strip()
+    env_batch = os.getenv("EMBEDDING_BATCH_SIZE")
+    default_bs = 128 if provider == "api" else 32
+    batch_size = int(env_batch) if env_batch and env_batch.isdigit() else default_bs
+
+    env_concurrency = os.getenv("EMBEDDING_API_CONCURRENCY")
+    api_concurrency = int(env_concurrency) if env_concurrency and env_concurrency.isdigit() else 4
+
+    env_max_tokens = os.getenv("EMBEDDING_MAX_TOKENS_PER_REQUEST")
+    max_tokens_per_request = int(env_max_tokens) if env_max_tokens and env_max_tokens.isdigit() else 100000
+
+    env_tpm = os.getenv("EMBEDDING_TPM_LIMIT")
+    tpm_limit = int(env_tpm) if env_tpm and env_tpm.isdigit() else 0
+
     dense_model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5").strip()
     sparse_model = os.getenv("SPARSE_MODEL", "Qdrant/bm25").strip()
     litellm_url = (
@@ -234,6 +244,9 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
         "sparse_model": sparse_model,
         "threads": max(1, threads),
         "batch_size": max(1, batch_size),
+        "api_concurrency": max(1, api_concurrency),
+        "max_tokens_per_request": max(1, max_tokens_per_request),
+        "tpm_limit": max(0, tpm_limit),
         "openai_api_url": litellm_url,
         "litellm_url": litellm_url,
         "litellm_api_key": litellm_api_key,
@@ -252,36 +265,47 @@ def get_embedding_db_config() -> Dict[str, Any]:
     sparse_model = _get_meta("embedding_sparse_model")
     threads_str = _get_meta("embedding_num_threads")
     batch_size_str = _get_meta("embedding_batch_size")
+    concurrency_str = _get_meta("embedding_api_concurrency")
+    max_tokens_str = _get_meta("embedding_max_tokens_per_request")
+    tpm_limit_str = _get_meta("embedding_tpm_limit")
     litellm_url = _get_meta("openai_api_url") or _get_meta("embedding_litellm_url")
     litellm_api_key = _get_meta("openai_api_key") or _get_meta("embedding_litellm_api_key")
     vision_ocr_model = (
-        _get_meta("openai_vision_model")
-        or _get_meta("vision_ocr_model")
-        or _get_meta("embedding_vision_ocr_model")
+        _get_meta("openai_vision_model") or _get_meta("vision_ocr_model") or _get_meta("embedding_vision_ocr_model")
     )
-    chat_model = (
-        _get_meta("openai_chat_model")
-        or _get_meta("chat_model")
-        or _get_meta("embedding_chat_model")
-    )
+    chat_model = _get_meta("openai_chat_model") or _get_meta("chat_model") or _get_meta("embedding_chat_model")
     allow_fallback_str = _get_meta("embedding_allow_fallback")
     fallback_dense_model = _get_meta("embedding_fallback_dense_model")
 
     default_cfg = _resolve_default_embedding_config()
+    eff_provider = (provider or default_cfg["provider"]).lower().strip()
 
     threads = int(threads_str) if threads_str and threads_str.isdigit() else default_cfg["threads"]
-    batch_size = int(batch_size_str) if batch_size_str and batch_size_str.isdigit() else default_cfg["batch_size"]
+    env_bs = os.getenv("EMBEDDING_BATCH_SIZE", "")
+    if batch_size_str and batch_size_str.isdigit():
+        batch_size = int(batch_size_str)
+    elif env_bs.isdigit():
+        batch_size = int(env_bs)
+    else:
+        batch_size = 128 if eff_provider == "api" else 32
+
+    api_concurrency = int(concurrency_str) if concurrency_str and concurrency_str.isdigit() else default_cfg["api_concurrency"]
+    max_tokens = int(max_tokens_str) if max_tokens_str and max_tokens_str.isdigit() else default_cfg["max_tokens_per_request"]
+    tpm_limit = int(tpm_limit_str) if tpm_limit_str and tpm_limit_str.isdigit() else default_cfg["tpm_limit"]
     allow_fallback = (allow_fallback_str == "1") if allow_fallback_str is not None else default_cfg["allow_fallback"]
 
     resolved_url = (litellm_url or default_cfg["litellm_url"]).strip()
     raw_db_key = (litellm_api_key or "").strip()
     effective_key = ("" if _is_placeholder_api_key(raw_db_key) else raw_db_key) or default_cfg["litellm_api_key"]
     return {
-        "provider": (provider or default_cfg["provider"]).lower().strip(),
+        "provider": eff_provider,
         "dense_model": (dense_model or default_cfg["dense_model"]).strip(),
         "sparse_model": (sparse_model or default_cfg["sparse_model"]).strip(),
         "threads": max(1, threads),
         "batch_size": max(1, batch_size),
+        "api_concurrency": max(1, api_concurrency),
+        "max_tokens_per_request": max(1, max_tokens),
+        "tpm_limit": max(0, tpm_limit),
         "openai_api_url": resolved_url,
         "litellm_url": resolved_url,
         "litellm_api_key": effective_key,
@@ -302,6 +326,9 @@ def set_embedding_db_config(
     sparse_model: Optional[str] = None,
     threads: Optional[int] = None,
     batch_size: Optional[int] = None,
+    api_concurrency: Optional[int] = None,
+    max_tokens_per_request: Optional[int] = None,
+    tpm_limit: Optional[int] = None,
     litellm_url: Optional[str] = None,
     litellm_api_key: Optional[str] = None,
     vision_ocr_model: Optional[str] = None,
@@ -312,28 +339,32 @@ def set_embedding_db_config(
     if provider is not None:
         _set_meta("embedding_provider", provider.lower().strip())
     if dense_model is not None:
-        _set_meta("embedding_dense_model", dense_model.strip())
-        _set_meta("openai_embedding_model", dense_model.strip())
+        for k in ("embedding_dense_model", "openai_embedding_model"):
+            _set_meta(k, dense_model.strip())
     if sparse_model is not None:
         _set_meta("embedding_sparse_model", sparse_model.strip())
     if threads is not None:
         _set_meta("embedding_num_threads", str(max(1, threads)))
     if batch_size is not None:
         _set_meta("embedding_batch_size", str(max(1, batch_size)))
+    if api_concurrency is not None:
+        _set_meta("embedding_api_concurrency", str(max(1, api_concurrency)))
+    if max_tokens_per_request is not None:
+        _set_meta("embedding_max_tokens_per_request", str(max(1, max_tokens_per_request)))
+    if tpm_limit is not None:
+        _set_meta("embedding_tpm_limit", str(max(0, tpm_limit)))
     if litellm_url is not None:
-        _set_meta("openai_api_url", litellm_url.strip())
-        _set_meta("embedding_litellm_url", litellm_url.strip())
+        for k in ("openai_api_url", "embedding_litellm_url"):
+            _set_meta(k, litellm_url.strip())
     if litellm_api_key is not None:
-        _set_meta("openai_api_key", litellm_api_key.strip())
-        _set_meta("embedding_litellm_api_key", litellm_api_key.strip())
+        for k in ("openai_api_key", "embedding_litellm_api_key"):
+            _set_meta(k, litellm_api_key.strip())
     if vision_ocr_model is not None:
-        _set_meta("openai_vision_model", vision_ocr_model.strip())
-        _set_meta("vision_ocr_model", vision_ocr_model.strip())
-        _set_meta("embedding_vision_ocr_model", vision_ocr_model.strip())
+        for k in ("openai_vision_model", "vision_ocr_model", "embedding_vision_ocr_model"):
+            _set_meta(k, vision_ocr_model.strip())
     if chat_model is not None:
-        _set_meta("openai_chat_model", chat_model.strip())
-        _set_meta("chat_model", chat_model.strip())
-        _set_meta("embedding_chat_model", chat_model.strip())
+        for k in ("openai_chat_model", "chat_model", "embedding_chat_model"):
+            _set_meta(k, chat_model.strip())
     if allow_fallback is not None:
         _set_meta("embedding_allow_fallback", "1" if allow_fallback else "0")
     if fallback_dense_model is not None:
@@ -406,20 +437,17 @@ def set_ai_gateway_config(
 ) -> Dict[str, Any]:
     """Persists OpenAI-compatible AI Gateway configuration in system_metadata."""
     if url is not None:
-        _set_meta("openai_api_url", url.strip())
-        _set_meta("embedding_litellm_url", url.strip())
+        for k in ("openai_api_url", "embedding_litellm_url"):
+            _set_meta(k, url.strip())
     if api_key is not None:
-        cleaned_key = api_key.strip()
-        _set_meta("openai_api_key", cleaned_key)
-        _set_meta("embedding_litellm_api_key", cleaned_key)
+        for k in ("openai_api_key", "embedding_litellm_api_key"):
+            _set_meta(k, api_key.strip())
     if chat_model is not None:
-        _set_meta("openai_chat_model", chat_model.strip())
-        _set_meta("chat_model", chat_model.strip())
-        _set_meta("embedding_chat_model", chat_model.strip())
+        for k in ("openai_chat_model", "chat_model", "embedding_chat_model"):
+            _set_meta(k, chat_model.strip())
     if vision_ocr_model is not None:
-        _set_meta("openai_vision_model", vision_ocr_model.strip())
-        _set_meta("vision_ocr_model", vision_ocr_model.strip())
-        _set_meta("embedding_vision_ocr_model", vision_ocr_model.strip())
+        for k in ("openai_vision_model", "vision_ocr_model", "embedding_vision_ocr_model"):
+            _set_meta(k, vision_ocr_model.strip())
     if embedding_model is not None:
         cleaned_emb = embedding_model.strip()
         _set_meta("openai_embedding_model", cleaned_emb)

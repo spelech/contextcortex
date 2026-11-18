@@ -129,6 +129,12 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
                 except Exception:
                     pass
 
+    from app.services.indexing.channel_pipeline import (
+        BoundedChannel,
+        ChannelIngestionPipeline,
+        ParsedFileItem,
+    )
+
     all_points = []
     all_symbols = []
     all_routes = []
@@ -138,40 +144,80 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
     files_to_update_cache = []
     files_to_delete = []
 
-    for filepath, (repo, category, base_dir) in found_files.items():
-        try:
-            mtime = os.path.getmtime(filepath)
-            with db_service.get_db_connection() as conn:
-                cached = conn.execute("SELECT mtime FROM indexed_files WHERE filepath = ?", (filepath,)).fetchone()
-            
-            if not force and cached and abs(cached["mtime"] - mtime) < 0.01:
-                continue # Cached & unchanged
+    def _produce_local_files(channel: BoundedChannel[ParsedFileItem]) -> None:
+        for filepath, (repo, category, base_dir) in found_files.items():
+            try:
+                mtime = os.path.getmtime(filepath)
+                with db_service.get_db_connection() as conn:
+                    cached = conn.execute("SELECT mtime FROM indexed_files WHERE filepath = ?", (filepath,)).fetchone()
 
-            rel_path = os.path.relpath(filepath, base_dir).replace("\\", "/")
-            doc_type = "code" if is_code_file(filepath) else "doc"
-            lang = detect_language(filepath)
+                if not force and cached and abs(cached["mtime"] - mtime) < 0.01:
+                    continue  # Cached & unchanged
 
-            content = read_source_text(filepath)
+                rel_path = os.path.relpath(filepath, base_dir).replace("\\", "/")
+                doc_type = "code" if is_code_file(filepath) else "doc"
+                lang = detect_language(filepath)
+                content = read_source_text(filepath)
 
-            points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                filepath=filepath,
-                rel_path=rel_path,
-                content=content,
-                repo=repo,
-                doc_type=doc_type,
-                category_override=category
-            )
+                try:
+                    points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                        filepath=filepath,
+                        rel_path=rel_path,
+                        content=content,
+                        repo=repo,
+                        doc_type=doc_type,
+                        category_override=category,
+                        embed=False,
+                    )
+                except TypeError:
+                    points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
+                        filepath=filepath,
+                        rel_path=rel_path,
+                        content=content,
+                        repo=repo,
+                        doc_type=doc_type,
+                        category_override=category,
+                    )
 
-            files_to_delete.append((filepath, repo))
-            all_points.extend(points)
-            all_symbols.extend(symbols)
-            all_routes.extend(routes)
-            all_calls.extend(calls)
-            all_summaries.append(summary_tuple)
-            all_relationships.extend(rels)
-            files_to_update_cache.append((filepath, repo, doc_type, lang, None, mtime))
-        except Exception as e:
-            logger.error(f"Error processing local file {filepath}: {e}")
+                channel.write(
+                    ParsedFileItem(
+                        filepath=filepath,
+                        rel_path=rel_path,
+                        repo=repo,
+                        points=points,
+                        symbols=symbols,
+                        summary_tuple=summary_tuple,
+                        relationships=rels,
+                        routes=routes,
+                        calls=calls,
+                        indexed_file_row=(filepath, repo, doc_type, lang, None, mtime),
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Error processing local file {filepath}: {e}")
+
+    def _collect_embedded_local_batch(batch_items: list[ParsedFileItem]) -> None:
+        for item in batch_items:
+            files_to_delete.append((item.filepath, item.repo))
+            all_points.extend(item.points)
+            all_symbols.extend(item.symbols)
+            all_routes.extend(item.routes)
+            all_calls.extend(item.calls)
+            if item.summary_tuple is not None:
+                all_summaries.append(item.summary_tuple)
+            all_relationships.extend(item.relationships)
+            if item.indexed_file_row is not None:
+                files_to_update_cache.append(item.indexed_file_row)
+
+    try:
+        pipeline = ChannelIngestionPipeline(
+            persist_batch_fn=_collect_embedded_local_batch,
+            file_batch_size=50,
+        )
+        pipeline.run(_produce_local_files)
+    except Exception as e:
+        logger.error(f"Failed to embed local files in pipeline: {e}")
+        return False
 
     # Purge old points for modified files
     store = vs_service.get_vector_store()
