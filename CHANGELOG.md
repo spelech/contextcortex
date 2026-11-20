@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.1](https://github.com/spelech/contextcortex/compare/v2.28.0...v2.28.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **indexing:** per-input token limit & 400 bisection, pipeline stage cancellation, and persisted sync progress ([#178](https://github.com/spelech/contextcortex/issues/178), [#179](https://github.com/spelech/contextcortex/issues/179), [#180](https://github.com/spelech/contextcortex/issues/180)) ([#181](https://github.com/spelech/contextcortex/issues/181)) ([a0f8100](https://github.com/spelech/contextcortex/commit/a0f8100da4fc44f1d27f5c2ccd31e3be855a5a2a))
+
 ## [2.28.0](https://github.com/spelech/contextcortex/compare/v2.27.4...v2.28.0) (2026-11-18)
 
 
