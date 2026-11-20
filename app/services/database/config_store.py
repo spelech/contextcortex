@@ -173,14 +173,10 @@ def detect_system_resources() -> Dict[str, Any]:
 
             class _MEMORYSTATUSEX(ctypes.Structure):
                 _fields_ = [
-                    ("dwLength", ctypes.c_ulong),
-                    ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
                     ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
                 ]
 
@@ -225,41 +221,23 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
 
     dense_model = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5").strip()
     sparse_model = os.getenv("SPARSE_MODEL", "Qdrant/bm25").strip()
-    litellm_url = (
-        os.getenv("OPENAI_API_URL")
-        or os.getenv("OPENAI_BASE_URL")
-        or os.getenv("LITELLM_URL")
-        or "http://litellm:4000/v1"
-    ).strip()
+    litellm_url = (os.getenv("OPENAI_API_URL") or os.getenv("OPENAI_BASE_URL") or os.getenv("LITELLM_URL") or "http://litellm:4000/v1").strip()
     raw_api_key = (os.getenv("OPENAI_API_KEY") or os.getenv("LITELLM_API_KEY") or "").strip()
     litellm_api_key = "" if _is_placeholder_api_key(raw_api_key) else raw_api_key
-
     vision_ocr_model = os.getenv("VISION_OCR_MODEL", "").strip()
     chat_model = os.getenv("CHAT_MODEL", "").strip()
-
-    allow_fallback_env = os.getenv("EMBEDDING_ALLOW_FALLBACK", "false").lower().strip()
-    allow_fallback = allow_fallback_env in ("1", "true", "yes")
+    allow_fallback = os.getenv("EMBEDDING_ALLOW_FALLBACK", "false").lower().strip() in ("1", "true", "yes")
     fallback_dense_model = os.getenv("EMBEDDING_FALLBACK_DENSE_MODEL", "").strip()
 
     return {
-        "provider": provider,
-        "dense_model": dense_model,
-        "sparse_model": sparse_model,
-        "threads": max(1, threads),
-        "batch_size": max(1, batch_size),
-        "api_concurrency": max(1, api_concurrency),
-        "max_tokens_per_request": max(1, max_tokens_per_request),
-        "max_tokens_per_input": max(1, max_tokens_per_input),
-        "tpm_limit": max(0, tpm_limit),
-        "openai_api_url": litellm_url,
-        "litellm_url": litellm_url,
-        "litellm_api_key": litellm_api_key,
-        "vision_ocr_model": vision_ocr_model,
-        "chat_model": chat_model,
-        "allow_fallback": allow_fallback,
-        "fallback_dense_model": fallback_dense_model,
-        "system_cpus": sys_res["cpus"],
-        "system_memory_gb": sys_res["memory_gb"],
+        "provider": provider, "dense_model": dense_model, "sparse_model": sparse_model,
+        "threads": max(1, threads), "batch_size": max(1, batch_size),
+        "api_concurrency": max(1, api_concurrency), "max_tokens_per_request": max(1, max_tokens_per_request),
+        "max_tokens_per_input": max(1, max_tokens_per_input), "tpm_limit": max(0, tpm_limit),
+        "openai_api_url": litellm_url, "litellm_url": litellm_url, "litellm_api_key": litellm_api_key,
+        "vision_ocr_model": vision_ocr_model, "chat_model": chat_model,
+        "allow_fallback": allow_fallback, "fallback_dense_model": fallback_dense_model,
+        "system_cpus": sys_res["cpus"], "system_memory_gb": sys_res["memory_gb"],
     }
 
 

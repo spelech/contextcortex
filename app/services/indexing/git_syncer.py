@@ -34,30 +34,18 @@ from app.services.database import *
 from app.services.embeddings import *
 from app.services.git_manager import *
 from app.services.indexing.git_delta_scanner import (
-    DEFAULT_SUPPORTED_EXTENSIONS,
-    _BUNDLED_REL_PREFIXES,
-    _IGNORED_DIR_NAMES,
-    _should_skip_indexed_file,
-    compute_git_repo_delta,
-    persist_recent_commits,
-    persist_sync_batch,
+    DEFAULT_SUPPORTED_EXTENSIONS, _BUNDLED_REL_PREFIXES, _IGNORED_DIR_NAMES,
+    _should_skip_indexed_file, compute_git_repo_delta, persist_recent_commits, persist_sync_batch,
 )
 from app.services.indexing.git_progress import progress_tracker
 from app.services.indexing.local_syncer import sync_local_paths
 from app.services.indexing.processor import (
-    compute_text_hash,
-    extract_keywords_from_text,
-    get_chunk_uuid,
-    get_dynamic_catalog_description,
-    process_file_content,
+    compute_text_hash, extract_keywords_from_text, get_chunk_uuid,
+    get_dynamic_catalog_description, process_file_content,
 )
 from app.services.indexing.state import (
-    CHUNK_OVERLAP,
-    CHUNK_SIZE,
-    VAULT_PATH,
-    ensure_collection,
-    indexing_lock,
-    trigger_list_changed_notification,
+    CHUNK_OVERLAP, CHUNK_SIZE, VAULT_PATH,
+    ensure_collection, indexing_lock, trigger_list_changed_notification,
 )
 from app.services.memory_utils import trim_memory
 from app.services.vector_store import VectorStoreManager
@@ -302,26 +290,13 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
                     try:
                         points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                            filepath=db_filepath,
-                            rel_path=rel_path,
-                            content=content,
-                            repo=repo_name,
-                            doc_type=doc_type,
-                            git_url=git_url,
-                            commit_sha=commit_sha,
-                            provider=provider,
-                            embed=False,
+                            filepath=db_filepath, rel_path=rel_path, content=content, repo=repo_name,
+                            doc_type=doc_type, git_url=git_url, commit_sha=commit_sha, provider=provider, embed=False,
                         )
                     except TypeError:
                         points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                            filepath=db_filepath,
-                            rel_path=rel_path,
-                            content=content,
-                            repo=repo_name,
-                            doc_type=doc_type,
-                            git_url=git_url,
-                            commit_sha=commit_sha,
-                            provider=provider,
+                            filepath=db_filepath, rel_path=rel_path, content=content, repo=repo_name,
+                            doc_type=doc_type, git_url=git_url, commit_sha=commit_sha, provider=provider,
                         )
 
                     if progress_tracker.is_cancelled(repo_id):
@@ -333,15 +308,9 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
                     if not channel.write(
                         ParsedFileItem(
-                            filepath=db_filepath,
-                            rel_path=rel_path,
-                            repo=repo_name,
-                            points=points,
-                            symbols=symbols,
-                            summary_tuple=summary_tuple,
-                            relationships=rels,
-                            routes=routes,
-                            calls=calls,
+                            filepath=db_filepath, rel_path=rel_path, repo=repo_name, points=points,
+                            symbols=symbols, summary_tuple=summary_tuple, relationships=rels,
+                            routes=routes, calls=calls,
                             indexed_file_row=(db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash),
                         )
                     ):
