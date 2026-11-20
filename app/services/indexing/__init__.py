@@ -24,6 +24,7 @@ from app.services.indexing.processor import (
 from app.services.indexing.local_syncer import sync_local_paths, sync_local_repo
 from app.services.indexing.git_syncer import (
     compute_git_repo_delta,
+    is_repo_sync_running,
     sync_single_git_repo,
     run_full_indexing,
 )
@@ -56,6 +57,7 @@ __all__ = [
     "sync_local_paths",
     "sync_local_repo",
     "compute_git_repo_delta",
+    "is_repo_sync_running",
     "sync_single_git_repo",
     "run_full_indexing",
     "GitSyncJob",

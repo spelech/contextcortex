@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import requests
 from app.models.schemas import CloneResult
@@ -140,17 +140,67 @@ def get_remote_head_sha(
     return None
 
 
-def _clone_fresh_into_dir(auth_url: str, branch: str, depth_str: str, dest_dir: str, git_env: Dict[str, str]) -> subprocess.CompletedProcess:
+_ORIG_SUBPROCESS_RUN = subprocess.run
+
+
+def _run_cancellable_git_cmd(
+    cmd: list[str],
+    *,
+    timeout: float,
+    env: Dict[str, str],
+    cwd: Optional[str] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> subprocess.CompletedProcess:
+    """Runs a git subprocess while polling cancel_check so a cancelled sync stops cloning immediately."""
+    if cancel_check is not None and cancel_check():
+        return subprocess.CompletedProcess(cmd, returncode=-15, stdout="", stderr="Sync cancelled by user")
+    if subprocess.run is not _ORIG_SUBPROCESS_RUN or cancel_check is None:
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
+
+    proc = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    deadline = time.monotonic() + float(timeout)
+    while True:
+        if cancel_check():
+            proc.terminate()
+            try:
+                proc.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=2.0)
+            return subprocess.CompletedProcess(cmd, returncode=-15, stdout="", stderr="Sync cancelled by user")
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            raise subprocess.TimeoutExpired(cmd, timeout, output=stdout, stderr=stderr)
+        try:
+            stdout, stderr = proc.communicate(timeout=min(0.2, remaining))
+            return subprocess.CompletedProcess(cmd, returncode=proc.returncode, stdout=stdout or "", stderr=stderr or "")
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def _clone_fresh_into_dir(
+    auth_url: str,
+    branch: str,
+    depth_str: str,
+    dest_dir: str,
+    git_env: Dict[str, str],
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> subprocess.CompletedProcess:
     """Clones a repository shallowly into dest_dir, falling back to default branch if --branch fails."""
     if os.path.exists(dest_dir) and os.listdir(dest_dir):
         cleanup_repo_dir(dest_dir)
     cmd = ["git", "clone", "--depth", depth_str, "--branch", branch, "--single-branch", auth_url, dest_dir]
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=git_env)
+    res = _run_cancellable_git_cmd(cmd, timeout=120, env=git_env, cancel_check=cancel_check)
     if res.returncode != 0:
+        if res.returncode == -15 or (cancel_check is not None and cancel_check()):
+            return res
         if os.path.exists(dest_dir) and os.listdir(dest_dir):
             cleanup_repo_dir(dest_dir)
         cmd_fallback = ["git", "clone", "--depth", depth_str, auth_url, dest_dir]
-        res = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=120, env=git_env)
+        res = _run_cancellable_git_cmd(cmd_fallback, timeout=120, env=git_env, cancel_check=cancel_check)
     return res
 
 
@@ -163,9 +213,15 @@ def shallow_clone_repo(
     repo_id: Optional[str] = None,
     target_dir: Optional[str] = None,
     depth: int = 1,
+    cancel_check: Optional[Callable[[], bool]] = None,
 ) -> CloneResult:
     """Shallow clones a git repository to a temporary or persistent directory."""
     from app.services.database import get_effective_git_token
+
+    if cancel_check is None and repo_id is not None and str(repo_id).isdigit():
+        from app.services.indexing.git_progress import progress_tracker
+        rid_int = int(str(repo_id))
+        cancel_check = lambda: progress_tracker.is_cancelled(rid_int)
 
     norm_url = normalize_git_url(git_url)
     use_ssh_native = is_ssh_git_url(git_url) and not token and not username
@@ -198,9 +254,13 @@ def shallow_clone_repo(
             git_base = ["git", "-C", repo_dir, "-c", f"safe.directory={safe_dir}"]
             logger.info(f"Existing shallow clone found in {repo_dir}; fetching latest refs (depth: {depth_str})...")
             subprocess.run(git_base + ["remote", "set-url", "origin", auth_url], cwd=repo_dir, capture_output=True, text=True, timeout=15, env=git_env)
-            f_res = subprocess.run(git_base + ["fetch", "--depth", depth_str, "origin", branch], cwd=repo_dir, capture_output=True, text=True, timeout=60, env=git_env)
+            f_res = _run_cancellable_git_cmd(git_base + ["fetch", "--depth", depth_str, "origin", branch], cwd=repo_dir, timeout=60, env=git_env, cancel_check=cancel_check)
+            if f_res.returncode == -15 or (cancel_check is not None and cancel_check()):
+                return CloneResult(temp_dir=None, commit_sha=None, error="Sync cancelled by user")
             if f_res.returncode != 0:
-                f_res = subprocess.run(git_base + ["fetch", "--depth", depth_str, "origin"], cwd=repo_dir, capture_output=True, text=True, timeout=60, env=git_env)
+                f_res = _run_cancellable_git_cmd(git_base + ["fetch", "--depth", depth_str, "origin"], cwd=repo_dir, timeout=60, env=git_env, cancel_check=cancel_check)
+                if f_res.returncode == -15 or (cancel_check is not None and cancel_check()):
+                    return CloneResult(temp_dir=None, commit_sha=None, error="Sync cancelled by user")
 
             if f_res.returncode == 0:
                 r_res = subprocess.run(git_base + ["reset", "--hard", "FETCH_HEAD"], cwd=repo_dir, capture_output=True, text=True, timeout=30, env=git_env)
@@ -215,9 +275,9 @@ def shallow_clone_repo(
                 logger.warning(f"Incremental fetch failed in {repo_dir} (rc={f_res.returncode}); staging fresh clone...")
 
             staging_dir = f"{repo_dir}.staging.{int(time.time() * 1000)}"
-            res = _clone_fresh_into_dir(auth_url, branch, depth_str, staging_dir, git_env)
+            res = _clone_fresh_into_dir(auth_url, branch, depth_str, staging_dir, git_env, cancel_check=cancel_check)
             if res.returncode != 0:
-                err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
+                err_msg = "Sync cancelled by user" if res.returncode == -15 else (res.stderr.strip() or res.stdout.strip() or "Git clone failed")
                 cleanup_repo_dir(staging_dir)
                 return CloneResult(temp_dir=None, commit_sha=None, error=f"Clone failed: {err_msg}")
 
@@ -228,9 +288,9 @@ def shallow_clone_repo(
                 logger.warning(f"Target directory {repo_dir} exists but is not a valid git repository; cleaning up for fresh clone...")
                 cleanup_repo_dir(repo_dir)
 
-            res = _clone_fresh_into_dir(auth_url, branch, depth_str, repo_dir, git_env)
+            res = _clone_fresh_into_dir(auth_url, branch, depth_str, repo_dir, git_env, cancel_check=cancel_check)
             if res.returncode != 0:
-                err_msg = res.stderr.strip() or res.stdout.strip() or "Git clone failed"
+                err_msg = "Sync cancelled by user" if res.returncode == -15 else (res.stderr.strip() or res.stdout.strip() or "Git clone failed")
                 cleanup_repo_dir(repo_dir)
                 return CloneResult(temp_dir=None, commit_sha=None, error=f"Clone failed: {err_msg}")
 

@@ -212,6 +212,7 @@ class ChannelIngestionPipeline:
         def _stage2_coalescer() -> None:
             try:
                 batch_items: List[ParsedFileItem] = []
+                active_futs: List[Future] = []
                 for item in self.parsed_channel.read_all():
                     if self.persist_channel.is_closed:
                         return
@@ -226,6 +227,7 @@ class ChannelIngestionPipeline:
                             proc_service,
                             get_cached_embeddings_batch,
                             execute_api_embeddings_batch,
+                            active_futs,
                         ):
                             return
                         batch_items = []
@@ -239,6 +241,7 @@ class ChannelIngestionPipeline:
                         proc_service,
                         get_cached_embeddings_batch,
                         execute_api_embeddings_batch,
+                        active_futs,
                     ):
                         return
                 self.persist_channel.complete()
@@ -282,6 +285,7 @@ class ChannelIngestionPipeline:
         proc_service: Any,
         get_cached_embeddings_batch: Callable,
         execute_api_embeddings_batch: Callable,
+        active_futs: Optional[List[Future]] = None,
     ) -> bool:
         if self.persist_channel.is_closed:
             return False
@@ -369,17 +373,17 @@ class ChannelIngestionPipeline:
                 if cur_t:
                     slices_triples.append((cur_h, cur_t, cur_fp))
 
-                active_futs: List[Future] = []
+                tracked_futs = active_futs if active_futs is not None else []
                 for s_hashes, s_texts, s_fps in slices_triples:
                     if self.persist_channel.is_closed or self.parsed_channel.is_closed:
                         return False
-                    active_futs = [f for f in active_futs if not f.done()]
+                    tracked_futs[:] = [f for f in tracked_futs if not f.done()]
                     eff_conc = telemetry_tracker.get_effective_concurrency(max_conc)
-                    while len(active_futs) >= eff_conc:
+                    while len(tracked_futs) >= eff_conc:
                         if self.persist_channel.is_closed or self.parsed_channel.is_closed:
                             return False
                         time.sleep(0.005)
-                        active_futs = [f for f in active_futs if not f.done()]
+                        tracked_futs[:] = [f for f in tracked_futs if not f.done()]
                         eff_conc = telemetry_tracker.get_effective_concurrency(max_conc)
 
                     fut = embed_executor.submit(
@@ -388,13 +392,13 @@ class ChannelIngestionPipeline:
                         texts=s_texts,
                         model_name=model_name,
                         batch_size=len(s_texts),
-                        max_concurrency=1,
+                        max_concurrency=max_conc,
                         max_tokens_per_request=max_tok,
                         max_tokens_per_input=max_tok_input,
                         tpm_limit=tpm,
                         filepaths=s_fps,
                     )
-                    active_futs.append(fut)
+                    tracked_futs.append(fut)
                     slice_futures.append((s_hashes, fut))
             else:
                 if self.persist_channel.is_closed or self.parsed_channel.is_closed:

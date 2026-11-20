@@ -21,6 +21,23 @@ def _get_repo_lock(repo_id: int) -> threading.Lock:
         return _repo_sync_locks[key]
 
 
+def is_repo_sync_running(repo_id: int) -> bool:
+    """Returns True if the per-repository sync lock is currently held."""
+    return _get_repo_lock(repo_id).locked()
+
+
+def _mark_repo_cancelled(repo_id: int, repo_name: str, stage_msg: str = "Sync cancelled by user") -> None:
+    logger.info(f"Sync cancelled for repo '{repo_name}': {stage_msg}")
+    progress_tracker.log(repo_id, "WARN", stage_msg)
+    try:
+        with db_service.get_db_connection() as conn:
+            conn.execute("UPDATE git_repositories SET status = 'error', last_error = ? WHERE id = ?", ("Sync cancelled by user", repo_id))
+            conn.commit()
+    except Exception:
+        pass
+    progress_tracker.finish_job(repo_id, "error", "Sync cancelled by user")
+
+
 import app.services.database as db_service
 import app.services.git_manager as gm_service
 import app.services.indexing.index_format as index_format
@@ -121,8 +138,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             return True
 
         if progress_tracker.is_cancelled(repo_id):
-            logger.info(f"Sync cancelled for repo '{repo_name}'")
-            progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
+            _mark_repo_cancelled(repo_id, repo_name)
             return
 
         # Stage 2: Shallow Cloning
@@ -164,8 +180,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         progress_tracker.log(repo_id, "INFO", f"Cloned successfully in {clone_duration}s (@ {commit_sha[:8] if commit_sha else 'head'})")
 
         if progress_tracker.is_cancelled(repo_id):
-            logger.info(f"Sync cancelled for repo '{repo_name}' after clone")
-            progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
+            _mark_repo_cancelled(repo_id, repo_name, "Sync cancelled by user")
             return
 
         try:
@@ -207,8 +222,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             return True
 
         if progress_tracker.is_cancelled(repo_id):
-            logger.info(f"Sync cancelled for repo '{repo_name}' after delta scan")
-            progress_tracker.log(repo_id, "WARN", "Sync cancelled by user")
+            _mark_repo_cancelled(repo_id, repo_name, "Sync cancelled by user")
             return
 
         store = vs_service.get_vector_store()
@@ -394,6 +408,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         )
         pipeline.run(_produce_parsed_files)
         if was_cancelled or progress_tracker.is_cancelled(repo_id):
+            _mark_repo_cancelled(repo_id, repo_name, "Sync cancelled by user")
             return
 
         # Stage 5: Vector Indexing & Cleanup

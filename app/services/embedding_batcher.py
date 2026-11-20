@@ -27,6 +27,21 @@ def _extract_filepath_from_embed_text(text: str) -> Optional[str]:
     return None
 
 
+def _chars_per_token_for_text(text: str) -> int:
+    """Returns conservative chars-per-token ratio: 2 for dense/minified code or data, 4 for normal prose/code."""
+    if not text:
+        return 4
+    lines = text.splitlines()
+    body = "\n".join(lines[5:]) if len(lines) > 5 and lines[0].startswith("Repo: ") else text
+    sample = body[:8192]
+    if not sample:
+        return 4
+    punct_count = sum(1 for ch in sample if not ch.isalnum() and not ch.isspace())
+    if (punct_count / len(sample)) >= 0.10 or (max((len(ln) for ln in sample.splitlines()), default=0) > 500 and punct_count > 0):
+        return 2
+    return 4
+
+
 def truncate_text_to_token_limit(
     text: str,
     max_tokens_per_input: int = 8000,
@@ -35,14 +50,16 @@ def truncate_text_to_token_limit(
     """Truncates a single input text so its estimated token count does not exceed max_tokens_per_input."""
     if not text or not max_tokens_per_input or max_tokens_per_input <= 0:
         return text
-    max_chars = int(max_tokens_per_input) * 4
+    chars_per_tok = _chars_per_token_for_text(text)
+    max_chars = int(max_tokens_per_input) * chars_per_tok
     if len(text) <= max_chars:
         return text
-    est_tokens = estimate_token_count(text)
+    est_tokens = max(1, len(text) // chars_per_tok)
     label = filepath or _extract_filepath_from_embed_text(text) or "<unknown>"
     logger.warning(
         f"Truncating oversized embedding input from '{label}' "
-        f"(~{est_tokens} estimated tokens, {len(text)} chars) to max_tokens_per_input={max_tokens_per_input} ({max_chars} chars)."
+        f"(~{est_tokens} estimated tokens, {len(text)} chars, {chars_per_tok} chars/token) "
+        f"to max_tokens_per_input={max_tokens_per_input} ({max_chars} chars)."
     )
     return text[:max_chars]
 
@@ -183,12 +200,17 @@ class EmbeddingTelemetryAndPacer:
             self._window_start = time.monotonic()
             self._window_tokens = 0
 
+    def set_target_concurrency(self, target_concurrency: int) -> None:
+        with self._lock:
+            self._current_concurrency = max(1, int(target_concurrency or 1))
+            self._consecutive_successes = 0
+
     def get_effective_concurrency(self, max_concurrency: int) -> int:
         max_c = max(1, int(max_concurrency or 1))
         with self._lock:
-            if self._current_concurrency is None or self._current_concurrency > max_c:
+            if self._current_concurrency is None:
                 self._current_concurrency = max_c
-            return max(1, self._current_concurrency)
+            return max(1, min(self._current_concurrency, max_c))
 
     def record_rate_limit(self, wait_seconds: float, max_concurrency: int) -> int:
         max_c = max(1, int(max_concurrency or 1))
@@ -335,6 +357,8 @@ def execute_api_embeddings_batch(
         telemetry_tracker.pace_tokens(slice_tokens, tpm_limit, sleep_fn=sleep_fn)
 
         attempt = 0
+        trunc_retries = 0
+        max_trunc_retries = 3
         backoff = 1.0
         while True:
             try:
@@ -384,6 +408,15 @@ def execute_api_embeddings_batch(
                         or _extract_filepath_from_embed_text(batch_slice[0])
                         or "<unknown>"
                     )
+                    if trunc_retries < max_trunc_retries and len(batch_slice[0]) > 64:
+                        trunc_retries += 1
+                        new_len = max(32, len(batch_slice[0]) // 2)
+                        batch_slice = [batch_slice[0][:new_len]]
+                        logger.warning(
+                            f"Single embedding input from '{bad_path}' rejected with HTTP 400 ({exc}). "
+                            f"Truncating in half to {new_len} chars (retry {trunc_retries}/{max_trunc_retries})."
+                        )
+                        continue
                     logger.error(
                         f"Skipping bad embedding input from '{bad_path}' (~{estimate_token_count(batch_slice[0])} estimated tokens) "
                         f"after HTTP 400 error: {exc}"

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1361 Automated Tests** (997 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1365 Automated Tests** (1001 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1136,10 +1136,14 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_embedding_cache_invalidation`
 - `test_embedding_cache_empty_inputs`
 
-#### `tests/test_embedding_input_limits_and_pipeline_recovery.py` (3 tests)
+#### `tests/test_embedding_input_limits_and_pipeline_recovery.py` (7 tests)
 - `test_per_input_token_limit_truncates_oversized_chunk_before_batching` - _Issue #178: Verifies oversized inputs exceeding max_tokens_per_input are truncated before batching and configurable via EMBEDDING_MAX_TOKENS_PER_INPUT._
 - `test_http_400_oversized_input_splits_batch_skips_bad_chunk_and_continues_sync` - _Issue #178: Verifies that on an HTTP 400 error for a batch, the batcher splits and retries halves, skips only the bad input, logs its file path, and completes the repo sync._
 - `test_pipeline_producer_stops_when_persist_stage_raises` - _Issue #179: Verifies that when the persist stage raises, the producer stops before reading all remaining files and threads are joined before executor shutdown._
+- `test_partial_embedding_settings_update_preserves_provider_and_rolls_back_on_failure` - _Issue #183: Verifies partial update with only api_concurrency preserves provider=api, and a failed update rolls back without mutating saved settings or active client._
+- `test_cancel_during_clone_stops_subprocess_updates_repo_status_and_sync_returns_409_when_locked` - _Issue #184: Verifies cancelling during clone terminates the git subprocess, sets DB repo status to error, and POST /sync returns 409 while lock is held._
+- `test_minified_css_dense_truncation_and_single_input_400_halving_retry` - _Issue #185: Verifies minified CSS uses dense token truncation and single-input HTTP 400 errors truncate in half and retry until accepted instead of skipping._
+- `test_pipeline_maintains_api_concurrency_overlap_without_clamping_to_1` - _Issue #186: Verifies ChannelIngestionPipeline runs up to api_concurrency=4 overlapping embedding requests in parallel and reports active_concurrency=4._
 
 #### `tests/test_embedding_model_transition.py` (6 tests)
 - `test_update_embedding_config_rejection_when_index_has_content` - _Verifies that changing dense model/dimension without rebuild_index=True raises ValueError if index has content._
