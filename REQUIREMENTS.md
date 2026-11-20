@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1357 Automated Tests** (993 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1361 Automated Tests** (997 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -593,13 +593,17 @@ classDiagram
 - `test_sse_stream_live_events_and_unsubscription`
 - `test_sse_stream_keep_alive_ping`
 
-#### `tests/backend/test_git_syncer_progress.py` (6 tests)
+#### `tests/backend/test_git_syncer_progress.py` (7 tests)
 - `test_git_syncer_reports_stages_up_to_date`
 - `test_git_syncer_clone_failure`
 - `test_git_syncer_full_5_stage_sync`
 - `test_git_syncer_cancellation_during_stage_4`
 - `test_git_syncer_nonexistent_repo`
 - `test_git_progress_tracker_pending_cancellation`
+- `test_git_syncer_failure_stops_producer_keeps_error_status_and_only_counts_persisted_files` - _Issues #179 & #180: Verifies that when batch 2 fails in the persist stage:
+1. The producer stops before reading all remaining files and logs no 'No such file or directory' after temp_dir cleanup.
+2. Only batch 1 files (actually saved to DB) are counted in processed_files and logged as 'Ingested'.
+3. sync-status remains 'error' matching the repository table record._
 
 #### `tests/backend/test_health_check_status.py` (12 tests)
 - `test_api_stats_reports_healthy_when_store_is_healthy`
@@ -1131,6 +1135,11 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_embedding_cache_model_isolation`
 - `test_embedding_cache_invalidation`
 - `test_embedding_cache_empty_inputs`
+
+#### `tests/test_embedding_input_limits_and_pipeline_recovery.py` (3 tests)
+- `test_per_input_token_limit_truncates_oversized_chunk_before_batching` - _Issue #178: Verifies oversized inputs exceeding max_tokens_per_input are truncated before batching and configurable via EMBEDDING_MAX_TOKENS_PER_INPUT._
+- `test_http_400_oversized_input_splits_batch_skips_bad_chunk_and_continues_sync` - _Issue #178: Verifies that on an HTTP 400 error for a batch, the batcher splits and retries halves, skips only the bad input, logs its file path, and completes the repo sync._
+- `test_pipeline_producer_stops_when_persist_stage_raises` - _Issue #179: Verifies that when the persist stage raises, the producer stops before reading all remaining files and threads are joined before executor shutdown._
 
 #### `tests/test_embedding_model_transition.py` (6 tests)
 - `test_update_embedding_config_rejection_when_index_has_content` - _Verifies that changing dense model/dimension without rebuild_index=True raises ValueError if index has content._

@@ -151,3 +151,67 @@ def test_git_progress_tracker_pending_cancellation():
     snap = tracker.get_snapshot(107)
     assert snap["status"] == "error"
     assert snap["cancelled"] is True
+
+
+@patch("app.services.git_manager.get_remote_head_sha", return_value="new333")
+@patch("app.services.git_manager.shallow_clone_repo")
+@patch("app.services.vector_store.get_vector_store")
+def test_git_syncer_failure_stops_producer_keeps_error_status_and_only_counts_persisted_files(
+    mock_store_getter, mock_clone, mock_sha, tmp_path, caplog
+):
+    """Issues #179 & #180: Verifies that when batch 2 fails in the persist stage:
+    1. The producer stops before reading all remaining files and logs no 'No such file or directory' after temp_dir cleanup.
+    2. Only batch 1 files (actually saved to DB) are counted in processed_files and logged as 'Ingested'.
+    3. sync-status remains 'error' matching the repository table record.
+    """
+    import logging
+    import shutil
+
+    _insert_repo(180, "partial-fail-repo", commit_sha="old111")
+
+    repo_dir = tmp_path / "repo_180"
+    repo_dir.mkdir()
+    for i in range(60):
+        (repo_dir / f"mod_{i:03d}.py").write_text(f"def fn_{i}():\n    return {i}\n", encoding="utf-8")
+
+    mock_clone.return_value = CloneResult(temp_dir=str(repo_dir), commit_sha="new333", error=None)
+
+    upsert_calls = 0
+
+    def upsert_side_effect(docs):
+        nonlocal upsert_calls
+        upsert_calls += 1
+        if upsert_calls == 1:
+            return True
+        raise RuntimeError("Batch 2 persist failure")
+
+    mock_store = MagicMock()
+    mock_store.upsert_documents.side_effect = upsert_side_effect
+    mock_store_getter.return_value = mock_store
+
+    with caplog.at_level(logging.ERROR), \
+         patch("app.services.git_manager.cleanup_repo_dir", side_effect=lambda d: shutil.rmtree(d, ignore_errors=True)):
+        res = sync_single_git_repo(180)
+
+    assert not res
+    # No 'No such file or directory' errors logged after temp_dir cleanup
+    assert not any("No such file or directory" in rec.message for rec in caplog.records)
+
+    job = progress_tracker.get_snapshot(180)
+    assert job is not None
+    # Status must remain 'error' (not overwritten back to 'syncing' by producer)
+    assert job["status"] == "error"
+    assert "Batch 2 persist failure" in (job["error"] or "")
+
+    # Only batch 1 (25 files) was persisted to the database
+    with get_db_connection() as conn:
+        repo_row = conn.execute("SELECT status, last_error FROM git_repositories WHERE id = 180").fetchone()
+        saved_files_count = conn.execute("SELECT COUNT(*) FROM indexed_files WHERE repo = 'partial-fail-repo'").fetchone()[0]
+
+    assert repo_row["status"] == "error"
+    assert saved_files_count == 25
+    assert job["processed_files"] == 25
+
+    ingested_logs = [l["message"] for l in job["logs"] if "Ingested mod_" in l["message"]]
+    assert len(ingested_logs) == 25
+

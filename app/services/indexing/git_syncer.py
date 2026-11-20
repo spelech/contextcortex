@@ -34,30 +34,18 @@ from app.services.database import *
 from app.services.embeddings import *
 from app.services.git_manager import *
 from app.services.indexing.git_delta_scanner import (
-    DEFAULT_SUPPORTED_EXTENSIONS,
-    _BUNDLED_REL_PREFIXES,
-    _IGNORED_DIR_NAMES,
-    _should_skip_indexed_file,
-    compute_git_repo_delta,
-    persist_recent_commits,
-    persist_sync_batch,
+    DEFAULT_SUPPORTED_EXTENSIONS, _BUNDLED_REL_PREFIXES, _IGNORED_DIR_NAMES,
+    _should_skip_indexed_file, compute_git_repo_delta, persist_recent_commits, persist_sync_batch,
 )
 from app.services.indexing.git_progress import progress_tracker
 from app.services.indexing.local_syncer import sync_local_paths
 from app.services.indexing.processor import (
-    compute_text_hash,
-    extract_keywords_from_text,
-    get_chunk_uuid,
-    get_dynamic_catalog_description,
-    process_file_content,
+    compute_text_hash, extract_keywords_from_text, get_chunk_uuid,
+    get_dynamic_catalog_description, process_file_content,
 )
 from app.services.indexing.state import (
-    CHUNK_OVERLAP,
-    CHUNK_SIZE,
-    VAULT_PATH,
-    ensure_collection,
-    indexing_lock,
-    trigger_list_changed_notification,
+    CHUNK_OVERLAP, CHUNK_SIZE, VAULT_PATH,
+    ensure_collection, indexing_lock, trigger_list_changed_notification,
 )
 from app.services.memory_utils import trim_memory
 from app.services.vector_store import VectorStoreManager
@@ -272,11 +260,14 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         BATCH_SIZE = 25
         total_vectors_count = 0
         total_symbols_count = 0
+        persisted_files_count = 0
         was_cancelled = False
 
         def _produce_parsed_files(channel: BoundedChannel[ParsedFileItem]) -> None:
             nonlocal was_cancelled
             for idx, full_path in enumerate(files_to_sync):
+                if channel.is_closed:
+                    return
                 if progress_tracker.is_cancelled(repo_id):
                     logger.info(f"Sync cancelled for repo '{repo_name}' during file ingestion at file {idx + 1}/{total_files}")
                     progress_tracker.log(repo_id, "WARN", f"Sync cancelled by user at file {idx + 1}/{total_files}")
@@ -286,8 +277,8 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
                 rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
                 progress_tracker.update_step(
-                    repo_id, 4, f"Parsing Files ({idx + 1}/{total_files})",
-                    current_file=rel_path, processed=idx + 1, total=total_files,
+                    repo_id, 4, f"Parsed {idx + 1}/{total_files}",
+                    current_file=rel_path, parsed=idx + 1, total=total_files,
                 )
                 doc_type = "code" if is_code_file(full_path) else "doc"
                 lang = detect_language(full_path)
@@ -299,53 +290,39 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
                     try:
                         points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                            filepath=db_filepath,
-                            rel_path=rel_path,
-                            content=content,
-                            repo=repo_name,
-                            doc_type=doc_type,
-                            git_url=git_url,
-                            commit_sha=commit_sha,
-                            provider=provider,
-                            embed=False,
+                            filepath=db_filepath, rel_path=rel_path, content=content, repo=repo_name,
+                            doc_type=doc_type, git_url=git_url, commit_sha=commit_sha, provider=provider, embed=False,
                         )
                     except TypeError:
                         points, symbols, summary_tuple, rels, routes, calls = proc_service.process_file_content(
-                            filepath=db_filepath,
-                            rel_path=rel_path,
-                            content=content,
-                            repo=repo_name,
-                            doc_type=doc_type,
-                            git_url=git_url,
-                            commit_sha=commit_sha,
-                            provider=provider,
+                            filepath=db_filepath, rel_path=rel_path, content=content, repo=repo_name,
+                            doc_type=doc_type, git_url=git_url, commit_sha=commit_sha, provider=provider,
                         )
 
-                    channel.write(
+                    if progress_tracker.is_cancelled(repo_id):
+                        logger.info(f"Sync cancelled for repo '{repo_name}' during file ingestion at file {idx + 1}/{total_files}")
+                        progress_tracker.log(repo_id, "WARN", f"Sync cancelled by user at file {idx + 1}/{total_files}")
+                        was_cancelled = True
+                        channel.cancel()
+                        return
+
+                    if not channel.write(
                         ParsedFileItem(
-                            filepath=db_filepath,
-                            rel_path=rel_path,
-                            repo=repo_name,
-                            points=points,
-                            symbols=symbols,
-                            summary_tuple=summary_tuple,
-                            relationships=rels,
-                            routes=routes,
-                            calls=calls,
+                            filepath=db_filepath, rel_path=rel_path, repo=repo_name, points=points,
+                            symbols=symbols, summary_tuple=summary_tuple, relationships=rels,
+                            routes=routes, calls=calls,
                             indexed_file_row=(db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash),
                         )
-                    )
-
-                    progress_tracker.log(repo_id, "INFO", f"[{idx + 1}/{total_files}] Ingested {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
-                    if (idx + 1) % 10 == 0 or (idx + 1) == total_files:
-                        pct = int(((idx + 1) / total_files) * 100)
-                        logger.info(f"[{idx + 1}/{total_files}] ({pct}%) Ingesting {rel_path} (+{len(points)} chunks, +{len(symbols)} symbols)")
+                    ):
+                        return
                 except Exception as fe:
+                    if channel.is_closed or progress_tracker.is_cancelled(repo_id):
+                        return
                     logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
                     progress_tracker.log(repo_id, "ERROR", f"Error parsing {rel_path}: {fe}")
 
         def _persist_parsed_batch(batch_items: list[ParsedFileItem]) -> None:
-            nonlocal total_vectors_count, total_symbols_count
+            nonlocal total_vectors_count, total_symbols_count, persisted_files_count
             batch_points = []
             batch_symbols = []
             batch_routes = []
@@ -385,6 +362,30 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     )
 
             total_symbols_count += submit_db_write(_write_relational_batch)
+
+            for item in batch_items:
+                persisted_files_count += 1
+                progress_tracker.log(
+                    repo_id,
+                    "INFO",
+                    f"[{persisted_files_count}/{total_files}] Ingested {item.rel_path} (+{len(item.points)} chunks, +{len(item.symbols)} symbols)",
+                )
+                if persisted_files_count % 10 == 0 or persisted_files_count == total_files:
+                    pct = int((persisted_files_count / total_files) * 100) if total_files > 0 else 100
+                    logger.info(
+                        f"[{persisted_files_count}/{total_files}] ({pct}%) Ingesting {item.rel_path} (+{len(item.points)} chunks, +{len(item.symbols)} symbols)"
+                    )
+
+            if batch_items:
+                progress_tracker.update_step(
+                    repo_id,
+                    4,
+                    f"Ingested {persisted_files_count}/{total_files}",
+                    current_file=batch_items[-1].rel_path,
+                    processed=persisted_files_count,
+                    total=total_files,
+                )
+
             trim_memory()
 
         pipeline = ChannelIngestionPipeline(

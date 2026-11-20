@@ -85,6 +85,12 @@ def test_tracker_finish_job_with_error():
     assert job.error == "Authentication failed"
     assert job.percent == 20
 
+    # Issue #180: Late update_step calls from background threads must not overwrite error status back to syncing
+    tracker.update_step(20, 4, "Parsed 100/100", processed=100, total=100)
+    assert job.status == "error"
+    assert job.error == "Authentication failed"
+    assert job.step == 2
+
 
 def test_tracker_log_ring_buffer_limit():
     tracker = GitProgressTracker()

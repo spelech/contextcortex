@@ -39,6 +39,7 @@ EMBEDDING_NUM_THREADS = _initial_cfg["threads"]
 EMBEDDING_BATCH_SIZE = _initial_cfg["batch_size"]
 EMBEDDING_API_CONCURRENCY = _initial_cfg.get("api_concurrency", 4)
 EMBEDDING_MAX_TOKENS_PER_REQUEST = _initial_cfg.get("max_tokens_per_request", 100000)
+EMBEDDING_MAX_TOKENS_PER_INPUT = _initial_cfg.get("max_tokens_per_input", 8000)
 EMBEDDING_TPM_LIMIT = _initial_cfg.get("tpm_limit", 0)
 LITELLM_URL = _initial_cfg["litellm_url"]
 LITELLM_API_KEY = _initial_cfg.get(
@@ -65,6 +66,7 @@ def init_embeddings(
     batch_size: Optional[int] = None,
     api_concurrency: Optional[int] = None,
     max_tokens_per_request: Optional[int] = None,
+    max_tokens_per_input: Optional[int] = None,
     tpm_limit: Optional[int] = None,
     litellm_url: Optional[str] = None,
     litellm_api_key: Optional[str] = None,
@@ -77,7 +79,7 @@ def init_embeddings(
     global REQUESTED_PROVIDER, EMBEDDING_PROVIDER
     global REQUESTED_DENSE_MODEL, DENSE_MODEL_NAME, SPARSE_MODEL_NAME
     global EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, LITELLM_URL, LITELLM_API_KEY
-    global EMBEDDING_API_CONCURRENCY, EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_TPM_LIMIT
+    global EMBEDDING_API_CONCURRENCY, EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_MAX_TOKENS_PER_INPUT, EMBEDDING_TPM_LIMIT
     global VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL
 
     cfg = _get_db_emb_config()
@@ -100,6 +102,9 @@ def init_embeddings(
     EMBEDDING_API_CONCURRENCY = int(api_concurrency if api_concurrency is not None else cfg.get("api_concurrency", 4))
     EMBEDDING_MAX_TOKENS_PER_REQUEST = int(
         max_tokens_per_request if max_tokens_per_request is not None else cfg.get("max_tokens_per_request", 100000)
+    )
+    EMBEDDING_MAX_TOKENS_PER_INPUT = int(
+        max_tokens_per_input if max_tokens_per_input is not None else cfg.get("max_tokens_per_input", 8000)
     )
     EMBEDDING_TPM_LIMIT = int(tpm_limit if tpm_limit is not None else cfg.get("tpm_limit", 0))
     LITELLM_URL = (litellm_url or cfg.get("litellm_url") or "http://litellm:4000/v1").strip()
@@ -240,6 +245,7 @@ def get_embedding_config() -> Dict[str, Any]:
         "batch_size": EMBEDDING_BATCH_SIZE,
         "api_concurrency": EMBEDDING_API_CONCURRENCY,
         "max_tokens_per_request": EMBEDDING_MAX_TOKENS_PER_REQUEST,
+        "max_tokens_per_input": EMBEDDING_MAX_TOKENS_PER_INPUT,
         "tpm_limit": EMBEDDING_TPM_LIMIT,
         "litellm_url": LITELLM_URL,
         "vision_ocr_model": VISION_OCR_MODEL,
@@ -301,6 +307,7 @@ def update_embedding_config(
     batch_size: Optional[int] = None,
     api_concurrency: Optional[int] = None,
     max_tokens_per_request: Optional[int] = None,
+    max_tokens_per_input: Optional[int] = None,
     tpm_limit: Optional[int] = None,
     litellm_url: Optional[str] = None,
     litellm_api_key: Optional[str] = None,
@@ -366,6 +373,7 @@ def update_embedding_config(
         "batch_size": batch_size,
         "api_concurrency": api_concurrency,
         "max_tokens_per_request": max_tokens_per_request,
+        "max_tokens_per_input": max_tokens_per_input,
         "tpm_limit": tpm_limit,
         "litellm_url": litellm_url,
         "litellm_api_key": litellm_api_key,
@@ -428,6 +436,7 @@ def get_dense_embeddings_batch(texts: List[str], batch_size: Optional[int] = Non
             batch_size=api_bs,
             max_concurrency=EMBEDDING_API_CONCURRENCY,
             max_tokens_per_request=EMBEDDING_MAX_TOKENS_PER_REQUEST,
+            max_tokens_per_input=EMBEDDING_MAX_TOKENS_PER_INPUT,
             tpm_limit=EMBEDDING_TPM_LIMIT,
         )
     else:

@@ -37,6 +37,7 @@ Configure the application by setting these environment variables in the system e
 | `EMBEDDING_BATCH_SIZE` | Number of text chunks sent per embedding call across files (clamped to `256` per API request). | `32` (`local`) / `128` (`api`) | `128` |
 | `EMBEDDING_API_CONCURRENCY` | Maximum concurrent in-flight HTTP `/embeddings` requests during indexing when `EMBEDDING_PROVIDER=api`. | `4` | `8` |
 | `EMBEDDING_MAX_TOKENS_PER_REQUEST` | Estimated token budget cap per API embedding request batch before splitting. | `100000` | `100000` |
+| `EMBEDDING_MAX_TOKENS_PER_INPUT` | Estimated per-input token cap before truncating oversized chunks prior to batching. | `8000` | `8000` |
 | `EMBEDDING_TPM_LIMIT` | Optional client-side tokens-per-minute pacing limit (`0` disables proactive pacing and relies on automatic HTTP `429` backoff). | `0` | `1000000` |
 | `VISION_OCR_MODEL` | Multimodal vision model used for scanned PDF and diagram OCR fallback. | `gpt-4o-mini` | `gpt-4o-mini` |
 | `CHAT_MODEL` | Default chat completion model used for large-file executive summarization. | `gpt-4o-mini` | `gpt-4o-mini` |

@@ -186,6 +186,10 @@ class EmbeddingSettingsRequest(BaseModel):
     sparse_model: Optional[str] = None
     threads: Optional[int] = Field(default=None, ge=1, le=128)
     batch_size: Optional[int] = Field(default=None, ge=1, le=1024)
+    api_concurrency: Optional[int] = Field(default=None, ge=1, le=128)
+    max_tokens_per_request: Optional[int] = Field(default=None, ge=1)
+    max_tokens_per_input: Optional[int] = Field(default=None, ge=1)
+    tpm_limit: Optional[int] = Field(default=None, ge=0)
     litellm_url: Optional[str] = None
     litellm_api_key: Optional[str] = None
     vision_ocr_model: Optional[str] = None
