@@ -73,13 +73,6 @@ def init_embeddings(
     global VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL
 
     cfg = _get_db_emb_config()
-    _prev_state = (
-        REQUESTED_PROVIDER, EMBEDDING_PROVIDER, REQUESTED_DENSE_MODEL, DENSE_MODEL_NAME,
-        SPARSE_MODEL_NAME, EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, EMBEDDING_API_CONCURRENCY,
-        EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_MAX_TOKENS_PER_INPUT, EMBEDDING_TPM_LIMIT,
-        LITELLM_URL, LITELLM_API_KEY, VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL,
-        _dense_model, _sparse_model, _openai_client,
-    )
 
     REQUESTED_PROVIDER = (provider or cfg.get("provider") or "local").lower().strip()
     EMBEDDING_PROVIDER = REQUESTED_PROVIDER
@@ -104,105 +97,82 @@ def init_embeddings(
     ALLOW_FALLBACK = allow_fallback if allow_fallback is not None else cfg.get("allow_fallback", False)
     FALLBACK_DENSE_MODEL = (fallback_dense_model if fallback_dense_model is not None else cfg.get("fallback_dense_model", "")).strip()
 
-    def _restore_prev_state() -> None:
-        global REQUESTED_PROVIDER, EMBEDDING_PROVIDER, REQUESTED_DENSE_MODEL, DENSE_MODEL_NAME
-        global SPARSE_MODEL_NAME, EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, EMBEDDING_API_CONCURRENCY
-        global EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_MAX_TOKENS_PER_INPUT, EMBEDDING_TPM_LIMIT
-        global LITELLM_URL, LITELLM_API_KEY, VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL
-        global _dense_model, _sparse_model, _openai_client
-        (
-            REQUESTED_PROVIDER, EMBEDDING_PROVIDER, REQUESTED_DENSE_MODEL, DENSE_MODEL_NAME,
-            SPARSE_MODEL_NAME, EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, EMBEDDING_API_CONCURRENCY,
-            EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_MAX_TOKENS_PER_INPUT, EMBEDDING_TPM_LIMIT,
-            LITELLM_URL, LITELLM_API_KEY, VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL,
-            prev_dense, prev_sparse, prev_client,
-        ) = _prev_state
-        with _dense_lock:
-            _dense_model = prev_dense
-        with _sparse_lock:
-            _sparse_model = prev_sparse
-        _openai_client = prev_client
-
     # Set underlying OpenMP / BLAS thread guard
     os.environ["OMP_NUM_THREADS"] = str(EMBEDDING_NUM_THREADS)
     sparse_disabled = SPARSE_MODEL_NAME.lower() in ("", "none", "off", "disabled", "false")
 
-    try:
-        if REQUESTED_PROVIDER == "local":
-            _openai_client = None
-            try:
-                from fastembed import TextEmbedding, SparseTextEmbedding
-                logger.info(f"Initializing FastEmbed dense model: {DENSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
-                new_dense = TextEmbedding(model_name=DENSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
-                with _dense_lock:
-                    _dense_model = new_dense
-                if not sparse_disabled:
-                    logger.info(f"Initializing FastEmbed sparse model: {SPARSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
+    if REQUESTED_PROVIDER == "local":
+        _openai_client = None
+        try:
+            from fastembed import TextEmbedding, SparseTextEmbedding
+            logger.info(f"Initializing FastEmbed dense model: {DENSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
+            new_dense = TextEmbedding(model_name=DENSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
+            with _dense_lock:
+                _dense_model = new_dense
+            if not sparse_disabled:
+                logger.info(f"Initializing FastEmbed sparse model: {SPARSE_MODEL_NAME} with threads={EMBEDDING_NUM_THREADS}")
+                new_sparse = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
+                with _sparse_lock:
+                    _sparse_model = new_sparse
+            else:
+                with _sparse_lock:
+                    _sparse_model = None
+            logger.info("FastEmbed dense & sparse models initialized successfully with resource limits.")
+        except Exception as e:
+            logger.error(f"Failed to initialize local FastEmbed models: {e}")
+            with _dense_lock:
+                _dense_model = None
+            with _sparse_lock:
+                _sparse_model = None
+
+            if not ALLOW_FALLBACK:
+                EMBEDDING_PROVIDER = "local"
+                raise RuntimeError(
+                    f"Local FastEmbed initialization failed for dense model '{DENSE_MODEL_NAME}': {e}. "
+                    "Fallback to API is disabled (allow_fallback=False)."
+                ) from e
+            else:
+                if not FALLBACK_DENSE_MODEL:
+                    EMBEDDING_PROVIDER = "local"
+                    raise ValueError(
+                        f"Local FastEmbed initialization failed for '{DENSE_MODEL_NAME}': {e}, "
+                        "and allow_fallback=True but no valid fallback_dense_model was configured."
+                    ) from e
+                logger.warning(f"Local FastEmbed initialization failed: {e}. Falling back to API with model '{FALLBACK_DENSE_MODEL}'.")
+                EMBEDDING_PROVIDER = "api"
+                DENSE_MODEL_NAME = FALLBACK_DENSE_MODEL
+
+    if EMBEDDING_PROVIDER == "api":
+        with _dense_lock:
+            _dense_model = None
+        try:
+            from openai import OpenAI
+            from app.services.llm_client import get_llm_extra_headers
+            logger.info(f"Using OpenAI/LiteLLM API embeddings at {LITELLM_URL} model {DENSE_MODEL_NAME}")
+            new_client = OpenAI(
+                base_url=LITELLM_URL,
+                api_key=LITELLM_API_KEY,
+                default_headers=get_llm_extra_headers(),
+            )
+            _openai_client = new_client
+            if not sparse_disabled:
+                try:
+                    from fastembed import SparseTextEmbedding
                     new_sparse = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
                     with _sparse_lock:
                         _sparse_model = new_sparse
-                else:
+                except Exception:
                     with _sparse_lock:
                         _sparse_model = None
-                logger.info("FastEmbed dense & sparse models initialized successfully with resource limits.")
-            except Exception as e:
-                logger.error(f"Failed to initialize local FastEmbed models: {e}")
-                with _dense_lock:
-                    _dense_model = None
+            else:
                 with _sparse_lock:
                     _sparse_model = None
+        except Exception as oe:
+            logger.error(f"Failed to initialize API client: {oe}")
+            if REQUESTED_PROVIDER == "local" and ALLOW_FALLBACK:
+                raise RuntimeError(f"Fallback to API failed: {oe}") from oe
 
-                if not ALLOW_FALLBACK:
-                    EMBEDDING_PROVIDER = "local"
-                    raise RuntimeError(
-                        f"Local FastEmbed initialization failed for dense model '{DENSE_MODEL_NAME}': {e}. "
-                        "Fallback to API is disabled (allow_fallback=False)."
-                    ) from e
-                else:
-                    if not FALLBACK_DENSE_MODEL:
-                        EMBEDDING_PROVIDER = "local"
-                        raise ValueError(
-                            f"Local FastEmbed initialization failed for '{DENSE_MODEL_NAME}': {e}, "
-                            "and allow_fallback=True but no valid fallback_dense_model was configured."
-                        ) from e
-                    logger.warning(f"Local FastEmbed initialization failed: {e}. Falling back to API with model '{FALLBACK_DENSE_MODEL}'.")
-                    EMBEDDING_PROVIDER = "api"
-                    DENSE_MODEL_NAME = FALLBACK_DENSE_MODEL
-
-        if EMBEDDING_PROVIDER == "api":
-            with _dense_lock:
-                _dense_model = None
-            try:
-                from openai import OpenAI
-                from app.services.llm_client import get_llm_extra_headers
-                logger.info(f"Using OpenAI/LiteLLM API embeddings at {LITELLM_URL} model {DENSE_MODEL_NAME}")
-                new_client = OpenAI(
-                    base_url=LITELLM_URL,
-                    api_key=LITELLM_API_KEY,
-                    default_headers=get_llm_extra_headers(),
-                )
-                _openai_client = new_client
-                if not sparse_disabled:
-                    try:
-                        from fastembed import SparseTextEmbedding
-                        new_sparse = SparseTextEmbedding(model_name=SPARSE_MODEL_NAME, threads=EMBEDDING_NUM_THREADS)
-                        with _sparse_lock:
-                            _sparse_model = new_sparse
-                    except Exception:
-                        with _sparse_lock:
-                            _sparse_model = None
-                else:
-                    with _sparse_lock:
-                        _sparse_model = None
-            except Exception as oe:
-                logger.error(f"Failed to initialize API client: {oe}")
-                if REQUESTED_PROVIDER == "local" and ALLOW_FALLBACK:
-                    raise RuntimeError(f"Fallback to API failed: {oe}") from oe
-                raise
-        telemetry_tracker.set_target_concurrency(EMBEDDING_API_CONCURRENCY)
-    except Exception:
-        _restore_prev_state()
-        raise
+    telemetry_tracker.set_target_concurrency(EMBEDDING_API_CONCURRENCY)
 
 
 # Auto-initialize on import safely
@@ -308,6 +278,11 @@ def update_embedding_config(
     rebuild_index: bool = False,
 ) -> Dict[str, Any]:
     """Updates embedding configuration in SQLite and hot-reloads models in memory."""
+    global REQUESTED_PROVIDER, EMBEDDING_PROVIDER, REQUESTED_DENSE_MODEL, DENSE_MODEL_NAME
+    global SPARSE_MODEL_NAME, EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, EMBEDDING_API_CONCURRENCY
+    global EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_MAX_TOKENS_PER_INPUT, EMBEDDING_TPM_LIMIT
+    global LITELLM_URL, LITELLM_API_KEY, VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL
+    global _dense_model, _sparse_model, _openai_client
     from app.services.database import set_embedding_db_config, clear_indexing_metadata, get_db_connection
     from app.services.vector_store import get_vector_store
 
@@ -364,7 +339,30 @@ def update_embedding_config(
         "vision_ocr_model": vision_ocr_model, "chat_model": chat_model,
         "allow_fallback": allow_fallback, "fallback_dense_model": fallback_dense_model,
     }
-    init_embeddings(**cfg_kwargs)
+    _prev_state = (
+        REQUESTED_PROVIDER, EMBEDDING_PROVIDER, REQUESTED_DENSE_MODEL, DENSE_MODEL_NAME,
+        SPARSE_MODEL_NAME, EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, EMBEDDING_API_CONCURRENCY,
+        EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_MAX_TOKENS_PER_INPUT, EMBEDDING_TPM_LIMIT,
+        LITELLM_URL, LITELLM_API_KEY, VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL,
+        _dense_model, _sparse_model, _openai_client,
+    )
+    try:
+        init_embeddings(**cfg_kwargs)
+    except Exception:
+        (
+            REQUESTED_PROVIDER, EMBEDDING_PROVIDER, REQUESTED_DENSE_MODEL, DENSE_MODEL_NAME,
+            SPARSE_MODEL_NAME, EMBEDDING_NUM_THREADS, EMBEDDING_BATCH_SIZE, EMBEDDING_API_CONCURRENCY,
+            EMBEDDING_MAX_TOKENS_PER_REQUEST, EMBEDDING_MAX_TOKENS_PER_INPUT, EMBEDDING_TPM_LIMIT,
+            LITELLM_URL, LITELLM_API_KEY, VISION_OCR_MODEL, CHAT_MODEL, ALLOW_FALLBACK, FALLBACK_DENSE_MODEL,
+            prev_dense, prev_sparse, prev_client,
+        ) = _prev_state
+        with _dense_lock:
+            _dense_model = prev_dense
+        with _sparse_lock:
+            _sparse_model = prev_sparse
+        _openai_client = prev_client
+        telemetry_tracker.set_target_concurrency(EMBEDDING_API_CONCURRENCY)
+        raise
     set_embedding_db_config(**cfg_kwargs)
 
     if (dim_changed or model_changed or rebuild_index) and has_indexed_content:
