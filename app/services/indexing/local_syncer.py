@@ -155,6 +155,8 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
 
     def _produce_local_files(channel: BoundedChannel[ParsedFileItem]) -> None:
         for filepath, (repo, category, base_dir) in found_files.items():
+            if channel.is_closed:
+                return
             try:
                 mtime = os.path.getmtime(filepath)
                 with db_service.get_db_connection() as conn:
@@ -188,7 +190,7 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
                         category_override=category,
                     )
 
-                channel.write(
+                if not channel.write(
                     ParsedFileItem(
                         filepath=filepath,
                         rel_path=rel_path,
@@ -201,8 +203,11 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
                         calls=calls,
                         indexed_file_row=(filepath, repo, doc_type, lang, None, mtime),
                     )
-                )
+                ):
+                    return
             except Exception as e:
+                if channel.is_closed:
+                    return
                 logger.error(f"Error processing local file {filepath}: {e}")
 
     def _collect_embedded_local_batch(batch_items: list[ParsedFileItem]) -> None:

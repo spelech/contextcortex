@@ -15,6 +15,7 @@ class GitSyncJob:
     total_steps: int = 5
     step_name: str = "Connecting & Remote Check"
     current_file: Optional[str] = None
+    parsed_files: int = 0
     processed_files: int = 0
     total_files: int = 0
     percent: int = 0
@@ -62,6 +63,7 @@ class GitProgressTracker:
                 job.step = 1
                 job.step_name = "Connecting & Remote Check"
                 job.current_file = None
+                job.parsed_files = 0
                 job.processed_files = 0
                 job.total_files = 0
                 job.percent = 0
@@ -106,12 +108,13 @@ class GitProgressTracker:
         current_file: Optional[str] = None,
         processed: Optional[int] = None,
         total: Optional[int] = None,
-        pct: Optional[int] = None
+        pct: Optional[int] = None,
+        parsed: Optional[int] = None,
     ):
         payload = None
         with self._lock:
             job = self.jobs.get(repo_id)
-            if not job:
+            if not job or job.cancelled or job.status == "error":
                 return
             job.status = "syncing"
             job.step = step
@@ -120,6 +123,8 @@ class GitProgressTracker:
                 job.current_file = current_file
             if processed is not None:
                 job.processed_files = processed
+            if parsed is not None:
+                job.parsed_files = parsed
             if total is not None:
                 job.total_files = total
             if pct is not None:
@@ -164,6 +169,7 @@ class GitProgressTracker:
                 job.percent = 100
                 job.step_name = "Sync Complete"
                 if job.total_files > 0:
+                    job.parsed_files = job.total_files
                     job.processed_files = job.total_files
             job.updated_at = time.time()
             payload = job.to_dict()

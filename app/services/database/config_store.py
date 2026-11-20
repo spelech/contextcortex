@@ -217,6 +217,9 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
     env_max_tokens = os.getenv("EMBEDDING_MAX_TOKENS_PER_REQUEST")
     max_tokens_per_request = int(env_max_tokens) if env_max_tokens and env_max_tokens.isdigit() else 100000
 
+    env_max_input_tokens = os.getenv("EMBEDDING_MAX_TOKENS_PER_INPUT")
+    max_tokens_per_input = int(env_max_input_tokens) if env_max_input_tokens and env_max_input_tokens.isdigit() else 8000
+
     env_tpm = os.getenv("EMBEDDING_TPM_LIMIT")
     tpm_limit = int(env_tpm) if env_tpm and env_tpm.isdigit() else 0
 
@@ -246,6 +249,7 @@ def _resolve_default_embedding_config(conn: Optional[Any] = None) -> Dict[str, A
         "batch_size": max(1, batch_size),
         "api_concurrency": max(1, api_concurrency),
         "max_tokens_per_request": max(1, max_tokens_per_request),
+        "max_tokens_per_input": max(1, max_tokens_per_input),
         "tpm_limit": max(0, tpm_limit),
         "openai_api_url": litellm_url,
         "litellm_url": litellm_url,
@@ -267,6 +271,7 @@ def get_embedding_db_config() -> Dict[str, Any]:
     batch_size_str = _get_meta("embedding_batch_size")
     concurrency_str = _get_meta("embedding_api_concurrency")
     max_tokens_str = _get_meta("embedding_max_tokens_per_request")
+    max_input_tokens_str = _get_meta("embedding_max_tokens_per_input")
     tpm_limit_str = _get_meta("embedding_tpm_limit")
     litellm_url = _get_meta("openai_api_url") or _get_meta("embedding_litellm_url")
     litellm_api_key = _get_meta("openai_api_key") or _get_meta("embedding_litellm_api_key")
@@ -291,6 +296,11 @@ def get_embedding_db_config() -> Dict[str, Any]:
 
     api_concurrency = int(concurrency_str) if concurrency_str and concurrency_str.isdigit() else default_cfg["api_concurrency"]
     max_tokens = int(max_tokens_str) if max_tokens_str and max_tokens_str.isdigit() else default_cfg["max_tokens_per_request"]
+    max_input_tokens = (
+        int(max_input_tokens_str)
+        if max_input_tokens_str and max_input_tokens_str.isdigit()
+        else default_cfg["max_tokens_per_input"]
+    )
     tpm_limit = int(tpm_limit_str) if tpm_limit_str and tpm_limit_str.isdigit() else default_cfg["tpm_limit"]
     allow_fallback = (allow_fallback_str == "1") if allow_fallback_str is not None else default_cfg["allow_fallback"]
 
@@ -305,6 +315,7 @@ def get_embedding_db_config() -> Dict[str, Any]:
         "batch_size": max(1, batch_size),
         "api_concurrency": max(1, api_concurrency),
         "max_tokens_per_request": max(1, max_tokens),
+        "max_tokens_per_input": max(1, max_input_tokens),
         "tpm_limit": max(0, tpm_limit),
         "openai_api_url": resolved_url,
         "litellm_url": resolved_url,
@@ -328,6 +339,7 @@ def set_embedding_db_config(
     batch_size: Optional[int] = None,
     api_concurrency: Optional[int] = None,
     max_tokens_per_request: Optional[int] = None,
+    max_tokens_per_input: Optional[int] = None,
     tpm_limit: Optional[int] = None,
     litellm_url: Optional[str] = None,
     litellm_api_key: Optional[str] = None,
@@ -351,6 +363,8 @@ def set_embedding_db_config(
         _set_meta("embedding_api_concurrency", str(max(1, api_concurrency)))
     if max_tokens_per_request is not None:
         _set_meta("embedding_max_tokens_per_request", str(max(1, max_tokens_per_request)))
+    if max_tokens_per_input is not None:
+        _set_meta("embedding_max_tokens_per_input", str(max(1, max_tokens_per_input)))
     if tpm_limit is not None:
         _set_meta("embedding_tpm_limit", str(max(0, tpm_limit)))
     if litellm_url is not None:

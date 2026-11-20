@@ -146,6 +146,8 @@ def _resolve_cached_or_compute_embeddings(
         for i, h in enumerate(unseen_hashes):
             nv = new_vectors[i] if i < len(new_vectors) and isinstance(new_vectors[i], dict) else {}
             dense_v = nv.get("dense")
+            if dense_v is None:
+                continue
             s_indices, s_values = _extract_sparse_tuple(nv.get("sparse"))
             cached_map[h] = {"dense": dense_v, "sparse_indices": s_indices, "sparse_values": s_values}
             items_to_cache.append({

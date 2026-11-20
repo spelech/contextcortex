@@ -14,6 +14,7 @@ from app.services.embedding_batcher import (
     estimate_token_count,
     partition_texts_into_slices,
     telemetry_tracker,
+    truncate_text_to_token_limit,
 )
 from app.services.memory_utils import trim_memory
 from app.services.vector_store import VectorDocument
@@ -46,9 +47,18 @@ class BoundedChannel(Generic[T]):
                     raise RuntimeError("Cannot write to a completed BoundedChannel.")
             try:
                 self._queue.put(item, timeout=timeout)
+                with self._lock:
+                    if self._cancelled or self._error is not None:
+                        return False
                 return True
             except queue.Full:
                 continue
+
+    @property
+    def is_closed(self) -> bool:
+        """Returns True if the channel has been cancelled or failed."""
+        with self._lock:
+            return self._cancelled or self._error is not None
 
     def complete(self) -> None:
         """Marks the channel as complete (no further items will be written)."""
@@ -203,9 +213,11 @@ class ChannelIngestionPipeline:
             try:
                 batch_items: List[ParsedFileItem] = []
                 for item in self.parsed_channel.read_all():
+                    if self.persist_channel.is_closed:
+                        return
                     batch_items.append(item)
                     if len(batch_items) >= self.file_batch_size:
-                        self._dispatch_batch(
+                        if not self._dispatch_batch(
                             batch_items,
                             embed_executor,
                             inflight_hash_futures,
@@ -214,10 +226,11 @@ class ChannelIngestionPipeline:
                             proc_service,
                             get_cached_embeddings_batch,
                             execute_api_embeddings_batch,
-                        )
+                        ):
+                            return
                         batch_items = []
-                if batch_items:
-                    self._dispatch_batch(
+                if batch_items and not self.persist_channel.is_closed:
+                    if not self._dispatch_batch(
                         batch_items,
                         embed_executor,
                         inflight_hash_futures,
@@ -226,7 +239,8 @@ class ChannelIngestionPipeline:
                         proc_service,
                         get_cached_embeddings_batch,
                         execute_api_embeddings_batch,
-                    )
+                    ):
+                        return
                 self.persist_channel.complete()
             except BaseException as exc:
                 logger.error(f"Pipeline Stage 2 (Coalescer) failed: {exc}")
@@ -245,8 +259,8 @@ class ChannelIngestionPipeline:
                     proc_service,
                     set_cached_embeddings_batch,
                 )
-            t1.join()
-            t2.join()
+            t1.join(timeout=10.0)
+            t2.join(timeout=10.0)
             if self.parsed_channel.error is not None:
                 raise self.parsed_channel.error
             if self.persist_channel.error is not None:
@@ -254,7 +268,9 @@ class ChannelIngestionPipeline:
         finally:
             self.parsed_channel.cancel()
             self.persist_channel.cancel()
-            embed_executor.shutdown(wait=True, cancel_futures=False)
+            t1.join(timeout=10.0)
+            t2.join(timeout=10.0)
+            embed_executor.shutdown(wait=True, cancel_futures=True)
 
     def _dispatch_batch(
         self,
@@ -266,10 +282,13 @@ class ChannelIngestionPipeline:
         proc_service: Any,
         get_cached_embeddings_batch: Callable,
         execute_api_embeddings_batch: Callable,
-    ) -> None:
+    ) -> bool:
+        if self.persist_channel.is_closed:
+            return False
         active_model = proc_service._get_indexer_attr("DENSE_MODEL_NAME", emb_service.DENSE_MODEL_NAME)
         point_hashes: List[Tuple[VectorDocument, str]] = []
         hash_to_text: Dict[str, str] = {}
+        hash_to_filepath: Dict[str, str] = {}
 
         for item in items:
             for pt in item.points:
@@ -284,9 +303,10 @@ class ChannelIngestionPipeline:
                 point_hashes.append((pt, h))
                 if h not in hash_to_text:
                     hash_to_text[h] = formatted
+                    hash_to_filepath[h] = item.rel_path or item.filepath
 
         if not point_hashes:
-            self.persist_channel.write(
+            return self.persist_channel.write(
                 PendingPersistBatch(
                     items=items,
                     point_hashes=[],
@@ -296,17 +316,18 @@ class ChannelIngestionPipeline:
                     active_model=active_model,
                 )
             )
-            return
 
         all_hashes = list(hash_to_text.keys())
         cached_map = get_cached_embeddings_batch(all_hashes, model_name=active_model)
 
         unseen_hashes: List[str] = []
         unseen_texts: List[str] = []
+        unseen_filepaths: List[str] = []
         for h in all_hashes:
             if h not in cached_map:
                 unseen_hashes.append(h)
                 unseen_texts.append(hash_to_text[h])
+                unseen_filepaths.append(hash_to_filepath.get(h, ""))
 
         embed_fn = proc_service._get_indexer_attr(
             "get_hybrid_embeddings_batch",
@@ -322,33 +343,41 @@ class ChannelIngestionPipeline:
             if is_default_embed_fn and is_api_provider:
                 api_bs = max(1, min(int(getattr(emb_service, "EMBEDDING_BATCH_SIZE", 128) or 128), 256))
                 max_tok = max(1, int(getattr(emb_service, "EMBEDDING_MAX_TOKENS_PER_REQUEST", 100000) or 100000))
+                max_tok_input = max(1, int(getattr(emb_service, "EMBEDDING_MAX_TOKENS_PER_INPUT", 8000) or 8000))
                 max_conc = max(1, int(getattr(emb_service, "EMBEDDING_API_CONCURRENCY", 4) or 4))
                 tpm = max(0, int(getattr(emb_service, "EMBEDDING_TPM_LIMIT", 0) or 0))
                 client = getattr(emb_service, "_openai_client", None)
                 model_name = getattr(emb_service, "DENSE_MODEL_NAME", active_model)
 
-                # Partition (hash, text) pairs into token- and size-bounded slices
-                slices_pairs: List[Tuple[List[str], List[str]]] = []
+                # Truncate oversized inputs to max_tokens_per_input and partition into token- and size-bounded slices
+                slices_triples: List[Tuple[List[str], List[str], List[str]]] = []
                 cur_h: List[str] = []
                 cur_t: List[str] = []
+                cur_fp: List[str] = []
                 cur_tok = 0
-                for h, t in zip(unseen_hashes, unseen_texts):
+                for h, raw_t, fp in zip(unseen_hashes, unseen_texts, unseen_filepaths):
+                    t = truncate_text_to_token_limit(raw_t, max_tokens_per_input=max_tok_input, filepath=fp)
                     t_tok = estimate_token_count(t)
                     if cur_t and (len(cur_t) >= api_bs or (cur_tok + t_tok) > max_tok):
-                        slices_pairs.append((cur_h, cur_t))
-                        cur_h, cur_t, cur_tok = [h], [t], t_tok
+                        slices_triples.append((cur_h, cur_t, cur_fp))
+                        cur_h, cur_t, cur_fp, cur_tok = [h], [t], [fp], t_tok
                     else:
                         cur_h.append(h)
                         cur_t.append(t)
+                        cur_fp.append(fp)
                         cur_tok += t_tok
                 if cur_t:
-                    slices_pairs.append((cur_h, cur_t))
+                    slices_triples.append((cur_h, cur_t, cur_fp))
 
                 active_futs: List[Future] = []
-                for s_hashes, s_texts in slices_pairs:
+                for s_hashes, s_texts, s_fps in slices_triples:
+                    if self.persist_channel.is_closed or self.parsed_channel.is_closed:
+                        return False
                     active_futs = [f for f in active_futs if not f.done()]
                     eff_conc = telemetry_tracker.get_effective_concurrency(max_conc)
                     while len(active_futs) >= eff_conc:
+                        if self.persist_channel.is_closed or self.parsed_channel.is_closed:
+                            return False
                         time.sleep(0.005)
                         active_futs = [f for f in active_futs if not f.done()]
                         eff_conc = telemetry_tracker.get_effective_concurrency(max_conc)
@@ -361,16 +390,20 @@ class ChannelIngestionPipeline:
                         batch_size=len(s_texts),
                         max_concurrency=1,
                         max_tokens_per_request=max_tok,
+                        max_tokens_per_input=max_tok_input,
                         tpm_limit=tpm,
+                        filepaths=s_fps,
                     )
                     active_futs.append(fut)
                     slice_futures.append((s_hashes, fut))
             else:
+                if self.persist_channel.is_closed or self.parsed_channel.is_closed:
+                    return False
                 use_raw_hybrid = True
                 fut = embed_executor.submit(embed_fn, unseen_texts)
                 slice_futures.append((unseen_hashes, fut))
 
-        self.persist_channel.write(
+        return self.persist_channel.write(
             PendingPersistBatch(
                 items=items,
                 point_hashes=point_hashes,
@@ -396,6 +429,8 @@ class ChannelIngestionPipeline:
                     for i, h in enumerate(s_hashes):
                         nv = new_vectors[i] if i < len(new_vectors) and isinstance(new_vectors[i], dict) else {}
                         dense_v = nv.get("dense")
+                        if dense_v is None:
+                            continue
                         s_indices, s_values = proc_service._extract_sparse_tuple(nv.get("sparse"))
                         batch.cached_map[h] = {
                             "dense": dense_v,
@@ -414,6 +449,8 @@ class ChannelIngestionPipeline:
                     dense_vecs = fut.result()
                     for i, h in enumerate(s_hashes):
                         dense_v = dense_vecs[i] if i < len(dense_vecs) else None
+                        if dense_v is None:
+                            continue
                         batch.cached_map[h] = {
                             "dense": dense_v,
                             "sparse_indices": None,
@@ -438,5 +475,13 @@ class ChannelIngestionPipeline:
                 pt.dense_vector = bv.get("dense")
                 pt.sparse_indices = bv.get("sparse_indices")
                 pt.sparse_values = bv.get("sparse_values")
+
+            for item in batch.items:
+                if any(pt.dense_vector is None for pt in item.points):
+                    skipped = sum(1 for pt in item.points if pt.dense_vector is None)
+                    logger.warning(
+                        f"Skipping {skipped} unembedded chunk(s) in file '{item.rel_path or item.filepath}'."
+                    )
+                    item.points = [pt for pt in item.points if pt.dense_vector is not None]
 
         self.persist_batch_fn(batch.items)
