@@ -171,6 +171,16 @@ async def api_sync_repo(repo_id: int):
                 return JSONResponse(status_code=404, content={"error": "Repo not found"})
             r = dict(row)
 
+        if getattr(idx_service, "is_repo_sync_running", lambda _: False)(r["id"]):
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "status": "already_running",
+                    "error": f"Sync already in progress for {r['name']}",
+                    "message": f"Sync already in progress for {r['name']}",
+                },
+            )
+
         sync_fn = _get_sync_fn()
 
         def _run_manual_sync(rid: int):

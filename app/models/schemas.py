@@ -181,7 +181,7 @@ class AutoSyncSettingsRequest(BaseModel):
     global_webhook_secret: Optional[str] = None
 
 class EmbeddingSettingsRequest(BaseModel):
-    provider: Optional[str] = "local"
+    provider: Optional[str] = None
     dense_model: Optional[str] = None
     sparse_model: Optional[str] = None
     threads: Optional[int] = Field(default=None, ge=1, le=128)
