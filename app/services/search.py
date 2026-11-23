@@ -19,6 +19,7 @@ from app.services.query_router import (
     should_early_return_lexical,
     strip_internal_metadata,
 )
+from app.services.search_ranking import hybrid_candidate_limit
 from app.services.vector_store import VectorSearchResult, get_vector_store
 
 logger = logging.getLogger("contextcortex.search")
@@ -191,6 +192,12 @@ def execute_hybrid_search(
             return results
 
         plan = classify_query_intent(clean_query)
+        candidate_limit = hybrid_candidate_limit(limit)
+        store_ranked = (
+            mode == "hybrid"
+            and (dense_weight is None or 0.0 < float(dense_weight) < 1.0)
+            and store.__class__.__name__ in ("PgVectorStore", "QdrantVectorStore")
+        )
 
         # Explicit lexical mode combines Track A (AST + rg) with store lexical FTS/BM25 (zero dense embeddings)
         if mode == "lexical":
@@ -202,7 +209,7 @@ def execute_hybrid_search(
                 language=language,
                 category=category,
                 tag=tag,
-                limit=limit,
+                limit=candidate_limit,
                 allow_store_chunk_hydration=True,
             )
             store_lex = _store_search(
@@ -213,11 +220,20 @@ def execute_hybrid_search(
                 language=language,
                 category=category,
                 tag=tag,
-                limit=limit,
+                limit=candidate_limit,
                 dense_weight=0.0,
                 search_mode="lexical",
             )
-            fused = fuse_search_results(track_a, store_lex, limit=limit, intent="lexical_keywords")
+            fused = fuse_search_results(
+                track_a,
+                store_lex,
+                limit=limit,
+                intent="lexical_keywords",
+                query_text=clean_query,
+                doc_type=doc_type,
+                language=language,
+                dense_weight=0.0,
+            )
             _enrich_code_ast_metadata(fused)
             return fused
 
@@ -231,7 +247,7 @@ def execute_hybrid_search(
                 language=language,
                 category=category,
                 tag=tag,
-                limit=limit,
+                limit=candidate_limit,
                 allow_store_chunk_hydration=True,
             )
             if not track_a and "lexical" in supported:
@@ -243,11 +259,11 @@ def execute_hybrid_search(
                     language=language,
                     category=category,
                     tag=tag,
-                    limit=limit,
+                    limit=candidate_limit,
                     dense_weight=0.0,
                     search_mode="lexical",
                 )
-            if should_early_return_lexical(plan, track_a):
+            if should_early_return_lexical(plan, track_a, doc_type=doc_type, language=language):
                 early = strip_internal_metadata(track_a[:limit])
                 _enrich_code_ast_metadata(early)
                 return early
@@ -260,11 +276,21 @@ def execute_hybrid_search(
                 language=language,
                 category=category,
                 tag=tag,
-                limit=limit,
+                limit=candidate_limit,
                 dense_weight=dense_weight,
                 search_mode=mode,
             )
-            fused = fuse_search_results(track_a, track_b, limit=limit, intent=plan.intent)
+            fused = fuse_search_results(
+                track_a,
+                track_b,
+                limit=limit,
+                intent=plan.intent,
+                query_text=clean_query,
+                doc_type=doc_type,
+                language=language,
+                dense_weight=dense_weight,
+                track_b_ranked=store_ranked,
+            )
             _enrich_code_ast_metadata(fused)
             return fused
 
@@ -280,7 +306,7 @@ def execute_hybrid_search(
             language=language,
             category=category,
             tag=tag,
-            limit=limit,
+            limit=candidate_limit,
             dense_weight=dense_weight,
             search_mode=mode,
         )
@@ -296,15 +322,25 @@ def execute_hybrid_search(
             language=language,
             category=category,
             tag=tag,
-            limit=limit,
+            limit=candidate_limit,
             allow_store_chunk_hydration=allow_hydration,
         )
 
-        if dense_weight is None and plan.intent == "lexical_keywords" and should_early_return_lexical(plan, track_a):
+        if dense_weight is None and plan.intent == "lexical_keywords" and should_early_return_lexical(plan, track_a, doc_type=doc_type, language=language):
             if track_b_future.done():
                 try:
                     track_b_done = track_b_future.result()
-                    fused = fuse_search_results(track_a, track_b_done, limit=limit, intent=plan.intent)
+                    fused = fuse_search_results(
+                        track_a,
+                        track_b_done,
+                        limit=limit,
+                        intent=plan.intent,
+                        query_text=clean_query,
+                        doc_type=doc_type,
+                        language=language,
+                        dense_weight=dense_weight,
+                        track_b_ranked=store_ranked,
+                    )
                     _enrich_code_ast_metadata(fused)
                     return fused
                 except ValueError:
@@ -322,12 +358,31 @@ def execute_hybrid_search(
         except Exception as exc:
             logger.error(f"Error executing Track B vector search: {exc}")
             if track_a:
-                fallback = strip_internal_metadata(track_a[:limit])
+                fallback = fuse_search_results(
+                    track_a,
+                    [],
+                    limit=limit,
+                    intent=plan.intent,
+                    query_text=clean_query,
+                    doc_type=doc_type,
+                    language=language,
+                    dense_weight=dense_weight,
+                )
                 _enrich_code_ast_metadata(fallback)
                 return fallback
             return []
 
-        fused = fuse_search_results(track_a, track_b_results, limit=limit, intent=plan.intent)
+        fused = fuse_search_results(
+            track_a,
+            track_b_results,
+            limit=limit,
+            intent=plan.intent,
+            query_text=clean_query,
+            doc_type=doc_type,
+            language=language,
+            dense_weight=dense_weight,
+            track_b_ranked=store_ranked,
+        )
         _enrich_code_ast_metadata(fused)
         return fused
     except ValueError:

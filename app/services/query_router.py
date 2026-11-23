@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.services.search_ranking import LEXICAL_ONLY_RANK_DECAY, low_signal_multiplier
 from app.services.vector_store.base import VectorSearchResult
 
 _INTERROGATIVES = frozenset({
@@ -181,7 +182,12 @@ def compute_token_coverage(
     return round(min(1.0, score), 4), meta
 
 
-def should_early_return_lexical(plan: QueryPlan, track_a_results: List[VectorSearchResult]) -> bool:
+def should_early_return_lexical(
+    plan: QueryPlan,
+    track_a_results: List[VectorSearchResult],
+    doc_type: Optional[str] = None,
+    language: Optional[str] = None,
+) -> bool:
     """Confidence gate deciding whether Track A can return immediately without waiting for Track B embeddings."""
     if not track_a_results:
         return False
@@ -203,6 +209,8 @@ def should_early_return_lexical(plan: QueryPlan, track_a_results: List[VectorSea
         return float(top.score or 0.0) >= 0.50 and meta.get("matched_count", 0) >= 1
 
     if plan.intent == "lexical_keywords":
+        if low_signal_multiplier(p, query_text=plan.raw_query, doc_type=doc_type, language=language) < 1.0:
+            return False
         coverage = float(meta.get("coverage", 0.0))
         header_hits = int(meta.get("header_hits", 0))
         body_hits = int(meta.get("body_hits", 0))
@@ -237,57 +245,90 @@ def _result_dedup_key(res: VectorSearchResult) -> Tuple[str, str, int]:
     return (repo, raw_path, bucket)
 
 
+def _track_a_solo_weight(intent: str, dense_weight: Optional[float]) -> float:
+    if dense_weight is not None and dense_weight <= 0.0:
+        return 0.90
+    if intent == "lexical_exact":
+        base = 0.85
+    elif intent == "lexical_keywords":
+        base = 0.55
+    else:
+        base = 0.32
+    if dense_weight is not None and dense_weight > 0.5:
+        cap = max(0.10, (1.0 - dense_weight) * (0.65 if intent == "semantic_prose" else 0.85))
+        return min(base, cap)
+    return base
+
+
 def fuse_search_results(
     track_a: List[VectorSearchResult],
     track_b: List[VectorSearchResult],
     limit: int,
     intent: str,
+    *,
+    query_text: str = "",
+    doc_type: Optional[str] = None,
+    language: Optional[str] = None,
+    dense_weight: Optional[float] = None,
+    track_b_ranked: bool = False,
 ) -> List[VectorSearchResult]:
-    """Combines Track A fast lexical hits and Track B semantic/hybrid hits with agreement boost."""
-    if not track_a:
-        return strip_internal_metadata(list(track_b[:limit]))
-    if not track_b:
-        return strip_internal_metadata(list(track_a[:limit]))
-
+    """Combines Track A fast lexical hits and Track B semantic/hybrid hits with agreement boost and noise demotion."""
+    apply_asset_penalty = dense_weight is None or (0.0 < dense_weight < 1.0)
     a_weight = 0.90 if intent in ("lexical_exact", "lexical_keywords") else 0.78
+    solo_a_weight = _track_a_solo_weight(intent, dense_weight)
+    use_rank_decay = intent == "semantic_prose" or (dense_weight is not None and dense_weight >= 0.7)
     merged: Dict[Tuple[str, str, int], VectorSearchResult] = {}
 
-    for item in track_b:
+    for item in track_b or []:
         key = _result_dedup_key(item)
-        copy_item = VectorSearchResult(
+        payload = dict(item.payload or {})
+        b_score = float(item.score or 0.0)
+        if apply_asset_penalty and not track_b_ranked:
+            b_score = round(
+                min(1.0, b_score * low_signal_multiplier(payload, query_text=query_text, doc_type=doc_type, language=language)),
+                4,
+            )
+        merged[key] = VectorSearchResult(
             id=item.id,
-            score=float(item.score or 0.0),
+            score=b_score,
             dense_score=item.dense_score,
             sparse_score=item.sparse_score,
             dense_rank=item.dense_rank,
             sparse_rank=item.sparse_rank,
-            payload=dict(item.payload or {}),
+            payload=payload,
         )
-        merged[key] = copy_item
 
-    for a_idx, a_item in enumerate(track_a, start=1):
+    for a_idx, a_item in enumerate(track_a or [], start=1):
         key = _result_dedup_key(a_item)
+        payload = dict(a_item.payload or {})
         a_score = float(a_item.score or 0.0)
+        a_mult = (
+            low_signal_multiplier(payload, query_text=query_text, doc_type=doc_type, language=language)
+            if apply_asset_penalty
+            else 1.0
+        )
         if key in merged:
             existing = merged[key]
             base_b = float(existing.score or 0.0)
-            boosted = min(1.0, max(base_b, a_score * a_weight) + 0.15 * min(base_b, a_score))
+            adj_a = a_score * a_mult
+            boosted = min(1.0, max(base_b, adj_a * a_weight) + 0.15 * min(base_b, adj_a))
             existing.score = round(boosted, 4)
             if not existing.sparse_score:
                 existing.sparse_score = round(a_score, 4)
             if existing.sparse_rank is None:
                 existing.sparse_rank = a_idx
         else:
-            copy_a = VectorSearchResult(
+            rank_decay = 1.0 / (1.0 + LEXICAL_ONLY_RANK_DECAY * (a_idx - 1)) if use_rank_decay else 1.0
+            solo_score = min(1.0, a_score * solo_a_weight * a_mult * rank_decay)
+            merged[key] = VectorSearchResult(
                 id=a_item.id,
-                score=round(min(1.0, a_score * a_weight), 4),
+                score=round(solo_score, 4),
                 dense_score=a_item.dense_score,
                 sparse_score=a_item.sparse_score or round(a_score, 4),
                 dense_rank=a_item.dense_rank,
                 sparse_rank=a_item.sparse_rank or a_idx,
-                payload=dict(a_item.payload or {}),
+                payload=payload,
             )
-            merged[key] = copy_a
 
     ranked = sorted(merged.values(), key=lambda r: float(r.score or 0.0), reverse=True)
     return strip_internal_metadata(ranked[:limit])

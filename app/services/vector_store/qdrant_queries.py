@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
+from app.services.search_ranking import compute_hybrid_score, hybrid_candidate_limit
 from app.services.vector_store.base import VectorSearchResult
 
 logger = logging.getLogger("contextcortex.vector_store.qdrant")
@@ -108,7 +109,7 @@ def execute_qdrant_search(
                     logger.error(msg)
                     raise ValueError(msg)
 
-        candidate_limit = max(limit * 5, 50)
+        candidate_limit = hybrid_candidate_limit(limit, min_pool=50)
 
         if mode == "lexical":
             if sparse_vec is None or len(sparse_vec.indices) == 0:
@@ -198,16 +199,20 @@ def execute_qdrant_search(
             s_score = (float(sparse_pts[uid].score) / max_sparse) if uid in sparse_pts and sparse_pts[uid].score is not None and max_sparse > 0 else 0.0
             s_score = max(0.0, min(1.0, s_score))
 
-            if uid in dense_pts and uid in sparse_pts:
-                final_score = alpha * d_score + (1.0 - alpha) * s_score
-            elif uid in dense_pts:
-                final_score = alpha * d_score
-            else:
-                final_score = (1.0 - alpha) * s_score
-
-            final_score = max(0.0, min(1.0, final_score))
             pt = dense_pts.get(uid) or sparse_pts.get(uid)
             payload = (pt.payload or {}) if pt else {}
+            final_score = compute_hybrid_score(
+                alpha,
+                d_score,
+                s_score,
+                has_dense=uid in dense_pts,
+                has_sparse=uid in sparse_pts,
+                sparse_rank=sparse_ranks.get(uid),
+                payload=payload,
+                query_text=clean_query,
+                doc_type=doc_type,
+                language=language,
+            )
             scored_results.append(
                 VectorSearchResult(
                     id=uid, score=round(final_score, 4),

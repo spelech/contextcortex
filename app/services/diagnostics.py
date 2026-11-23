@@ -7,7 +7,7 @@ from app.services.database import get_db_connection
 from app.services.diagnostic_error_terms import extract_error_terms
 from app.services.diagnostic_evidence_chain import build_call_chain
 from app.services.diagnostic_working_path import compare_working_path
-from app.services.diagnostic_route_path import collect_route_path_symbols, keep_semantic_hit, language_family
+from app.services.diagnostic_route_path import collect_route_path_symbols, diagnostic_search_kwargs, keep_semantic_hit, language_family
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
 from app.services.search import execute_hybrid_search
@@ -403,6 +403,7 @@ def find_semantic_candidates(
     matched_routes: Optional[List[Dict[str, Any]]] = None,
     detail: bool = True,
     route_path: bool = True,
+    has_resolved_identifiers: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     """Returns ranked code candidates: the matched route's call path first (unless `route_path` is False), then filtered search hits."""
     candidates: List[Dict[str, Any]] = []
@@ -431,14 +432,14 @@ def find_semantic_candidates(
         if remaining > 0:
             query_str = _build_semantic_query(issue_text, signals or {}, frames or []) if (signals or frames) else issue_text[:2000]
             try:
-                hits = execute_hybrid_search(query_text=query_str, doc_type="code", repo=repo, limit=limit)
+                hits = execute_hybrid_search(query_text=query_str, doc_type="code", repo=repo, **diagnostic_search_kwargs(signals, frames, limit, has_resolved_identifiers))
             except Exception as e:
                 logger.warning(f"Hybrid search failed in diagnostics: {e}")
         for h in hits:
             if len(candidates) >= limit:
                 break
             p = h.payload
-            if not keep_semantic_hit(p, repo, route_languages):
+            if not keep_semantic_hit(p, repo, route_languages, query_text=issue_text):
                 continue
             file_path = _diag_file(roots, p.get("rel_path") or p.get("path") or "")
             sym = p.get("full_symbol") or p.get("symbol")
@@ -485,6 +486,7 @@ def diagnose_issue(
         "semantic_candidates": find_semantic_candidates(
             issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
             matched_routes=matched_routes, detail=detail, route_path=not chain["steps"],
+            has_resolved_identifiers=bool(frames or matched_routes or symbols or signals.get("exceptions")),
         ),
     }
 

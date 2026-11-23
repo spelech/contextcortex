@@ -6,6 +6,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional
 from sqlalchemy import Engine, text
 
+from app.services.search_ranking import compute_hybrid_score, hybrid_candidate_limit
 from app.services.vector_store.base import VectorSearchResult
 from app.services.vector_store.pgvector_chunk_scanner import (
     execute_pgvector_file_chunks,
@@ -196,13 +197,33 @@ def _execute_sqlite_fallback_search(
             for idx, it in enumerate(scored[:limit], start=1)
         ]
 
+    sparse_order = sorted(
+        (it for it in scored if it["sparse_score"] > 0.0),
+        key=lambda x: x["sparse_score"],
+        reverse=True,
+    )
+    sparse_rank_map = {it["id"]: idx for idx, it in enumerate(sparse_order, start=1)}
     for it in scored:
-        it["combined"] = (alpha * it["dense_score"]) + ((1.0 - alpha) * it["sparse_score"])
+        s_rank = sparse_rank_map.get(it["id"])
+        it["sparse_rank"] = s_rank
+        it["combined"] = compute_hybrid_score(
+            alpha,
+            it["dense_score"],
+            it["sparse_score"],
+            has_dense=it["dense_score"] > 0.0,
+            has_sparse=s_rank is not None,
+            sparse_rank=s_rank,
+            payload=it["payload"],
+            query_text=clean_query,
+            doc_type=doc_type,
+            language=language,
+        )
     scored.sort(key=lambda x: x["combined"], reverse=True)
     return [
         VectorSearchResult(
             id=it["id"], score=round(it["combined"], 4), dense_score=round(it["dense_score"], 4),
-            sparse_score=round(it["sparse_score"], 4), dense_rank=idx, sparse_rank=idx if it["sparse_score"] > 0 else None,
+            sparse_score=round(it["sparse_score"], 4), dense_rank=idx if it["dense_score"] > 0 else None,
+            sparse_rank=it["sparse_rank"],
             payload=it["payload"],
         )
         for idx, it in enumerate(scored[:limit], start=1)
@@ -365,7 +386,7 @@ def execute_pgvector_search(
 
         params["query_vec"] = str(query_vec)
         params["query_text"] = clean_query
-        params["candidate_limit"] = max(limit * 5, 50)
+        params["candidate_limit"] = hybrid_candidate_limit(limit, min_pool=50)
 
         dense_sql = text(f"""
         SELECT id, (1 - (embedding <=> CAST(:query_vec AS vector))) AS score, payload
@@ -414,7 +435,18 @@ def execute_pgvector_search(
 
         fused: List[VectorSearchResult] = []
         for item in merged.values():
-            combined = (alpha * item["dense_score"]) + ((1.0 - alpha) * item["sparse_score"])
+            combined = compute_hybrid_score(
+                alpha,
+                item["dense_score"],
+                item["sparse_score"],
+                has_dense=item["dense_rank"] is not None,
+                has_sparse=item["sparse_rank"] is not None,
+                sparse_rank=item["sparse_rank"],
+                payload=item["payload"],
+                query_text=clean_query,
+                doc_type=doc_type,
+                language=language,
+            )
             fused.append(
                 VectorSearchResult(
                     id=item["id"], score=round(combined, 4),
