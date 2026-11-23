@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.28.2](https://github.com/spelech/contextcortex/compare/v2.28.1...v2.28.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **indexing:** partial settings rollback, clone cancellation & 409 lock guard, minified input halving retry, and pipeline concurrency ([#183](https://github.com/spelech/contextcortex/issues/183), [#184](https://github.com/spelech/contextcortex/issues/184), [#185](https://github.com/spelech/contextcortex/issues/185), [#186](https://github.com/spelech/contextcortex/issues/186)) ([#187](https://github.com/spelech/contextcortex/issues/187)) ([52fa9d5](https://github.com/spelech/contextcortex/commit/52fa9d5422ad6630ac458b5dba2d06afb5d4b5af))
+* **search:** dampen lexical-only noise and improve diagnose_issue ranking ([#188](https://github.com/spelech/contextcortex/issues/188)) ([#190](https://github.com/spelech/contextcortex/issues/190)) ([fa4fc34](https://github.com/spelech/contextcortex/commit/fa4fc34ee88e9e4c7c1a5b616057ae4e112cdcae))
+
 ## [2.28.1](https://github.com/spelech/contextcortex/compare/v2.28.0...v2.28.1) (2026-11-20)
 
 
