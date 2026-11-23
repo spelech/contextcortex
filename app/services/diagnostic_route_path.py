@@ -11,6 +11,11 @@ import os
 from typing import Any, Dict, List, Optional, Set
 
 from app.services.graph_traversal import trace_symbol_path
+from app.services.search_ranking import (
+    PLAIN_LANGUAGE_DIAGNOSTIC_DENSE_WEIGHT,
+    hybrid_candidate_limit,
+    is_low_signal_diagnostic_hit,
+)
 from app.services.stack_trace_parser import _is_test_path
 
 logger = logging.getLogger("contextcortex.diagnostics")
@@ -133,17 +138,38 @@ def collect_route_path_symbols(
     return results
 
 
+def diagnostic_search_kwargs(
+    signals: Optional[Dict[str, Any]],
+    frames: Optional[List[Dict[str, Any]]],
+    limit: int,
+    has_resolved_identifiers: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Returns expanded candidate pool limit and higher dense_weight for plain-language bug reports."""
+    sig = signals or {}
+    if has_resolved_identifiers is not None:
+        has_identifiers = bool(has_resolved_identifiers)
+    else:
+        has_identifiers = bool(sig.get("symbols") or sig.get("exceptions") or sig.get("routes") or frames)
+    kwargs: Dict[str, Any] = {"limit": hybrid_candidate_limit(limit)}
+    if not has_identifiers:
+        kwargs["dense_weight"] = PLAIN_LANGUAGE_DIAGNOSTIC_DENSE_WEIGHT
+    return kwargs
+
+
 def keep_semantic_hit(
     payload: Dict[str, Any],
     repo: Optional[str],
     route_languages: Set[str],
+    query_text: str = "",
 ) -> bool:
-    """Drops semantic hits from other repos, test files, and (when a route matched) other languages."""
+    """Drops semantic hits from other repos, test/fixture/CSS/minified/summary noise, and other route languages."""
     hit_repo = payload.get("repo")
     if repo and hit_repo and hit_repo != repo:
         return False
     hit_path = payload.get("rel_path") or payload.get("path") or ""
     if hit_path and _is_test_path(hit_path):
+        return False
+    if is_low_signal_diagnostic_hit(payload, query_text=query_text):
         return False
     if route_languages:
         hit_lang = language_family(payload.get("language"), hit_path)

@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1365 Automated Tests** (1001 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1373 Automated Tests** (1009 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1263,6 +1263,16 @@ code results are enriched with signature/kind/ast_symbol_id from SQLite._
 - `test_path_glob_wins_over_path`
 - `test_alternation_without_is_regex_runs_as_regex`
 - `test_literal_text_with_regex_characters_stays_literal_when_it_matches`
+
+#### `tests/test_hybrid_search_ranking_188.py` (8 tests)
+- `test_pgvector_hybrid_ranks_semantic_code_above_lexical_only_fixture_and_css` - _Dense-only relevant code must outrank weak lexical-only hits, fixture summaries, CSS, and minified files._
+- `test_qdrant_hybrid_ranks_semantic_code_above_lexical_only_fixture_and_css` - _Qdrant hybrid fusion must dampen lexical-only hits and demote fixture/CSS/summary noise._
+- `test_execute_hybrid_search_uses_expanded_candidate_pool_before_fusion` - _execute_hybrid_search must fetch a >=5x candidate pool from Track A and Track B before fusing down to limit._
+- `test_explicit_css_query_does_not_demote_css_files` - _Demotion of CSS/fixture assets must back off when the query explicitly asks for CSS or fixtures._
+- `test_early_return_skipped_for_low_signal_track_a_hits` - _should_early_return_lexical must not short-circuit Track B when the top Track A hit is a fixture or CSS file._
+- `test_diagnose_issue_plain_language_uses_higher_dense_weight_expanded_pool_and_filters_noise` - _Plain-language bug reports (even with part numbers/UI labels) must boost dense_weight, expand limit, and drop CSS/fixtures/summaries._
+- `test_diagnose_issue_with_matched_code_symbol_keeps_balanced_hybrid_weight` - _When concrete indexed symbols or exceptions are present, diagnose_issue keeps default balanced hybrid weight._
+- `test_keep_semantic_hit_drops_css_fixtures_minified_and_summaries_but_keeps_extensionless`
 
 #### `tests/test_incremental_pipeline.py` (1 tests)
 - `test_full_incremental_sync_pipeline` - _End-to-End integration test for the full ingestion & incremental sync pipeline:
