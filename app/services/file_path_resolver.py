@@ -226,7 +226,24 @@ class FilePathResolver:
             cur = stripped.rstrip("_-.")
             if cur and cur.lower() not in stems:
                 stems.append(cur.lower())
-        camel_parts = re.findall(r"[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z0-9]+", stem)
+        camel_parts: List[str] = []
+        buf: List[str] = []
+        for idx_c, ch in enumerate(stem[:120]):
+            if not ch.isalnum():
+                if buf:
+                    camel_parts.append("".join(buf))
+                    buf = []
+                continue
+            if buf and ch.isupper():
+                prev_lower = buf[-1].islower() or buf[-1].isdigit()
+                next_lower = (idx_c + 1 < len(stem) and stem[idx_c + 1].islower())
+                if prev_lower or (buf[-1].isupper() and next_lower):
+                    camel_parts.append("".join(buf))
+                    buf = [ch]
+                    continue
+            buf.append(ch)
+        if buf:
+            camel_parts.append("".join(buf))
         if len(camel_parts) >= 3:
             for k in range(len(camel_parts) - 1, 1, -1):
                 pref = "".join(camel_parts[:k]).lower()
