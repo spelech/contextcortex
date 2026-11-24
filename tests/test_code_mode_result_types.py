@@ -72,6 +72,13 @@ def test_result_types_agree_with_real_tool_results(chain_db):  # noqa: F811
     with patch("app.mcp.tools.execute_hybrid_search", _fake_search):
         for permalinks in (False, True):
             _check(_call("search", query="publish", repo=REPO, include_permalinks=permalinks), "SearchResult", "search", seen)
+        expanded = _call("search", query="accessory missing on catalog page unless spec filter is enabled", scope="code", repo=REPO, expand=True)
+        _check(expanded, "SearchResult", "search(expand=True)", seen)
+        assert expanded["queries"] and expanded["areas"]
+    with patch("app.services.diagnostics.execute_hybrid_search", _fake_search):
+        plain_diag = _call("diagnose_issue", issue_text="accessory missing on catalog page unless spec filter is enabled", repo=REPO)
+        _check(plain_diag, "DiagnoseResult", "diagnose_issue(plain)", seen)
+        assert plain_diag["queries"] and plain_diag["areas"]
     assert seen == set(RESULT_INTERFACES), f"not checked: {sorted(set(RESULT_INTERFACES) - seen)}"
 
 

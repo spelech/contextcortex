@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1413 Automated Tests** (1049 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1418 Automated Tests** (1054 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1698,6 +1698,13 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_216_html_classified_as_doc_and_code_search_caps_per_file_in_all_modes`
 - `test_217_concurrent_mcp_tool_calls_run_in_parallel_not_serialized` - _8 parallel handle_search calls sleeping 0.25s each must complete in ~0.3-0.8s, not ~2.0s._
 - `test_218_read_file_resolves_unique_suffix_and_ranks_ambiguous_suffixes_first`
+
+#### `tests/test_usage_fixes_219.py` (5 tests)
+- `test_219_llm_report_expansion_caches_by_hash_and_falls_back_on_error`
+- `test_219_heuristic_splits_clauses_and_prunes_low_df_and_test_only_tokens`
+- `test_219_rrf_fusion_diversifies_files_and_folders_with_evidence`
+- `test_219_diagnose_issue_expands_plain_language_and_skips_when_resolved`
+- `test_219_mcp_search_expand_flag_returns_queries_and_areas`
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`

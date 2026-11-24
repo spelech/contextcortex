@@ -7,26 +7,25 @@ from app.services.database import get_db_connection
 from app.services.diagnostic_error_terms import extract_error_terms
 from app.services.diagnostic_evidence_chain import build_call_chain
 from app.services.diagnostic_working_path import compare_working_path
-from app.services.diagnostic_route_path import PLAIN_LANGUAGE_MIN_SCORE, build_diagnostic_semantic_query, collect_route_path_symbols, diagnostic_search_kwargs, keep_semantic_hit, language_family
+from app.services.diagnostic_route_path import (
+    PLAIN_LANGUAGE_MIN_SCORE, build_diagnostic_semantic_query, collect_route_path_symbols,
+    diagnostic_search_kwargs, keep_semantic_hit, language_family, run_plain_language_diagnosis,
+)
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
 from app.services.search import execute_hybrid_search
 from app.services.source_paths import LocalSourceRoots
 from app.services.stack_trace_parser import (
-    RE_COBOL_ABEND_FRAME, RE_COBOL_DIAG_FRAME, RE_COBOL_PARAGRAPH_FRAME,
-    RE_CSHARP_FRAME, RE_EXCEPTION_NAME, RE_GENERIC_FRAME, RE_HTTP_ROUTE,
-    RE_JAVA_FRAME, RE_NODE_AT_FRAME, RE_PYTHON_FRAME, RE_QUOTED_ERROR,
-    RE_SYMBOL_CANDIDATE, _STOP_IDENTIFIERS, _clean_diag_path, _is_test_path,
-    candidate_path_suffixes, extract_diagnostic_signals, normalize_stack_path, parse_stack_frames,
+    RE_COBOL_ABEND_FRAME, RE_COBOL_DIAG_FRAME, RE_COBOL_PARAGRAPH_FRAME, RE_CSHARP_FRAME,
+    RE_EXCEPTION_NAME, RE_GENERIC_FRAME, RE_HTTP_ROUTE, RE_JAVA_FRAME, RE_NODE_AT_FRAME,
+    RE_PYTHON_FRAME, RE_QUOTED_ERROR, RE_SYMBOL_CANDIDATE, _STOP_IDENTIFIERS, _clean_diag_path,
+    _is_test_path, candidate_path_suffixes, extract_diagnostic_signals, normalize_stack_path,
+    parse_stack_frames,
 )
 
 logger = logging.getLogger("contextcortex.diagnostics")
-
-MAX_RESOLVED_FRAMES = 15
-MAX_SNIPPET_CHARS = 4000
-MAX_CANDIDATE_CHARS = 3000
-MAX_MATCHED_ROUTES = 15
-MAX_MATCHED_SYMBOLS = 20
+MAX_RESOLVED_FRAMES, MAX_SNIPPET_CHARS, MAX_CANDIDATE_CHARS = 15, 4000, 3000
+MAX_MATCHED_ROUTES, MAX_MATCHED_SYMBOLS = 15, 20
 
 
 def _diag_file(roots: LocalSourceRoots, filepath: Optional[str]) -> str:
@@ -37,15 +36,11 @@ def _diag_file(roots: LocalSourceRoots, filepath: Optional[str]) -> str:
 def _cobol_alt_filenames(filename: str) -> List[str]:
     lower = filename.lower()
     stem, dot, ext = lower.rpartition(".")
-    if dot and ext in ("cbl", "cob", "cpy"):
-        return [f"{stem}.cbl", f"{stem}.cob", f"{stem}.cpy"]
-    return [lower]
+    return [f"{stem}.cbl", f"{stem}.cob", f"{stem}.cpy"] if (dot and ext in ("cbl", "cob", "cpy")) else [lower]
 
 
 def _get_callers_and_callees(
-    conn,
-    repo: Optional[str],
-    symbol_name: str,
+    conn, repo: Optional[str], symbol_name: str,
     enclosing_filepath: Optional[str] = None,
     enclosing_start_line: Optional[int] = None,
     enclosing_end_line: Optional[int] = None,
@@ -192,9 +187,7 @@ def _find_matching_indexed_file(conn, repo: Optional[str], parsed_path: str) -> 
 
 
 def resolve_stack_frames(
-    frames: List[Dict[str, Any]],
-    repo: Optional[str] = None,
-    context_lines: int = 5,
+    frames: List[Dict[str, Any]], repo: Optional[str] = None, context_lines: int = 5,
 ) -> List[Dict[str, Any]]:
     """Resolves parsed stack frames to indexed files, code slices, and enclosing symbol relations."""
     resolved = []
@@ -214,8 +207,7 @@ def resolve_stack_frames(
 
             enclosing = _find_symbol_enclosing(conn, target_repo, file_path, line_no)
             symbol_name = (enclosing["full_symbol"] or enclosing["name"]) if enclosing else (frame.get("function") or None)
-            kind = enclosing.get("kind") if enclosing else None
-            signature = enclosing.get("signature") if enclosing else None
+            kind, signature = (enclosing.get("kind"), enclosing.get("signature")) if enclosing else (None, None)
 
             code_snippet = ""
             effective_repo = target_repo if target_repo != "unknown" else None
@@ -224,10 +216,8 @@ def resolve_stack_frames(
                     continue
                 try:
                     read_res = file_reader.read_file(
-                        path=cand_path,
-                        repo=effective_repo,
-                        start_line=max(1, line_no - context_lines),
-                        end_line=line_no + context_lines,
+                        path=cand_path, repo=effective_repo,
+                        start_line=max(1, line_no - context_lines), end_line=line_no + context_lines,
                     )
                     code_snippet = (read_res.get("content") or "")[:MAX_SNIPPET_CHARS]
                     if code_snippet:
@@ -244,19 +234,16 @@ def resolve_stack_frames(
 
             callers, callees = (
                 _get_callers_and_callees(
-                    conn, target_repo, symbol_name,
-                    enclosing_filepath=clean_file_path,
+                    conn, target_repo, symbol_name, enclosing_filepath=clean_file_path,
                     enclosing_start_line=enclosing.get("start_line") if enclosing else None,
                     enclosing_end_line=enclosing.get("end_line") if enclosing else None,
                 )
-                if symbol_name
-                else ([], [])
+                if symbol_name else ([], [])
             )
             resolved.append({
                 "repo": target_repo, "file": clean_file_path, "line": line_no,
                 "symbol": symbol_name, "kind": kind, "signature": signature,
-                "code": code_snippet, "permalink": permalink,
-                "callers": callers, "callees": callees,
+                "code": code_snippet, "permalink": permalink, "callers": callers, "callees": callees,
             })
     return resolved
 
@@ -472,16 +459,26 @@ def diagnose_issue(issue_text: str, repo: Optional[str] = None, context_lines: i
         chain = build_call_chain(conn, terms, matched_routes, frames, symbols, repo, detail)
         working = compare_working_path(conn, safe_text, terms, chain, matched_routes, repo)
     has_resolved = bool(frames or matched_routes or symbols or signals.get("exceptions"))
-    sem_cands = find_semantic_candidates(
-        issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
-        matched_routes=matched_routes, detail=detail, route_path=not chain["steps"], has_resolved_identifiers=has_resolved,
-    )
+    expanded_queries, expanded_areas = None, None
+    if not has_resolved and not chain["steps"] and safe_text.strip():
+        expanded_queries, expanded_areas, sem_cands = run_plain_language_diagnosis(
+            safe_text, repo, clamped_limit, detail,
+            search_fn=execute_hybrid_search, build_candidate_fn=_build_candidate,
+            diag_file_fn=_diag_file, max_candidate_chars=MAX_CANDIDATE_CHARS,
+        )
+    else:
+        sem_cands = find_semantic_candidates(
+            issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
+            matched_routes=matched_routes, detail=detail, route_path=not chain["steps"], has_resolved_identifiers=has_resolved,
+        )
     out: Dict[str, Any] = {
         "call_chain": chain, "working_path_comparison": working, "resolved_frames": frames,
         "matched_routes": matched_routes, "matched_symbols": symbols, "semantic_candidates": sem_cands,
     }
+    if expanded_queries is not None:
+        out["queries"], out["areas"] = expanded_queries, expanded_areas or []
     if not has_resolved and not sem_cands:
-        out["hint"] = "No stack frames, routes, symbols, or high-confidence semantic code matches were found. Use search(query=..., scope='code') with key domain concepts or grep_code for UI strings."
+        out["hint"] = "No stack frames, routes, symbols, or high-confidence semantic code matches were found. Use search(query=..., scope='code', expand=True) with key domain concepts or grep_code for UI strings."
     return out
 
 
