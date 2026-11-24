@@ -1,4 +1,4 @@
-# Software Requirements Specification: ContextCortex (v2.28.6) <!-- x-release-please-version -->
+# Software Requirements Specification: ContextCortex (v2.28.7) <!-- x-release-please-version -->
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 

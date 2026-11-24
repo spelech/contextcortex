@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.7](https://github.com/spelech/contextcortex/compare/v2.28.6...v2.28.7) (2026-11-24)
+
+
+### Bug Fixes
+
+* resolve [#215](https://github.com/spelech/contextcortex/issues/215)-[#219](https://github.com/spelech/contextcortex/issues/219) (concurrent index deadlock, HTML doc/per-file cap, non-blocking MCP/API, read_file suffix auto-resolve, and plain-language query expansion) ([#220](https://github.com/spelech/contextcortex/issues/220)) ([7e4da9e](https://github.com/spelech/contextcortex/commit/7e4da9e1a8b9b3106ef137f5008c31ad3e572478))
+
 ## [2.28.6](https://github.com/spelech/contextcortex/compare/v2.28.5...v2.28.6) (2026-11-24)
 
 
