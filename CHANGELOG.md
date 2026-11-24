@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.6](https://github.com/spelech/contextcortex/compare/v2.28.5...v2.28.6) (2026-11-24)
+
+
+### Bug Fixes
+
+* non-blocking pgvector migration & Windows loop, sync progress/ETA, HNSW iterative scan, indexed Track A hydration, and multiline grep ([#208](https://github.com/spelech/contextcortex/issues/208)-[#212](https://github.com/spelech/contextcortex/issues/212)) ([#213](https://github.com/spelech/contextcortex/issues/213)) ([e463ccc](https://github.com/spelech/contextcortex/commit/e463cccb67b7bd7f95d42ed185474309830a8c1f))
+
 ## [2.28.5](https://github.com/spelech/contextcortex/compare/v2.28.4...v2.28.5) (2026-11-24)
 
 
