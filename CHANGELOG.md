@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.4](https://github.com/spelech/contextcortex/compare/v2.28.3...v2.28.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* **trace,diagnose:** rank typed callers, bound BFS depth/time, and route plain reports to search ([#198](https://github.com/spelech/contextcortex/issues/198), [#193](https://github.com/spelech/contextcortex/issues/193)) ([#199](https://github.com/spelech/contextcortex/issues/199)) ([9159908](https://github.com/spelech/contextcortex/commit/915990868dc13b1b0a040c7ef0050996db5dff8c))
+
 ## [2.28.3](https://github.com/spelech/contextcortex/compare/v2.28.2...v2.28.3) (2026-11-24)
 
 
