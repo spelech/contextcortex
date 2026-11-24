@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.3](https://github.com/spelech/contextcortex/compare/v2.28.2...v2.28.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* resolve indexing, diagnose_issue, read_file, and code-mode usage issues ([#191](https://github.com/spelech/contextcortex/issues/191)-[#195](https://github.com/spelech/contextcortex/issues/195)) ([#196](https://github.com/spelech/contextcortex/issues/196)) ([72e34e7](https://github.com/spelech/contextcortex/commit/72e34e71a72bd8add8f2132f9758199013003869))
+
 ## [2.28.2](https://github.com/spelech/contextcortex/compare/v2.28.1...v2.28.2) (2026-11-23)
 
 
