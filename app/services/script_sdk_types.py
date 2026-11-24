@@ -28,7 +28,7 @@ RESULT_TYPES = """\
 interface GrepCodeFile { file: string; repo?: string; symbols?: Record<string, string>; permalink?: string; lines: string[] }
 interface GrepCodeResult { total_matches: number; has_more: boolean; next_offset?: number; offset?: number; pattern_mode?: string; path_filter?: string; repo?: string; files: GrepCodeFile[]; index_status?: string; sync_progress?: Record<string, any> }
 /** read_file text slice: each content line is '<line>:<text>'. With outline_only=True the result has symbols instead. */
-interface ReadFileResult { file: string; lines: [number, number]; total_lines: number; next_start_line?: number; truncated?: boolean; source?: string; missing_lines?: [number, number][]; content: string }
+interface ReadFileResult { file: string; resolved_from?: string; lines: [number, number]; total_lines: number; next_start_line?: number; truncated?: boolean; source?: string; missing_lines?: [number, number][]; content: string }
 interface ReadFileOutline { file: string; repo: string | null; outline_only: true; total_symbols: number; offset: number; limit: number; has_more: boolean; next_offset: number | null; symbols: { name: string; symbol: string; kind: string; lines: [number, number]; signature: string | null }[]; candidates?: string[] }
 """
 
@@ -45,9 +45,11 @@ RESULT_INTERFACES: Dict[str, Dict[str, str]] = {
     "WorkingStep": {"symbol": _S, "file": _S, "lines": _LINES, "call_site?": "CallSite"},
     "WorkingPathComparison": {"statement": _S, "entry": "{ symbol: string; aligned_with: string; route?: string } | null",
                               "steps": "WorkingStep[]", "first_divergence": "Record<string, any> | null"},
+    "ConceptArea": {"area": _S, "repo": _SN, "file": _S, "symbol": _SN, "lines": "[number, number] | null",
+                    "matched_by": "number[]", "evidence": _S, "score": _N},
     "DiagnoseResult": {"call_chain": "CallChain", "working_path_comparison": "WorkingPathComparison | null",
                        "resolved_frames": "any[]", "matched_routes": "any[]", "matched_symbols": "any[]",
-                       "semantic_candidates": "any[]", "hint?": _S,
+                       "semantic_candidates": "any[]", "queries?": "string[]", "areas?": "ConceptArea[]", "hint?": _S,
                        "index_status?": _S, "sync_progress?": "Record<string, any>"},
     "Route": {"repo": _S, "method": _S, "path": _S, "framework": _SN, "handler": _S, "file": _S, "lines": _LINES,
               "permalink?": _SN},
@@ -73,7 +75,8 @@ RESULT_INTERFACES: Dict[str, Dict[str, str]] = {
                   "dense_score": _NN, "sparse_score": _NN, "permalink?": _SN, "content_truncated": "boolean",
                   "content": _S},
     "SearchResult": {"query": _S, "scope": _S, "mode": _S, "returned": _N, "total": _N, **_PAGE, "max_snippet_chars": _N,
-                     "results": "SearchHit[]", "dense_fallback_lexical_only?": "boolean",
+                     "results": "SearchHit[]", "queries?": "string[]", "areas?": "ConceptArea[]",
+                     "dense_fallback_lexical_only?": "boolean",
                      "index_status?": _S, "sync_progress?": "Record<string, any>"},
 }
 _INTERFACE_DOCS = {

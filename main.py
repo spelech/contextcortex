@@ -437,7 +437,7 @@ async def health():
 @app.get("/healthz/ready")
 async def readiness():
     try:
-        is_ready, db_info = check_db_readiness()
+        is_ready, db_info = await asyncio.to_thread(check_db_readiness)
     except Exception as e:
         logger.warning(f"Readiness check unhandled exception: {e}")
         is_ready = False

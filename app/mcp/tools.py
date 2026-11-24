@@ -51,8 +51,9 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "one call replaces most of those lookups. For a plain-language description without a stack trace, error message, or route, start with search instead. "
         "Returns call_chain: the call path from the matched route, stack frame, or symbol to the most likely fault, with the "
         "call-site line, 1-3 evidence lines, and arguments not passed (not_passed) for each step. If the report says that a similar "
-        "action still works, working_path_comparison aligns that path with the chain and shows the first difference. Also resolves stack frames "
-        "(context_lines 1..15), API routes, symbols, and compact semantic candidates (limit 1..20). detail=true adds method bodies.",
+        "action still works, working_path_comparison aligns that path with the chain and shows the first difference. For plain-language reports "
+        "with an empty call_chain, splits the report into 3-6 code-concept queries, fuses results via RRF, and returns diversified areas (`queries`, `areas`). "
+        "Also resolves stack frames (context_lines 1..15), API routes, symbols, and compact semantic candidates (limit 1..20). detail=true adds method bodies.",
     ),
     (
         "execute_script",
@@ -120,6 +121,7 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "search",
         handle_search,
         f"Use for hybrid semantic + BM25 search across {_SUPPORTED_LANGS} code (scope='code'), Markdown specs/runbooks/ADRs/PDFs (scope='docs'), or both (default scope='all'). "
+        "Set expand=True for plain-language bug reports to split into 3-6 code-concept queries, fuse with RRF, diversify by file/folder, and return `queries` and `areas`. "
         "Bounds snippets via max_snippet_chars (200..6000, default 2000) and paginates via limit (1..25, default 5) and offset.",
     ),
     (

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import sys
@@ -21,17 +22,10 @@ def _get_tools_attr(name, default):
     return getattr(t_mod, name, default) if t_mod else default
 
 
-async def handle_list_repositories(
-    repo: Annotated[Optional[str], Field(description="Optional repository or storage namespace filter.")] = None,
-    source_type: Annotated[Literal["all", "git", "monitored_path", "local_storage"], Field(description="Source filter: 'all' (default), 'git', 'monitored_path', or 'local_storage'.")] = "all",
-    path_prefix: Annotated[Optional[str], Field(description="Optional file path substring/prefix filter when include_files=True (e.g. 'app/services').")] = None,
-    file_extension: Annotated[Optional[str], Field(description="Optional file extension filter when include_files=True (e.g. '.py', '.ts', '.cs').")] = None,
-    include_files: Annotated[bool, Field(description="Set True to include bounded, paginated file inventory per source and at top level (default False).")] = False,
-    include_status: Annotated[bool, Field(description="Set True to include global vector store health, embedding models, counts, and Git provider auth status (default False).")] = False,
-    limit: Annotated[int, Field(description="Maximum files returned per source and top-level page when include_files=True, clamped to 1..500 (default 100).")] = 100,
-    offset: Annotated[int, Field(description="0-based file offset when include_files=True (default 0). Advance via next_offset when has_more is True.")] = 0,
+def _execute_list_repositories_sync(
+    repo: Optional[str], source_type: str, path_prefix: Optional[str], file_extension: Optional[str],
+    include_files: bool, include_status: bool, limit: int, offset: int,
 ) -> str:
-    """List ingested Git repositories, monitored local paths, and optional file inventory or global index health status."""
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
@@ -80,35 +74,19 @@ async def handle_list_repositories(
             r_key = df["repo"] or "unknown"
             clean_fp = _strip_repo_prefix(df["filepath"])
             per_repo_paths.setdefault(r_key, []).append(clean_fp)
-            formatted_all_files.append({
-                "repo": df["repo"],
-                "file": clean_fp,
-                "doc_type": df["doc_type"],
-                "language": df["language"],
-            })
+            formatted_all_files.append({"repo": df["repo"], "file": clean_fp, "doc_type": df["doc_type"], "language": df["language"]})
 
-        result: Dict[str, Any] = {
-            "source_type": st,
-            "include_files": want_files,
-            "include_status": want_status,
-        }
-
+        result: Dict[str, Any] = {"source_type": st, "include_files": want_files, "include_status": want_status}
         if st in ("all", "git"):
             filtered_repos = [gr for gr in git_repos if not repo_name or gr["name"] == repo_name]
             repos_list = []
             for gr in filtered_repos:
                 r_name = gr["name"]
                 entry: Dict[str, Any] = {
-                    "id": gr["id"],
-                    "name": r_name,
-                    "url": gr["url"],
-                    "branch": gr["branch"],
-                    "commit_sha": gr["commit_sha"],
-                    "provider": (gr["provider"] or "git").lower(),
-                    "status": gr["status"],
-                    "files": file_count_map.get(r_name, 0),
-                    "symbols": symbol_count_map.get(r_name, 0),
-                    "last_synced": gr["last_synced"],
+                    "id": gr["id"], "name": r_name, "url": gr["url"], "branch": gr["branch"],
+                    "commit_sha": gr["commit_sha"], "provider": (gr["provider"] or "git").lower(),
+                    "status": gr["status"], "files": file_count_map.get(r_name, 0),
+                    "symbols": symbol_count_map.get(r_name, 0), "last_synced": gr["last_synced"],
                 }
                 if want_files:
                     entry.update(build_source_file_slice(per_repo_paths.get(r_name, []), safe_offset, safe_limit))
@@ -120,12 +98,7 @@ async def handle_list_repositories(
             monitored_list = []
             for lp in filtered_paths:
                 r_name = lp["repo"]
-                entry = {
-                    "repo": r_name,
-                    "path": lp["path"],
-                    "category": lp["category"],
-                    "files": file_count_map.get(r_name, 0),
-                }
+                entry = {"repo": r_name, "path": lp["path"], "category": lp["category"], "files": file_count_map.get(r_name, 0)}
                 if want_files:
                     entry.update(build_source_file_slice(per_repo_paths.get(r_name, []), safe_offset, safe_limit))
                 monitored_list.append(entry)
@@ -133,34 +106,44 @@ async def handle_list_repositories(
 
         if st in ("all", "local_storage"):
             result["local_storage"] = collect_local_storage_entry(
-                per_repo_paths=per_repo_paths,
-                repo_file_counts=file_count_map,
-                want_files=want_files,
-                path_prefix=path_prefix,
-                file_extension=file_extension,
-                safe_offset=safe_offset,
-                safe_limit=safe_limit,
+                per_repo_paths=per_repo_paths, repo_file_counts=file_count_map, want_files=want_files,
+                path_prefix=path_prefix, file_extension=file_extension, safe_offset=safe_offset, safe_limit=safe_limit,
             )
 
         if want_files:
             total_files = len(formatted_all_files)
             has_more = (safe_offset + safe_limit) < total_files
-            result["total_files"] = total_files
-            result["offset"] = safe_offset
-            result["limit"] = safe_limit
-            result["has_more"] = has_more
-            result["next_offset"] = (safe_offset + safe_limit) if has_more else None
-            result["files"] = formatted_all_files[safe_offset : safe_offset + safe_limit]
+            result.update({
+                "total_files": total_files, "offset": safe_offset, "limit": safe_limit,
+                "has_more": has_more, "next_offset": (safe_offset + safe_limit) if has_more else None,
+                "files": formatted_all_files[safe_offset : safe_offset + safe_limit],
+            })
 
         if want_status:
             result.update(collect_index_status())
-
         return json.dumps(result, default=str)
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_list_repositories: {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         return json.dumps({"error": f"Error listing repositories: {str(e)}"})
+
+
+async def handle_list_repositories(
+    repo: Annotated[Optional[str], Field(description="Optional repository or storage namespace filter.")] = None,
+    source_type: Annotated[Literal["all", "git", "monitored_path", "local_storage"], Field(description="Source filter: 'all' (default), 'git', 'monitored_path', or 'local_storage'.")] = "all",
+    path_prefix: Annotated[Optional[str], Field(description="Optional file path substring/prefix filter when include_files=True (e.g. 'app/services').")] = None,
+    file_extension: Annotated[Optional[str], Field(description="Optional file extension filter when include_files=True (e.g. '.py', '.ts', '.cs').")] = None,
+    include_files: Annotated[bool, Field(description="Set True to include bounded, paginated file inventory per source and at top level (default False).")] = False,
+    include_status: Annotated[bool, Field(description="Set True to include global vector store health, embedding models, counts, and Git provider auth status (default False).")] = False,
+    limit: Annotated[int, Field(description="Maximum files returned per source and top-level page when include_files=True, clamped to 1..500 (default 100).")] = 100,
+    offset: Annotated[int, Field(description="0-based file offset when include_files=True (default 0). Advance via next_offset when has_more is True.")] = 0,
+) -> str:
+    """List ingested Git repositories, monitored local paths, and optional file inventory or global index health status."""
+    return await asyncio.to_thread(
+        _execute_list_repositories_sync,
+        repo, source_type, path_prefix, file_extension, include_files, include_status, limit, offset,
+    )
 
 
 def handle_search_infrastructure_docs(

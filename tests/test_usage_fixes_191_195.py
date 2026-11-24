@@ -278,20 +278,24 @@ def test_193_plain_language_diagnose_matches_semantic_search_results(isolated_db
 
         def search(self, **kwargs):
             captured.append(kwargs)
-            assert kwargs["search_mode"] == "semantic"
+            assert kwargs["search_mode"] in ("semantic", "hybrid")
             return list(top_semantic_hits)
 
     with patch("app.services.search.get_vector_store", return_value=_SemanticStore()), \
-         patch("app.services.search._enrich_code_ast_metadata"):
+         patch("app.services.search._enrich_code_ast_metadata"), \
+         patch("app.services.search.run_fast_lexical_track", return_value=[]):
         search_hits = execute_hybrid_search(report, doc_type="code", repo="shop", limit=5, search_mode="semantic")
         diag = diagnose_issue(report, repo="shop", limit=5)
 
-    assert len(captured) == 2
-    # Plain-language diagnose query must NOT prepend raw product codes as duplicate prefix tokens.
-    assert not captured[1]["query_text"].startswith("1234-ABCD")
+    assert len(captured) >= 2
+    # Plain-language diagnose queries must NOT include raw product codes or SKU data values.
+    for call_kw in captured[1:]:
+        assert "1234-ABCD" not in call_kw["query_text"]
+        assert "SKU-98765" not in call_kw["query_text"]
     search_files = [h.payload["rel_path"] for h in search_hits]
     diag_files = [c["file"] for c in diag["semantic_candidates"]]
     assert diag_files[:2] == search_files[:2]
+    assert diag["queries"] and diag["areas"]
 
 
 def test_193_error_terms_exclude_alphanumeric_data_values_but_keep_cobol_and_code():

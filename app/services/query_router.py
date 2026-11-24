@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.services.search_ranking import LEXICAL_ONLY_RANK_DECAY, low_signal_multiplier
+from app.services.search_ranking import LEXICAL_ONLY_RANK_DECAY, cap_results_per_file, low_signal_multiplier
 from app.services.vector_store.base import VectorSearchResult
 
 _INTERROGATIVES = frozenset({
@@ -293,7 +293,7 @@ def fuse_search_results(
     track_b_ranked: bool = False,
 ) -> List[VectorSearchResult]:
     """Combines Track A fast lexical hits and Track B semantic/hybrid hits with agreement boost and noise demotion."""
-    apply_asset_penalty = dense_weight is None or (0.0 < dense_weight < 1.0)
+    apply_asset_penalty = dense_weight is None or (0.0 < dense_weight < 1.0) or doc_type == "code"
     a_weight = 0.90 if intent in ("lexical_exact", "lexical_keywords") else 0.78
     solo_a_weight = _track_a_solo_weight(intent, dense_weight)
     use_rank_decay = intent == "semantic_prose" or (dense_weight is not None and dense_weight >= 0.7)
@@ -351,4 +351,4 @@ def fuse_search_results(
             )
 
     ranked = sorted(merged.values(), key=lambda r: float(r.score or 0.0), reverse=True)
-    return strip_internal_metadata(ranked[:limit])
+    return strip_internal_metadata(cap_results_per_file(ranked, limit=limit, max_per_file=2))

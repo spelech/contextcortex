@@ -415,13 +415,16 @@ def test_diagnose_issue_plain_language_uses_higher_dense_weight_expanded_pool_an
     with patch("app.services.diagnostics.execute_hybrid_search", return_value=mixed_hits) as mock_search:
         result = diagnose_issue(issue, repo="shop", limit=5)
 
-    mock_search.assert_called_once()
-    kwargs = mock_search.call_args.kwargs
-    assert kwargs["limit"] >= 25
-    assert kwargs.get("dense_weight") is not None and kwargs["dense_weight"] >= 0.75
+    assert mock_search.call_count >= 1
+    for call in mock_search.call_args_list:
+        kwargs = call.kwargs
+        assert kwargs["limit"] >= 25
+        assert kwargs.get("dense_weight") is not None and kwargs["dense_weight"] >= 0.75
+        assert "1234-ABCD" not in kwargs["query_text"]
 
     cands = result["semantic_candidates"]
     assert [c["file"] for c in cands] == ["Services/CatalogFilter.cs"]
+    assert result.get("queries") and result.get("areas")
 
 
 def test_diagnose_issue_with_matched_code_symbol_keeps_balanced_hybrid_weight(diag_db):

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import sys
@@ -16,16 +17,10 @@ def _get_tools_attr(name, default):
     return getattr(t_mod, name, default) if t_mod else default
 
 
-async def handle_diagnose_issue(
-    issue_text: Annotated[Optional[str], Field(description="Raw stack trace, exception log, HTTP failure payload, or bug symptom report across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")] = None,
-    repo: Annotated[Optional[str], Field(description="Optional repository name to scope stack frame, route, and semantic candidate resolution.")] = None,
-    context_lines: Annotated[int, Field(description="Surrounding source lines returned per resolved stack frame, clamped to 1..15 (default 5).")] = 5,
-    limit: Annotated[int, Field(description="Maximum semantic code candidates returned alongside resolved stack frames, clamped to 1..20 (default 5).")] = 5,
-    detail: Annotated[bool, Field(description="Set True to add full method bodies to call_chain steps and code, permalinks, callers, and callees to semantic_candidates (default False keeps the answer compact).")] = False,
-    query: Annotated[Optional[str], Field(description="Alias for `issue_text`. `issue_text` wins when both are given.")] = None,
-    error: Annotated[Optional[str], Field(description="Alias for `issue_text`. `issue_text` wins when both are given.")] = None,
+def _execute_diagnose_issue_sync(
+    issue_text: Optional[str], repo: Optional[str], context_lines: int,
+    limit: int, detail: bool, query: Optional[str], error: Optional[str],
 ) -> str:
-    """Forensic triage: a ranked call chain with evidence lines, plus stack frames, routes, symbols, and semantic candidates."""
     try:
         enforce_tool_permission(Role.VIEWER)
 
@@ -46,11 +41,7 @@ async def handle_diagnose_issue(
 
         diag_fn = _get_tools_attr("diagnose_issue", diagnose_issue)
         result = diag_fn(
-            issue_text=text,
-            repo=repo,
-            context_lines=safe_ctx,
-            limit=safe_limit,
-            detail=bool(detail),
+            issue_text=text, repo=repo, context_lines=safe_ctx, limit=safe_limit, detail=bool(detail),
         )
         if isinstance(result, dict):
             sync_info = get_active_sync_status(repo)
@@ -58,10 +49,25 @@ async def handle_diagnose_issue(
                 result = {**result, **sync_info}
 
         return json.dumps(result, separators=(",", ":"), default=str)
-
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_diagnose_issue: {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
     except Exception as e:
         logger.error(f"Error executing diagnose_issue triage: {e}", exc_info=True)
         return json.dumps({"error": f"Error executing diagnostics: {str(e)}"})
+
+
+async def handle_diagnose_issue(
+    issue_text: Annotated[Optional[str], Field(description="Raw stack trace, exception log, HTTP failure payload, or bug symptom report across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++.")] = None,
+    repo: Annotated[Optional[str], Field(description="Optional repository name to scope stack frame, route, and semantic candidate resolution.")] = None,
+    context_lines: Annotated[int, Field(description="Surrounding source lines returned per resolved stack frame, clamped to 1..15 (default 5).")] = 5,
+    limit: Annotated[int, Field(description="Maximum semantic code candidates returned alongside resolved stack frames, clamped to 1..20 (default 5).")] = 5,
+    detail: Annotated[bool, Field(description="Set True to add full method bodies to call_chain steps and code, permalinks, callers, and callees to semantic_candidates (default False keeps the answer compact).")] = False,
+    query: Annotated[Optional[str], Field(description="Alias for `issue_text`. `issue_text` wins when both are given.")] = None,
+    error: Annotated[Optional[str], Field(description="Alias for `issue_text`. `issue_text` wins when both are given.")] = None,
+) -> str:
+    """Forensic triage: a ranked call chain with evidence lines, plus stack frames, routes, symbols, and semantic candidates."""
+    return await asyncio.to_thread(
+        _execute_diagnose_issue_sync,
+        issue_text, repo, context_lines, limit, detail, query, error,
+    )

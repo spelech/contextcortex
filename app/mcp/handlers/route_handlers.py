@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import sys
@@ -166,19 +167,11 @@ def _query_route_callers(
     return all_callers
 
 
-async def handle_find_routes(
-    query: Annotated[Optional[str], Field(description="Optional route path, URL pattern, or handler/caller substring filter (e.g. '/api/v1/users/{id}' or 'checkout') across FastAPI, Flask, Django, Express/NestJS, ASP.NET Core, Go, Rust, Java, and frontend/service HTTP clients.")] = None,
-    kind: Annotated[Literal["handlers", "callers", "both"], Field(description="Search server route 'handlers', client HTTP 'callers', or 'both' (default 'both').")] = "both",
-    method: Annotated[Optional[str], Field(description="Optional HTTP verb filter (GET, POST, PUT, PATCH, DELETE).")] = None,
-    repo: Annotated[Optional[str], Field(description="Optional repository name filter.")] = None,
-    limit: Annotated[int, Field(description="Maximum results per section per page, clamped to 1..200 (default 50).")] = 50,
-    offset: Annotated[int, Field(description="0-based offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
-    include_permalinks: Annotated[bool, Field(description="Include Git web permalinks on returned routes and callers (default False keeps answers compact).")] = False,
-    path: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
-    path_query: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
-    route: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
+def _execute_find_routes_sync(
+    query: Optional[str], kind: str, method: Optional[str], repo: Optional[str],
+    limit: int, offset: int, include_permalinks: bool,
+    path: Optional[str], path_query: Optional[str], route: Optional[str],
 ) -> str:
-    """Discover HTTP/API route endpoints and/or client HTTP callers across indexed repositories with bounded pagination."""
     try:
         from app.services.auth import enforce_tool_permission, Role, ForbiddenError
         enforce_tool_permission(Role.VIEWER)
@@ -208,48 +201,27 @@ async def handle_find_routes(
             )
 
         payload: Dict[str, Any] = {
-            "query": clean_q,
-            "kind": clean_kind,
-            "method": method_clean,
-            "repo": repo_clean,
-            "offset": safe_offset,
-            "limit": safe_limit,
+            "query": clean_q, "kind": clean_kind, "method": method_clean,
+            "repo": repo_clean, "offset": safe_offset, "limit": safe_limit,
         }
 
         if clean_kind == "handlers":
             total = len(all_routes)
             has_more = (safe_offset + safe_limit) < total
-            payload.update({
-                "total": total,
-                "has_more": has_more,
-                "next_offset": (safe_offset + safe_limit) if has_more else None,
-                "routes": all_routes[safe_offset : safe_offset + safe_limit],
-            })
+            payload.update({"total": total, "has_more": has_more, "next_offset": (safe_offset + safe_limit) if has_more else None, "routes": all_routes[safe_offset : safe_offset + safe_limit]})
         elif clean_kind == "callers":
             total = len(all_callers)
             has_more = (safe_offset + safe_limit) < total
-            payload.update({
-                "total": total,
-                "has_more": has_more,
-                "next_offset": (safe_offset + safe_limit) if has_more else None,
-                "callers": all_callers[safe_offset : safe_offset + safe_limit],
-            })
+            payload.update({"total": total, "has_more": has_more, "next_offset": (safe_offset + safe_limit) if has_more else None, "callers": all_callers[safe_offset : safe_offset + safe_limit]})
         else:
-            total_routes = len(all_routes)
-            total_callers = len(all_callers)
-            routes_more = (safe_offset + safe_limit) < total_routes
-            callers_more = (safe_offset + safe_limit) < total_callers
-            has_more = routes_more or callers_more
+            total_routes, total_callers = len(all_routes), len(all_callers)
+            has_more = (safe_offset + safe_limit) < total_routes or (safe_offset + safe_limit) < total_callers
             payload.update({
-                "total": total_routes + total_callers,
-                "total_routes": total_routes,
-                "total_callers": total_callers,
-                "has_more": has_more,
-                "next_offset": (safe_offset + safe_limit) if has_more else None,
+                "total": total_routes + total_callers, "total_routes": total_routes, "total_callers": total_callers,
+                "has_more": has_more, "next_offset": (safe_offset + safe_limit) if has_more else None,
                 "routes": all_routes[safe_offset : safe_offset + safe_limit],
                 "callers": all_callers[safe_offset : safe_offset + safe_limit],
             })
-
         return json.dumps(payload)
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_find_routes: {fe}")
@@ -257,3 +229,22 @@ async def handle_find_routes(
     except Exception as e:
         logger.error(f"find_routes failed: {e}")
         return json.dumps({"error": f"Error searching API routes: {str(e)}"})
+
+
+async def handle_find_routes(
+    query: Annotated[Optional[str], Field(description="Optional route path, URL pattern, or handler/caller substring filter (e.g. '/api/v1/users/{id}' or 'checkout') across FastAPI, Flask, Django, Express/NestJS, ASP.NET Core, Go, Rust, Java, and frontend/service HTTP clients.")] = None,
+    kind: Annotated[Literal["handlers", "callers", "both"], Field(description="Search server route 'handlers', client HTTP 'callers', or 'both' (default 'both').")] = "both",
+    method: Annotated[Optional[str], Field(description="Optional HTTP verb filter (GET, POST, PUT, PATCH, DELETE).")] = None,
+    repo: Annotated[Optional[str], Field(description="Optional repository name filter.")] = None,
+    limit: Annotated[int, Field(description="Maximum results per section per page, clamped to 1..200 (default 50).")] = 50,
+    offset: Annotated[int, Field(description="0-based offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
+    include_permalinks: Annotated[bool, Field(description="Include Git web permalinks on returned routes and callers (default False keeps answers compact).")] = False,
+    path: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
+    path_query: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
+    route: Annotated[Optional[str], Field(description="Alias for `query` (route path or URL pattern filter). `query` wins when both are given.")] = None,
+) -> str:
+    """Discover HTTP/API route endpoints and/or client HTTP callers across indexed repositories with bounded pagination."""
+    return await asyncio.to_thread(
+        _execute_find_routes_sync,
+        query, kind, method, repo, limit, offset, include_permalinks, path, path_query, route,
+    )

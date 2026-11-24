@@ -127,11 +127,13 @@ def get_db_engine(database_url: Optional[str] = None, reset: bool = False, **kwa
                 cursor.close()
 
     else:
+        default_pool = max(10, int(os.getenv("DB_POOL_SIZE", "16") or 16))
+        default_overflow = max(10, int(os.getenv("DB_MAX_OVERFLOW", "32") or 32))
         engine = create_engine(
             url,
             pool_pre_ping=True,
-            pool_size=kwargs.get("pool_size", 10),
-            max_overflow=kwargs.get("max_overflow", 20),
+            pool_size=kwargs.get("pool_size", default_pool),
+            max_overflow=kwargs.get("max_overflow", default_overflow),
             **{k: v for k, v in kwargs.items() if k not in ("pool_size", "max_overflow")},
         )
 

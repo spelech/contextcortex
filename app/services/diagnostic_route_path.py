@@ -227,3 +227,56 @@ def keep_semantic_hit(
         if hit_lang and hit_lang not in route_languages:
             return False
     return True
+
+
+def run_plain_language_diagnosis(
+    issue_text: str,
+    repo: Optional[str],
+    limit: int,
+    detail: bool,
+    *,
+    search_fn,
+    build_candidate_fn,
+    diag_file_fn,
+    max_candidate_chars: int = 3000,
+):
+    """Expands a plain-language report into concept queries and builds diversified candidates + areas."""
+    from app.services.database import get_db_connection
+    from app.services.expanded_search import area_key_for_path, run_expanded_code_search
+    from app.services.source_paths import LocalSourceRoots
+
+    expanded = run_expanded_code_search(
+        report_text=issue_text,
+        search_fn=search_fn,
+        repo=repo,
+        doc_type="code",
+        limit=limit,
+        per_query_limit=hybrid_candidate_limit(limit),
+        dense_weight=PLAIN_LANGUAGE_DIAGNOSTIC_DENSE_WEIGHT,
+        search_mode="hybrid",
+        filter_fn=lambda p: keep_semantic_hit(p, repo, set(), query_text=issue_text),
+        min_raw_score=PLAIN_LANGUAGE_MIN_SCORE,
+    )
+    sem_cands: List[Dict[str, Any]] = []
+    with get_db_connection() as conn:
+        git_repos = {
+            r["name"]: dict(r)
+            for r in conn.execute("SELECT name, url, commit_sha, provider FROM git_repositories").fetchall()
+        }
+        roots = LocalSourceRoots.load(conn)
+        for h in expanded.hits[:limit]:
+            p = h.payload or {}
+            fp = diag_file_fn(roots, p.get("rel_path") or p.get("path") or "")
+            sem_cands.append(build_candidate_fn(conn, git_repos, {
+                "score": round(float(h.score or 0.0), 4), "source": "semantic", "depth": None,
+                "repo": p.get("repo") or repo or "unknown", "file": fp,
+                "lines": [p.get("start_line", 1), p.get("end_line", 1)],
+                "symbol": p.get("full_symbol") or p.get("symbol"), "kind": p.get("kind"),
+                "signature": p.get("signature"), "content": (p.get("content") or "")[:max_candidate_chars],
+                "permalink": p.get("permalink_url") or p.get("github_url"),
+            }, detail))
+        areas = [
+            {**a, "file": (clean_fp := diag_file_fn(roots, a["file"])), "area": area_key_for_path(clean_fp)}
+            for a in expanded.areas
+        ]
+    return expanded.queries, areas, sem_cands

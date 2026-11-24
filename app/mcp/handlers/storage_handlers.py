@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -149,14 +150,9 @@ def collect_index_status() -> Dict[str, Any]:
     return payload
 
 
-async def handle_manage(
-    action: Annotated[Literal["sync_repo", "upload", "replace", "delete", "read", "preview"], Field(description="Admin/storage operation: 'sync_repo' (re-fetch/index Git repo or all sources), 'upload', 'replace', 'delete' (editor role), or 'read', 'preview' (viewer role) on managed local storage.")],
-    repo: Annotated[Optional[str], Field(description="Target Git repository or local-path repo name for 'sync_repo' (forces a full reprocess of that source; omit for full re-index), or storage namespace tag for file operations (default 'local_storage').")] = None,
-    file_path: Annotated[Optional[str], Field(description="Safe relative path inside managed local storage (required for 'upload', 'replace', 'delete', 'read', and 'preview').")] = None,
-    content: Annotated[Optional[str], Field(description="UTF-8 text payload to write when action is 'upload' or 'replace'.")] = None,
-    category: Annotated[Optional[str], Field(description="Optional document category metadata tag (e.g. 'runbook', 'architecture').")] = None,
+def _execute_manage_sync(
+    action: str, repo: Optional[str], file_path: Optional[str], content: Optional[str], category: Optional[str],
 ) -> str:
-    """Manage repository synchronization and local storage files with RBAC enforcement and immediate indexing."""
     act = (action or "").strip().lower()
     try:
         if act in ("sync_repo", "upload", "replace", "delete"):
@@ -315,3 +311,16 @@ async def handle_manage(
     except Exception as e:
         logger.error(f"Error executing manage ({action}): {e}")
         return json.dumps({"error": f"Error executing manage: {str(e)}"})
+
+
+async def handle_manage(
+    action: Annotated[Literal["sync_repo", "upload", "replace", "delete", "read", "preview"], Field(description="Admin/storage operation: 'sync_repo' (re-fetch/index Git repo or all sources), 'upload', 'replace', 'delete' (editor role), or 'read', 'preview' (viewer role) on managed local storage.")],
+    repo: Annotated[Optional[str], Field(description="Target Git repository or local-path repo name for 'sync_repo' (forces a full reprocess of that source; omit for full re-index), or storage namespace tag for file operations (default 'local_storage').")] = None,
+    file_path: Annotated[Optional[str], Field(description="Safe relative path inside managed local storage (required for 'upload', 'replace', 'delete', 'read', and 'preview').")] = None,
+    content: Annotated[Optional[str], Field(description="UTF-8 text payload to write when action is 'upload' or 'replace'.")] = None,
+    category: Annotated[Optional[str], Field(description="Optional document category metadata tag (e.g. 'runbook', 'architecture').")] = None,
+) -> str:
+    """Manage repository synchronization and local storage files with RBAC enforcement and immediate indexing."""
+    if not isinstance(threading.Thread, type):
+        return _execute_manage_sync(action, repo, file_path, content, category)
+    return await asyncio.to_thread(_execute_manage_sync, action, repo, file_path, content, category)

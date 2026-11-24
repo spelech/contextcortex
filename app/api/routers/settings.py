@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import json
@@ -372,7 +373,7 @@ async def api_get_vector_store():
                 "stats": {},
                 "points_count": 0,
             }
-        cfg = vs_service.get_vector_store_config()
+        cfg = await asyncio.to_thread(vs_service.get_vector_store_config)
         cfg["points_count"] = cfg.get("stats", {}).get("points_count", cfg.get("points_count", 0))
         return cfg
     except Exception as e:

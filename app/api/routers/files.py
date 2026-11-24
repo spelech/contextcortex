@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional
 from pydantic import BaseModel, Field
@@ -48,11 +49,12 @@ async def api_read_file(
             return JSONResponse(status_code=400, content={"error": "Path traversal or invalid repo detected."})
 
         reader = get_file_reader_service()
-        res = reader.read_file(
+        res = await asyncio.to_thread(
+            reader.read_file,
             path=raw_path,
             repo=raw_repo,
             start_line=start_line,
-            end_line=end_line
+            end_line=end_line,
         )
         return res
     except ForbiddenError as fe:
@@ -85,12 +87,13 @@ async def api_summarize_file(payload: FileSummarizePayload):
             return JSONResponse(status_code=400, content={"error": "Path traversal or invalid repo detected."})
 
         reader = get_file_reader_service()
-        safe_path, _ = reader.resolve_safe_path(raw_path, repo=raw_repo)
+        safe_path, _ = await asyncio.to_thread(reader.resolve_safe_path, raw_path, repo=raw_repo)
         summarizer = get_summarizer_service()
-        summary_text = summarizer.get_or_create_summary(
+        summary_text = await asyncio.to_thread(
+            summarizer.get_or_create_summary,
             filepath=safe_path,
             repo=payload.repo,
-            force_refresh=payload.force_refresh
+            force_refresh=payload.force_refresh,
         )
         return {
             "path": payload.path,
@@ -133,7 +136,8 @@ async def api_grep_code(payload: GrepSearchPayload):
 
         safe_pattern = re.escape(raw_pattern)
         reader = get_file_reader_service()
-        result = reader.grep_code(
+        result = await asyncio.to_thread(
+            reader.grep_code,
             pattern=safe_pattern,
             repo=raw_repo,
             path_glob=payload.path_glob,
