@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import sys
@@ -39,21 +40,20 @@ def _resolve_doc_type(scope: Optional[str]) -> Tuple[str, Optional[str]]:
     raise ValueError(f"Unsupported scope '{scope}'. Valid scopes are 'code', 'docs', or 'all'.")
 
 
-async def handle_search(
-    query: Annotated[str, Field(description="Natural-language code/doc concept or exact identifier (e.g. 'JWT bearer validation' or 'OrderProcessor.retry_payment') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, ADRs, and PDFs.")],
-    scope: Annotated[Literal["code", "docs", "all"], Field(description="Retrieval scope: 'code' (AST code chunks), 'docs' (Markdown, ADRs, PDFs), or 'all' (default, searches both).")] = "all",
-    repo: Annotated[Optional[str], Field(description="Optional repository name, documentation vault, or 'local_storage' filter.")] = None,
-    language: Annotated[Optional[str], Field(description="Optional language filter for code results (e.g. 'python', 'typescript', 'tsx', 'csharp', 'cobol', 'go', 'rust', 'java', 'cpp', 'c').")] = None,
-    category: Annotated[Optional[str], Field(description="Optional document category filter (e.g. 'architecture', 'runbook', 'notes').")] = None,
-    tag: Annotated[Optional[str], Field(description="Optional frontmatter tag filter.")] = None,
-    mode: Annotated[Optional[str], Field(description="Retrieval mode: 'hybrid' (default), 'semantic' ('vector'), or 'lexical' ('keyword', 'bm25', 'fts').")] = "hybrid",
-    dense_weight: Annotated[Optional[float], Field(description="Optional fusion weight in 0.0..1.0 between lexical BM25 (0.0) and dense semantic vectors (1.0); default 0.5 balanced.")] = None,
-    limit: Annotated[int, Field(description="Maximum chunks per page, clamped to 1..25 (default 5).")] = 5,
-    offset: Annotated[int, Field(description="0-based result offset for pagination (default 0). Advance using next_offset when has_more is True.")] = 0,
-    max_snippet_chars: Annotated[int, Field(description="Maximum characters per returned snippet, clamped to 200..6000 (default 2000).")] = 2000,
-    include_permalinks: Annotated[bool, Field(description="Include Git web permalinks on search hits (default False keeps results compact).")] = False,
+def _execute_search_sync(
+    query: str,
+    scope: str,
+    repo: Optional[str],
+    language: Optional[str],
+    category: Optional[str],
+    tag: Optional[str],
+    mode: Optional[str],
+    dense_weight: Optional[float],
+    limit: int,
+    offset: int,
+    max_snippet_chars: int,
+    include_permalinks: bool,
 ) -> str:
-    """Hybrid semantic + BM25 search across AST-chunked source code and documentation with bounded snippets and pagination."""
     clean_query = query.strip() if query else ""
     if not clean_query:
         return json.dumps({"error": "search query cannot be empty."})
@@ -153,3 +153,24 @@ async def handle_search(
     except Exception as e:
         logger.error(f"search failed: {e}")
         return json.dumps({"error": f"Error executing search: {str(e)}"})
+
+
+async def handle_search(
+    query: Annotated[str, Field(description="Natural-language code/doc concept or exact identifier (e.g. 'JWT bearer validation' or 'OrderProcessor.retry_payment') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, ADRs, and PDFs.")],
+    scope: Annotated[Literal["code", "docs", "all"], Field(description="Retrieval scope: 'code' (AST code chunks), 'docs' (Markdown, ADRs, PDFs), or 'all' (default, searches both).")] = "all",
+    repo: Annotated[Optional[str], Field(description="Optional repository name, documentation vault, or 'local_storage' filter.")] = None,
+    language: Annotated[Optional[str], Field(description="Optional language filter for code results (e.g. 'python', 'typescript', 'tsx', 'csharp', 'cobol', 'go', 'rust', 'java', 'cpp', 'c').")] = None,
+    category: Annotated[Optional[str], Field(description="Optional document category filter (e.g. 'architecture', 'runbook', 'notes').")] = None,
+    tag: Annotated[Optional[str], Field(description="Optional frontmatter tag filter.")] = None,
+    mode: Annotated[Optional[str], Field(description="Retrieval mode: 'hybrid' (default), 'semantic' ('vector'), or 'lexical' ('keyword', 'bm25', 'fts').")] = "hybrid",
+    dense_weight: Annotated[Optional[float], Field(description="Optional fusion weight in 0.0..1.0 between lexical BM25 (0.0) and dense semantic vectors (1.0); default 0.5 balanced.")] = None,
+    limit: Annotated[int, Field(description="Maximum chunks per page, clamped to 1..25 (default 5).")] = 5,
+    offset: Annotated[int, Field(description="0-based result offset for pagination (default 0). Advance using next_offset when has_more is True.")] = 0,
+    max_snippet_chars: Annotated[int, Field(description="Maximum characters per returned snippet, clamped to 200..6000 (default 2000).")] = 2000,
+    include_permalinks: Annotated[bool, Field(description="Include Git web permalinks on search hits (default False keeps results compact).")] = False,
+) -> str:
+    """Hybrid semantic + BM25 search across AST-chunked source code and documentation with bounded snippets and pagination."""
+    return await asyncio.to_thread(
+        _execute_search_sync,
+        query, scope, repo, language, category, tag, mode, dense_weight, limit, offset, max_snippet_chars, include_permalinks,
+    )

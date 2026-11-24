@@ -185,6 +185,32 @@ class FileReaderService:
             logger.warning(f"Error reading from vector store fallback for {path}: {e}")
             return None
 
+    def _try_read_resolved_path(
+        self,
+        resolved_path: str,
+        repo: str,
+        start_line: Optional[int],
+        end_line: Optional[int],
+        max_lines: Optional[int],
+    ) -> Optional[Dict[str, Any]]:
+        """Reads a uniquely suffix-resolved path from disk if present, else from the vector store."""
+        try:
+            abs_p, src_type = self.resolve_safe_path(resolved_path, repo=repo)
+            if os.path.isabs(abs_p) and os.path.isfile(abs_p) and not self.is_binary_file(abs_p):
+                size_b = os.path.getsize(abs_p)
+                txt = read_source_text(abs_p)
+                if not txt:
+                    return {
+                        "filepath": resolved_path, "content": "", "start_line": 1, "end_line": 0,
+                        "total_lines": 0, "size_bytes": size_b, "truncated": False, "source": src_type,
+                    }
+                return self._slice_lines(txt.splitlines(), resolved_path, size_b, src_type, start_line, end_line, max_lines)
+        except Exception:
+            pass
+        return self._read_from_vector_store(
+            path=resolved_path, repo=repo, start_line=start_line, end_line=end_line, max_lines=max_lines,
+        )
+
     def read_file(
         self,
         path: str,
@@ -218,6 +244,25 @@ class FileReaderService:
             if vec_res:
                 return vec_res
 
+            # Issue #218: if the requested relative path is a unique suffix of an indexed path, resolve and read it.
+            suffix_matches: List[str] = []
+            is_abs_lookup = clean_lookup_path.startswith("/") or clean_lookup_path.startswith("\\") or (len(clean_lookup_path) >= 2 and clean_lookup_path[1] == ":")
+            if effective_repo and effective_repo != "local_storage" and not is_abs_lookup:
+                suffix_matches = self._resolver.find_suffix_indexed_files(clean_lookup_path, effective_repo)
+                if len(suffix_matches) == 1 and suffix_matches[0].lower() != clean_lookup_path.lstrip("/").lower():
+                    resolved_path = suffix_matches[0]
+                    resolved_res = self._try_read_resolved_path(
+                        resolved_path=resolved_path,
+                        repo=effective_repo,
+                        start_line=start_line,
+                        end_line=end_line,
+                        max_lines=max_lines,
+                    )
+                    if resolved_res is not None:
+                        resolved_res["filepath"] = resolved_path
+                        resolved_res["resolved_from"] = clean_lookup_path
+                        return resolved_res
+
             if effective_repo and self._resolver.is_ephemeral_git_repo_absent(effective_repo):
                 if self._resolver.is_file_indexed(clean_lookup_path, effective_repo):
                     raise FileNotFoundError(
@@ -225,7 +270,7 @@ class FileReaderService:
                         f"(ephemeral Git clone was cleaned up after indexing) and could not be reconstructed from "
                         f"indexed vector chunks. Enable persistent shallow clone (keep_shallow) and re-sync '{effective_repo}'."
                     ) from orig_err
-                suggestions = self._resolver.suggest_similar_indexed_files(clean_lookup_path, effective_repo)
+                suggestions = suffix_matches[:5] if len(suffix_matches) > 1 else self._resolver.suggest_similar_indexed_files(clean_lookup_path, effective_repo)
                 hint = f" Similar indexed paths: {', '.join(suggestions)}." if suggestions else ""
                 raise FileNotFoundError(
                     f"File '{clean_lookup_path}' was not found in repository '{effective_repo}'. "
@@ -235,7 +280,7 @@ class FileReaderService:
             if isinstance(orig_err, ValueError):
                 raise
             if effective_repo and effective_repo != "local_storage" and not self._resolver.is_file_indexed(clean_lookup_path, effective_repo):
-                suggestions = self._resolver.suggest_similar_indexed_files(clean_lookup_path, effective_repo)
+                suggestions = suffix_matches[:5] if len(suffix_matches) > 1 else self._resolver.suggest_similar_indexed_files(clean_lookup_path, effective_repo)
                 hint = f" Similar indexed paths: {', '.join(suggestions)}." if suggestions else ""
                 raise FileNotFoundError(
                     f"File '{clean_lookup_path}' was not found in repository '{effective_repo}'. "

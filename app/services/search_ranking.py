@@ -86,8 +86,13 @@ def is_low_value_chunk_kind(payload: Optional[Dict[str, Any]]) -> bool:
     return isinstance(payload, dict) and payload.get("kind") in _LOW_VALUE_CHUNK_KINDS
 
 
-def demote_trivial_code_results(results: list) -> list:
-    """Demotes `#endregion }`-style fragments and header/gap chunks so real code ranks first even in semantic mode."""
+def demote_trivial_code_results(
+    results: list,
+    query_text: str = "",
+    doc_type: Optional[str] = None,
+    language: Optional[str] = None,
+) -> list:
+    """Demotes `#endregion }`-style fragments, header/gap chunks, and low-signal HTML/fixture/CSS assets in semantic mode."""
     if not results:
         return results
     changed = False
@@ -95,21 +100,50 @@ def demote_trivial_code_results(results: list) -> list:
         p = getattr(r, "payload", None) or {}
         if not isinstance(p, dict):
             continue
-        is_code = p.get("doc_type") == "code" or bool(p.get("language"))
+        is_code = doc_type == "code" or p.get("doc_type") == "code" or bool(p.get("language"))
         if not is_code:
             continue
-        mult = 1.0
-        if is_low_value_chunk_kind(p):
-            mult = min(mult, 0.15)
-        content = p.get("content")
-        if isinstance(content, str) and content.strip() and not is_substantive_code_fragment(content):
-            mult = min(mult, 0.05)
+        mult = low_signal_multiplier(p, query_text=query_text, doc_type=doc_type, language=language)
         if mult < 1.0:
             r.score = round(float(r.score or 0.0) * mult, 4)
             changed = True
     if changed:
         results.sort(key=lambda item: float(item.score or 0.0), reverse=True)
     return results
+
+
+def cap_results_per_file(results: list, limit: int, max_per_file: int = 2) -> list:
+    """Caps chunks from any single file so one large file cannot monopolize a search result page.
+
+    Overflow items are only appended if fewer than `limit` diverse results exist.
+    """
+    safe_limit = max(1, int(limit or 5))
+    cap = max(1, int(max_per_file or 2))
+    if not results or len(results) <= cap:
+        return list(results[:safe_limit])
+    primary: list = []
+    overflow: list = []
+    counts: Dict[tuple, int] = {}
+    for item in results:
+        p = getattr(item, "payload", None) or {}
+        if isinstance(p, dict):
+            repo = str(p.get("repo") or "")
+            raw_path = _normalize_path(str(p.get("rel_path") or p.get("path") or ""))
+            key = (repo, raw_path) if raw_path else None
+        else:
+            key = None
+        if key is None:
+            primary.append(item)
+        else:
+            seen_n = counts.get(key, 0)
+            if seen_n < cap:
+                counts[key] = seen_n + 1
+                primary.append(item)
+            else:
+                overflow.append(item)
+    if len(primary) >= safe_limit:
+        return primary[:safe_limit]
+    return (primary + overflow)[:safe_limit]
 
 
 def hybrid_candidate_limit(

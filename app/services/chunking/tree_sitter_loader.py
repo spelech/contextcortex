@@ -30,6 +30,7 @@ EXTENSION_TO_LANGUAGE = {
     ".bash": "bash",
     ".sql": "sql",
     ".html": "html",
+    ".htm": "html",
     ".css": "css",
     ".json": "json",
     ".yaml": "yaml",
@@ -64,5 +65,5 @@ def detect_language(filepath: str) -> str:
 
 def is_code_file(filepath: str) -> bool:
     lang = detect_language(filepath)
-    return lang not in ("markdown", "text", "json", "yaml", "toml")
+    return lang not in ("markdown", "text", "json", "yaml", "toml", "html")
 

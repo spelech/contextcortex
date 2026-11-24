@@ -28,7 +28,7 @@ RESULT_TYPES = """\
 interface GrepCodeFile { file: string; repo?: string; symbols?: Record<string, string>; permalink?: string; lines: string[] }
 interface GrepCodeResult { total_matches: number; has_more: boolean; next_offset?: number; offset?: number; pattern_mode?: string; path_filter?: string; repo?: string; files: GrepCodeFile[]; index_status?: string; sync_progress?: Record<string, any> }
 /** read_file text slice: each content line is '<line>:<text>'. With outline_only=True the result has symbols instead. */
-interface ReadFileResult { file: string; lines: [number, number]; total_lines: number; next_start_line?: number; truncated?: boolean; source?: string; missing_lines?: [number, number][]; content: string }
+interface ReadFileResult { file: string; resolved_from?: string; lines: [number, number]; total_lines: number; next_start_line?: number; truncated?: boolean; source?: string; missing_lines?: [number, number][]; content: string }
 interface ReadFileOutline { file: string; repo: string | null; outline_only: true; total_symbols: number; offset: number; limit: number; has_more: boolean; next_offset: number | null; symbols: { name: string; symbol: string; kind: string; lines: [number, number]; signature: string | null }[]; candidates?: string[] }
 """
 

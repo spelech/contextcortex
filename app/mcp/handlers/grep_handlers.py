@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import sys
@@ -69,22 +70,11 @@ def _sanitize_match_lines(match: Dict[str, Any]) -> Dict[str, Any]:
     return sanitized
 
 
-async def handle_grep_code(
-    pattern: Annotated[Optional[str], Field(description="Exact literal string or regular expression to match across source files (Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, configs).")] = None,
-    repo: Annotated[Optional[str], Field(description="Optional repository name or 'local_storage' to scope search. Omit to scan all indexed sources.")] = None,
-    path_glob: Annotated[Optional[str], Field(description="Optional path filter. With wildcards it is an fnmatch glob ('*.cs', 'app/services/*'); without wildcards it is a file or folder ('Services_V2', 'src/app/main.py').")] = None,
-    is_regex: Annotated[bool, Field(description="Set True to evaluate pattern as a Python regular expression; False (default) matches literal text. If a literal search finds nothing and the pattern looks like a regex (for example 'A|B'), the search runs again as a regex and pattern_mode says so.")] = False,
-    case_sensitive: Annotated[bool, Field(description="Set True for case-sensitive matching; False (default) ignores case.")] = False,
-    context_lines: Annotated[int, Field(description="Surrounding context lines per match, clamped to 0..10 (default 2). Lines > 400 chars are truncated.")] = 2,
-    limit: Annotated[int, Field(description="Maximum matched lines per page, clamped to 1..100 (default 30).")] = 30,
-    offset: Annotated[int, Field(description="0-based match offset for pagination (default 0). Advance by next_offset when has_more is True.")] = 0,
-    path: Annotated[Optional[str], Field(description="Alias for path_glob (a file, folder, or glob). path_glob wins when both are given.")] = None,
-    include_permalinks: Annotated[bool, Field(description="Include file-level Git web permalinks on matched file groups (default False keeps output compact).")] = False,
-    query: Annotated[Optional[str], Field(description="Alias for `pattern`. `pattern` wins when both are given.")] = None,
-    filepath: Annotated[Optional[str], Field(description="Alias for `path_glob` (a file, folder, or glob). `path_glob` wins when both are given.")] = None,
-    file: Annotated[Optional[str], Field(description="Alias for `path_glob` (a file, folder, or glob). `path_glob` wins when both are given.")] = None,
+def _execute_grep_code_sync(
+    pattern: Optional[str], repo: Optional[str], path_glob: Optional[str], is_regex: bool,
+    case_sensitive: bool, context_lines: int, limit: int, offset: int, path: Optional[str],
+    include_permalinks: bool, query: Optional[str], filepath: Optional[str], file: Optional[str],
 ) -> str:
-    """Deterministic literal and regex pattern search across indexed repositories with bounded line lengths and pagination."""
     try:
         enforce_tool_permission(Role.VIEWER)
         eff_pattern = pattern if (pattern is not None and pattern != "") else (query if query is not None else "")
@@ -100,29 +90,17 @@ async def handle_grep_code(
         def _search(as_regex: bool) -> List[Dict[str, Any]]:
             if needed <= 100:
                 raw_result = reader.grep_code(
-                    pattern=eff_pattern,
-                    repo=repo,
-                    path_glob=path_filter,
-                    is_regex=as_regex,
-                    case_sensitive=case_sensitive,
-                    context_lines=safe_context,
-                    limit=100,
+                    pattern=eff_pattern, repo=repo, path_glob=path_filter, is_regex=as_regex,
+                    case_sensitive=case_sensitive, context_lines=safe_context, limit=100,
                 )
                 return raw_result.get("matches", [])
             raw_result = execute_code_grep(
-                pattern=eff_pattern,
-                storage_root=reader.storage_root,
+                pattern=eff_pattern, storage_root=reader.storage_root,
                 indexed_paths=reader._get_authorized_indexed_paths(),
                 persistent_repos=reader._get_authorized_persistent_repos(),
-                is_binary_fn=reader.is_binary_file,
-                db_conn_factory=lambda: get_db_connection(),
-                repo=repo,
-                path_glob=path_filter,
-                is_regex=as_regex,
-                case_sensitive=case_sensitive,
-                context_lines=safe_context,
-                limit=needed,
-                max_limit=needed,
+                is_binary_fn=reader.is_binary_file, db_conn_factory=lambda: get_db_connection(),
+                repo=repo, path_glob=path_filter, is_regex=as_regex, case_sensitive=case_sensitive,
+                context_lines=safe_context, limit=needed, max_limit=needed,
             )
             return raw_result.get("matches", [])
 
@@ -138,9 +116,7 @@ async def handle_grep_code(
         next_offset = (safe_offset + safe_limit) if has_more else None
 
         shared_repo, files = group_grep_matches(
-            sanitized_matches,
-            block_separators=safe_context > 0,
-            include_permalinks=bool(include_permalinks),
+            sanitized_matches, block_separators=safe_context > 0, include_permalinks=bool(include_permalinks),
         )
         payload: Dict[str, Any] = {"total_matches": len(all_matches)}
         if pattern_mode != ("regex" if is_regex else "literal"):
@@ -159,7 +135,6 @@ async def handle_grep_code(
         if sync_info:
             payload.update(sync_info)
         return json.dumps(payload, separators=(",", ":"))
-
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_grep_code: {fe}")
         return json.dumps({"error": "forbidden", "message": str(fe)}, separators=(",", ":"))
@@ -168,3 +143,26 @@ async def handle_grep_code(
     except Exception as e:
         logger.error(f"Error searching code with grep: {e}")
         return json.dumps({"error": str(e)}, separators=(",", ":"))
+
+
+async def handle_grep_code(
+    pattern: Annotated[Optional[str], Field(description="Exact literal string or regular expression to match across source files (Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, C/C++, Markdown, configs).")] = None,
+    repo: Annotated[Optional[str], Field(description="Optional repository name or 'local_storage' to scope search. Omit to scan all indexed sources.")] = None,
+    path_glob: Annotated[Optional[str], Field(description="Optional path filter. With wildcards it is an fnmatch glob ('*.cs', 'app/services/*'); without wildcards it is a file or folder ('Services_V2', 'src/app/main.py').")] = None,
+    is_regex: Annotated[bool, Field(description="Set True to evaluate pattern as a Python regular expression; False (default) matches literal text. If a literal search finds nothing and the pattern looks like a regex (for example 'A|B'), the search runs again as a regex and pattern_mode says so.")] = False,
+    case_sensitive: Annotated[bool, Field(description="Set True for case-sensitive matching; False (default) ignores case.")] = False,
+    context_lines: Annotated[int, Field(description="Surrounding context lines per match, clamped to 0..10 (default 2). Lines > 400 chars are truncated.")] = 2,
+    limit: Annotated[int, Field(description="Maximum matched lines per page, clamped to 1..100 (default 30).")] = 30,
+    offset: Annotated[int, Field(description="0-based match offset for pagination (default 0). Advance by next_offset when has_more is True.")] = 0,
+    path: Annotated[Optional[str], Field(description="Alias for path_glob (a file, folder, or glob). path_glob wins when both are given.")] = None,
+    include_permalinks: Annotated[bool, Field(description="Include file-level Git web permalinks on matched file groups (default False keeps output compact).")] = False,
+    query: Annotated[Optional[str], Field(description="Alias for `pattern`. `pattern` wins when both are given.")] = None,
+    filepath: Annotated[Optional[str], Field(description="Alias for `path_glob` (a file, folder, or glob). `path_glob` wins when both are given.")] = None,
+    file: Annotated[Optional[str], Field(description="Alias for `path_glob` (a file, folder, or glob). `path_glob` wins when both are given.")] = None,
+) -> str:
+    """Deterministic literal and regex pattern search across indexed repositories with bounded line lengths and pagination."""
+    return await asyncio.to_thread(
+        _execute_grep_code_sync,
+        pattern, repo, path_glob, is_regex, case_sensitive, context_lines, limit, offset, path,
+        include_permalinks, query, filepath, file,
+    )

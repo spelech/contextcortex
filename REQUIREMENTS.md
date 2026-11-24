@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1408 Automated Tests** (1044 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1413 Automated Tests** (1049 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1691,6 +1691,13 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_210_single_word_routing_and_dense_fill`
 - `test_211_pgvector_file_chunks_uses_indexed_rel_path_first_and_batches`
 - `test_212_multiline_line_anchors_across_pgvector_qdrant_and_chroma`
+
+#### `tests/test_usage_fixes_215_218.py` (5 tests)
+- `test_215_concurrent_index_ddl_runs_with_zero_open_transactions_and_rebuilds_invalid_index` - _Asserts active_tx == 0 during every CONCURRENTLY statement and INVALID indexes are rebuilt._
+- `test_215_real_postgres_concurrent_index_migration_no_deadlock` - _Integration test against real Postgres: populated table + missing file-lookup index completes cleanly._
+- `test_216_html_classified_as_doc_and_code_search_caps_per_file_in_all_modes`
+- `test_217_concurrent_mcp_tool_calls_run_in_parallel_not_serialized` - _8 parallel handle_search calls sleeping 0.25s each must complete in ~0.3-0.8s, not ~2.0s._
+- `test_218_read_file_resolves_unique_suffix_and_ranks_ambiguous_suffixes_first`
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`

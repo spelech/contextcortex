@@ -427,7 +427,8 @@ async def api_test_search(payload: SearchRequest):
             return JSONResponse(status_code=400, content={"error": "Query required"})
 
         search_mode = (payload.search_mode or "hybrid").lower().strip()
-        hits = search_service.execute_hybrid_search(
+        hits = await asyncio.to_thread(
+            search_service.execute_hybrid_search,
             query_text=query, doc_type=payload.type, repo=payload.repo,
             language=payload.language, category=payload.category, tag=payload.tag,
             limit=payload.limit or 6, dense_weight=payload.dense_weight, search_mode=search_mode,

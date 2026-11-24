@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import sys
@@ -71,18 +72,10 @@ def _paginate_trace_tree(
     return roots, counter
 
 
-async def handle_find_symbol(
-    symbol: Annotated[Optional[str], Field(description="Function, method, class, struct, interface, record, or COBOL paragraph name (or qualified name such as 'OrderService.create_order') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Same parameter name as trace_path.")] = None,
-    repo: Annotated[Optional[str], Field(description="Optional repository name filter to restrict AST lookup.")] = None,
-    exact: Annotated[bool, Field(description="Set True (default) for exact symbol/qualified-name match; False for substring/prefix matching.")] = True,
-    limit: Annotated[int, Field(description="Maximum AST symbols per page, clamped to 1..100 (default 30).")] = 30,
-    offset: Annotated[int, Field(description="0-based symbol offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
-    name: Annotated[Optional[str], Field(description="Deprecated alias of `symbol`, kept for older callers. Use `symbol`; it wins when both are given.")] = None,
-    query: Annotated[Optional[str], Field(description="Alias for `symbol`. `symbol` wins when both are given.")] = None,
+def _execute_find_symbol_sync(
+    symbol: Optional[str], repo: Optional[str], exact: bool,
+    limit: int, offset: int, name: Optional[str], query: Optional[str],
 ) -> str:
-    """Instant deterministic AST symbol lookup (functions, classes, methods, interfaces) without token-heavy full-file scans."""
-    # `symbol` is optional here only so that a call with the deprecated `name` or `query` alias still validates.
-    # The published schema marks `symbol` as required (see app/mcp/tools.py `_SCHEMA_REQUIRED_OVERRIDES`).
     sym_name = (symbol or name or query or "").strip()
     if not sym_name:
         return json.dumps({"error": "symbol name cannot be empty: pass 'symbol' (the alias 'name' is also accepted)."})
@@ -106,11 +99,9 @@ async def handle_find_symbol(
             else:
                 sql_query += "(name LIKE ? OR full_symbol LIKE ?)"
                 params.extend([f"%{sym_name}%", f"%{sym_name}%"])
-
             if repo:
                 sql_query += " AND repo = ?"
                 params.append(repo)
-
             sql_query += " ORDER BY repo ASC, filepath ASC, start_line ASC, name ASC"
             rows = conn.execute(sql_query, params).fetchall()
             local_roots = LocalSourceRoots.load(conn)
@@ -125,14 +116,9 @@ async def handle_find_symbol(
                 continue
             seen_syms.add(dedup_key)
             all_symbols.append({
-                "name": r["name"],
-                "symbol": sym_full,
-                "kind": r["kind"],
-                "repo": r["repo"],
-                "file": rel_file,
-                "lines": [r["start_line"], r["end_line"]],
-                "signature": r["signature"],
-                "language": r["language"],
+                "name": r["name"], "symbol": sym_full, "kind": r["kind"], "repo": r["repo"],
+                "file": rel_file, "lines": [r["start_line"], r["end_line"]],
+                "signature": r["signature"], "language": r["language"],
             })
 
         total = len(all_symbols)
@@ -141,14 +127,8 @@ async def handle_find_symbol(
         next_offset = (safe_offset + safe_limit) if has_more else None
 
         payload = {
-            "query": sym_name,
-            "exact": exact,
-            "total": total,
-            "offset": safe_offset,
-            "limit": safe_limit,
-            "has_more": has_more,
-            "next_offset": next_offset,
-            "symbols": paged_symbols,
+            "query": sym_name, "exact": exact, "total": total, "offset": safe_offset,
+            "limit": safe_limit, "has_more": has_more, "next_offset": next_offset, "symbols": paged_symbols,
         }
         sync_info = get_active_sync_status(repo)
         if sync_info:
@@ -160,6 +140,93 @@ async def handle_find_symbol(
     except Exception as e:
         logger.error(f"find_symbol error: {e}")
         return json.dumps({"error": f"Error finding symbol: {str(e)}"})
+
+
+async def handle_find_symbol(
+    symbol: Annotated[Optional[str], Field(description="Function, method, class, struct, interface, record, or COBOL paragraph name (or qualified name such as 'OrderService.create_order') across Python, TypeScript/JS/TSX, C#, COBOL, Go, Rust, Java, and C/C++. Same parameter name as trace_path.")] = None,
+    repo: Annotated[Optional[str], Field(description="Optional repository name filter to restrict AST lookup.")] = None,
+    exact: Annotated[bool, Field(description="Set True (default) for exact symbol/qualified-name match; False for substring/prefix matching.")] = True,
+    limit: Annotated[int, Field(description="Maximum AST symbols per page, clamped to 1..100 (default 30).")] = 30,
+    offset: Annotated[int, Field(description="0-based symbol offset for pagination (default 0). Advance via next_offset when has_more is True.")] = 0,
+    name: Annotated[Optional[str], Field(description="Deprecated alias of `symbol`, kept for older callers. Use `symbol`; it wins when both are given.")] = None,
+    query: Annotated[Optional[str], Field(description="Alias for `symbol`. `symbol` wins when both are given.")] = None,
+) -> str:
+    """Instant deterministic AST symbol lookup (functions, classes, methods, interfaces) without token-heavy full-file scans."""
+    return await asyncio.to_thread(_execute_find_symbol_sync, symbol, repo, exact, limit, offset, name, query)
+
+
+def _execute_trace_path_sync(
+    symbol: Optional[str], repo: Optional[str], direction: str, depth: int,
+    limit: int, offset: int, include_permalinks: bool, include_unresolved: bool,
+    name: Optional[str], query: Optional[str],
+) -> str:
+    eff_symbol = (symbol if (symbol is not None and symbol.strip()) else (name or query or ""))
+    try:
+        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
+        enforce_tool_permission(Role.VIEWER)
+
+        safe_limit = max(1, min(int(limit if limit is not None else 50), 200))
+        safe_offset = max(0, int(offset if offset is not None else 0))
+        fetch_cap = min(500, max(100, safe_offset + safe_limit + 25))
+
+        trace_fn = _get_tools_attr("trace_symbol_path", trace_symbol_path)
+        raw_res = trace_fn(
+            symbol=eff_symbol, repo=repo, direction=direction, depth=depth,
+            limit=fetch_cap, include_unresolved=bool(include_unresolved),
+        )
+
+        parsed: Optional[Dict[str, Any]] = None
+        if isinstance(raw_res, dict):
+            parsed = dict(raw_res)
+        elif isinstance(raw_res, str):
+            stripped = raw_res.strip()
+            if stripped.startswith("{"):
+                parsed = json.loads(stripped)
+            elif stripped.startswith("["):
+                return stripped
+            elif stripped.startswith("Error:"):
+                return json.dumps({"error": stripped})
+            else:
+                return json.dumps({"symbol": (eff_symbol or "").strip(), "repo": repo, "direction": direction, "depth": depth, "trace": raw_res})
+
+        if parsed is None:
+            return json.dumps({"result": raw_res})
+        if "error" in parsed:
+            return json.dumps(parsed, separators=(",", ":"))
+        if parsed.get("found") is False:
+            parsed.update({
+                "total_callers": 0, "total_callees": 0, "offset": safe_offset,
+                "limit": safe_limit, "has_more": False, "next_offset": None,
+            })
+            sync_info = get_active_sync_status(repo)
+            if sync_info:
+                parsed.update(sync_info)
+            return json.dumps(parsed, separators=(",", ":"))
+
+        paged_callers, total_callers = _paginate_trace_tree(parsed.get("callers") or [], "callers", safe_offset, safe_limit)
+        paged_callees, total_callees = _paginate_trace_tree(parsed.get("callees") or [], "callees", safe_offset, safe_limit)
+        has_more = (safe_offset + safe_limit) < total_callers or (safe_offset + safe_limit) < total_callees
+        next_offset = (safe_offset + safe_limit) if has_more else None
+
+        if not include_permalinks:
+            paged_callers = _without_node_permalinks(paged_callers)
+            paged_callees = _without_node_permalinks(paged_callees)
+        parsed.update({
+            "callers": paged_callers, "callees": paged_callees,
+            "total_callers": total_callers, "total_callees": total_callees,
+            "offset": safe_offset, "limit": safe_limit, "has_more": has_more,
+            "next_offset": next_offset, "truncated": bool(has_more or parsed.get("truncated", False)),
+        })
+        sync_info = get_active_sync_status(repo)
+        if sync_info:
+            parsed.update(sync_info)
+        return json.dumps(parsed, separators=(",", ":"))
+    except ForbiddenError as fe:
+        logger.warning(f"Forbidden error in handle_trace_path: {fe}")
+        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
+    except Exception as e:
+        logger.error(f"trace_path tool execution failed: {e}")
+        return json.dumps({"error": f"Error executing trace_path: {str(e)}"})
 
 
 async def handle_trace_path(
@@ -175,98 +242,10 @@ async def handle_trace_path(
     query: Annotated[Optional[str], Field(description="Alias for `symbol`. `symbol` wins when both are given.")] = None,
 ) -> str:
     """Traverse AST call graphs, imports, inheritance, and cross-repo HTTP route/client boundaries via bounded BFS."""
-    eff_symbol = (symbol if (symbol is not None and symbol.strip()) else (name or query or ""))
-    try:
-        from app.services.auth import enforce_tool_permission, Role, ForbiddenError
-        enforce_tool_permission(Role.VIEWER)
-
-        safe_limit = max(1, min(int(limit if limit is not None else 50), 200))
-        safe_offset = max(0, int(offset if offset is not None else 0))
-        fetch_cap = min(500, max(100, safe_offset + safe_limit + 25))
-
-        trace_fn = _get_tools_attr("trace_symbol_path", trace_symbol_path)
-        raw_res = trace_fn(
-            symbol=eff_symbol,
-            repo=repo,
-            direction=direction,
-            depth=depth,
-            limit=fetch_cap,
-            include_unresolved=bool(include_unresolved),
-        )
-
-        parsed: Optional[Dict[str, Any]] = None
-        if isinstance(raw_res, dict):
-            parsed = dict(raw_res)
-        elif isinstance(raw_res, str):
-            stripped = raw_res.strip()
-            if stripped.startswith("{"):
-                parsed = json.loads(stripped)
-            elif stripped.startswith("["):
-                return stripped
-            elif stripped.startswith("Error:"):
-                return json.dumps({"error": stripped})
-            else:
-                return json.dumps({
-                    "symbol": (eff_symbol or "").strip(),
-                    "repo": repo,
-                    "direction": direction,
-                    "depth": depth,
-                    "trace": raw_res,
-                })
-
-        if parsed is None:
-            return json.dumps({"result": raw_res})
-
-        if "error" in parsed:
-            return json.dumps(parsed, separators=(",", ":"))
-
-        if parsed.get("found") is False:
-            parsed.update({
-                "total_callers": 0,
-                "total_callees": 0,
-                "offset": safe_offset,
-                "limit": safe_limit,
-                "has_more": False,
-                "next_offset": None,
-            })
-            sync_info = get_active_sync_status(repo)
-            if sync_info:
-                parsed.update(sync_info)
-            return json.dumps(parsed, separators=(",", ":"))
-
-        paged_callers, total_callers = _paginate_trace_tree(
-            parsed.get("callers") or [], "callers", safe_offset, safe_limit
-        )
-        paged_callees, total_callees = _paginate_trace_tree(
-            parsed.get("callees") or [], "callees", safe_offset, safe_limit
-        )
-        callers_more = (safe_offset + safe_limit) < total_callers
-        callees_more = (safe_offset + safe_limit) < total_callees
-        has_more = callers_more or callees_more
-        next_offset = (safe_offset + safe_limit) if has_more else None
-
-        if not include_permalinks:
-            paged_callers = _without_node_permalinks(paged_callers)
-            paged_callees = _without_node_permalinks(paged_callees)
-        parsed["callers"] = paged_callers
-        parsed["callees"] = paged_callees
-        parsed["total_callers"] = total_callers
-        parsed["total_callees"] = total_callees
-        parsed["offset"] = safe_offset
-        parsed["limit"] = safe_limit
-        parsed["has_more"] = has_more
-        parsed["next_offset"] = next_offset
-        parsed["truncated"] = bool(has_more or parsed.get("truncated", False))
-        sync_info = get_active_sync_status(repo)
-        if sync_info:
-            parsed.update(sync_info)
-        return json.dumps(parsed, separators=(",", ":"))
-    except ForbiddenError as fe:
-        logger.warning(f"Forbidden error in handle_trace_path: {fe}")
-        return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
-    except Exception as e:
-        logger.error(f"trace_path tool execution failed: {e}")
-        return json.dumps({"error": f"Error executing trace_path: {str(e)}"})
+    return await asyncio.to_thread(
+        _execute_trace_path_sync,
+        symbol, repo, direction, depth, limit, offset, include_permalinks, include_unresolved, name, query,
+    )
 
 
 def handle_find_implementation_symbol(

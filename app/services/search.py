@@ -19,12 +19,12 @@ from app.services.query_router import (
     should_early_return_lexical,
     strip_internal_metadata,
 )
-from app.services.search_ranking import demote_trivial_code_results, hybrid_candidate_limit
+from app.services.search_ranking import cap_results_per_file, demote_trivial_code_results, hybrid_candidate_limit
 from app.services.vector_store import VectorSearchResult, get_vector_store
 
 logger = logging.getLogger("contextcortex.search")
 
-_TRACK_B_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ctx-search-track-b")
+_TRACK_B_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="ctx-search-track-b")
 _ABSOLUTE_PATH_RE = re.compile(r"^(/|[A-Za-z]:/)")
 
 
@@ -176,7 +176,7 @@ def execute_hybrid_search(
 
         # Explicit pure semantic search bypasses lexical shortcutting
         if mode == "semantic":
-            sem_fetch = max(limit, min(limit * 3, 25)) if doc_type in (None, "code") else limit
+            sem_fetch = max(limit * 4, 25) if doc_type in (None, "code") else max(limit * 2, limit)
             results = _store_search(
                 store,
                 query_text=clean_query,
@@ -189,7 +189,8 @@ def execute_hybrid_search(
                 dense_weight=dense_weight,
                 search_mode=mode,
             )
-            results = demote_trivial_code_results(results)[:limit]
+            results = demote_trivial_code_results(results, query_text=clean_query, doc_type=doc_type, language=language)
+            results = cap_results_per_file(results, limit=limit, max_per_file=2)
             _enrich_code_ast_metadata(results)
             return results
 
@@ -267,7 +268,7 @@ def execute_hybrid_search(
                 )
             has_exact_top = bool(track_a and float(track_a[0].score or 0.0) >= 0.85)
             if (len(track_a) >= limit or has_exact_top) and should_early_return_lexical(plan, track_a, doc_type=doc_type, language=language):
-                early = strip_internal_metadata(track_a[:limit])
+                early = strip_internal_metadata(cap_results_per_file(track_a, limit=limit, max_per_file=2))
                 _enrich_code_ast_metadata(early)
                 return early
 
@@ -354,7 +355,7 @@ def execute_hybrid_search(
                     raise
                 except Exception as exc:
                     logger.warning(f"Track B failed after Track A succeeded; returning Track A hits: {exc}")
-            early = strip_internal_metadata(track_a[:limit])
+            early = strip_internal_metadata(cap_results_per_file(track_a, limit=limit, max_per_file=2))
             _enrich_code_ast_metadata(early)
             return early
 
