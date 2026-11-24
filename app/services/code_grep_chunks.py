@@ -4,12 +4,41 @@ grep_code matches from vector-store chunks.
 The chunks of one file are put back together as one line map before the scan. Each context line then gets its own
 file line number, and the context can continue past the edge of the chunk that holds the match.
 """
+import fnmatch
 import logging
+import os
 from typing import Any, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple
 
 logger = logging.getLogger("contextcortex.file_reader")
 
 FileKey = Tuple[str, str]
+_GLOB_CHARS = set("*?[")
+
+
+def path_matches_filter(rel_path: str, path_filter: Optional[str]) -> bool:
+    """
+    True when `rel_path` matches the filter. A filter with wildcards is an fnmatch glob on the path or the
+    file name ('*.cs', 'app/services/*'). A filter without wildcards is a file or folder: it matches the same
+    path, anything below it, or a path that ends with it ('Services_V2', 'src/app/main.py', 'main.py').
+    """
+    if not path_filter:
+        return True
+    clean_path = rel_path.replace("\\", "/")
+    if "://" in clean_path:
+        clean_path = clean_path.split("://", 1)[1]
+    norm_path = clean_path.strip("/")
+    norm_filter = path_filter.replace("\\", "/").strip().strip("/")
+    if not norm_filter:
+        return True
+    if _GLOB_CHARS & set(norm_filter):
+        return fnmatch.fnmatch(norm_path, norm_filter) or fnmatch.fnmatch(os.path.basename(norm_path), norm_filter)
+    path_l, filter_l = norm_path.lower(), norm_filter.lower()
+    return (
+        path_l == filter_l
+        or path_l.startswith(filter_l + "/")
+        or path_l.endswith("/" + filter_l)
+        or f"/{filter_l}/" in f"/{path_l}/"
+    )
 
 
 def chunk_file_key(chunk: Dict[str, Any]) -> FileKey:

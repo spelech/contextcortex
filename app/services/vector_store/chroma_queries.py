@@ -4,6 +4,7 @@ import os
 import re
 from typing import Any, Callable, Dict, List, Optional
 
+from app.services.code_grep_chunks import path_matches_filter
 from app.services.vector_store.base import VectorSearchResult
 
 logger = logging.getLogger("contextcortex.vector_store.chroma")
@@ -186,11 +187,8 @@ def execute_chroma_grep_chunks(
                     continue
 
                 chunk_path = payload.get("rel_path") or payload.get("path") or ""
-                if path_glob:
-                    norm_p = chunk_path.replace("\\", "/")
-                    norm_glob = path_glob.replace("\\", "/")
-                    if not (fnmatch.fnmatch(norm_p, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_p), norm_glob)):
-                        continue
+                if path_glob and not path_matches_filter(chunk_path, path_glob):
+                    continue
 
                 content = payload.get("content") or ""
                 if compiled.search(content):

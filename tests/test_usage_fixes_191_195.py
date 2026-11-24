@@ -333,11 +333,12 @@ def test_194_read_file_nonexistent_path_in_ephemeral_repo_says_not_in_repo_with_
     reader = FileReaderService(storage_root=str(isolated_db / "storage"))
 
     with patch("app.services.vector_store.get_vector_store", return_value=_InMemoryStore()):
-        # Case 1: path is NOT in indexed_files -> clear "not in repository" error + suggestion, NO keep_shallow message
+        # Case 1: path is NOT in indexed_files -> clear "not found in repository" error + suggestion, NO keep_shallow/(not indexed)
         with pytest.raises(FileNotFoundError) as exc_missing:
             reader.read_file("Src/OrderService.cs", repo="ephem-repo")
         msg_missing = str(exc_missing.value)
-        assert "not in repository 'ephem-repo'" in msg_missing
+        assert "not found in repository 'ephem-repo'" in msg_missing
+        assert "(not indexed)" not in msg_missing
         assert "keep_shallow" not in msg_missing
         assert "Tests/OrderServiceTests.cs" in msg_missing
 
@@ -365,7 +366,8 @@ def test_194_mcp_handle_read_file_surfaces_not_in_repo_message(isolated_db, monk
     with patch("app.mcp.handlers.file_handlers.get_file_reader_service", return_value=reader), \
          patch("app.services.vector_store.get_vector_store", return_value=_InMemoryStore()):
         payload = json.loads(asyncio.run(handle_read_file(path="Src/DoesNotExist.cs", repo="ephem-repo")))
-    assert "not in repository 'ephem-repo'" in payload["error"]
+    assert "not found in repository 'ephem-repo'" in payload["error"]
+    assert "(not indexed)" not in payload["error"]
     assert "keep_shallow" not in payload["error"]
 
 

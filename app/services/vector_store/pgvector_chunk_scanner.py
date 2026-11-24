@@ -1,12 +1,79 @@
-import fnmatch
 import json
 import logging
-import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import Engine, text
 
+from app.services.code_grep_chunks import path_matches_filter
+
 logger = logging.getLogger("contextcortex.vector_store.pgvector")
+
+_PG_GREP_MAX_PAGES = 20
+
+
+def _translate_python_regex_for_postgres(pattern: str) -> str:
+    """Converts common Python regex escapes (`\\b`, `\\B`, `\\A`, `\\Z`, `(?P<name>`) to PostgreSQL ARE syntax."""
+    out: List[str] = []
+    in_class = False
+    i = 0
+    n = len(pattern)
+    while i < n:
+        ch = pattern[i]
+        if ch == "\\" and i + 1 < n:
+            nxt = pattern[i + 1]
+            if not in_class and nxt == "b":
+                out.append("\\y")
+            elif not in_class and nxt == "B":
+                out.append("\\Y")
+            elif not in_class and nxt == "A":
+                out.append("^")
+            elif not in_class and nxt == "Z":
+                out.append("$")
+            else:
+                out.append(ch)
+                out.append(nxt)
+            i += 2
+            continue
+        if ch == "[" and not in_class:
+            in_class = True
+        elif ch == "]" and in_class:
+            in_class = False
+        elif not in_class and pattern.startswith("(?P<", i):
+            gt = pattern.find(">", i + 4)
+            if gt != -1:
+                out.append("(?:")
+                i = gt + 1
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _sql_path_prefilter(path_glob: Optional[str], is_sqlite: bool) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Builds a SQL LIKE prefilter for `path_glob` (always refined by Python `path_matches_filter`)."""
+    if not path_glob:
+        return None, {}
+    norm = path_glob.replace("\\", "/").strip().strip("/")
+    if not norm:
+        return None, {}
+    esc_char = "/" if is_sqlite else "\\"
+
+    def _esc(s: str) -> str:
+        return s.replace(esc_char, esc_char + esc_char).replace("%", esc_char + "%").replace("_", esc_char + "_")
+
+    if any(c in norm for c in "*?["):
+        if "[" in norm:
+            return None, {}
+        translated = _esc(norm.lower()).replace("*", "%").replace("?", "_")
+        if "/" not in norm and not translated.startswith("%"):
+            translated = f"%{translated}"
+        like_val = translated
+    else:
+        like_val = f"%{_esc(norm.lower())}%"
+
+    col = "LOWER(COALESCE(NULLIF(rel_path, ''), path, ''))" if not is_sqlite else "LOWER(COALESCE(rel_path, path, ''))"
+    clause = f"{col} LIKE :path_like ESCAPE '{esc_char}'"
+    return clause, {"path_like": like_val}
 
 
 def parse_json_payload(raw_payload: Any) -> Dict[str, Any]:
@@ -105,58 +172,75 @@ def execute_pgvector_grep_chunks(
         raise ValueError(f"Invalid regular expression pattern: {e}") from e
 
     is_sqlite = getattr(engine.dialect, "name", "") == "sqlite"
-    conditions = ["collection_name = :collection_name"]
-    params: Dict[str, Any] = {
-        "collection_name": collection_name,
-        "fetch_limit": max(limit * 4, 200),
-    }
+    base_conditions = ["collection_name = :collection_name"]
+    base_params: Dict[str, Any] = {"collection_name": collection_name}
 
     if repo and repo not in ("__all__", "all"):
-        conditions.append("repo = :repo")
-        params["repo"] = repo.replace("\x00", "")
+        base_conditions.append("repo = :repo")
+        base_params["repo"] = repo.replace("\x00", "")
+
+    path_clause, path_params = _sql_path_prefilter(path_glob, is_sqlite=is_sqlite)
+    if path_clause:
+        base_conditions.append(path_clause)
+        base_params.update(path_params)
+
+    content_conditions = list(base_conditions)
+    content_params = dict(base_params)
+    used_pg_regex = False
 
     if not is_sqlite:
         if is_regex:
             op = "~" if case_sensitive else "~*"
-            conditions.append(f"content {op} :pattern")
-            params["pattern"] = clean_pattern
+            content_conditions.append(f"content {op} :pattern")
+            content_params["pattern"] = _translate_python_regex_for_postgres(clean_pattern)
+            used_pg_regex = True
         else:
             op = "LIKE" if case_sensitive else "ILIKE"
             escaped = clean_pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            conditions.append(f"content {op} :pattern ESCAPE '\\'")
-            params["pattern"] = f"%{escaped}%"
+            content_conditions.append(f"content {op} :pattern ESCAPE '\\'")
+            content_params["pattern"] = f"%{escaped}%"
     elif not is_regex:
         escaped = clean_pattern.replace("/", "//").replace("%", "/%").replace("_", "/_")
-        conditions.append("content LIKE :pattern ESCAPE '/'")
-        params["pattern"] = f"%{escaped}%"
+        content_conditions.append("content LIKE :pattern ESCAPE '/'")
+        content_params["pattern"] = f"%{escaped}%"
 
-    query_sql = text(f"""
-    SELECT payload, content, start_line, end_line, repo, path, rel_path
-    FROM {table_name}
-    WHERE {' AND '.join(conditions)}
-    LIMIT :fetch_limit;
-    """)
+    page_size = max(limit * 4, 250)
 
-    try:
-        with engine.connect() as conn:
-            rows = conn.execute(query_sql, params).mappings().fetchall()
-
+    def _scan_with(conds: List[str], qparams: Dict[str, Any]) -> List[Dict[str, Any]]:
+        order_col = "COALESCE(NULLIF(rel_path, ''), path, '')" if not is_sqlite else "COALESCE(rel_path, path, '')"
+        query_sql = text(f"""
+        SELECT payload, content, start_line, end_line, repo, path, rel_path
+        FROM {table_name}
+        WHERE {' AND '.join(conds)}
+        ORDER BY {order_col} ASC, COALESCE(start_line, 0) ASC, id ASC
+        LIMIT :fetch_limit OFFSET :fetch_offset;
+        """)
         matched_chunks: List[Dict[str, Any]] = []
-        for r in rows:
-            p = hydrate_chunk_row(r)
-            chunk_path = p.get("rel_path") or p.get("path") or ""
-            if path_glob:
-                norm_p = chunk_path.replace("\\", "/")
-                norm_glob = path_glob.replace("\\", "/")
-                if not (fnmatch.fnmatch(norm_p, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_p), norm_glob)):
-                    continue
-
-            content = p.get("content") or ""
-            if compiled.search(content):
-                matched_chunks.append(p)
-                if len(matched_chunks) >= limit:
+        with engine.connect() as conn:
+            for page_idx in range(_PG_GREP_MAX_PAGES):
+                run_params = {**qparams, "fetch_limit": page_size, "fetch_offset": page_idx * page_size}
+                rows = conn.execute(query_sql, run_params).mappings().fetchall()
+                if not rows:
+                    break
+                for r in rows:
+                    p = hydrate_chunk_row(r)
+                    chunk_path = p.get("rel_path") or p.get("path") or ""
+                    if path_glob and not path_matches_filter(chunk_path, path_glob):
+                        continue
+                    content = p.get("content") or ""
+                    if compiled.search(content):
+                        matched_chunks.append(p)
+                        if len(matched_chunks) >= limit:
+                            return matched_chunks[:limit]
+                if len(rows) < page_size:
                     break
         return matched_chunks[:limit]
+
+    try:
+        return _scan_with(content_conditions, content_params)
     except Exception as e:
+        if used_pg_regex:
+            logger.debug(f"Postgres regex prefilter failed ({e}); falling back to paged Python regex scan.")
+            return _scan_with(base_conditions, base_params)
         logger.error(f"Error running grep_chunks on PgVectorStore: {e}")
         raise

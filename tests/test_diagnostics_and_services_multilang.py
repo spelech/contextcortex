@@ -352,7 +352,8 @@ def test_file_reader_and_local_storage_extensions_resolution_and_security(tmp_pa
 
     with pytest.raises(FileNotFoundError) as exc_unindexed:
         reader.read_file("missing-clone://src/NOT_IN_REPO.cbl")
-    assert "not in repository 'missing-clone'" in str(exc_unindexed.value)
+    assert "not found in repository 'missing-clone'" in str(exc_unindexed.value)
+    assert "(not indexed)" not in str(exc_unindexed.value)
     assert "persistent shallow clone" not in str(exc_unindexed.value).lower()
 
     symlink_escape = storage_dir / "escape_link.cbl"

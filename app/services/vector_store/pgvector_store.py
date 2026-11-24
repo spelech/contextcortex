@@ -92,28 +92,22 @@ class PgVectorStore(VectorStore):
                             f"ALTER TABLE {self.table_name} ALTER COLUMN embedding TYPE vector({self.dimension})"
                         ))
 
+                fts_col_ddl = (
+                    "" if is_sqlite else
+                    "fts tsvector GENERATED ALWAYS AS ("
+                    "to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, ''))"
+                    ") STORED,\n                    "
+                )
                 create_table_sql = f"""
                 CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    id VARCHAR(255),
-                    collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1',
-                    repo VARCHAR(255),
-                    doc_type VARCHAR(50) DEFAULT 'doc',
-                    path TEXT,
-                    rel_path TEXT,
-                    title TEXT,
-                    folder TEXT,
-                    category TEXT,
-                    tags JSONB,
-                    heading TEXT,
-                    symbol TEXT,
-                    language VARCHAR(50),
-                    start_line INTEGER,
-                    end_line INTEGER,
-                    github_url TEXT,
-                    permalink_url TEXT,
+                    id VARCHAR(255), collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1',
+                    repo VARCHAR(255), doc_type VARCHAR(50) DEFAULT 'doc',
+                    path TEXT, rel_path TEXT, title TEXT, folder TEXT, category TEXT,
+                    tags JSONB, heading TEXT, symbol TEXT, language VARCHAR(50),
+                    start_line INTEGER, end_line INTEGER, github_url TEXT, permalink_url TEXT,
                     content TEXT,
                     embedding {"TEXT" if is_sqlite else "vector(" + str(self.dimension) + ")"},
-                    payload JSONB,
+                    {fts_col_ddl}payload JSONB,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (collection_name, id)
                 );
@@ -126,6 +120,11 @@ class PgVectorStore(VectorStore):
                     ))
                     conn.execute(text(
                         f"UPDATE {self.table_name} SET collection_name = 'knowledge_rag_v1' WHERE collection_name IS NULL;"
+                    ))
+                    conn.execute(text(
+                        f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS ("
+                        "to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, ''))"
+                        ") STORED;"
                     ))
 
                     pk_check_sql = text("""
@@ -152,15 +151,13 @@ class PgVectorStore(VectorStore):
                     CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding
                     ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
                     """))
-                    conn.execute(text(f"""
-                    CREATE INDEX IF NOT EXISTS idx_{self.table_name}_fts
-                    ON {self.table_name} USING gin (
-                        to_tsvector(
-                            'simple',
-                            COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, '')
-                        )
-                    );
-                    """))
+                    existing_fts_idx = conn.execute(
+                        text("SELECT indexdef FROM pg_indexes WHERE tablename = :t AND indexname = :idx"),
+                        {"t": self.table_name, "idx": f"idx_{self.table_name}_fts"},
+                    ).scalar()
+                    if isinstance(existing_fts_idx, str) and "to_tsvector(" in existing_fts_idx.lower():
+                        conn.execute(text(f"DROP INDEX IF EXISTS idx_{self.table_name}_fts;"))
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_fts ON {self.table_name} USING gin (fts);"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_collection ON {self.table_name}(collection_name);"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_repo ON {self.table_name}(repo);"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_type ON {self.table_name}(doc_type);"))

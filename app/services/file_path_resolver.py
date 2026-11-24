@@ -201,29 +201,77 @@ class FilePathResolver:
             return False
 
     def suggest_similar_indexed_files(self, clean_path: str, repo_name: str, limit: int = 5) -> List[str]:
-        """Returns up to `limit` close indexed paths in repo_name (same filename in other folders or stem/Test variants)."""
+        """Returns up to `limit` close indexed paths in repo_name (same basename, suffix-stripped stems, or same-folder near matches)."""
         if not clean_path or not repo_name:
             return []
         rel = clean_path.replace("\\", "/").lstrip("/")
         basename = os.path.basename(rel)
+        req_dir = os.path.dirname(rel).lower()
         stem, _ = os.path.splitext(basename)
         if not basename:
             return []
+
+        _SUFFIXES = (
+            "resolver", "handler", "service", "factory", "provider", "manager",
+            "repository", "controller", "adapter", "client", "builder", "helper",
+            "impl", "tests", "test",
+        )
+        stems: List[str] = [stem.lower()]
+        cur = stem
+        for _ in range(3):
+            low = cur.lower()
+            stripped = next((cur[:-len(suf)] for suf in _SUFFIXES if low.endswith(suf) and len(cur) - len(suf) >= 4), None)
+            if not stripped:
+                break
+            cur = stripped.rstrip("_-.")
+            if cur and cur.lower() not in stems:
+                stems.append(cur.lower())
+        camel_parts: List[str] = []
+        buf: List[str] = []
+        for idx_c, ch in enumerate(stem[:120]):
+            if not ch.isalnum():
+                if buf:
+                    camel_parts.append("".join(buf))
+                    buf = []
+                continue
+            if buf and ch.isupper():
+                prev_lower = buf[-1].islower() or buf[-1].isdigit()
+                next_lower = (idx_c + 1 < len(stem) and stem[idx_c + 1].islower())
+                if prev_lower or (buf[-1].isupper() and next_lower):
+                    camel_parts.append("".join(buf))
+                    buf = [ch]
+                    continue
+            buf.append(ch)
+        if buf:
+            camel_parts.append("".join(buf))
+        if len(camel_parts) >= 3:
+            for k in range(len(camel_parts) - 1, 1, -1):
+                pref = "".join(camel_parts[:k]).lower()
+                if len(pref) >= 4 and pref not in stems:
+                    stems.append(pref)
+
+        like_clauses = ["LOWER(REPLACE(filepath, '\\', '/')) LIKE ?"]
+        params: List[Any] = [repo_name, f"%/{basename.lower()}"]
+        for st in stems[:5]:
+            like_clauses.append("LOWER(REPLACE(filepath, '\\', '/')) LIKE ?")
+            params.append(f"%{st}%")
+        if req_dir:
+            like_clauses.append("LOWER(REPLACE(filepath, '\\', '/')) LIKE ?")
+            params.append(f"%/{req_dir}/%")
+
         try:
             with self._get_db_connection() as conn:
                 rows = conn.execute(
-                    "SELECT filepath FROM indexed_files WHERE repo = ? AND "
-                    "(LOWER(REPLACE(filepath, '\\', '/')) LIKE ? OR LOWER(REPLACE(filepath, '\\', '/')) LIKE ?) "
-                    "LIMIT 40",
-                    (repo_name, f"%/{basename.lower()}", f"%{stem.lower()}%"),
+                    f"SELECT filepath FROM indexed_files WHERE repo = ? AND ({' OR '.join(like_clauses)}) LIMIT 80",
+                    params,
                 ).fetchall()
         except Exception:
             return []
 
         prefix = f"{repo_name}://"
-        base_low = basename.lower()
-        stem_low = stem.lower()
-        scored: List[Tuple[int, int, str]] = []
+        base_low, stem_low = basename.lower(), stem.lower()
+        shorter_stems = set(stems[1:])
+        scored: List[Tuple[int, int, int, str]] = []
         seen = set()
         for r in rows:
             fp = str(r["filepath"] or "").replace("\\", "/")
@@ -231,19 +279,25 @@ class FilePathResolver:
             if not clean_fp or clean_fp in seen:
                 continue
             seen.add(clean_fp)
+            cand_dir = os.path.dirname(clean_fp).lower()
             cand_base = os.path.basename(clean_fp).lower()
             cand_stem = os.path.splitext(cand_base)[0]
+            same_dir = 0 if (req_dir and (cand_dir == req_dir or cand_dir.endswith(f"/{req_dir}"))) else 1
             if cand_base == base_low:
                 rank = 0
             elif cand_stem in (f"{stem_low}test", f"{stem_low}tests", f"{stem_low}_test", f"test_{stem_low}"):
                 rank = 1
-            elif stem_low in cand_base:
+            elif cand_stem in shorter_stems or (len(cand_stem) >= 4 and stem_low.startswith(cand_stem)):
                 rank = 2
-            else:
+            elif stem_low in cand_base or any(st in cand_base for st in shorter_stems):
                 rank = 3
-            scored.append((rank, len(clean_fp), clean_fp))
-        scored.sort(key=lambda item: (item[0], item[1], item[2]))
-        return [item[2] for item in scored[:limit]]
+            elif same_dir == 0:
+                rank = 4
+            else:
+                continue
+            scored.append((rank, same_dir, len(clean_fp), clean_fp))
+        scored.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+        return [item[3] for item in scored[:limit]]
 
     def resolve_safe_path(
         self,

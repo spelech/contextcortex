@@ -348,7 +348,7 @@ def process_file_content(
 
                 points.append(VectorDocument(
                     id=point_id,
-                    text=chunk["content"].strip(),
+                    text=chunk["content"].strip("\r\n"),
                     dense_vector=bv.get("dense"),
                     sparse_indices=bv.get("sparse_indices"),
                     sparse_values=bv.get("sparse_values"),
@@ -400,7 +400,7 @@ def process_file_content(
 
                 points.append(VectorDocument(
                     id=point_id,
-                    text=chunk["content"].strip(),
+                    text=chunk["content"].strip("\r\n"),
                     dense_vector=bv.get("dense"),
                     sparse_indices=bv.get("sparse_indices"),
                     sparse_values=bv.get("sparse_values"),

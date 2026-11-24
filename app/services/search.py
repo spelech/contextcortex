@@ -19,7 +19,7 @@ from app.services.query_router import (
     should_early_return_lexical,
     strip_internal_metadata,
 )
-from app.services.search_ranking import hybrid_candidate_limit
+from app.services.search_ranking import demote_trivial_code_results, hybrid_candidate_limit
 from app.services.vector_store import VectorSearchResult, get_vector_store
 
 logger = logging.getLogger("contextcortex.search")
@@ -176,6 +176,7 @@ def execute_hybrid_search(
 
         # Explicit pure semantic search bypasses lexical shortcutting
         if mode == "semantic":
+            sem_fetch = max(limit, min(limit * 3, 25)) if doc_type in (None, "code") else limit
             results = _store_search(
                 store,
                 query_text=clean_query,
@@ -184,10 +185,11 @@ def execute_hybrid_search(
                 language=language,
                 category=category,
                 tag=tag,
-                limit=limit,
+                limit=sem_fetch,
                 dense_weight=dense_weight,
                 search_mode=mode,
             )
+            results = demote_trivial_code_results(results)[:limit]
             _enrich_code_ast_metadata(results)
             return results
 
