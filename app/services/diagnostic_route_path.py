@@ -11,6 +11,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Set
 
+from app.services.diagnostic_error_terms import is_data_value_token
 from app.services.graph_traversal import trace_symbol_path
 from app.services.search_ranking import (
     PLAIN_LANGUAGE_DIAGNOSTIC_DENSE_WEIGHT,
@@ -140,12 +141,30 @@ def collect_route_path_symbols(
 
 
 _MD_SYNTAX_RE = re.compile(r"(?:^|\s)[#>*`-]+(?=\s)|[*_`~]+")
+_URL_RE = re.compile(r"https?://\S+")
+_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.\-/]*")
+PLAIN_LANGUAGE_MIN_SCORE = 0.20
+
+_REPORT_FILLER = frozenset({
+    "already", "actually", "back", "checked", "checking", "customer", "customers", "doing", "done", "down",
+    "even", "happened", "happening", "happens", "however", "instead", "issue", "just", "looks", "problem",
+    "really", "report", "reported", "reports", "seems", "still", "tried", "trying", "user", "users",
+})
 
 
 def clean_plain_language_query(issue_text: str) -> str:
-    """Strips Markdown punctuation from a plain-language report while preserving full sentence context."""
-    cleaned = _MD_SYNTAX_RE.sub(" ", issue_text or "")
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    """Strips Markdown, URLs, data values (part numbers/IDs), and report filler to focus dense search on domain phrases."""
+    text = _URL_RE.sub(" ", issue_text or "")
+    text = _MD_SYNTAX_RE.sub(" ", text)
+    kept: List[str] = []
+    for raw in text.split():
+        core = raw.strip(".,;:!?()[]{}\"'")
+        if not core or is_data_value_token(core):
+            continue
+        if core.lower() in _REPORT_FILLER:
+            continue
+        kept.append(core)
+    cleaned = " ".join(kept).strip()
     return (cleaned or (issue_text or "").strip())[:2000]
 
 

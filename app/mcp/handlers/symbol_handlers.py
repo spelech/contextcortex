@@ -182,7 +182,7 @@ async def handle_trace_path(
 
         safe_limit = max(1, min(int(limit if limit is not None else 50), 200))
         safe_offset = max(0, int(offset if offset is not None else 0))
-        fetch_cap = max(1000, (safe_offset + safe_limit) * 2 + 50)
+        fetch_cap = min(500, max(100, safe_offset + safe_limit + 25))
 
         trace_fn = _get_tools_attr("trace_symbol_path", trace_symbol_path)
         raw_res = trace_fn(
