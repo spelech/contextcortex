@@ -26,9 +26,9 @@ HEADER = """\
 RESULT_TYPES = """\
 /** grep_code lines: '<line>:<text>' is a match, '<line>-<text>' is context, '--' separates blocks. */
 interface GrepCodeFile { file: string; repo?: string; symbols?: Record<string, string>; permalink?: string; lines: string[] }
-interface GrepCodeResult { total_matches: number; has_more: boolean; next_offset?: number; offset?: number; pattern_mode?: string; path_filter?: string; repo?: string; files: GrepCodeFile[] }
+interface GrepCodeResult { total_matches: number; has_more: boolean; next_offset?: number; offset?: number; pattern_mode?: string; path_filter?: string; repo?: string; files: GrepCodeFile[]; index_status?: string; sync_progress?: Record<string, any> }
 /** read_file text slice: each content line is '<line>:<text>'. With outline_only=True the result has symbols instead. */
-interface ReadFileResult { file: string; lines: [number, number]; total_lines: number; next_start_line?: number; truncated?: boolean; source?: string; content: string }
+interface ReadFileResult { file: string; lines: [number, number]; total_lines: number; next_start_line?: number; truncated?: boolean; source?: string; missing_lines?: [number, number][]; content: string }
 interface ReadFileOutline { file: string; repo: string | null; outline_only: true; total_symbols: number; offset: number; limit: number; has_more: boolean; next_offset: number | null; symbols: { name: string; symbol: string; kind: string; lines: [number, number]; signature: string | null }[]; candidates?: string[] }
 """
 
@@ -47,7 +47,8 @@ RESULT_INTERFACES: Dict[str, Dict[str, str]] = {
                               "steps": "WorkingStep[]", "first_divergence": "Record<string, any> | null"},
     "DiagnoseResult": {"call_chain": "CallChain", "working_path_comparison": "WorkingPathComparison | null",
                        "resolved_frames": "any[]", "matched_routes": "any[]", "matched_symbols": "any[]",
-                       "semantic_candidates": "any[]"},
+                       "semantic_candidates": "any[]", "hint?": _S,
+                       "index_status?": _S, "sync_progress?": "Record<string, any>"},
     "Route": {"repo": _S, "method": _S, "path": _S, "framework": _SN, "handler": _S, "file": _S, "lines": _LINES,
               "permalink?": _SN},
     "RouteCaller": {"repo": _S, "method": _SN, "url": _S, "caller": _S, "file": _S, "line": _N, "permalink?": _SN},
@@ -56,21 +57,23 @@ RESULT_INTERFACES: Dict[str, Dict[str, str]] = {
     "TraceTarget": {"symbol": _S, "name": _S, "kind": _SN, "repo": _S, "file": _S, "lines": _LINES, "permalink": _SN,
                     "route?": "any", "external_callers?": "any[]", "http_calls?": "any[]"},
     "TraceNode": {"symbol": _S, "rel": _S, "repo": _S, "file": _S, "line": _NN, "defined_at?": _S, "permalink?": _SN,
-                  "route?": "any", "external_callers?": "any[]", "http_calls?": "any[]", "unresolved?": "string[]",
-                  "callers?": "TraceNode[]", "callees?": "TraceNode[]"},
+                  "confidence?": _S, "route?": "any", "external_callers?": "any[]", "http_calls?": "any[]",
+                  "unresolved?": "string[]", "callers?": "TraceNode[]", "callees?": "TraceNode[]"},
     "TracePathResult": {"target?": "TraceTarget", "symbol?": _S, "found?": "false",
                         "candidates?": "{ symbol: string; file: string; line: number; repos: string[] }[]", "hint?": _S, "direction?": _S, "depth?": _N,
-                        "truncated?": "boolean", "callers": "TraceNode[]", "callees": "TraceNode[]",
-                        "unresolved?": "string[]", "total_callers": _N, "total_callees": _N, **_PAGE},
+                        "truncated?": "boolean", "truncation_reason?": _S, "callers": "TraceNode[]", "callees": "TraceNode[]",
+                        "unresolved?": "string[]", "total_callers": _N, "total_callees": _N, **_PAGE,
+                        "index_status?": _S, "sync_progress?": "Record<string, any>"},
     "SymbolHit": {"name": _S, "symbol": _S, "kind": _SN, "repo": _S, "file": _S, "lines": _LINES, "signature": _SN,
                   "language": _SN},
-    "FindSymbolResult": {"query": _S, "exact": "boolean", "total": _N, **_PAGE, "symbols": "SymbolHit[]"},
+    "FindSymbolResult": {"query": _S, "exact": "boolean", "total": _N, **_PAGE, "symbols": "SymbolHit[]",
+                         "index_status?": _S, "sync_progress?": "Record<string, any>"},
     "SearchHit": {"repo": _SN, "file": _S, "doc_type": _S, "lines": "[number, number] | null", "symbol": _SN,
                   "kind": _SN, "signature": _SN, "language": _SN, "heading": _SN, "tags": "string[]", "score": _N,
                   "dense_score": _NN, "sparse_score": _NN, "permalink?": _SN, "content_truncated": "boolean",
                   "content": _S},
-    "SearchResult": {"query": _S, "scope": _S, "mode": _S, "total": _N, **_PAGE, "max_snippet_chars": _N,
-                     "results": "SearchHit[]"},
+    "SearchResult": {"query": _S, "scope": _S, "mode": _S, "returned": _N, "total": _N, **_PAGE, "max_snippet_chars": _N,
+                     "results": "SearchHit[]", "index_status?": _S, "sync_progress?": "Record<string, any>"},
 }
 _INTERFACE_DOCS = {
     "CallSite": "The line in the caller that calls this step (a working-path step has no file).",
@@ -195,7 +198,8 @@ def build_sdk_declarations(tools: Iterable[Any]) -> str:
 
 HELP_INTRO = ("ContextCortex Code Mode. Call a tool with `await tools.<tool>(args)`; results are parsed JSON. "
               "tools.help('<tool>') gives the argument docs and the result type of one tool. "
-              "For a bug report, call diagnose_issue first.")
+              "For a bug report with a stack trace, error message, or route, call diagnose_issue first; "
+              "for a plain-language description, start with search.")
 
 
 def _interface_blocks() -> Dict[str, str]:
