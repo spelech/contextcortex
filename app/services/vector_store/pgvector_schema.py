@@ -37,7 +37,10 @@ def _get_index_info(engine: Engine, table_name: str, index_name: str) -> Tuple[O
     """)
     with engine.connect() as conn:
         result = conn.execute(sql, {"t": table_name, "idx": index_name})
-        row = result.fetchone()
+        try:
+            row = result.fetchone()
+        except StopIteration:
+            row = None
         try:
             conn.rollback()
         except Exception:

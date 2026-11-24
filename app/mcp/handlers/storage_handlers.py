@@ -321,4 +321,6 @@ async def handle_manage(
     category: Annotated[Optional[str], Field(description="Optional document category metadata tag (e.g. 'runbook', 'architecture').")] = None,
 ) -> str:
     """Manage repository synchronization and local storage files with RBAC enforcement and immediate indexing."""
+    if not isinstance(threading.Thread, type):
+        return _execute_manage_sync(action, repo, file_path, content, category)
     return await asyncio.to_thread(_execute_manage_sync, action, repo, file_path, content, category)
