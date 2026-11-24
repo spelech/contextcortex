@@ -1,29 +1,16 @@
 import logging
+import math
 import os
 import threading
 import time
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
-_repo_sync_locks: Dict[Tuple[str, int], threading.Lock] = {}
-_repo_sync_locks_guard = threading.Lock()
-
-
-def _get_repo_lock(repo_id: int) -> threading.Lock:
-    try:
-        from app.services.database.engine import get_db_url
-        db_key = get_db_url()
-    except Exception:
-        db_key = "default"
-    key = (db_key, repo_id)
-    with _repo_sync_locks_guard:
-        if key not in _repo_sync_locks:
-            _repo_sync_locks[key] = threading.Lock()
-        return _repo_sync_locks[key]
-
-
-def is_repo_sync_running(repo_id: int) -> bool:
-    """Returns True if the per-repository sync lock is currently held."""
-    return _get_repo_lock(repo_id).locked()
+from app.services.indexing.sync_progress_reporter import (
+    BatchProgressMonitor, _active_sync_repos, _repo_sync_locks, _repo_sync_locks_guard,
+    build_sync_completion_message, compute_eta_seconds, format_eta_suffix, get_active_sync_repos,
+    get_repo_sync_lock as _get_repo_lock, has_active_repo_sync, is_repo_sync_running,
+    register_active_sync_repo, repo_sync_key as _repo_sync_key, unregister_active_sync_repo,
+)
 
 
 def _mark_repo_cancelled(repo_id: int, repo_name: str, stage_msg: str = "Sync cancelled by user") -> None:
@@ -64,6 +51,7 @@ from app.services.indexing.state import (
     CHUNK_OVERLAP, CHUNK_SIZE, VAULT_PATH,
     ensure_collection, indexing_lock, trigger_list_changed_notification,
 )
+from app.services.embedding_batcher import telemetry_tracker
 from app.services.memory_utils import trim_memory
 from app.services.vector_store import VectorStoreManager
 
@@ -81,6 +69,9 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         return
 
     repo_name = f"repo-{repo_id}"
+    sync_key = _repo_sync_key(repo_id)
+    sync_start = time.time()
+    embed_snap_start = telemetry_tracker.get_telemetry_snapshot()
     temp_dir = None
     keep_shallow = False
     try:
@@ -90,6 +81,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             return
 
         repo_name = repo_row["name"]
+        register_active_sync_repo(sync_key, repo_name)
         git_url = repo_row["url"]
         branch = repo_row["branch"] or "main"
         per_repo_token = repo_row["auth_token"]
@@ -103,10 +95,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         progress_tracker.get_or_create_job(repo_id, repo_name)
 
         effective_token, effective_user, token_source = db_service.get_effective_git_token(
-            git_url,
-            override_token=per_repo_token,
-            override_user=per_repo_user,
-            provider=provider,
+            git_url, override_token=per_repo_token, override_user=per_repo_user, provider=provider,
         )
         safe_url = gm_service.sanitize_url_for_logging(git_url)
 
@@ -121,13 +110,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         progress_tracker.log(repo_id, "INFO", f"Checking remote ref for '{repo_name}' ({safe_url})...")
         logger.info(f"Checking remote status for Git repo '{repo_name}' ({git_url}, provider: {provider or 'auto'}, auth: {token_source})...")
         remote_sha = gm_service.get_remote_head_sha(git_url, branch, token=effective_token, username=effective_user, provider=provider)
-        if (
-            not force
-            and prev_status != "error"
-            and persistent_dir_valid
-            and remote_sha
-            and repo_row["commit_sha"] == remote_sha
-        ):
+        if not force and prev_status != "error" and persistent_dir_valid and remote_sha and repo_row["commit_sha"] == remote_sha:
             msg = f"Repo '{repo_name}' already up-to-date at commit {remote_sha[:8]}. Skipping clone."
             logger.info(msg)
             progress_tracker.log(repo_id, "INFO", msg)
@@ -153,18 +136,10 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
 
         clone_start = time.time()
         clone_res = gm_service.shallow_clone_repo(
-            git_url,
-            branch,
-            token=effective_token,
-            username=effective_user,
-            provider=provider,
-            repo_id=str(repo_id),
-            target_dir=target_dir,
-            depth=clone_depth,
+            git_url, branch, token=effective_token, username=effective_user,
+            provider=provider, repo_id=str(repo_id), target_dir=target_dir, depth=clone_depth,
         )
-        temp_dir = clone_res.temp_dir
-        commit_sha = clone_res.commit_sha
-        err = clone_res.error
+        temp_dir, commit_sha, err = clone_res.temp_dir, clone_res.commit_sha, clone_res.error
 
         if err or not temp_dir:
             err_msg = f"Failed to clone repo '{repo_name}': {err}"
@@ -238,23 +213,19 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             except Exception as qe:
                 logger.error(f"Error deleting vector for {fpath}: {qe}")
 
-        from app.services.indexing.channel_pipeline import (
-            BoundedChannel,
-            ChannelIngestionPipeline,
-            ParsedFileItem,
-        )
+        from app.services.indexing.channel_pipeline import BoundedChannel, ChannelIngestionPipeline, ParsedFileItem
         from app.services.indexing.db_write_channel import submit_db_write
 
         if deleted_filepaths:
             def _clean_deleted_paths() -> None:
                 with db_service.get_db_connection() as conn:
                     for fpath in deleted_filepaths:
-                        conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
-                        conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
-                        conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
-                        conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (fpath,))
-                        conn.execute("DELETE FROM file_summaries WHERE filepath = ?", (fpath,))
-                        conn.execute("DELETE FROM indexed_files WHERE filepath = ?", (fpath,))
+                        for tbl, col in (
+                            ("ast_symbols", "filepath"), ("ast_relationships", "source_filepath"),
+                            ("api_routes", "filepath"), ("api_client_calls", "filepath"),
+                            ("file_summaries", "filepath"), ("indexed_files", "filepath"),
+                        ):
+                            conn.execute(f"DELETE FROM {tbl} WHERE {col} = ?", (fpath,))
                     conn.commit()
 
             submit_db_write(_clean_deleted_paths)
@@ -272,13 +243,18 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             pass
 
         BATCH_SIZE = 25
+        total_batches = max(1, math.ceil(total_files / BATCH_SIZE))
+        ingest_start = time.time()
         total_vectors_count = 0
         total_symbols_count = 0
         persisted_files_count = 0
+        parsed_files_count = 0
+        batch_counter = 0
+        active_monitor: List[Optional[BatchProgressMonitor]] = [None]
         was_cancelled = False
 
         def _produce_parsed_files(channel: BoundedChannel[ParsedFileItem]) -> None:
-            nonlocal was_cancelled
+            nonlocal was_cancelled, parsed_files_count
             for idx, full_path in enumerate(files_to_sync):
                 if channel.is_closed:
                     return
@@ -290,9 +266,10 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     return
 
                 rel_path = os.path.relpath(full_path, temp_dir).replace("\\", "/")
+                parsed_files_count = idx + 1
                 progress_tracker.update_step(
-                    repo_id, 4, f"Parsed {idx + 1}/{total_files}",
-                    current_file=rel_path, parsed=idx + 1, total=total_files,
+                    repo_id, 4, f"Parsed {parsed_files_count}/{total_files}",
+                    current_file=rel_path, parsed_file=rel_path, parsed=parsed_files_count, total=total_files,
                 )
                 doc_type = "code" if is_code_file(full_path) else "doc"
                 lang = detect_language(full_path)
@@ -320,14 +297,12 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                         channel.cancel()
                         return
 
-                    if not channel.write(
-                        ParsedFileItem(
-                            filepath=db_filepath, rel_path=rel_path, repo=repo_name, points=points,
-                            symbols=symbols, summary_tuple=summary_tuple, relationships=rels,
-                            routes=routes, calls=calls,
-                            indexed_file_row=(db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash),
-                        )
-                    ):
+                    if not channel.write(ParsedFileItem(
+                        filepath=db_filepath, rel_path=rel_path, repo=repo_name, points=points,
+                        symbols=symbols, summary_tuple=summary_tuple, relationships=rels,
+                        routes=routes, calls=calls,
+                        indexed_file_row=(db_filepath, repo_name, doc_type, lang, commit_sha, 0.0, file_hash),
+                    )):
                         return
                 except Exception as fe:
                     if channel.is_closed or progress_tracker.is_cancelled(repo_id):
@@ -335,16 +310,27 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     logger.error(f"Error parsing file {rel_path} in repo '{repo_name}': {fe}")
                     progress_tracker.log(repo_id, "ERROR", f"Error parsing {rel_path}: {fe}")
 
+        def _batch_lifecycle(event: str, batch_items: list[ParsedFileItem], _unseen: int) -> None:
+            nonlocal batch_counter
+            if event == "batch_start":
+                batch_counter += 1
+                f_start = persisted_files_count + 1
+                f_end = min(total_files, persisted_files_count + len(batch_items))
+                active_monitor[0] = BatchProgressMonitor(
+                    repo_id=repo_id, batch_index=batch_counter, total_batches=total_batches,
+                    file_start=f_start, file_end=f_end, items=batch_items,
+                    log=logger, tracker=progress_tracker,
+                )
+            elif event == "embed_done" and active_monitor[0] is not None:
+                active_monitor[0].set_phase("vector_upsert")
+            elif event == "batch_end" and active_monitor[0] is not None:
+                active_monitor[0].finish()
+                active_monitor[0] = None
+
         def _persist_parsed_batch(batch_items: list[ParsedFileItem]) -> None:
             nonlocal total_vectors_count, total_symbols_count, persisted_files_count
-            batch_points = []
-            batch_symbols = []
-            batch_routes = []
-            batch_calls = []
-            batch_summaries = []
-            batch_relationships = []
-            batch_indexed_files = []
-
+            batch_points, batch_symbols, batch_routes, batch_calls = [], [], [], []
+            batch_summaries, batch_relationships, batch_indexed_files = [], [], []
             for item in batch_items:
                 batch_points.extend(item.points)
                 batch_symbols.extend(item.symbols)
@@ -356,6 +342,8 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                 if item.indexed_file_row is not None:
                     batch_indexed_files.append(item.indexed_file_row)
 
+            if active_monitor[0] is not None:
+                active_monitor[0].set_phase("vector_upsert")
             for item in batch_items:
                 try:
                     store.delete_by_path(item.filepath)
@@ -369,41 +357,41 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     raise RuntimeError(f"Vector store upsert failed during git indexing for repo '{repo_name}'")
                 total_vectors_count += len(batch_points)
 
+            if active_monitor[0] is not None:
+                active_monitor[0].set_phase("relational_write")
+
             def _write_relational_batch() -> int:
                 with db_service.get_db_connection() as conn:
                     return persist_sync_batch(
-                        conn,
-                        batch_indexed_files,
-                        batch_summaries,
-                        batch_symbols,
-                        batch_relationships,
-                        batch_routes,
-                        batch_calls,
+                        conn, batch_indexed_files, batch_summaries, batch_symbols,
+                        batch_relationships, batch_routes, batch_calls,
                     )
 
             total_symbols_count += submit_db_write(_write_relational_batch)
 
+            ingest_elapsed = max(0.001, time.time() - ingest_start)
             for item in batch_items:
                 persisted_files_count += 1
+                eta_sec = compute_eta_seconds(persisted_files_count, total_files, ingest_elapsed)
                 progress_tracker.log(
-                    repo_id,
-                    "INFO",
+                    repo_id, "INFO",
                     f"[{persisted_files_count}/{total_files}] Ingested {item.rel_path} (+{len(item.points)} chunks, +{len(item.symbols)} symbols)",
                 )
                 if persisted_files_count % 10 == 0 or persisted_files_count == total_files:
                     pct = int((persisted_files_count / total_files) * 100) if total_files > 0 else 100
+                    eta_str = format_eta_suffix(eta_sec)
+                    parsed_note = f", parsed {parsed_files_count}/{total_files}" if parsed_files_count > persisted_files_count else ""
                     logger.info(
-                        f"[{persisted_files_count}/{total_files}] ({pct}%) Ingesting {item.rel_path} (+{len(item.points)} chunks, +{len(item.symbols)} symbols)"
+                        f"[{persisted_files_count}/{total_files}] ({pct}%{eta_str}{parsed_note}) "
+                        f"Ingested {item.rel_path} (+{len(item.points)} chunks, +{len(item.symbols)} symbols)"
                     )
 
             if batch_items:
+                eta_sec = compute_eta_seconds(persisted_files_count, total_files, max(0.001, time.time() - ingest_start))
                 progress_tracker.update_step(
-                    repo_id,
-                    4,
-                    f"Ingested {persisted_files_count}/{total_files}",
-                    current_file=batch_items[-1].rel_path,
-                    processed=persisted_files_count,
-                    total=total_files,
+                    repo_id, 4, f"Ingested {persisted_files_count}/{total_files}",
+                    current_file=batch_items[-1].rel_path, processed=persisted_files_count,
+                    total=total_files, eta_seconds=eta_sec, chunks_from_cache=pipeline.chunks_from_cache,
                 )
 
             trim_memory()
@@ -411,6 +399,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         pipeline = ChannelIngestionPipeline(
             persist_batch_fn=_persist_parsed_batch,
             file_batch_size=BATCH_SIZE,
+            batch_lifecycle_hook=_batch_lifecycle,
         )
         pipeline.run(_produce_parsed_files)
         if was_cancelled or progress_tracker.is_cancelled(repo_id):
@@ -428,7 +417,14 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         if covered_all_files:
             index_format.mark_current(f"git:{repo_id}", index_format.current_fingerprint())
 
-        success_msg = f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Delta: +{len(added_files)} ~{len(modified_files)} -{len(deleted_filepaths)}. Vectors: {total_vectors_count}, Symbols: {total_symbols_count}"
+        success_msg = build_sync_completion_message(
+            repo_name=repo_name, commit_sha=commit_sha, sync_start=sync_start,
+            clone_seconds=clone_duration, ingest_start=ingest_start,
+            embed_snap_start=embed_snap_start, pipeline=pipeline,
+            added_count=len(added_files), modified_count=len(modified_files),
+            deleted_count=len(deleted_filepaths), total_vectors=total_vectors_count,
+            total_symbols=total_symbols_count,
+        )
         logger.info(success_msg)
         progress_tracker.log(repo_id, "INFO", success_msg)
         progress_tracker.finish_job(repo_id, "synced")
@@ -446,6 +442,7 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         except Exception:
             pass
     finally:
+        unregister_active_sync_repo(sync_key)
         if not keep_shallow and temp_dir:
             gm_service.cleanup_repo_dir(temp_dir)
         elif keep_shallow and temp_dir:

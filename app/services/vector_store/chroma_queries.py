@@ -166,7 +166,7 @@ def execute_chroma_grep_chunks(
     if not clean_pattern:
         return []
 
-    flags = 0 if case_sensitive else re.IGNORECASE
+    flags = re.MULTILINE | (0 if case_sensitive else re.IGNORECASE)
     regex_pat = clean_pattern if is_regex else re.escape(clean_pattern)
     try:
         compiled = re.compile(regex_pat, flags)

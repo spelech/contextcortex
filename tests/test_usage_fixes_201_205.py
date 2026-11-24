@@ -164,9 +164,9 @@ def test_202_folder_filter_works_across_qdrant_and_chroma_chunk_scanners():
 
 
 def test_202_postgres_regex_word_boundary_translation_and_escaped_punct_fallback():
-    assert _translate_python_regex_for_postgres(r"SomeQuery\b") == r"SomeQuery\y"
-    assert _translate_python_regex_for_postgres(r"[\b]foo\B") == r"[\b]foo\Y"
-    assert _translate_python_regex_for_postgres(r"(?P<name>Foo)\b") == r"(?:Foo)\y"
+    assert _translate_python_regex_for_postgres(r"SomeQuery\b") == r"(?n)SomeQuery\y"
+    assert _translate_python_regex_for_postgres(r"[\b]foo\B") == r"(?n)[\b]foo\Y"
+    assert _translate_python_regex_for_postgres(r"(?P<name>Foo)\b") == r"(?n)(?:Foo)\y"
 
     # End-to-end word boundary match on pgvector grep_chunks
     store = _make_sqlite_pgvector_store()
@@ -318,42 +318,65 @@ def test_204_search_total_and_returned_never_exceed_limit():
 def test_205_pgvector_uses_stored_fts_column_and_migrates_legacy_index(caplog):
     mock_engine = MagicMock()
     mock_engine.dialect = postgresql.dialect()
+    ddl_seen = []
+
+    def _exec_ddl(stmt, params=None):
+        s = str(stmt)
+        ddl_seen.append(s)
+        res = MagicMock()
+        res.fetchone.return_value = None
+        res.fetchall.return_value = [("collection_name",), ("id",)]
+        if "FROM pg_extension" in s:
+            res.scalar.return_value = 1
+        elif "SELECT EXISTS" in s:
+            res.scalar.return_value = False
+        elif "attname = 'collection_name'" in s:
+            res.scalar.return_value = 1
+        elif "attname = 'fts'" in s:
+            res.scalar.return_value = None
+        elif "FROM pg_indexes" in s and (params or {}).get("idx") == "idx_vector_documents_fts":
+            res.scalar.return_value = "CREATE INDEX idx_vector_documents_fts ON public.vector_documents USING gin (to_tsvector('simple', content))"
+        else:
+            res.scalar.return_value = None
+        return res
+
     mock_conn = MagicMock()
+    mock_conn.execute.side_effect = _exec_ddl
     mock_engine.connect.return_value.__enter__.return_value = mock_conn
-    # 1st scalar: pg_extension exists; 2nd scalar: legacy expression indexdef containing to_tsvector(
-    mock_conn.execute.return_value.scalar.side_effect = [
-        1,
-        "CREATE INDEX idx_vector_documents_fts ON public.vector_documents USING gin (to_tsvector('simple', content))",
-    ]
-    mock_conn.execute.return_value.fetchone.return_value = None
-    mock_conn.execute.return_value.fetchall.return_value = [("collection_name",), ("id",)]
 
     store = PgVectorStore(engine=mock_engine, dimension=4, auto_init=False)
     assert store.ensure_collection() is True
-    ddl_sql = " ".join(str(c[0][0]) for c in mock_conn.execute.call_args_list)
+    ddl_sql = " ".join(ddl_seen)
     assert "fts tsvector GENERATED ALWAYS AS" in ddl_sql
     assert "ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS" in ddl_sql
     assert "DROP INDEX IF EXISTS idx_vector_documents_fts" in ddl_sql
     assert "USING gin (fts)" in ddl_sql
 
     # Verify lexical & hybrid queries use stored `fts` column instead of recomputing to_tsvector
-    mock_conn.execute.reset_mock()
-    dense_res = MagicMock()
-    dense_res.mappings.return_value.fetchall.return_value = [
-        {"id": "d1", "score": 0.7, "payload": {"content": "public void ApplyFilter() {}", "doc_type": "code"}},
-    ]
-    lex_res = MagicMock()
-    lex_res.mappings.return_value.fetchall.return_value = [
-        {"id": "d1", "sparse_score": 0.5, "payload": {"content": "public void ApplyFilter() {}", "doc_type": "code"}},
-    ]
-    mock_conn.execute.side_effect = [dense_res, lex_res]
+    search_sqls = []
+
+    def _exec_search(stmt, params=None):
+        s = str(stmt)
+        search_sqls.append(s)
+        res = MagicMock()
+        if "ts_rank_cd" in s:
+            res.mappings.return_value.fetchall.return_value = [
+                {"id": "d1", "sparse_score": 0.5, "payload": {"content": "public void ApplyFilter() {}", "doc_type": "code"}},
+            ]
+        else:
+            res.mappings.return_value.fetchall.return_value = [
+                {"id": "d1", "score": 0.7, "payload": {"content": "public void ApplyFilter() {}", "doc_type": "code"}},
+            ]
+        return res
+
+    mock_conn.execute.side_effect = _exec_search
 
     with caplog.at_level(logging.DEBUG, logger="contextcortex.vector_store.pgvector"), \
          patch("app.services.vector_store.pgvector_store.get_dense_embedding", return_value=[0.1, 0.2, 0.3, 0.4]):
         results = store.search(query_text="apply filter", search_mode="hybrid", limit=5)
 
     assert len(results) == 1
-    lex_sql = str(mock_conn.execute.call_args_list[1][0][0])
+    lex_sql = next(s for s in search_sqls if "ts_rank_cd" in s)
     assert "ts_rank_cd(fts," in lex_sql
     assert "fts @@" in lex_sql
     assert "to_tsvector(" not in lex_sql

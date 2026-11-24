@@ -32,9 +32,27 @@ class VectorStoreManager:
     """
 
     _instance_lock = threading.RLock()
+    _status_lock = threading.Lock()
     _active_store: Optional[VectorStore] = None
     _active_config: Optional[Dict[str, str]] = None
     _reindex_callbacks: List[Callable[[], None]] = []
+    _migration_status: Optional[str] = None
+    _initializing: bool = False
+
+    @classmethod
+    def set_migration_status(cls, message: Optional[str]) -> None:
+        with cls._status_lock:
+            cls._migration_status = message
+
+    @classmethod
+    def get_migration_status(cls) -> Optional[str]:
+        with cls._status_lock:
+            return cls._migration_status
+
+    @classmethod
+    def is_initializing(cls) -> bool:
+        with cls._status_lock:
+            return cls._initializing
 
     @classmethod
     def reset_instance(cls):
@@ -47,6 +65,9 @@ class VectorStoreManager:
                     pass
             cls._active_store = None
             cls._active_config = None
+        with cls._status_lock:
+            cls._migration_status = None
+            cls._initializing = False
 
     @classmethod
     def register_reindex_callback(cls, callback: Callable[[], None]):
@@ -132,8 +153,14 @@ class VectorStoreManager:
                     f"Instantiating vector store: provider={current_config['provider']}, "
                     f"mode={current_config['mode']}, collection={current_config['collection']}"
                 )
-                cls._active_store = cls._create_store(current_config)
-                cls._active_config = current_config
+                with cls._status_lock:
+                    cls._initializing = True
+                try:
+                    cls._active_store = cls._create_store(current_config)
+                    cls._active_config = current_config
+                finally:
+                    with cls._status_lock:
+                        cls._initializing = False
             return cls._active_store
 
 

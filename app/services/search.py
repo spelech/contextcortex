@@ -265,7 +265,8 @@ def execute_hybrid_search(
                     dense_weight=0.0,
                     search_mode="lexical",
                 )
-            if should_early_return_lexical(plan, track_a, doc_type=doc_type, language=language):
+            has_exact_top = bool(track_a and float(track_a[0].score or 0.0) >= 0.85)
+            if (len(track_a) >= limit or has_exact_top) and should_early_return_lexical(plan, track_a, doc_type=doc_type, language=language):
                 early = strip_internal_metadata(track_a[:limit])
                 _enrich_code_ast_metadata(early)
                 return early
@@ -328,7 +329,11 @@ def execute_hybrid_search(
             allow_store_chunk_hydration=allow_hydration,
         )
 
-        if dense_weight is None and plan.intent == "lexical_keywords" and should_early_return_lexical(plan, track_a, doc_type=doc_type, language=language):
+        if (
+            dense_weight is None
+            and plan.intent == "lexical_keywords"
+            and should_early_return_lexical(plan, track_a, doc_type=doc_type, language=language)
+        ):
             if track_b_future.done():
                 try:
                     track_b_done = track_b_future.result()

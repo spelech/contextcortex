@@ -102,40 +102,60 @@ async def api_get_stats():
             total_chunks = 0
             vector_db_healthy = False
             vector_db_status = "Unknown"
-            try:
-                store = vs_service.get_vector_store()
-                check = store.health_check()
-                if isinstance(check, tuple) and len(check) >= 1:
-                    healthy = check[0]
-                else:
-                    healthy = bool(check)
-                stats = store.get_stats()
-                total_chunks = stats.get("points_count", 0)
-                vector_db_healthy = bool(healthy)
-                vector_db_status = "Healthy" if vector_db_healthy else "Unhealthy"
-            except Exception as e:
-                logger.error(f"Error checking vector store health/stats: {e}")
-                vector_db_status = "Error"
+            migration_msg = vs_service.VectorStoreManager.get_migration_status()
+            store_initializing = vs_service.VectorStoreManager.is_initializing()
+            if migration_msg or store_initializing:
+                vector_db_status = "Migrating" if migration_msg else "Initializing"
+            else:
+                try:
+                    store = vs_service.get_vector_store()
+                    check = store.health_check()
+                    if isinstance(check, tuple) and len(check) >= 1:
+                        healthy = check[0]
+                    else:
+                        healthy = bool(check)
+                    stats = store.get_stats()
+                    total_chunks = stats.get("points_count", 0)
+                    vector_db_healthy = bool(healthy)
+                    vector_db_status = "Healthy" if vector_db_healthy else "Unhealthy"
+                except Exception as e:
+                    logger.error(f"Error checking vector store health/stats: {e}")
+                    vector_db_status = "Error"
 
         gh_token, _, gh_src = db_service.get_effective_git_token("https://github.com", provider="github")
         gl_token, _, gl_src = db_service.get_effective_git_token("https://gitlab.com", provider="gitlab")
         gt_token, _, gt_src = db_service.get_effective_git_token("https://gitea.com", provider="gitea")
         rate_info = gm_service.check_github_rate_limit(gh_token)
 
-        try:
-            vs_cfg = vs_service.get_vector_store_config()
-        except Exception:
+        if migration_msg or store_initializing:
+            db_vs_cfg = db_service.get_vector_store_db_config()
             vs_cfg = {
-                "provider": "unknown",
-                "mode": "unknown",
-                "storage_path": None,
-                "url": None,
-                "collection": idx_service.COLLECTION_NAME,
-                "healthy": vector_db_healthy,
-                "points_count": total_chunks
+                "provider": db_vs_cfg.get("provider", "unknown"),
+                "mode": db_vs_cfg.get("mode", "unknown"),
+                "storage_path": db_vs_cfg.get("storage_path"),
+                "url": db_vs_cfg.get("url"),
+                "collection": db_vs_cfg.get("collection", idx_service.COLLECTION_NAME),
+                "healthy": False,
+                "migrating": bool(migration_msg),
+                "health_message": migration_msg or "Vector store is initializing...",
+                "points_count": 0,
             }
+        else:
+            try:
+                vs_cfg = vs_service.get_vector_store_config()
+            except Exception:
+                vs_cfg = {
+                    "provider": "unknown",
+                    "mode": "unknown",
+                    "storage_path": None,
+                    "url": None,
+                    "collection": idx_service.COLLECTION_NAME,
+                    "healthy": vector_db_healthy,
+                    "points_count": total_chunks
+                }
 
         emb_cfg = emb_service.get_embedding_config()
+        syncing_repos = idx_service.get_active_sync_repos() if hasattr(idx_service, "get_active_sync_repos") else []
         return {
             "repos_count": repo_count,
             "git_repos": repo_count,
@@ -150,6 +170,7 @@ async def api_get_stats():
             "local_paths": path_count,
             "last_indexed": last_indexed,
             "is_indexing": idx_service.is_indexing(),
+            "syncing_repos": syncing_repos,
             "vector_db_status": vector_db_status,
             "vector_store": vs_cfg,
             "vector_store_provider": vs_cfg.get("provider"),
@@ -336,6 +357,21 @@ async def api_clear_logs():
 )
 async def api_get_vector_store():
     try:
+        migration_msg = vs_service.VectorStoreManager.get_migration_status()
+        if migration_msg or vs_service.VectorStoreManager.is_initializing():
+            db_vs_cfg = db_service.get_vector_store_db_config()
+            return {
+                "provider": db_vs_cfg.get("provider", "unknown"),
+                "mode": db_vs_cfg.get("mode", "unknown"),
+                "storage_path": db_vs_cfg.get("storage_path"),
+                "url": db_vs_cfg.get("url"),
+                "collection": db_vs_cfg.get("collection", idx_service.COLLECTION_NAME),
+                "healthy": False,
+                "migrating": bool(migration_msg),
+                "health_message": migration_msg or "Vector store is initializing...",
+                "stats": {},
+                "points_count": 0,
+            }
         cfg = vs_service.get_vector_store_config()
         cfg["points_count"] = cfg.get("stats", {}).get("points_count", cfg.get("points_count", 0))
         return cfg

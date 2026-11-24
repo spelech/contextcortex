@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1398 Automated Tests** (1034 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1408 Automated Tests** (1044 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1679,6 +1679,18 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_204_tail_endregion_fragments_not_emitted_and_demoted_at_query_time`
 - `test_204_search_total_and_returned_never_exceed_limit`
 - `test_205_pgvector_uses_stored_fts_column_and_migrates_legacy_index`
+
+#### `tests/test_usage_fixes_208_212.py` (10 tests)
+- `test_208_pgvector_schema_migration_logs_and_builds_new_fts_before_drop`
+- `test_208_ready_and_stats_return_migrating_without_blocking`
+- `test_208_windows_uses_selector_event_loop_override`
+- `test_209_batch_heartbeat_slow_warning_eta_and_summary`
+- `test_209_is_indexing_and_stats_true_during_repo_sync`
+- `test_210_pgvector_dense_query_enables_iterative_scan_and_falls_back_on_old_pgvector`
+- `test_210_hybrid_dense_empty_logs_warning_and_sets_flag`
+- `test_210_single_word_routing_and_dense_fill`
+- `test_211_pgvector_file_chunks_uses_indexed_rel_path_first_and_batches`
+- `test_212_multiline_line_anchors_across_pgvector_qdrant_and_chroma`
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`

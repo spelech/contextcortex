@@ -105,15 +105,50 @@ def _read_disk_slice(roots: List[Tuple[str, str]], repo: Optional[str], rel_path
     return None
 
 
-def _hydrate_from_store(store: Any, repo: Optional[str], rel_path: str, start_line: int, end_line: int) -> Optional[Dict[str, Any]]:
+def _select_overlapping_chunk(chunks: List[Dict[str, Any]], start_line: int, end_line: int) -> Optional[Dict[str, Any]]:
+    if not chunks:
+        return None
+    overlapping = [c for c in chunks if (c.get("end_line") or 999999) >= start_line and (c.get("start_line") or 1) <= end_line]
+    return dict(overlapping[0] if overlapping else chunks[0])
+
+
+def _prefetch_store_chunks(
+    store: Any, pairs: List[Tuple[Optional[str], str]], cache: Dict[Tuple[Optional[str], str], List[Dict[str, Any]]]
+) -> None:
+    """Batch-loads chunk lists into `cache` using `get_files_chunks_batch` when available."""
+    missing = [pair for pair in dict.fromkeys(pairs) if pair not in cache]
+    if not missing or not store:
+        return
+    if hasattr(store, "get_files_chunks_batch"):
+        try:
+            fetched = store.get_files_chunks_batch(missing)
+            if isinstance(fetched, dict):
+                for pair in missing:
+                    cache[pair] = fetched.get(pair) or []
+                return
+        except Exception:
+            pass
+    if hasattr(store, "get_file_chunks"):
+        for r_repo, rel_p in missing:
+            try:
+                cache[(r_repo, rel_p)] = store.get_file_chunks(path=rel_p, repo=r_repo) or []
+            except Exception:
+                cache[(r_repo, rel_p)] = []
+
+
+def _hydrate_from_store(
+    store: Any, repo: Optional[str], rel_path: str, start_line: int, end_line: int,
+    cache: Optional[Dict[Tuple[Optional[str], str], List[Dict[str, Any]]]] = None,
+) -> Optional[Dict[str, Any]]:
+    if cache is not None and (repo, rel_path) in cache:
+        return _select_overlapping_chunk(cache[(repo, rel_path)], start_line, end_line)
     if not store or not hasattr(store, "get_file_chunks"):
         return None
     try:
-        chunks = store.get_file_chunks(path=rel_path, repo=repo)
-        if not chunks:
-            return None
-        overlapping = [c for c in chunks if (c.get("end_line") or 999999) >= start_line and (c.get("start_line") or 1) <= end_line]
-        return dict(overlapping[0] if overlapping else chunks[0])
+        chunks = store.get_file_chunks(path=rel_path, repo=repo) or []
+        if cache is not None:
+            cache[(repo, rel_path)] = chunks
+        return _select_overlapping_chunk(chunks, start_line, end_line)
     except Exception:
         return None
 
@@ -219,16 +254,28 @@ def _query_ast_candidates(
             scored_rows.append((pre_score, row))
 
     scored_rows.sort(key=lambda item: item[0], reverse=True)
-    results: List[VectorSearchResult] = []
-    for _, row in scored_rows[:target_cap]:
+    top_rows = scored_rows[:target_cap]
+    prepared = []
+    store_lookup_pairs: List[Tuple[Optional[str], str]] = []
+    for _, row in top_rows:
         r_repo = row["repo"]
         rel_p = _clean_rel_path(row["filepath"], r_repo, local_roots)
         s_line, e_line = int(row["start_line"] or 1), int(row["end_line"] or 1)
         content = _read_disk_slice(roots, r_repo, rel_p, s_line, min(e_line, s_line + 140))
+        prepared.append((row, r_repo, rel_p, s_line, e_line, content))
+        if content is None and allow_store_hydration:
+            store_lookup_pairs.append((r_repo, rel_p))
+
+    chunk_cache: Dict[Tuple[Optional[str], str], List[Dict[str, Any]]] = {}
+    if store_lookup_pairs:
+        _prefetch_store_chunks(store, store_lookup_pairs, chunk_cache)
+
+    results: List[VectorSearchResult] = []
+    for row, r_repo, rel_p, s_line, e_line, content in prepared:
         payload_path = row["filepath"]
 
         if content is None and allow_store_hydration:
-            hydrated = _hydrate_from_store(store, r_repo, rel_p, s_line, e_line)
+            hydrated = _hydrate_from_store(store, r_repo, rel_p, s_line, e_line, cache=chunk_cache)
             if hydrated:
                 content = hydrated.get("content") or hydrated.get("text")
                 payload_path = hydrated.get("path") or payload_path
@@ -366,7 +413,8 @@ def _query_summary_candidates(
     except Exception:
         return []
 
-    out: List[VectorSearchResult] = []
+    summary_rows = []
+    summary_lookup_pairs: List[Tuple[Optional[str], str]] = []
     for row in rows[: max(limit * 2, 6)]:
         if tag:
             try:
@@ -377,9 +425,19 @@ def _query_summary_candidates(
         r_repo = row["repo"]
         rel_p = _clean_rel_path(row["filepath"], r_repo, local_roots)
         content = _read_disk_slice(roots, r_repo, rel_p, 1, 120)
+        summary_rows.append((row, r_repo, rel_p, content))
+        if content is None and allow_store_hydration:
+            summary_lookup_pairs.append((r_repo, rel_p))
+
+    summary_cache: Dict[Tuple[Optional[str], str], List[Dict[str, Any]]] = {}
+    if summary_lookup_pairs:
+        _prefetch_store_chunks(store, summary_lookup_pairs, summary_cache)
+
+    out: List[VectorSearchResult] = []
+    for row, r_repo, rel_p, content in summary_rows:
         payload_path, heading = row["filepath"], None
         if content is None and allow_store_hydration:
-            hydrated = _hydrate_from_store(store, r_repo, rel_p, 1, 120)
+            hydrated = _hydrate_from_store(store, r_repo, rel_p, 1, 120, cache=summary_cache)
             if hydrated:
                 content = hydrated.get("content") or hydrated.get("text")
                 payload_path = hydrated.get("path") or payload_path

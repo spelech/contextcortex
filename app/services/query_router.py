@@ -78,6 +78,12 @@ def _has_term_code_syntax(term: str) -> bool:
     return False
 
 
+def _is_plain_single_word(term: str) -> bool:
+    """True for a single all-lowercase alphabetic word (e.g. 'padlock'), which should not skip dense retrieval."""
+    stripped = re.sub(r"^[^\w]+|[^\w]+$", "", term or "")
+    return bool(stripped) and stripped.isascii() and stripped.isalpha() and stripped.islower()
+
+
 def classify_query_intent(query_text: str) -> QueryPlan:
     """Classifies queries using word tokens and identifier morphology into lexical_exact, lexical_keywords, or semantic_prose."""
     cleaned = (query_text or "").strip()
@@ -110,8 +116,10 @@ def classify_query_intent(query_text: str) -> QueryPlan:
         single_w = lower_words[0] if lower_words else cleaned.lower()
         if single_w in _INTERROGATIVES or single_w in _PROSE_AUX_VERBS or single_w in _PROSE_STOPWORDS:
             intent = "semantic_prose"
-        else:
+        elif has_code_syntax or not _is_plain_single_word(raw_terms[0]):
             intent = "lexical_exact"
+        else:
+            intent = "lexical_keywords"
     elif has_code_syntax and len(raw_terms) <= 3 and not (has_interrogative or has_aux_verb or ends_qmark):
         intent = "lexical_exact"
     elif ends_qmark or has_interrogative or has_aux_verb:
@@ -217,7 +225,7 @@ def should_early_return_lexical(
         total_tokens = len(plan.content_tokens)
 
         if total_tokens <= 1:
-            return coverage >= 1.0 and (header_hits >= 1 or body_hits >= 1)
+            return False
         if total_tokens == 2:
             return coverage >= 1.0 and body_hits >= 1 and (header_hits >= 1 or body_hits >= 2)
         return (coverage >= 0.75 and body_hits >= 2) or (coverage >= 0.80 and header_hits >= 1 and body_hits >= 1)

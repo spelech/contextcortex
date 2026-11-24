@@ -81,6 +81,10 @@ async def handle_search(
             search_mode=requested_mode,
         ) or []
 
+        dense_leg_empty = any(
+            isinstance(getattr(h, "payload", None), dict) and h.payload.pop("_dense_leg_empty", False)
+            for h in hits
+        )
         has_more = len(hits) > (safe_offset + safe_limit)
         page_hits = hits[safe_offset : safe_offset + safe_limit]
         next_offset = (safe_offset + safe_limit) if has_more else None
@@ -135,6 +139,8 @@ async def handle_search(
             "next_offset": next_offset,
             "results": results,
         }
+        if dense_leg_empty and requested_mode == "hybrid":
+            payload["dense_fallback_lexical_only"] = True
         sync_info = get_active_sync_status(repo)
         if sync_info:
             payload.update(sync_info)

@@ -73,7 +73,8 @@ RESULT_INTERFACES: Dict[str, Dict[str, str]] = {
                   "dense_score": _NN, "sparse_score": _NN, "permalink?": _SN, "content_truncated": "boolean",
                   "content": _S},
     "SearchResult": {"query": _S, "scope": _S, "mode": _S, "returned": _N, "total": _N, **_PAGE, "max_snippet_chars": _N,
-                     "results": "SearchHit[]", "index_status?": _S, "sync_progress?": "Record<string, any>"},
+                     "results": "SearchHit[]", "dense_fallback_lexical_only?": "boolean",
+                     "index_status?": _S, "sync_progress?": "Record<string, any>"},
 }
 _INTERFACE_DOCS = {
     "CallSite": "The line in the caller that calls this step (a working-path step has no file).",

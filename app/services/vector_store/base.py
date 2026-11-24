@@ -153,6 +153,16 @@ class VectorStore(ABC):
         """Returns all chunk payloads for the specified path / rel_path (and optional repo), sorted by (start_line, end_line)."""
         return []
 
+    def get_files_chunks_batch(
+        self,
+        paths: List[Tuple[Optional[str], str]],
+    ) -> Dict[Tuple[Optional[str], str], List[Dict[str, Any]]]:
+        """Batch-fetches chunk payloads for multiple (repo, rel_path) pairs."""
+        results: Dict[Tuple[Optional[str], str], List[Dict[str, Any]]] = {}
+        for repo, rel_path in dict.fromkeys(paths):
+            results[(repo, rel_path)] = self.get_file_chunks(path=rel_path, repo=repo)
+        return results
+
     def grep_chunks(
         self,
         pattern: str,

@@ -181,11 +181,15 @@ class ChannelIngestionPipeline:
         file_batch_size: int = 25,
         parsed_channel_capacity: int = 64,
         persist_channel_capacity: int = 8,
+        batch_lifecycle_hook: Optional[Callable[[str, List[ParsedFileItem], int], None]] = None,
     ) -> None:
         self.persist_batch_fn = persist_batch_fn
         self.file_batch_size = max(1, int(file_batch_size))
         self.parsed_channel: BoundedChannel[ParsedFileItem] = BoundedChannel(capacity=parsed_channel_capacity)
         self.persist_channel: BoundedChannel[PendingPersistBatch] = BoundedChannel(capacity=persist_channel_capacity)
+        self.batch_lifecycle_hook = batch_lifecycle_hook
+        self.chunks_from_cache: int = 0
+        self.chunks_newly_embedded: int = 0
 
     def run(self, producer_fn: Callable[[BoundedChannel[ParsedFileItem]], None]) -> None:
         """Runs the 4-stage pipeline to completion, propagating any stage exception."""
@@ -323,7 +327,6 @@ class ChannelIngestionPipeline:
 
         all_hashes = list(hash_to_text.keys())
         cached_map = get_cached_embeddings_batch(all_hashes, model_name=active_model)
-
         unseen_hashes: List[str] = []
         unseen_texts: List[str] = []
         unseen_filepaths: List[str] = []
@@ -332,6 +335,8 @@ class ChannelIngestionPipeline:
                 unseen_hashes.append(h)
                 unseen_texts.append(hash_to_text[h])
                 unseen_filepaths.append(hash_to_filepath.get(h, ""))
+        self.chunks_from_cache += sum(1 for _, h in point_hashes if h in cached_map)
+        self.chunks_newly_embedded += sum(1 for _, h in point_hashes if h not in cached_map)
 
         embed_fn = proc_service._get_indexer_attr(
             "get_hybrid_embeddings_batch",
@@ -425,67 +430,48 @@ class ChannelIngestionPipeline:
         proc_service: Any,
         set_cached_embeddings_batch: Callable,
     ) -> None:
-        if batch.point_hashes:
-            items_to_cache: List[Dict[str, Any]] = []
-            if batch.use_raw_hybrid_future:
-                for s_hashes, fut in batch.slice_futures:
-                    new_vectors = fut.result()
-                    for i, h in enumerate(s_hashes):
-                        nv = new_vectors[i] if i < len(new_vectors) and isinstance(new_vectors[i], dict) else {}
-                        dense_v = nv.get("dense")
-                        if dense_v is None:
-                            continue
-                        s_indices, s_values = proc_service._extract_sparse_tuple(nv.get("sparse"))
-                        batch.cached_map[h] = {
-                            "dense": dense_v,
-                            "sparse_indices": s_indices,
-                            "sparse_values": s_values,
-                        }
-                        items_to_cache.append({
-                            "chunk_hash": h,
-                            "dense_vector": dense_v,
-                            "sparse_indices": s_indices,
-                            "sparse_values": s_values,
-                            "model_name": batch.active_model,
-                        })
-            else:
-                for s_hashes, fut in batch.slice_futures:
-                    dense_vecs = fut.result()
-                    for i, h in enumerate(s_hashes):
-                        dense_v = dense_vecs[i] if i < len(dense_vecs) else None
-                        if dense_v is None:
-                            continue
-                        batch.cached_map[h] = {
-                            "dense": dense_v,
-                            "sparse_indices": None,
-                            "sparse_values": None,
-                        }
-                        items_to_cache.append({
-                            "chunk_hash": h,
-                            "dense_vector": dense_v,
-                            "sparse_indices": None,
-                            "sparse_values": None,
-                            "model_name": batch.active_model,
-                        })
-
-            if items_to_cache:
-                from app.services.indexing.db_write_channel import submit_db_write
-
-                submit_db_write(lambda: set_cached_embeddings_batch(items_to_cache))
-                trim_memory()
-
-            for pt, h in batch.point_hashes:
-                bv = batch.cached_map.get(h, {})
-                pt.dense_vector = bv.get("dense")
-                pt.sparse_indices = bv.get("sparse_indices")
-                pt.sparse_values = bv.get("sparse_values")
-
-            for item in batch.items:
-                if any(pt.dense_vector is None for pt in item.points):
-                    skipped = sum(1 for pt in item.points if pt.dense_vector is None)
-                    logger.warning(
-                        f"Skipping {skipped} unembedded chunk(s) in file '{item.rel_path or item.filepath}'."
-                    )
-                    item.points = [pt for pt in item.points if pt.dense_vector is not None]
-
-        self.persist_batch_fn(batch.items)
+        if self.batch_lifecycle_hook is not None:
+            self.batch_lifecycle_hook("batch_start", batch.items, len(batch.unseen_hashes))
+        try:
+            if batch.point_hashes:
+                items_to_cache: List[Dict[str, Any]] = []
+                if batch.use_raw_hybrid_future:
+                    for s_hashes, fut in batch.slice_futures:
+                        new_vectors = fut.result()
+                        for i, h in enumerate(s_hashes):
+                            nv = new_vectors[i] if i < len(new_vectors) and isinstance(new_vectors[i], dict) else {}
+                            dense_v = nv.get("dense")
+                            if dense_v is None:
+                                continue
+                            s_indices, s_values = proc_service._extract_sparse_tuple(nv.get("sparse"))
+                            batch.cached_map[h] = {"dense": dense_v, "sparse_indices": s_indices, "sparse_values": s_values}
+                            items_to_cache.append({"chunk_hash": h, "dense_vector": dense_v, "sparse_indices": s_indices, "sparse_values": s_values, "model_name": batch.active_model})
+                else:
+                    for s_hashes, fut in batch.slice_futures:
+                        dense_vecs = fut.result()
+                        for i, h in enumerate(s_hashes):
+                            dense_v = dense_vecs[i] if i < len(dense_vecs) else None
+                            if dense_v is None:
+                                continue
+                            batch.cached_map[h] = {"dense": dense_v, "sparse_indices": None, "sparse_values": None}
+                            items_to_cache.append({"chunk_hash": h, "dense_vector": dense_v, "sparse_indices": None, "sparse_values": None, "model_name": batch.active_model})
+                if items_to_cache:
+                    from app.services.indexing.db_write_channel import submit_db_write
+                    submit_db_write(lambda: set_cached_embeddings_batch(items_to_cache))
+                    trim_memory()
+                for pt, h in batch.point_hashes:
+                    bv = batch.cached_map.get(h, {})
+                    pt.dense_vector = bv.get("dense")
+                    pt.sparse_indices = bv.get("sparse_indices")
+                    pt.sparse_values = bv.get("sparse_values")
+                for item in batch.items:
+                    if any(pt.dense_vector is None for pt in item.points):
+                        skipped = sum(1 for pt in item.points if pt.dense_vector is None)
+                        logger.warning(f"Skipping {skipped} unembedded chunk(s) in file '{item.rel_path or item.filepath}'.")
+                        item.points = [pt for pt in item.points if pt.dense_vector is not None]
+            if self.batch_lifecycle_hook is not None:
+                self.batch_lifecycle_hook("embed_done", batch.items, len(batch.unseen_hashes))
+            self.persist_batch_fn(batch.items)
+        finally:
+            if self.batch_lifecycle_hook is not None:
+                self.batch_lifecycle_hook("batch_end", batch.items, len(batch.unseen_hashes))
