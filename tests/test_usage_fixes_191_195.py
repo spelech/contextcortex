@@ -214,14 +214,17 @@ def test_192_search_tools_include_index_status_while_repo_is_syncing(isolated_db
 
     for payload in (s_res, g_res, f_res, t_res, d_res):
         assert payload["index_status"] == "syncing"
-        assert payload["processed"] == 120
-        assert payload["total"] == 500
+        assert payload["sync_progress"]["processed"] == 120
+        assert payload["sync_progress"]["total"] == 500
+    assert s_res["total"] == 0
+    assert f_res["total"] == 0
 
     # Once finished, index_status is omitted.
     progress_tracker.finish_job(42, "synced")
     with patch("app.mcp.handlers.search_handlers.execute_hybrid_search", return_value=[]):
         idle_res = json.loads(asyncio.run(handle_search(query="billing", repo="shop-repo")))
     assert "index_status" not in idle_res
+    assert "sync_progress" not in idle_res
 
 
 # --- Issue #193: diagnose_issue plain-language semantic_candidates + data-value filtering ---

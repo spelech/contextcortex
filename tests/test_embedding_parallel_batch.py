@@ -151,6 +151,7 @@ def test_http_429_retry_after_aimd_and_telemetry(caplog):
         sleep_fn=lambda s: None,
     )
     assert telemetry_tracker.get_effective_concurrency(4) >= 3
+    progress_tracker.jobs.pop(777, None)
 
 
 def test_cross_file_batch_embedding_in_git_and_local_syncer(tmp_path, monkeypatch):
