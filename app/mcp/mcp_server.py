@@ -9,7 +9,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from app.mcp.handlers.script_handlers import code_mode_enabled
 
-MCP_SERVER_VERSION = "2.28.5"  # x-release-please-version
+MCP_SERVER_VERSION = "2.28.6"  # x-release-please-version
 
 
 def build_mcp_server_instructions(include_code_mode: bool | None = None) -> str:
