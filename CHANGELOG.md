@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.5](https://github.com/spelech/contextcortex/compare/v2.28.4...v2.28.5) (2026-11-24)
+
+
+### Bug Fixes
+
+* resolve read_file suggestions, pgvector grep & FTS perf, header chunks/indent, and tail-fragment ranking ([#201](https://github.com/spelech/contextcortex/issues/201)-[#205](https://github.com/spelech/contextcortex/issues/205)) ([#206](https://github.com/spelech/contextcortex/issues/206)) ([f41985b](https://github.com/spelech/contextcortex/commit/f41985bc0e5d6641ce4d2bb26c9bb09d4855b7ce))
+
 ## [2.28.4](https://github.com/spelech/contextcortex/compare/v2.28.3...v2.28.4) (2026-11-24)
 
 
