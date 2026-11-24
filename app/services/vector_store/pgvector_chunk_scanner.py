@@ -9,10 +9,11 @@ from app.services.code_grep_chunks import path_matches_filter
 logger = logging.getLogger("contextcortex.vector_store.pgvector")
 
 _PG_GREP_MAX_PAGES = 20
+_LEADING_FLAGS_RE = re.compile(r"^\(\?([a-zA-Z]+)\)")
 
 
 def _translate_python_regex_for_postgres(pattern: str) -> str:
-    """Converts common Python regex escapes (`\\b`, `\\B`, `\\A`, `\\Z`, `(?P<name>`) to PostgreSQL ARE syntax."""
+    """Converts common Python regex escapes (`\\b`, `\\B`, `(?P<name>`) to newline-sensitive PostgreSQL ARE syntax."""
     out: List[str] = []
     in_class = False
     i = 0
@@ -25,10 +26,6 @@ def _translate_python_regex_for_postgres(pattern: str) -> str:
                 out.append("\\y")
             elif not in_class and nxt == "B":
                 out.append("\\Y")
-            elif not in_class and nxt == "A":
-                out.append("^")
-            elif not in_class and nxt == "Z":
-                out.append("$")
             else:
                 out.append(ch)
                 out.append(nxt)
@@ -46,7 +43,17 @@ def _translate_python_regex_for_postgres(pattern: str) -> str:
                 continue
         out.append(ch)
         i += 1
-    return "".join(out)
+    translated = "".join(out)
+    # Enable PostgreSQL ARE newline-sensitive mode (?n) so ^ and $ match line boundaries (not chunk boundaries)
+    # and '.' does not cross newlines, matching Python re.MULTILINE line-oriented grep semantics.
+    lead = _LEADING_FLAGS_RE.match(translated)
+    if lead:
+        raw_flags = lead.group(1)
+        pg_flags = "".join(dict.fromkeys("n" if f == "m" else f for f in raw_flags))
+        if "n" not in pg_flags and "s" not in pg_flags and "p" not in pg_flags:
+            pg_flags = "n" + pg_flags
+        return f"(?{pg_flags}){translated[lead.end():]}"
+    return f"(?n){translated}"
 
 
 def _sql_path_prefilter(path_glob: Optional[str], is_sqlite: bool) -> Tuple[Optional[str], Dict[str, Any]]:
@@ -104,6 +111,78 @@ def hydrate_chunk_row(row: Any) -> Dict[str, Any]:
     return p
 
 
+def _try_set_local(conn: Any, sql_stmt: str) -> bool:
+    """Executes a transaction-local PostgreSQL SET LOCAL inside a savepoint so unsupported GUCs never abort."""
+    try:
+        if hasattr(conn, "begin_nested"):
+            with conn.begin_nested():
+                conn.execute(text(sql_stmt))
+        else:
+            conn.execute(text(sql_stmt))
+        return True
+    except Exception:
+        return False
+
+
+def execute_pgvector_dense_query(
+    conn: Any,
+    table_name: str,
+    where_clause: str,
+    params: Dict[str, Any],
+    target_limit: int,
+    has_filter: bool,
+    is_pg_dialect: bool = True,
+) -> List[Any]:
+    """Runs an HNSW dense vector query with pgvector 0.8+ iterative scanning and ef_search tuning."""
+    safe_limit = max(1, int(target_limit))
+    ef_search = max(40, safe_limit * 4)
+    iterative_ok = False
+    if is_pg_dialect:
+        iterative_ok = _try_set_local(conn, "SET LOCAL hnsw.iterative_scan = 'relaxed_order'")
+        _try_set_local(conn, f"SET LOCAL hnsw.ef_search = {ef_search}")
+
+    if iterative_ok:
+        scan_limit = max(safe_limit, min(safe_limit * 2, 100))
+        cte_sql = text(f"""
+        WITH relaxed_results AS MATERIALIZED (
+            SELECT id, (embedding <=> CAST(:query_vec AS vector)) AS distance, payload
+            FROM {table_name}
+            WHERE {where_clause}
+            ORDER BY embedding <=> CAST(:query_vec AS vector)
+            LIMIT :scan_limit
+        )
+        SELECT id, (1 - distance) AS score, payload
+        FROM relaxed_results
+        ORDER BY distance ASC
+        LIMIT :target_limit;
+        """)
+        qparams = {**params, "scan_limit": scan_limit, "target_limit": safe_limit}
+        return conn.execute(cte_sql, qparams).mappings().fetchall()
+
+    direct_sql = text(f"""
+    SELECT id, (1 - (embedding <=> CAST(:query_vec AS vector))) AS score, payload
+    FROM {table_name}
+    WHERE {where_clause}
+    ORDER BY embedding <=> CAST(:query_vec AS vector)
+    LIMIT :target_limit;
+    """)
+    qparams = {**params, "target_limit": safe_limit}
+    rows = conn.execute(direct_sql, qparams).mappings().fetchall()
+    if is_pg_dialect and has_filter and len(rows) < safe_limit:
+        retry_ef = max(200, safe_limit * 10)
+        if _try_set_local(conn, f"SET LOCAL hnsw.ef_search = {retry_ef}"):
+            rows = conn.execute(direct_sql, qparams).mappings().fetchall()
+    return rows
+
+
+def _normalize_rel_path(path: str, repo: Optional[str]) -> str:
+    clean_path = (path or "").replace("\x00", "").replace("\\", "/").strip("/")
+    rel_path = clean_path.split("://", 1)[1] if "://" in clean_path else clean_path
+    if repo and rel_path.startswith(f"{repo}/"):
+        rel_path = rel_path[len(repo) + 1:]
+    return rel_path
+
+
 def execute_pgvector_file_chunks(
     engine: Engine,
     table_name: str,
@@ -111,42 +190,121 @@ def execute_pgvector_file_chunks(
     path: str,
     repo: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    clean_path = (path or "").replace("\x00", "").replace("\\", "/").strip("/")
-    rel_path = clean_path.split("://", 1)[1] if "://" in clean_path else clean_path
-    if repo and rel_path.startswith(f"{repo}/"):
-        rel_path = rel_path[len(repo) + 1:]
+    rel_path = _normalize_rel_path(path, repo)
+    has_repo = bool(repo and repo not in ("__all__", "all"))
 
-    esc_rel = rel_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    conditions = [
-        "collection_name = :collection_name",
-        "(rel_path = :rel_path OR path = :path OR rel_path = :path OR path = :rel_path OR REPLACE(path, '\\', '/') LIKE :path_suffix ESCAPE '\\')",
-    ]
-    params: Dict[str, Any] = {
-        "collection_name": collection_name,
-        "rel_path": rel_path,
-        "path": (path or "").replace("\x00", ""),
-        "path_suffix": f"%://{repo}/{esc_rel}" if (repo and repo not in ("__all__", "all")) else f"%/{esc_rel}",
-    }
-    if repo and repo not in ("__all__", "all"):
-        conditions.append("repo = :repo")
-        params["repo"] = repo
+    fast_conds = ["collection_name = :collection_name", "rel_path = :rel_path"]
+    fast_params: Dict[str, Any] = {"collection_name": collection_name, "rel_path": rel_path}
+    if has_repo:
+        fast_conds.append("repo = :repo")
+        fast_params["repo"] = repo
 
-    query_sql = text(f"""
+    fast_sql = text(f"""
     SELECT payload, content, start_line, end_line, repo, path, rel_path
     FROM {table_name}
-    WHERE {' AND '.join(conditions)}
+    WHERE {' AND '.join(fast_conds)}
     ORDER BY COALESCE(start_line, 0) ASC, COALESCE(end_line, 0) ASC;
     """)
 
     try:
         with engine.connect() as conn:
-            rows = conn.execute(query_sql, params).mappings().fetchall()
+            rows = conn.execute(fast_sql, fast_params).mappings().fetchall()
+            if not rows:
+                esc_rel = rel_path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                fb_conds = [
+                    "collection_name = :collection_name",
+                    "(path = :path OR rel_path = :path OR path = :rel_path OR REPLACE(path, '\\', '/') LIKE :path_suffix ESCAPE '\\')",
+                ]
+                fb_params: Dict[str, Any] = {
+                    "collection_name": collection_name,
+                    "rel_path": rel_path,
+                    "path": (path or "").replace("\x00", ""),
+                    "path_suffix": f"%://{repo}/{esc_rel}" if has_repo else f"%/{esc_rel}",
+                }
+                if has_repo:
+                    fb_conds.append("repo = :repo")
+                    fb_params["repo"] = repo
+                fb_sql = text(f"""
+                SELECT payload, content, start_line, end_line, repo, path, rel_path
+                FROM {table_name}
+                WHERE {' AND '.join(fb_conds)}
+                ORDER BY COALESCE(start_line, 0) ASC, COALESCE(end_line, 0) ASC;
+                """)
+                rows = conn.execute(fb_sql, fb_params).mappings().fetchall()
         chunks = [hydrate_chunk_row(r) for r in rows]
         chunks.sort(key=lambda p: (p.get("start_line") or 0, p.get("end_line") or 0))
         return chunks
     except Exception as e:
         logger.error(f"Error fetching file chunks from PgVectorStore: {e}")
         return []
+
+
+def execute_pgvector_files_chunks_batch(
+    engine: Engine,
+    table_name: str,
+    collection_name: str,
+    paths: List[Tuple[Optional[str], str]],
+) -> Dict[Tuple[Optional[str], str], List[Dict[str, Any]]]:
+    """Batch-fetches chunks for multiple (repo, rel_path) pairs using the (collection_name, repo, rel_path) index."""
+    if not paths:
+        return {}
+    unique_pairs = list(dict.fromkeys(paths))
+    by_repo: Dict[Optional[str], List[Tuple[str, str]]] = {}
+    for req_repo, raw_p in unique_pairs:
+        eff_repo = None if req_repo in (None, "", "__all__", "all") else req_repo
+        rel_p = _normalize_rel_path(raw_p, eff_repo)
+        by_repo.setdefault(eff_repo, []).append((raw_p, rel_p))
+
+    out: Dict[Tuple[Optional[str], str], List[Dict[str, Any]]] = {pair: [] for pair in unique_pairs}
+    try:
+        with engine.connect() as conn:
+            for eff_repo, entries in by_repo.items():
+                rel_to_raws: Dict[str, List[str]] = {}
+                for raw_p, rel_p in entries:
+                    rel_to_raws.setdefault(rel_p, []).append(raw_p)
+                rel_list = list(rel_to_raws.keys())
+                placeholders = ", ".join(f":rp_{i}" for i in range(len(rel_list)))
+                params: Dict[str, Any] = {"collection_name": collection_name}
+                for i, rp in enumerate(rel_list):
+                    params[f"rp_{i}"] = rp
+                conds = ["collection_name = :collection_name", f"rel_path IN ({placeholders})"]
+                if eff_repo is not None:
+                    conds.append("repo = :repo")
+                    params["repo"] = eff_repo
+                sql = text(f"""
+                SELECT payload, content, start_line, end_line, repo, path, rel_path
+                FROM {table_name}
+                WHERE {' AND '.join(conds)}
+                ORDER BY rel_path ASC, COALESCE(start_line, 0) ASC, COALESCE(end_line, 0) ASC;
+                """)
+                rows = conn.execute(sql, params).mappings().fetchall()
+                grouped: Dict[str, List[Dict[str, Any]]] = {}
+                for r in rows:
+                    c = hydrate_chunk_row(r)
+                    rp_key = str(r["rel_path"] or c.get("rel_path") or "")
+                    grouped.setdefault(rp_key, []).append(c)
+                for rel_p, raw_list in rel_to_raws.items():
+                    chunks = grouped.get(rel_p, [])
+                    chunks.sort(key=lambda p: (p.get("start_line") or 0, p.get("end_line") or 0))
+                    for raw_p in raw_list:
+                        for req_repo, req_raw in unique_pairs:
+                            norm_req = None if req_repo in (None, "", "__all__", "all") else req_repo
+                            if norm_req == eff_repo and req_raw == raw_p:
+                                out[(req_repo, raw_p)] = chunks
+
+                # Only fall back to legacy path-suffix scan if the whole repo returned zero indexed rel_path hits.
+                if not grouped:
+                    for raw_p, _ in entries:
+                        for req_repo, req_raw in unique_pairs:
+                            norm_req = None if req_repo in (None, "", "__all__", "all") else req_repo
+                            if norm_req == eff_repo and req_raw == raw_p and not out.get((req_repo, req_raw)):
+                                out[(req_repo, req_raw)] = execute_pgvector_file_chunks(
+                                    engine=engine, table_name=table_name, collection_name=collection_name,
+                                    path=req_raw, repo=req_repo,
+                                )
+    except Exception as e:
+        logger.error(f"Error batch-fetching file chunks from PgVectorStore: {e}")
+    return out
 
 
 def execute_pgvector_grep_chunks(
@@ -164,7 +322,7 @@ def execute_pgvector_grep_chunks(
     if not clean_pattern:
         return []
 
-    flags = 0 if case_sensitive else re.IGNORECASE
+    flags = re.MULTILINE | (0 if case_sensitive else re.IGNORECASE)
     regex_pat = clean_pattern if is_regex else re.escape(clean_pattern)
     try:
         compiled = re.compile(regex_pat, flags)

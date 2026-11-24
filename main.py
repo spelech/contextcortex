@@ -124,8 +124,15 @@ async def lifespan(app: FastAPI):
     # Ensure database connection & bootstrapping is verified on startup
     init_application_database()
 
+    def _startup_background_tasks() -> None:
+        try:
+            VectorStoreManager.get_vector_store()
+        except Exception as vs_err:
+            logger.error(f"Startup vector store initialization error: {vs_err}")
+        run_full_indexing()
+
     try:
-        threading.Thread(target=run_full_indexing, daemon=True).start()
+        threading.Thread(target=_startup_background_tasks, daemon=True, name="cc-startup-init").start()
     except Exception as e:
         logger.error(f"Startup indexing error: {e}")
 
@@ -435,6 +442,20 @@ async def readiness():
         logger.warning(f"Readiness check unhandled exception: {e}")
         is_ready = False
         db_info = {"status": "error", "type": "unknown"}
+
+    migration_msg = VectorStoreManager.get_migration_status()
+    if migration_msg:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "migrating",
+                "migration": migration_msg,
+                "protocolVersion": "2026-07-28",
+                "server": "contextcortex",
+                "database": db_info,
+            },
+            headers={"Cache-Control": "no-cache, no-transform"},
+        )
 
     if is_ready:
         return JSONResponse(

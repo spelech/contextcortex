@@ -71,8 +71,8 @@ _DEFAULT_TOOL_DEFINITIONS: List[Tuple[str, Any, str]] = [
         "working_path_comparison}; find_routes {routes: [{method, path, handler, file, lines}]}; trace_path {target, "
         "callees/callers: [{symbol, file, line, defined_at, callees}]}; find_symbol {symbols: [{symbol, kind, file, lines}]}; "
         "search {results: [{file, lines, symbol, content}]}; read_file {content}. Typed signatures: resource contextcortex://code-mode/sdk.d.ts. "
-        "Limits: 60 s default (CODE_MODE_TIMEOUT_SECONDS, max 300 s), 50 tool calls, 64 MB. On large repos, search (~2-3 s) and "
-        "diagnose_issue (~3-4 s) are slower than AST/file calls (find_symbol, find_routes, read_file, grep_code <0.5 s); keep scripts to "
+        "Limits: 60 s default (CODE_MODE_TIMEOUT_SECONDS, max 300 s), 50 tool calls, 64 MB. On large repos, search (~0.5-1.5 s) and "
+        "diagnose_issue (~1-3 s) are slower than AST/file calls (find_symbol, find_routes, read_file, grep_code <0.5 s); keep scripts to "
         "~3-5 search/diagnose calls per batch. On timeout, completed nested call results and timings are returned in partial_results. "
         "Returns {result, logs, executionTimeMs, toolCallsCount}.",
     ),

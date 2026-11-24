@@ -9,10 +9,12 @@ non-loopback interface. All other HOST values (127.0.0.1, 0.0.0.0, ::, a LAN add
 their usual single-socket uvicorn meaning.
 """
 
+import asyncio
 import logging
 import os
 import socket
-from typing import Callable, List
+import sys
+from typing import Callable, List, Optional
 
 import uvicorn
 
@@ -66,16 +68,37 @@ def open_listen_sockets(
     return sockets
 
 
+def selector_loop_factory() -> asyncio.AbstractEventLoop:
+    """Returns SelectorEventLoop on Windows to avoid ProactorEventLoop WinError 64 accept socket closure."""
+    return asyncio.SelectorEventLoop()
+
+
+def _windows_loop_override() -> Optional[str]:
+    """Selects SelectorEventLoop on Windows unless CONTEXTCORTEX_WINDOWS_PROACTOR=1 opts back into Proactor."""
+    if sys.platform != "win32":
+        return None
+    if os.getenv("CONTEXTCORTEX_WINDOWS_PROACTOR", "").strip().lower() in ("1", "true", "yes"):
+        return None
+    return "app.services.listen_sockets:selector_loop_factory"
+
+
 def run_server(app, host: str, port: int) -> None:
     """Runs uvicorn on one socket, or on both loopback sockets when HOST=localhost."""
+    loop_override = _windows_loop_override()
     hosts = resolve_listen_hosts(host)
     if len(hosts) == 1:
-        uvicorn.run(app, host=host, port=port)
+        if loop_override:
+            uvicorn.run(app, host=host, port=port, loop=loop_override)
+        else:
+            uvicorn.run(app, host=host, port=port)
         return
     sockets = open_listen_sockets(hosts, port)
     for sock in sockets:
         address, bound_port = sock.getsockname()[:2]
         shown = f"[{address}]" if ":" in address else address
         logger.info("Listening on http://%s:%d", shown, bound_port)
-    config = uvicorn.Config(app, host=LOOPBACK_ADDRESSES[0], port=sockets[0].getsockname()[1])
+    cfg_kwargs = {"host": LOOPBACK_ADDRESSES[0], "port": sockets[0].getsockname()[1]}
+    if loop_override:
+        cfg_kwargs["loop"] = loop_override
+    config = uvicorn.Config(app, **cfg_kwargs)
     uvicorn.Server(config).run(sockets=sockets)

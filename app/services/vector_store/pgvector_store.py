@@ -14,6 +14,7 @@ from app.services.database.engine import get_db_engine, is_postgres
 from app.services.embeddings import get_dense_dim, get_dense_embedding, get_dense_embeddings_batch
 from app.services.text_decoding import strip_nul
 from app.services.vector_store.base import VectorDocument, VectorSearchResult, VectorStore
+from app.services.vector_store.pgvector_chunk_scanner import execute_pgvector_files_chunks_batch
 from app.services.vector_store.pgvector_queries import (
     _FTS_STOPWORDS,
     _SEARCH_MODE_ALIASES,
@@ -24,6 +25,7 @@ from app.services.vector_store.pgvector_queries import (
     parse_json_payload,
     sanitize_fts_query_text,
 )
+from app.services.vector_store.pgvector_schema import ensure_pgvector_collection
 
 logger = logging.getLogger("contextcortex.vector_store.pgvector")
 
@@ -64,112 +66,8 @@ class PgVectorStore(VectorStore):
             self.ensure_collection()
 
     def ensure_collection(self) -> bool:
-        """Initializes vector extension, documents table schema, and HNSW/GIN FTS indexes idempotently."""
-        try:
-            with self.engine.connect() as conn, conn.begin():
-                is_sqlite = getattr(self.engine.dialect, "name", "") == "sqlite"
-
-                if not is_sqlite:
-                    extension = conn.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")).scalar()
-                    if not extension:
-                        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-
-                    check_dim_sql = text("""
-                        SELECT atttypmod FROM pg_attribute
-                        WHERE attrelid = to_regclass(:table_name) AND attname = 'embedding';
-                    """)
-                    row = conn.execute(check_dim_sql, {"table_name": self.table_name}).fetchone()
-                    if row and row[0] is not None and row[0] > 0 and row[0] != self.dimension:
-                        conn.execute(text(f"LOCK TABLE {self.table_name} IN ACCESS EXCLUSIVE MODE"))
-                        if conn.execute(text(f"SELECT EXISTS (SELECT 1 FROM {self.table_name})")).scalar():
-                            raise ValueError(
-                                f"Vector dimension mismatch for table '{self.table_name}': "
-                                f"existing {row[0]}d, configured {self.dimension}d. "
-                                "An explicit rebuild is required; all collections sharing this "
-                                "table must be cleared before changing dimensions."
-                            )
-                        conn.execute(text(
-                            f"ALTER TABLE {self.table_name} ALTER COLUMN embedding TYPE vector({self.dimension})"
-                        ))
-
-                fts_col_ddl = (
-                    "" if is_sqlite else
-                    "fts tsvector GENERATED ALWAYS AS ("
-                    "to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, ''))"
-                    ") STORED,\n                    "
-                )
-                create_table_sql = f"""
-                CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    id VARCHAR(255), collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1',
-                    repo VARCHAR(255), doc_type VARCHAR(50) DEFAULT 'doc',
-                    path TEXT, rel_path TEXT, title TEXT, folder TEXT, category TEXT,
-                    tags JSONB, heading TEXT, symbol TEXT, language VARCHAR(50),
-                    start_line INTEGER, end_line INTEGER, github_url TEXT, permalink_url TEXT,
-                    content TEXT,
-                    embedding {"TEXT" if is_sqlite else "vector(" + str(self.dimension) + ")"},
-                    {fts_col_ddl}payload JSONB,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (collection_name, id)
-                );
-                """
-                conn.execute(text(create_table_sql))
-
-                if not is_sqlite:
-                    conn.execute(text(
-                        f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS collection_name VARCHAR(255) DEFAULT 'knowledge_rag_v1';"
-                    ))
-                    conn.execute(text(
-                        f"UPDATE {self.table_name} SET collection_name = 'knowledge_rag_v1' WHERE collection_name IS NULL;"
-                    ))
-                    conn.execute(text(
-                        f"ALTER TABLE {self.table_name} ADD COLUMN IF NOT EXISTS fts tsvector GENERATED ALWAYS AS ("
-                        "to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, ''))"
-                        ") STORED;"
-                    ))
-
-                    pk_check_sql = text("""
-                        SELECT a.attname
-                        FROM pg_index i
-                        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                        WHERE i.indrelid = CAST(:table_name AS regclass) AND i.indisprimary;
-                    """)
-                    pk_cols = [row[0] for row in conn.execute(pk_check_sql, {"table_name": self.table_name}).fetchall()]
-                    if set(pk_cols) != {"collection_name", "id"}:
-                        if pk_cols:
-                            conname_sql = text("""
-                                SELECT conname
-                                FROM pg_constraint
-                                WHERE conrelid = CAST(:table_name AS regclass) AND contype = 'p';
-                            """)
-                            conname_row = conn.execute(conname_sql, {"table_name": self.table_name}).fetchone()
-                            if conname_row:
-                                conname = self.engine.dialect.identifier_preparer.quote(conname_row[0])
-                                conn.execute(text(f"ALTER TABLE {self.table_name} DROP CONSTRAINT {conname};"))
-                        conn.execute(text(f"ALTER TABLE {self.table_name} ADD PRIMARY KEY (collection_name, id);"))
-
-                    conn.execute(text(f"""
-                    CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding
-                    ON {self.table_name} USING hnsw (embedding vector_cosine_ops);
-                    """))
-                    existing_fts_idx = conn.execute(
-                        text("SELECT indexdef FROM pg_indexes WHERE tablename = :t AND indexname = :idx"),
-                        {"t": self.table_name, "idx": f"idx_{self.table_name}_fts"},
-                    ).scalar()
-                    if isinstance(existing_fts_idx, str) and "to_tsvector(" in existing_fts_idx.lower():
-                        conn.execute(text(f"DROP INDEX IF EXISTS idx_{self.table_name}_fts;"))
-                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_fts ON {self.table_name} USING gin (fts);"))
-                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_collection ON {self.table_name}(collection_name);"))
-                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_repo ON {self.table_name}(repo);"))
-                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_type ON {self.table_name}(doc_type);"))
-                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{self.table_name}_path ON {self.table_name}(path);"))
-
-            logger.info(f"PgVectorStore initialized table '{self.table_name}' with {self.dimension}d HNSW and GIN FTS indexes.")
-            return True
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error(f"Error initializing PgVectorStore table '{self.table_name}': {e}", exc_info=True)
-            raise RuntimeError(f"Failed to initialize PgVectorStore table '{self.table_name}'.") from e
+        """Initializes vector extension, documents table schema, and HNSW/GIN FTS/file-lookup indexes idempotently."""
+        return ensure_pgvector_collection(self.engine, self.table_name, self.dimension)
 
     def upsert_documents(
         self,
@@ -462,6 +360,15 @@ class PgVectorStore(VectorStore):
         return execute_pgvector_file_chunks(
             engine=self.engine, table_name=self.table_name,
             collection_name=self.collection_name, path=path, repo=repo,
+        )
+
+    def get_files_chunks_batch(
+        self,
+        paths: List[Tuple[Optional[str], str]],
+    ) -> Dict[Tuple[Optional[str], str], List[Dict[str, Any]]]:
+        return execute_pgvector_files_chunks_batch(
+            engine=self.engine, table_name=self.table_name,
+            collection_name=self.collection_name, paths=paths,
         )
 
     def grep_chunks(

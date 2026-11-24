@@ -10,6 +10,7 @@ from sqlalchemy import Engine, text
 from app.services.search_ranking import compute_hybrid_score, hybrid_candidate_limit
 from app.services.vector_store.base import VectorSearchResult
 from app.services.vector_store.pgvector_chunk_scanner import (
+    execute_pgvector_dense_query,
     execute_pgvector_file_chunks,
     execute_pgvector_grep_chunks,
     hydrate_chunk_row as _hydrate_chunk_row,
@@ -311,6 +312,8 @@ def execute_pgvector_search(
             params["tag_like"] = f'%"{esc_tag}"%'
 
         where_clause = " AND ".join(conditions)
+        has_selective_filter = bool(doc_type or repo or language or category or tag)
+        is_pg_dialect = getattr(getattr(engine, "dialect", None), "name", None) == "postgresql"
         # Uses the stored generated `fts` tsvector column (GIN-indexed) so ts_rank_cd never recomputes to_tsvector per row.
         fts_expr = "fts"
         or_tsq = _build_or_tsquery(clean_query)
@@ -330,15 +333,10 @@ def execute_pgvector_search(
                 raise ValueError(msg)
 
             params["query_vec"] = str(query_vec)
-            search_sql = text(f"""
-            SELECT id, (1 - (embedding <=> CAST(:query_vec AS vector))) AS score, payload
-            FROM {table_name}
-            WHERE {where_clause}
-            ORDER BY embedding <=> CAST(:query_vec AS vector)
-            LIMIT :limit;
-            """)
-            with engine.connect() as conn:
-                rows = conn.execute(search_sql, params).mappings().fetchall()
+            with engine.connect() as conn, conn.begin():
+                rows = execute_pgvector_dense_query(
+                    conn, table_name, where_clause, params, limit, has_selective_filter, is_pg_dialect=is_pg_dialect,
+                )
             logger.debug("pgvector semantic leg finished in %.1f ms (%d rows)", (time.perf_counter() - t0) * 1000, len(rows))
 
             results: List[VectorSearchResult] = []
@@ -390,15 +388,9 @@ def execute_pgvector_search(
 
         params["query_vec"] = str(query_vec)
         params["query_text"] = clean_query
-        params["candidate_limit"] = hybrid_candidate_limit(limit, min_pool=50)
+        cand_limit = hybrid_candidate_limit(limit, min_pool=50)
+        params["candidate_limit"] = cand_limit
 
-        dense_sql = text(f"""
-        SELECT id, (1 - (embedding <=> CAST(:query_vec AS vector))) AS score, payload
-        FROM {table_name}
-        WHERE {where_clause}
-        ORDER BY embedding <=> CAST(:query_vec AS vector)
-        LIMIT :candidate_limit;
-        """)
         lexical_sql = text(f"""
         SELECT id, ts_rank_cd({fts_expr}, {tsq_expr}) AS sparse_score, payload
         FROM {table_name}
@@ -407,9 +399,11 @@ def execute_pgvector_search(
         LIMIT :candidate_limit;
         """)
 
-        with engine.connect() as conn:
+        with engine.connect() as conn, conn.begin():
             t_d = time.perf_counter()
-            dense_rows = conn.execute(dense_sql, params).mappings().fetchall()
+            dense_rows = execute_pgvector_dense_query(
+                conn, table_name, where_clause, params, cand_limit, has_selective_filter, is_pg_dialect=is_pg_dialect,
+            )
             dense_ms = (time.perf_counter() - t_d) * 1000
             t_l = time.perf_counter()
             lexical_rows = conn.execute(lexical_sql, params).mappings().fetchall()
@@ -418,6 +412,12 @@ def execute_pgvector_search(
             "pgvector hybrid legs: dense=%.1f ms (%d rows), lexical=%.1f ms (%d rows)",
             dense_ms, len(dense_rows), lex_ms, len(lexical_rows),
         )
+        dense_leg_empty = len(dense_rows) == 0 and len(lexical_rows) > 0
+        if dense_leg_empty:
+            logger.warning(
+                "pgvector hybrid search dense leg returned 0 rows (filters: doc_type=%s, repo=%s, language=%s, category=%s, tag=%s); returning lexical-only results.",
+                doc_type, repo, language, category, tag,
+            )
 
         merged: Dict[str, Dict[str, Any]] = {}
         for d_rank, row in enumerate(dense_rows, start=1):
@@ -468,7 +468,10 @@ def execute_pgvector_search(
                 )
             )
         fused.sort(key=lambda r: r.score, reverse=True)
-        return fused[:limit]
+        top_fused = fused[:limit]
+        if dense_leg_empty and top_fused:
+            top_fused[0].payload["_dense_leg_empty"] = True
+        return top_fused
     except ValueError:
         raise
     except Exception as e:

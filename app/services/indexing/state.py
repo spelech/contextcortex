@@ -39,12 +39,18 @@ indexing_lock = threading.Lock()
 
 
 def is_indexing() -> bool:
-    """Return True while a full indexing run holds ``indexing_lock``.
+    """Return True while a full indexing run holds ``indexing_lock`` or any repository sync is active.
 
     This is the single source of truth for "indexing is running". Callers must
     call this function: a module-level bool copied with ``from ... import`` goes stale.
     """
-    return indexing_lock.locked()
+    if indexing_lock.locked():
+        return True
+    try:
+        from app.services.indexing.git_syncer import has_active_repo_sync
+        return has_active_repo_sync()
+    except Exception:
+        return False
 
 
 def ensure_collection() -> bool:

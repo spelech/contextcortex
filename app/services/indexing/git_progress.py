@@ -15,15 +15,20 @@ class GitSyncJob:
     total_steps: int = 5
     step_name: str = "Connecting & Remote Check"
     current_file: Optional[str] = None
+    parsed_file: Optional[str] = None
+    current_phase: Optional[str] = None
     parsed_files: int = 0
     processed_files: int = 0
     total_files: int = 0
     percent: int = 0
+    eta_seconds: Optional[float] = None
     chunks_embedded: int = 0
+    chunks_from_cache: int = 0
     embedding_seconds: float = 0.0
     embedding_chunks_per_sec: float = 0.0
     rate_limit_wait_seconds: float = 0.0
     rate_limit_hits: int = 0
+    persist_started_at: Optional[float] = None
     started_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     error: Optional[str] = None
@@ -63,15 +68,20 @@ class GitProgressTracker:
                 job.step = 1
                 job.step_name = "Connecting & Remote Check"
                 job.current_file = None
+                job.parsed_file = None
+                job.current_phase = None
                 job.parsed_files = 0
                 job.processed_files = 0
                 job.total_files = 0
                 job.percent = 0
+                job.eta_seconds = None
                 job.chunks_embedded = 0
+                job.chunks_from_cache = 0
                 job.embedding_seconds = 0.0
                 job.embedding_chunks_per_sec = 0.0
                 job.rate_limit_wait_seconds = 0.0
                 job.rate_limit_hits = 0
+                job.persist_started_at = None
                 job.error = None
                 job.cancelled = False
                 job.started_at = time.time()
@@ -100,6 +110,13 @@ class GitProgressTracker:
                 job.rate_limit_hits = int(telemetry.get("rate_limit_hits", job.rate_limit_hits))
                 job.updated_at = time.time()
 
+    def set_current_phase(self, repo_id: int, phase: Optional[str]) -> None:
+        with self._lock:
+            job = self.jobs.get(repo_id)
+            if job and not job.cancelled and job.status != "error":
+                job.current_phase = phase
+                job.updated_at = time.time()
+
     def update_step(
         self,
         repo_id: int,
@@ -110,23 +127,46 @@ class GitProgressTracker:
         total: Optional[int] = None,
         pct: Optional[int] = None,
         parsed: Optional[int] = None,
+        parsed_file: Optional[str] = None,
+        current_phase: Optional[str] = None,
+        eta_seconds: Optional[float] = None,
+        chunks_from_cache: Optional[int] = None,
     ):
         payload = None
+        now = time.time()
         with self._lock:
             job = self.jobs.get(repo_id)
             if not job or job.cancelled or job.status == "error":
                 return
             job.status = "syncing"
             job.step = step
-            job.step_name = step_name
-            if current_file is not None:
+            is_parse_only_update = parsed is not None and processed is None and job.processed_files > 0
+            if not is_parse_only_update:
+                job.step_name = step_name
+            if current_file is not None and not is_parse_only_update:
                 job.current_file = current_file
+            if parsed_file is not None:
+                job.parsed_file = parsed_file
+            if current_phase is not None:
+                job.current_phase = current_phase
             if processed is not None:
+                if job.persist_started_at is None:
+                    job.persist_started_at = job.started_at if processed == 0 else now
                 job.processed_files = processed
             if parsed is not None:
                 job.parsed_files = parsed
+                if job.persist_started_at is None and step == 4:
+                    job.persist_started_at = now
             if total is not None:
                 job.total_files = total
+            if chunks_from_cache is not None:
+                job.chunks_from_cache = chunks_from_cache
+            if eta_seconds is not None:
+                job.eta_seconds = round(max(0.0, float(eta_seconds)), 1)
+            elif processed is not None and job.total_files > 0 and job.processed_files > 0:
+                elapsed = max(0.001, now - (job.persist_started_at or job.started_at))
+                rem = max(0, job.total_files - job.processed_files)
+                job.eta_seconds = round(rem / (job.processed_files / elapsed), 1) if rem > 0 else 0.0
             if pct is not None:
                 job.percent = max(0, min(100, pct))
             elif job.total_files > 0:
@@ -135,7 +175,7 @@ class GitProgressTracker:
                 job.percent = min(100, base_pct + int((job.processed_files / job.total_files) * step_range))
             else:
                 job.percent = int(((step - 1) / job.total_steps) * 100)
-            job.updated_at = time.time()
+            job.updated_at = now
             payload = job.to_dict()
         if payload is not None:
             self._broadcast({"type": "progress", "data": payload})
@@ -168,6 +208,8 @@ class GitProgressTracker:
                 job.step = job.total_steps
                 job.percent = 100
                 job.step_name = "Sync Complete"
+                job.current_phase = None
+                job.eta_seconds = 0.0
                 if job.total_files > 0:
                     job.parsed_files = job.total_files
                     job.processed_files = job.total_files
