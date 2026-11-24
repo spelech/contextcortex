@@ -4,7 +4,7 @@ import os
 import re
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from app.services.code_grep_chunks import grep_chunk_matches
+from app.services.code_grep_chunks import grep_chunk_matches, path_matches_filter
 from app.services.git_manager import format_git_permalink
 from app.services.ripgrep_runner import search_files_with_ripgrep
 from app.services.text_decoding import read_source_text
@@ -18,32 +18,8 @@ IGNORED_GREP_DIRS = frozenset({
     "target", "bin", "obj", ".next", ".nuxt", "coverage",
 })
 
-_GLOB_CHARS = set("*?[")
-# Regex syntax that is rare in literal search text: alternation, wildcards, classes, anchors, groups.
-_REGEX_HINT = re.compile(r"\||\.\*|\.\+|\\[bdswBDSW]|\[[^\]]+\]|^\^|\$$|\(\?|\{\d+(,\d*)?\}")
-
-
-def path_matches_filter(rel_path: str, path_filter: Optional[str]) -> bool:
-    """
-    True when `rel_path` matches the filter. A filter with wildcards is an fnmatch glob on the path or the
-    file name ('*.cs', 'app/services/*'). A filter without wildcards is a file or folder: it matches the same
-    path, anything below it, or a path that ends with it ('Services_V2', 'src/app/main.py', 'main.py').
-    """
-    if not path_filter:
-        return True
-    norm_path = rel_path.replace("\\", "/").strip("/")
-    norm_filter = path_filter.replace("\\", "/").strip().strip("/")
-    if not norm_filter:
-        return True
-    if _GLOB_CHARS & set(norm_filter):
-        return fnmatch.fnmatch(norm_path, norm_filter) or fnmatch.fnmatch(os.path.basename(norm_path), norm_filter)
-    path_l, filter_l = norm_path.lower(), norm_filter.lower()
-    return (
-        path_l == filter_l
-        or path_l.startswith(filter_l + "/")
-        or path_l.endswith("/" + filter_l)
-        or f"/{filter_l}/" in f"/{path_l}/"
-    )
+# Regex syntax that is rare in literal search text: alternation, wildcards, classes, anchors, groups, escaped punctuation.
+_REGEX_HINT = re.compile(r"\||\.\*|\.\+|\\[bdswBDSW]|\\[^\w\s]|\[[^\]]+\]|^\^|\$$|\(\?|\{\d+(,\d*)?\}")
 
 
 def looks_like_regex(pattern: str) -> bool:

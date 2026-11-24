@@ -195,6 +195,8 @@ async def handle_read_file(
             payload["truncated"] = True
         if result.get("source") == "vector_store":
             payload["source"] = "vector_store"
+        if result.get("missing_lines"):
+            payload["missing_lines"] = result["missing_lines"]
         payload["content"] = number_lines(result.get("content", ""), s_line or 1)
         return json.dumps(payload, separators=(",", ":"))
 

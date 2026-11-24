@@ -141,28 +141,20 @@ class FileReaderService:
             )
 
             if has_line_numbers:
-                line_map: Dict[int, str] = {}
-                max_line = 0
-                for p in sorted_chunks:
-                    text = p.get("content") or p.get("text") or ""
-                    chunk_start = p.get("start_line")
-                    chunk_lines = text.splitlines()
-                    c_start = int(chunk_start) if (chunk_start is not None and int(chunk_start) >= 1) else (max_line + 1)
-                    for i, line_str in enumerate(chunk_lines):
-                        curr_line = c_start + i
-                        if curr_line not in line_map:
-                            line_map[curr_line] = line_str
-                        if curr_line > max_line:
-                            max_line = curr_line
+                from app.services.code_grep_chunks import build_line_map
+                line_map = build_line_map(sorted_chunks)
+                max_line = max(line_map.keys(), default=0)
                 all_lines = [line_map.get(l_num, "") for l_num in range(1, max_line + 1)]
+                covered_lines = set(line_map.keys())
             else:
                 all_lines = []
                 for p in sorted_chunks:
                     text = p.get("content") or p.get("text") or ""
                     all_lines.extend(text.splitlines())
+                covered_lines = set(range(1, len(all_lines) + 1))
 
             full_bytes = len("\n".join(all_lines).encode("utf-8"))
-            return self._slice_lines(
+            sliced = self._slice_lines(
                 lines=all_lines,
                 filepath=path,
                 size_bytes=full_bytes,
@@ -171,6 +163,22 @@ class FileReaderService:
                 end_line=end_line,
                 max_lines=max_lines,
             )
+            if has_line_numbers and sliced.get("total_lines", 0) > 0:
+                s_l, e_l = sliced["start_line"], sliced["end_line"]
+                missing_ranges: List[List[int]] = []
+                gap_start: Optional[int] = None
+                for ln in range(s_l, e_l + 1):
+                    if ln not in covered_lines:
+                        if gap_start is None:
+                            gap_start = ln
+                    elif gap_start is not None:
+                        missing_ranges.append([gap_start, ln - 1])
+                        gap_start = None
+                if gap_start is not None:
+                    missing_ranges.append([gap_start, e_l])
+                if missing_ranges:
+                    sliced["missing_lines"] = missing_ranges
+            return sliced
         except ValueError:
             raise
         except Exception as e:
@@ -220,7 +228,8 @@ class FileReaderService:
                 suggestions = self._resolver.suggest_similar_indexed_files(clean_lookup_path, effective_repo)
                 hint = f" Similar indexed paths: {', '.join(suggestions)}." if suggestions else ""
                 raise FileNotFoundError(
-                    f"File '{clean_lookup_path}' is not in repository '{effective_repo}' (not indexed).{hint}"
+                    f"File '{clean_lookup_path}' was not found in repository '{effective_repo}'. "
+                    f"No indexed file has this path.{hint} Use find_symbol to locate a class or method."
                 ) from orig_err
 
             if isinstance(orig_err, ValueError):
@@ -229,7 +238,8 @@ class FileReaderService:
                 suggestions = self._resolver.suggest_similar_indexed_files(clean_lookup_path, effective_repo)
                 hint = f" Similar indexed paths: {', '.join(suggestions)}." if suggestions else ""
                 raise FileNotFoundError(
-                    f"File '{clean_lookup_path}' is not in repository '{effective_repo}' (not indexed).{hint}"
+                    f"File '{clean_lookup_path}' was not found in repository '{effective_repo}'. "
+                    f"No indexed file has this path.{hint} Use find_symbol to locate a class or method."
                 ) from orig_err
             raise FileNotFoundError(f"File not found: {path}") from orig_err
 

@@ -65,6 +65,51 @@ _LANGUAGE_ASSET_MAP = {
 }
 
 _WORD_RE = re.compile(r"[a-z0-9_.+-]+")
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+_LINE_COMMENT_OR_REGION_RE = re.compile(r"(?m)(?://[^\n]*|#\s*(?:end)?region[^\n]*|#[^\n]*)")
+_IDENT_CHAR_RE = re.compile(r"[A-Za-z0-9_]")
+_LOW_VALUE_CHUNK_KINDS = frozenset({"file_header", "file_context"})
+
+
+def is_substantive_code_fragment(text: Optional[str], min_ident_chars: int = 4) -> bool:
+    """False for tiny closing fragments (`#endregion }`, bare braces, or comment-only tails) with no real code."""
+    if not text or not text.strip():
+        return False
+    if text.strip() == "...":
+        return True
+    stripped = _BLOCK_COMMENT_RE.sub(" ", text)
+    stripped = _LINE_COMMENT_OR_REGION_RE.sub(" ", stripped)
+    return len(_IDENT_CHAR_RE.findall(stripped)) >= min_ident_chars
+
+
+def is_low_value_chunk_kind(payload: Optional[Dict[str, Any]]) -> bool:
+    return isinstance(payload, dict) and payload.get("kind") in _LOW_VALUE_CHUNK_KINDS
+
+
+def demote_trivial_code_results(results: list) -> list:
+    """Demotes `#endregion }`-style fragments and header/gap chunks so real code ranks first even in semantic mode."""
+    if not results:
+        return results
+    changed = False
+    for r in results:
+        p = getattr(r, "payload", None) or {}
+        if not isinstance(p, dict):
+            continue
+        is_code = p.get("doc_type") == "code" or bool(p.get("language"))
+        if not is_code:
+            continue
+        mult = 1.0
+        if is_low_value_chunk_kind(p):
+            mult = min(mult, 0.15)
+        content = p.get("content")
+        if isinstance(content, str) and content.strip() and not is_substantive_code_fragment(content):
+            mult = min(mult, 0.05)
+        if mult < 1.0:
+            r.score = round(float(r.score or 0.0) * mult, 4)
+            changed = True
+    if changed:
+        results.sort(key=lambda item: float(item.score or 0.0), reverse=True)
+    return results
 
 
 def hybrid_candidate_limit(
@@ -178,6 +223,14 @@ def low_signal_multiplier(
     if is_summary_payload(payload) and not query_explicitly_targets_asset(query_text, "summary", language):
         mult = min(mult, 0.20 if mult < 1.0 else 0.65)
 
+    if is_low_value_chunk_kind(payload):
+        mult = min(mult, 0.15)
+
+    is_code = doc_type == "code" or payload.get("doc_type") == "code"
+    content = payload.get("content")
+    if is_code and isinstance(content, str) and content.strip() and not is_substantive_code_fragment(content):
+        mult = min(mult, 0.05)
+
     return mult
 
 
@@ -185,7 +238,10 @@ def is_low_signal_diagnostic_hit(payload: Optional[Dict[str, Any]], query_text: 
     """Returns True when a hit should be excluded from diagnose_issue semantic candidates."""
     if not isinstance(payload, dict):
         return False
-    if is_summary_payload(payload):
+    if is_summary_payload(payload) or is_low_value_chunk_kind(payload):
+        return True
+    content = payload.get("content")
+    if isinstance(content, str) and content.strip() and not is_substantive_code_fragment(content):
         return True
     path = str(payload.get("rel_path") or payload.get("path") or "")
     if not path:

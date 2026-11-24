@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import re
+import time
 from typing import Any, Callable, Dict, List, Optional
 from sqlalchemy import Engine, text
 
@@ -310,9 +311,8 @@ def execute_pgvector_search(
             params["tag_like"] = f'%"{esc_tag}"%'
 
         where_clause = " AND ".join(conditions)
-        fts_expr = (
-            "to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(symbol, '') || ' ' || COALESCE(path, '') || ' ' || COALESCE(content, ''))"
-        )
+        # Uses the stored generated `fts` tsvector column (GIN-indexed) so ts_rank_cd never recomputes to_tsvector per row.
+        fts_expr = "fts"
         or_tsq = _build_or_tsquery(clean_query)
         if or_tsq:
             params["tsq_or"] = or_tsq
@@ -322,6 +322,7 @@ def execute_pgvector_search(
 
         # 1. Pure Semantic Search
         if mode == "semantic" or (mode == "hybrid" and alpha >= 1.0):
+            t0 = time.perf_counter()
             query_vec = embed_fn(clean_query)
             if len(query_vec) != dimension:
                 msg = f"Vector dimension mismatch: query vector ({len(query_vec)}d) does not match PgVectorStore table '{table_name}' ({dimension}d). An index rebuild is required."
@@ -338,6 +339,7 @@ def execute_pgvector_search(
             """)
             with engine.connect() as conn:
                 rows = conn.execute(search_sql, params).mappings().fetchall()
+            logger.debug("pgvector semantic leg finished in %.1f ms (%d rows)", (time.perf_counter() - t0) * 1000, len(rows))
 
             results: List[VectorSearchResult] = []
             for rank_idx, row in enumerate(rows, start=1):
@@ -353,6 +355,7 @@ def execute_pgvector_search(
 
         # 2. Pure Lexical Search
         if mode == "lexical" or (mode == "hybrid" and alpha <= 0.0):
+            t0 = time.perf_counter()
             params["query_text"] = clean_query
             lexical_sql = text(f"""
             SELECT id, ts_rank_cd({fts_expr}, {tsq_expr}) AS sparse_score, payload
@@ -363,6 +366,7 @@ def execute_pgvector_search(
             """)
             with engine.connect() as conn:
                 rows = conn.execute(lexical_sql, params).mappings().fetchall()
+            logger.debug("pgvector lexical leg finished in %.1f ms (%d rows)", (time.perf_counter() - t0) * 1000, len(rows))
 
             max_sparse = max((float(r["sparse_score"] or 0.0) for r in rows), default=1.0) or 1.0
             results = []
@@ -404,8 +408,16 @@ def execute_pgvector_search(
         """)
 
         with engine.connect() as conn:
+            t_d = time.perf_counter()
             dense_rows = conn.execute(dense_sql, params).mappings().fetchall()
+            dense_ms = (time.perf_counter() - t_d) * 1000
+            t_l = time.perf_counter()
             lexical_rows = conn.execute(lexical_sql, params).mappings().fetchall()
+            lex_ms = (time.perf_counter() - t_l) * 1000
+        logger.debug(
+            "pgvector hybrid legs: dense=%.1f ms (%d rows), lexical=%.1f ms (%d rows)",
+            dense_ms, len(dense_rows), lex_ms, len(lexical_rows),
+        )
 
         merged: Dict[str, Dict[str, Any]] = {}
         for d_rank, row in enumerate(dense_rows, start=1):

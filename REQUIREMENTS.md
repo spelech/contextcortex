@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1389 Automated Tests** (1025 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1398 Automated Tests** (1034 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1668,6 +1668,17 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_195_default_timeout_is_60s_and_description_documents_budget`
 - `test_195_timeout_returns_completed_partial_results_and_guidance`
 - `test_195_handle_execute_script_includes_partial_results_on_timeout`
+
+#### `tests/test_usage_fixes_201_205.py` (9 tests)
+- `test_201_guessed_path_suggests_shorter_stem_and_omits_not_indexed`
+- `test_202_pgvector_grep_applies_path_filter_before_sql_limit`
+- `test_202_folder_filter_works_across_qdrant_and_chroma_chunk_scanners`
+- `test_202_postgres_regex_word_boundary_translation_and_escaped_punct_fallback`
+- `test_203_csharp_header_chunks_and_preserved_indent_roundtrip`
+- `test_203_read_file_reports_missing_lines_when_header_chunks_absent`
+- `test_204_tail_endregion_fragments_not_emitted_and_demoted_at_query_time`
+- `test_204_search_total_and_returned_never_exceed_limit`
+- `test_205_pgvector_uses_stored_fts_column_and_migrates_legacy_index`
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`

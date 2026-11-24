@@ -26,6 +26,7 @@ from app.services.chunking.api_route_extractor import (
     extract_api_routes_and_calls,
     find_enclosing_symbol
 )
+from app.services.search_ranking import is_substantive_code_fragment
 
 logger = logging.getLogger("contextcortex.chunker")
 
@@ -136,6 +137,10 @@ def extract_symbols_and_chunks(
             })
         else:
             sub = split_by_length(text_span, heading=heading_str, max_chars=max_chunk_chars)
+            if len(sub) > 1 and not is_substantive_code_fragment(sub[-1].get("content", "")):
+                tail = sub.pop()
+                sub[-1]["content"] = (sub[-1]["content"].rstrip("\r\n") + "\n" + tail["content"]).rstrip("\r\n")
+                sub[-1]["end_line"] = tail.get("end_line", sub[-1].get("end_line", span_end - span_start + 1))
             for s in sub:
                 s["symbol"] = sym_full
                 s["kind"] = sym_kind
@@ -170,6 +175,10 @@ def extract_symbols_and_chunks(
             start_line = node.start_point[0] + 1
             end_line = node.end_point[0] + 1
             node_text = source_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="ignore")
+            if node.start_point[1] > 0 and start_line - 1 < len(lines):
+                lead_prefix = lines[start_line - 1][: node.start_point[1]]
+                if lead_prefix and not lead_prefix.strip():
+                    node_text = lead_prefix + node_text
             
             first_line = lines[start_line - 1].strip() if start_line - 1 < len(lines) else ""
             
@@ -257,7 +266,7 @@ def extract_symbols_and_chunks(
 
                 for idx_span, (s_ln, e_ln) in enumerate(spans):
                     seg_text = "\n".join(lines[s_ln - 1 : e_ln])
-                    if idx_span == 0 or re.search(r"[A-Za-z0-9_]", seg_text):
+                    if idx_span == 0 or is_substantive_code_fragment(seg_text):
                         _emit_chunk_span(full_symbol, kind, seg_text, s_ln, e_ln)
 
             for child in node.children:
@@ -301,6 +310,36 @@ def extract_symbols_and_chunks(
                 traverse(child, parent_symbol=parent_symbol)
 
     traverse(root)
+
+    # Index uncovered file header / gap lines (imports, usings, namespace, top-level comments) so
+    # read_file and grep_code see the full file; marked low-signal in search ranking.
+    if chunks and total_lines > 0:
+        covered_all = set()
+        for c in chunks:
+            covered_all.update(range(int(c.get("start_line") or 1), int(c.get("end_line") or 1) + 1))
+        first_sym_line = min(int(c.get("start_line") or 1) for c in chunks)
+        gap_spans: List[Tuple[int, int]] = []
+        g_start: Optional[int] = None
+        for ln in range(1, total_lines + 1):
+            if ln not in covered_all:
+                if g_start is None:
+                    g_start = ln
+            elif g_start is not None:
+                gap_spans.append((g_start, ln - 1))
+                g_start = None
+        if g_start is not None:
+            gap_spans.append((g_start, total_lines))
+
+        for g_s, g_e in gap_spans:
+            g_text = "\n".join(lines[g_s - 1 : g_e])
+            if not is_substantive_code_fragment(g_text):
+                continue
+            gap_kind = "file_header" if g_e < first_sym_line else "file_context"
+            before = len(chunks)
+            _emit_chunk_span(file_symbol, gap_kind, g_text, g_s, g_e)
+            for added_c in chunks[before:]:
+                added_c["symbol"] = None
+        chunks.sort(key=lambda c: (int(c.get("start_line") or 0), int(c.get("end_line") or 0)))
 
     # If no AST symbols found (e.g. script with top-level statements), chunk by length
     if not chunks:

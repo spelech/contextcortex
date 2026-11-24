@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
+from app.services.code_grep_chunks import path_matches_filter
 from app.services.search_ranking import compute_hybrid_score, hybrid_candidate_limit
 from app.services.vector_store.base import VectorSearchResult
 
@@ -345,11 +346,8 @@ def execute_qdrant_grep_chunks(
             for r in (records or []):
                 payload = dict(r.payload or {})
                 chunk_path = payload.get("rel_path") or payload.get("path") or ""
-                if path_glob:
-                    norm_p = chunk_path.replace("\\", "/")
-                    norm_glob = path_glob.replace("\\", "/")
-                    if not (fnmatch.fnmatch(norm_p, norm_glob) or fnmatch.fnmatch(os.path.basename(norm_p), norm_glob)):
-                        continue
+                if path_glob and not path_matches_filter(chunk_path, path_glob):
+                    continue
 
                 text_content = payload.get("content") or payload.get("text") or ""
                 if compiled.search(text_content):
