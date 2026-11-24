@@ -78,9 +78,21 @@ def _has_term_code_syntax(term: str) -> bool:
     return False
 
 
+def _strip_outer_non_word(term: str) -> str:
+    """Trims leading and trailing non-word characters in O(N) without regex backtracking."""
+    if not term:
+        return ""
+    start, end = 0, len(term)
+    while start < end and not (term[start].isalnum() or term[start] == "_"):
+        start += 1
+    while end > start and not (term[end - 1].isalnum() or term[end - 1] == "_"):
+        end -= 1
+    return term[start:end]
+
+
 def _is_plain_single_word(term: str) -> bool:
     """True for a single all-lowercase alphabetic word (e.g. 'padlock'), which should not skip dense retrieval."""
-    stripped = re.sub(r"^[^\w]+|[^\w]+$", "", term or "")
+    stripped = _strip_outer_non_word(term)
     return bool(stripped) and stripped.isascii() and stripped.isalpha() and stripped.islower()
 
 
@@ -95,7 +107,7 @@ def classify_query_intent(query_text: str) -> QueryPlan:
     working = exact_phrase or cleaned
 
     raw_terms = working.split()
-    lower_words = [re.sub(r"^[^\w]+|[^\w]+$", "", t.lower()) for t in raw_terms]
+    lower_words = [_strip_outer_non_word(t.lower()) for t in raw_terms]
     lower_words = [w for w in lower_words if w]
 
     all_tokens = split_identifier_tokens(working, min_len=2)
