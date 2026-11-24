@@ -1,5 +1,6 @@
 import app.services.database as db_service
 import app.services.vector_store as vs_service
+import app.services.indexing.index_format as index_format
 import app.services.indexing.state as idx_state
 import app.services.indexing.processor as proc_service
 from app.services.memory_utils import trim_memory
@@ -152,8 +153,10 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
     all_relationships = []
     files_to_update_cache = []
     files_to_delete = []
+    skipped_unchanged = 0
 
     def _produce_local_files(channel: BoundedChannel[ParsedFileItem]) -> None:
+        nonlocal skipped_unchanged
         for filepath, (repo, category, base_dir) in found_files.items():
             if channel.is_closed:
                 return
@@ -163,6 +166,7 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
                     cached = conn.execute("SELECT mtime FROM indexed_files WHERE filepath = ?", (filepath,)).fetchone()
 
                 if not force and cached and abs(cached["mtime"] - mtime) < 0.01:
+                    skipped_unchanged += 1
                     continue  # Cached & unchanged
 
                 rel_path = os.path.relpath(filepath, base_dir).replace("\\", "/")
@@ -371,6 +375,9 @@ def _sync_local_paths_internal(force: bool = False, repo_filter: str = None):
     except Exception as e:
         logger.error(f"Failed writing local index updates to SQLite: {e}")
         return False
+
+    if repo_filter is None and (force or skipped_unchanged == 0):
+        index_format.mark_current("local", index_format.current_fingerprint())
 
     return True
 

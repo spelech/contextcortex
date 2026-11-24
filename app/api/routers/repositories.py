@@ -286,6 +286,7 @@ async def api_delete_repo(repo_id: int):
             name = row["name"]
 
             conn.execute("DELETE FROM git_repositories WHERE id = ?", (repo_id,))
+            conn.execute("DELETE FROM system_metadata WHERE key = ?", (f"index_format:git:{repo_id}",))
             for table in _REPO_SCOPED_TABLES:
                 try:
                     conn.execute(f"DELETE FROM {table} WHERE repo = ?", (name,))

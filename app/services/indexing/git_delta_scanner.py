@@ -179,8 +179,20 @@ def persist_sync_batch(
     batch_routes: List[Dict[str, Any]],
     batch_calls: List[Dict[str, Any]],
 ) -> int:
-    """Flushes a batch of parsed AST symbols, relationships, API routes, and file summaries into SQLite."""
+    """Flushes a batch of parsed AST symbols, relationships, API routes, and file summaries into SQLite.
+
+    Replaces any prior relational rows for the batch's filepaths inside the same transaction so
+    modified files remain searchable until their replacement rows are committed.
+    """
     inserted_symbols = 0
+    batch_filepaths = list(dict.fromkeys(row[0] for row in batch_indexed_files if row and row[0]))
+    for fpath in batch_filepaths:
+        conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
+        conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
+        conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
+        conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (fpath,))
+        conn.execute("DELETE FROM file_summaries WHERE filepath = ?", (fpath,))
+
     if batch_indexed_files:
         conn.executemany(
             """INSERT INTO indexed_files (filepath, repo, doc_type, language, commit_sha, mtime, hash)

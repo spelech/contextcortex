@@ -207,6 +207,8 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         )
         progress_tracker.log(repo_id, "INFO", delta_msg)
 
+        covered_all_files = bool(force or not repo_row["commit_sha"] or not unchanged_files)
+
         if total_delta == 0:
             msg = f"Repo '{repo_name}' delta is empty (all {len(unchanged_files)} files unchanged). Updating commit SHA."
             logger.info(msg)
@@ -217,6 +219,8 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                     (commit_sha, repo_id),
                 )
                 conn.commit()
+            if covered_all_files:
+                index_format.mark_current(f"git:{repo_id}", index_format.current_fingerprint())
             progress_tracker.finish_job(repo_id, "synced")
             idx_state.trigger_list_changed_notification()
             return True
@@ -226,12 +230,9 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
             return
 
         store = vs_service.get_vector_store()
-        added_db_filepaths = [f"{repo_name}://" + os.path.relpath(f, temp_dir).replace("\\", "/") for f in added_files]
-        modified_db_filepaths = [f"{repo_name}://" + os.path.relpath(f, temp_dir).replace("\\", "/") for f in modified_files]
-        paths_to_delete = modified_db_filepaths + deleted_filepaths
-        db_paths_to_clean = list(dict.fromkeys(added_db_filepaths + modified_db_filepaths + deleted_filepaths))
-
-        for fpath in paths_to_delete:
+        # Only remove genuinely deleted files up front; modified files keep their old chunks
+        # and relational rows searchable until each batch replaces them in the persist stage.
+        for fpath in deleted_filepaths:
             try:
                 store.delete_by_path(fpath)
             except Exception as qe:
@@ -244,20 +245,19 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
         )
         from app.services.indexing.db_write_channel import submit_db_write
 
-        if db_paths_to_clean:
-            def _clean_stale_paths() -> None:
+        if deleted_filepaths:
+            def _clean_deleted_paths() -> None:
                 with db_service.get_db_connection() as conn:
-                    for fpath in db_paths_to_clean:
+                    for fpath in deleted_filepaths:
                         conn.execute("DELETE FROM ast_symbols WHERE filepath = ?", (fpath,))
                         conn.execute("DELETE FROM ast_relationships WHERE source_filepath = ?", (fpath,))
                         conn.execute("DELETE FROM api_routes WHERE filepath = ?", (fpath,))
                         conn.execute("DELETE FROM api_client_calls WHERE filepath = ?", (fpath,))
                         conn.execute("DELETE FROM file_summaries WHERE filepath = ?", (fpath,))
-                    for fpath in deleted_filepaths:
                         conn.execute("DELETE FROM indexed_files WHERE filepath = ?", (fpath,))
                     conn.commit()
 
-            submit_db_write(_clean_stale_paths)
+            submit_db_write(_clean_deleted_paths)
 
         files_to_sync = added_files + modified_files
         total_files = len(files_to_sync)
@@ -356,6 +356,12 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                 if item.indexed_file_row is not None:
                     batch_indexed_files.append(item.indexed_file_row)
 
+            for item in batch_items:
+                try:
+                    store.delete_by_path(item.filepath)
+                except Exception as qe:
+                    logger.error(f"Error deleting prior vectors for {item.filepath}: {qe}")
+
             if batch_points:
                 upsert_ok = store.upsert_documents(batch_points)
                 if not upsert_ok:
@@ -419,6 +425,8 @@ def sync_single_git_repo(repo_id: int, force: bool = False):
                 (commit_sha, repo_id),
             )
             conn.commit()
+        if covered_all_files:
+            index_format.mark_current(f"git:{repo_id}", index_format.current_fingerprint())
 
         success_msg = f"Successfully synced repo '{repo_name}' (@ {commit_sha[:8] if commit_sha else 'head'}). Delta: +{len(added_files)} ~{len(modified_files)} -{len(deleted_filepaths)}. Vectors: {total_vectors_count}, Symbols: {total_symbols_count}"
         logger.info(success_msg)

@@ -6,6 +6,7 @@ from pydantic import Field
 
 from app.services.auth import enforce_tool_permission, Role, ForbiddenError
 from app.services.diagnostics import diagnose_issue
+from app.services.indexing.sync_status import get_active_sync_status
 
 logger = logging.getLogger("contextcortex.mcp.diagnostics")
 
@@ -51,6 +52,10 @@ async def handle_diagnose_issue(
             limit=safe_limit,
             detail=bool(detail),
         )
+        if isinstance(result, dict):
+            sync_info = get_active_sync_status(repo)
+            if sync_info:
+                result = {**result, **sync_info}
 
         return json.dumps(result, separators=(",", ":"), default=str)
 
