@@ -7,7 +7,7 @@ from app.services.database import get_db_connection
 from app.services.diagnostic_error_terms import extract_error_terms
 from app.services.diagnostic_evidence_chain import build_call_chain
 from app.services.diagnostic_working_path import compare_working_path
-from app.services.diagnostic_route_path import build_diagnostic_semantic_query, collect_route_path_symbols, diagnostic_search_kwargs, keep_semantic_hit, language_family
+from app.services.diagnostic_route_path import PLAIN_LANGUAGE_MIN_SCORE, build_diagnostic_semantic_query, collect_route_path_symbols, diagnostic_search_kwargs, keep_semantic_hit, language_family
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
 from app.services.search import execute_hybrid_search
@@ -394,15 +394,10 @@ def _read_symbol_code(raw_path: str, repo: str, start_l: int, end_l: int) -> str
 
 
 def find_semantic_candidates(
-    issue_text: str,
-    repo: Optional[str] = None,
-    limit: int = 5,
-    signals: Optional[Dict[str, Any]] = None,
-    frames: Optional[List[Dict[str, Any]]] = None,
-    matched_routes: Optional[List[Dict[str, Any]]] = None,
-    detail: bool = True,
-    route_path: bool = True,
-    has_resolved_identifiers: Optional[bool] = None,
+    issue_text: str, repo: Optional[str] = None, limit: int = 5,
+    signals: Optional[Dict[str, Any]] = None, frames: Optional[List[Dict[str, Any]]] = None,
+    matched_routes: Optional[List[Dict[str, Any]]] = None, detail: bool = True,
+    route_path: bool = True, has_resolved_identifiers: Optional[bool] = None,
 ) -> List[Dict[str, Any]]:
     """Returns ranked code candidates: the matched route's call path first (unless `route_path` is False), then filtered search hits."""
     candidates: List[Dict[str, Any]] = []
@@ -446,6 +441,8 @@ def find_semantic_candidates(
             if (target_repo, file_path, sym) in seen:
                 continue
             score_val = float(h.score) if isinstance(getattr(h, "score", None), (int, float)) else 0.0
+            if has_resolved_identifiers is False and score_val < PLAIN_LANGUAGE_MIN_SCORE:
+                continue
             candidates.append(_build_candidate(conn, git_repos, {
                 "score": round(score_val, 4), "source": "semantic", "depth": None, "repo": target_repo,
                 "file": file_path, "lines": [p.get("start_line", 1), p.get("end_line", 1)], "symbol": sym,
@@ -456,13 +453,7 @@ def find_semantic_candidates(
     return candidates
 
 
-def diagnose_issue(
-    issue_text: str,
-    repo: Optional[str] = None,
-    context_lines: int = 5,
-    limit: int = 5,
-    detail: bool = False,
-) -> Dict[str, Any]:
+def diagnose_issue(issue_text: str, repo: Optional[str] = None, context_lines: int = 5, limit: int = 5, detail: bool = False) -> Dict[str, Any]:
     """Main triage coordinator for stack trace, log, and bug triage across Python, C#, TS/JS, COBOL, Java, Go, Rust."""
     clamped_context = max(1, min(15, int(context_lines)))
     clamped_limit = max(1, min(20, int(limit)))
@@ -480,14 +471,18 @@ def diagnose_issue(
         terms = extract_error_terms(safe_text, signals)
         chain = build_call_chain(conn, terms, matched_routes, frames, symbols, repo, detail)
         working = compare_working_path(conn, safe_text, terms, chain, matched_routes, repo)
-    return {
-        "call_chain": chain, "working_path_comparison": working, "resolved_frames": frames, "matched_routes": matched_routes, "matched_symbols": symbols,
-        "semantic_candidates": find_semantic_candidates(
-            issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
-            matched_routes=matched_routes, detail=detail, route_path=not chain["steps"],
-            has_resolved_identifiers=bool(frames or matched_routes or symbols or signals.get("exceptions")),
-        ),
+    has_resolved = bool(frames or matched_routes or symbols or signals.get("exceptions"))
+    sem_cands = find_semantic_candidates(
+        issue_text=safe_text, repo=repo, limit=clamped_limit, signals=signals, frames=parsed_frames,
+        matched_routes=matched_routes, detail=detail, route_path=not chain["steps"], has_resolved_identifiers=has_resolved,
+    )
+    out: Dict[str, Any] = {
+        "call_chain": chain, "working_path_comparison": working, "resolved_frames": frames,
+        "matched_routes": matched_routes, "matched_symbols": symbols, "semantic_candidates": sem_cands,
     }
+    if not has_resolved and not sem_cands:
+        out["hint"] = "No stack frames, routes, symbols, or high-confidence semantic code matches were found. Use search(query=..., scope='code') with key domain concepts or grep_code for UI strings."
+    return out
 
 
 __all__ = [

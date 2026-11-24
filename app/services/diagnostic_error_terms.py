@@ -58,12 +58,26 @@ ERROR_VOCABULARY: Dict[str, tuple] = {
 }
 
 _STOP_WORDS = {
-    "about", "after", "again", "against", "being", "below", "between", "cannot", "could", "doesn", "error",
-    "exception", "fails", "failed", "failing", "first", "from", "have", "having", "http", "into", "other",
-    "should", "shows", "since", "still", "system", "their", "there", "these", "thing", "those", "through",
-    "under", "until", "when", "where", "which", "while", "with", "without", "would", "returns", "return",
-    "requires", "assigned", "works", "working", "property", "value", "object", "instance", "while",
-    "please", "users", "using", "been", "this", "that", "than", "does", "will", "they", "them", "then", "also", "only", "some", "log", "logs", "shows", "message", "throws", "thrown", "occurred",
+    "about", "above", "across", "actual", "actually", "after", "again", "against", "along", "already", "also",
+    "although", "always", "anything", "anyone", "appear", "appears", "appeared", "appearing", "around", "assigned",
+    "away", "back", "because", "been", "before", "behavior", "being", "below", "between", "both", "button",
+    "cannot", "case", "check", "checked", "checking", "click", "clicked", "clicking", "client", "clients",
+    "come", "comes", "came", "could", "currently", "customer", "customers", "does", "doesn", "doing", "done",
+    "down", "during", "each", "error", "even", "every", "everything", "example", "exception", "expected",
+    "fails", "failed", "failing", "find", "fine", "first", "found", "from", "further", "gave", "gets", "getting",
+    "give", "gives", "goes", "going", "good", "happened", "happening", "happens", "have", "having", "here",
+    "however", "http", "instance", "instead", "into", "issue", "just", "keep", "keeps", "kept", "know", "knows",
+    "left", "logs", "look", "looked", "looking", "looks", "made", "make", "makes", "many", "maybe", "message",
+    "more", "most", "much", "need", "needs", "never", "normally", "nothing", "object", "occurred", "often",
+    "only", "onto", "other", "otherwise", "over", "page", "please", "possibly", "pretty", "previously", "problem",
+    "probably", "property", "quite", "rather", "really", "recently", "report", "reported", "reports", "requires",
+    "return", "returns", "right", "same", "screen", "seeing", "seems", "seen", "should", "shows", "since",
+    "some", "someone", "something", "sometimes", "still", "sure", "system", "take", "takes", "than", "that",
+    "their", "them", "then", "there", "therefore", "these", "they", "thing", "think", "this", "those", "though",
+    "through", "thrown", "throws", "today", "took", "toward", "towards", "tried", "trying", "under", "unless",
+    "until", "upon", "used", "users", "using", "usually", "value", "very", "want", "wants", "well", "went",
+    "when", "whenever", "where", "which", "while", "will", "with", "within", "without", "working", "works",
+    "would", "wrong", "yesterday",
 }
 _IDENT_PARTS = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9_]{3,}")

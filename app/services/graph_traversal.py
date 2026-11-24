@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 from collections import deque
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -7,22 +8,14 @@ from app.services.chunking.route_specificity import is_test_route_file
 from app.services.database import get_db_connection
 from app.services.git_manager import format_git_permalink
 from app.services.source_paths import LocalSourceRoots
-from app.services.trace_call_filters import is_cobol_file, member_visible_from
+from app.services.trace_call_filters import classify_caller_match, is_cobol_file, member_visible_from
 from app.services.trace_http_boundaries import make_http_boundary_resolver
 from app.services.trace_target_lookup import trace_not_found
 
-_DIRECTION_ALIASES = {
-    "inbound": "callers",
-    "outbound": "callees",
-    "callers": "callers",
-    "callees": "callees",
-    "both": "both",
-}
-
+_DIRECTION_ALIASES = {"inbound": "callers", "outbound": "callees", "callers": "callers", "callees": "callees", "both": "both"}
 _CONTAINER_KINDS = frozenset({
-    "class_declaration", "class_definition", "interface_declaration",
-    "struct_declaration", "record_declaration", "record_struct_declaration",
-    "namespace_definition", "program_definition",
+    "class_declaration", "class_definition", "interface_declaration", "struct_declaration",
+    "record_declaration", "record_struct_declaration", "namespace_definition", "program_definition",
 })
 
 
@@ -59,15 +52,9 @@ def trace_symbol_path(
     depth: int = 2,
     limit: int = 25,
     include_unresolved: bool = False,
+    max_seconds: float = 10.0,
 ) -> str:
-    """
-    Breadth-First Search (BFS) call graph traversal engine over ast_relationships.
-    Supports direction ('callers'/'inbound', 'callees'/'outbound', 'both'), depth clamping (1-5),
-    cross-repository HTTP boundaries, COBOL program/paragraph/copybook links, and DI interface resolution.
-    By default, calls into test code are dropped for a production target, and calls that do not resolve to an
-    indexed symbol (library calls) are listed by name in `unresolved` instead of as tree nodes.
-    `include_unresolved=True` keeps both as tree nodes.
-    """
+    """BFS call-graph traversal over ast_relationships (callers/callees/both, depth 1-5, HTTP boundaries, DI)."""
     target_sym = symbol.strip() if symbol else ""
     if not target_sym:
         return json.dumps({"error": "Target symbol cannot be empty."}, separators=(",", ":"))
@@ -248,24 +235,10 @@ def trace_symbol_path(
                 return matched[0].get("full_symbol") or matched[0].get("name") or raw_target
         return raw_target
 
-    def _call_reaches(r_target: str, caller_sym: str, curr_sym: str) -> bool:
-        """
-        Call targets are stored as bare method names (`_toolService.PublishInstance(...)` -> `PublishInstance`).
-        For a qualified target, resolve the call from the caller's class with the same DI rules as callees:
-        when it resolves to a different concrete method, the row is not a caller of `curr_sym`.
-        Calls from the target's own class, and undecidable calls, are kept.
-        """
-        if "." not in curr_sym or not r_target or "." in r_target:
-            return True
-        curr_cls = curr_sym.rsplit(".", 1)[0]
-        caller_cls = caller_sym.rsplit(".", 1)[0] if "." in caller_sym else caller_sym
-        if caller_cls == curr_cls or caller_cls.endswith(f".{curr_cls}"):
-            return True
-        candidates = _resolve_symbol_candidates(r_target)
-        if len(candidates) < 2:
-            return True
-        resolved = _resolve_di_callee(r_target, caller_sym, candidates)
-        return resolved == r_target or resolved == curr_sym or resolved.endswith(f".{curr_sym}")
+    def _classify_caller(r_target: str, caller_sym: str, curr_sym: str, curr_ifaces: Set[str]) -> Optional[str]:
+        candidates = _resolve_symbol_candidates(r_target) if ("." in curr_sym and r_target and "." not in r_target) else []
+        resolved = _resolve_di_callee(r_target, caller_sym, candidates) if len(candidates) >= 2 else r_target
+        return classify_caller_match(r_target, caller_sym, curr_sym, curr_ifaces, candidates, resolved, class_signatures)
 
     def _resolve_enclosing_symbol(r_repo: str, r_filepath: str, line_num: Optional[int], fallback_sym: str, source_symbol_id: Optional[int] = None) -> Tuple[str, Optional[dict]]:
         if source_symbol_id and source_symbol_id in sym_by_id:
@@ -342,12 +315,10 @@ def trace_symbol_path(
         clean_fp = _rel_path(row_obj["source_filepath"])
         r_route, r_ext_callers, r_http_calls = resolve_http_boundaries(display_sym, row_obj["repo"])
         node = {
-            "symbol": display_sym,
-            "rel": (row_obj["relationship_type"] or "calls").lower(),
-            "repo": row_obj["repo"],
-            "file": clean_fp,
-            "line": row_obj["line_number"],
+            "symbol": display_sym, "rel": (row_obj["relationship_type"] or "calls").lower(),
+            "repo": row_obj["repo"], "file": clean_fp, "line": row_obj["line_number"],
             "permalink": get_permalink(row_obj["repo"], clean_fp, row_obj["line_number"], row_obj["line_number"]),
+            child_key: [],
         }
         if r_route:
             node["route"] = r_route
@@ -355,21 +326,36 @@ def trace_symbol_path(
             node["external_callers"] = r_ext_callers
         if r_http_calls:
             node["http_calls"] = r_http_calls
-        node[child_key] = []
         return node
 
     visited_edges = set()
     total_returned = 0
     truncated = False
+    truncation_reason: Optional[str] = None
     callers_tree: List[dict] = []
     callees_tree: List[dict] = []
     root_holder: dict = {}
+    started = time.monotonic()
+    time_budget = max(0.05, float(max_seconds))
+
+    def _over_time() -> bool:
+        nonlocal truncated, truncation_reason
+        if time.monotonic() - started >= time_budget:
+            truncated = True
+            truncation_reason = f"time_budget_exceeded ({time_budget:g}s)"
+            return True
+        return False
 
     with _db_conn() as conn:
         if direction in ("callers", "both"):
             queue = deque([(target_sym, 1, callers_tree)])
             visited_nodes = {target_sym}
             while queue:
+                if total_returned >= limit:
+                    truncated = True
+                    break
+                if _over_time():
+                    break
                 curr_sym, curr_depth, parent_list = queue.popleft()
                 if curr_depth > depth:
                     continue
@@ -385,31 +371,37 @@ def trace_symbol_path(
                     p.append(bfs_repo)
                 rows = conn.execute(q + " ORDER BY line_number ASC", p).fetchall()
 
-                for r in rows:
-                    if total_returned >= limit:
-                        truncated = True
+                resolved_rows, name_only_rows = [], []
+                for idx_r, r in enumerate(rows):
+                    if idx_r % 200 == 199 and _over_time():
                         break
                     r_target = r["target_symbol"] or ""
-                    if "." in curr_sym and "." in r_target and r_target != curr_sym and not r_target.endswith(f".{curr_sym}") and not curr_sym.endswith(f".{r_target}"):
-                        if r_target.rsplit(".", 1)[0] not in curr_ifaces:
-                            continue
                     caller_sym, caller_obj = _resolve_enclosing_symbol(r["repo"], r["source_filepath"], r["line_number"], r["source_symbol"], r["source_symbol_id"])
                     if (caller_obj and caller_obj.get("id") in curr_ids and "." in curr_sym) or caller_sym == curr_sym:
                         continue
-                    if not _call_reaches(r_target, caller_sym, curr_sym):
+                    conf = _classify_caller(r_target, caller_sym, curr_sym, curr_ifaces)
+                    if conf is None:
                         continue
                     if curr_cands and not any(member_visible_from(c, caller_sym) for c in curr_cands):
                         continue  # a private member is called only from its own class
                     if _hidden_test_row(r):
                         continue
+                    (resolved_rows if conf == "resolved" else name_only_rows).append((conf, caller_sym, r))
+
+                for conf, caller_sym, r in resolved_rows + name_only_rows:
+                    if total_returned >= limit:
+                        truncated = True
+                        break
                     edge_key = (caller_sym, curr_sym, r["relationship_type"], "caller", r["line_number"])
                     if edge_key in visited_edges:
                         continue
                     visited_edges.add(edge_key)
                     total_returned += 1
                     node = _make_edge_node(caller_sym, r, "callers")
+                    if conf == "name_only":
+                        node["confidence"] = "name_only"
                     parent_list.append(node)
-                    if curr_depth < depth and caller_sym not in visited_nodes:
+                    if conf == "resolved" and curr_depth < depth and caller_sym not in visited_nodes:
                         visited_nodes.add(caller_sym)
                         if total_returned < limit:
                             queue.append((caller_sym, curr_depth + 1, node["callers"]))
@@ -420,6 +412,11 @@ def trace_symbol_path(
             queue = deque([(target_sym, 1, callees_tree, root_holder)])
             visited_nodes = {target_sym}
             while queue:
+                if total_returned >= limit:
+                    truncated = True
+                    break
+                if _over_time():
+                    break
                 curr_sym, curr_depth, parent_list, holder = queue.popleft()
                 if curr_depth > depth:
                     continue
@@ -488,6 +485,8 @@ def trace_symbol_path(
         "target": target_info, "direction": direction, "depth": depth,
         "truncated": truncated, "callers": callers_tree, "callees": callees_tree,
     }
+    if truncation_reason:
+        result["truncation_reason"] = truncation_reason
     if root_holder.get("unresolved"):
         result["unresolved"] = root_holder["unresolved"]
     if hidden_test_rows:

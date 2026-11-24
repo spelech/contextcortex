@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1384 Automated Tests** (1020 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1389 Automated Tests** (1025 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1614,6 +1614,13 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_upsert_skips_only_the_rejected_record_and_keeps_the_rest`
 - `test_upsert_reports_failure_when_every_record_is_rejected`
 - `test_rejected_record_warnings_do_not_log_the_chunk_text`
+
+#### `tests/test_trace_callers_and_diagnose_198_193.py` (5 tests)
+- `test_198_resolved_callers_rank_above_name_only_and_name_only_not_expanded`
+- `test_198_time_budget_stops_traversal_and_sets_truncation_reason`
+- `test_193_filler_words_excluded_from_error_terms_and_plain_query`
+- `test_193_plain_language_low_score_candidates_dropped_with_search_hint`
+- `test_193_server_instructions_and_tool_guidance_route_plain_descriptions_to_search`
 
 #### `tests/test_trace_path_callee_noise.py` (7 tests)
 - `test_private_members_are_visible_only_from_their_own_class`
