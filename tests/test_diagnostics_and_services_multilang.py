@@ -338,10 +338,22 @@ def test_file_reader_and_local_storage_extensions_resolution_and_security(tmp_pa
     assert recon["source"] == "vector_store"
     assert "PROGRAM-ID. RECON." in recon["content"]
 
+    with get_db_connection() as conn:
+        conn.execute(
+            "INSERT INTO indexed_files (filepath, repo, doc_type, language) VALUES (?, ?, ?, ?)",
+            ("missing-clone://src/GHOST.cbl", "missing-clone", "code", "cobol"),
+        )
+        conn.commit()
+
     with pytest.raises(FileNotFoundError) as exc_info:
         reader.read_file("missing-clone://src/GHOST.cbl")
     assert "missing-clone" in str(exc_info.value)
     assert "persistent shallow clone" in str(exc_info.value).lower()
+
+    with pytest.raises(FileNotFoundError) as exc_unindexed:
+        reader.read_file("missing-clone://src/NOT_IN_REPO.cbl")
+    assert "not in repository 'missing-clone'" in str(exc_unindexed.value)
+    assert "persistent shallow clone" not in str(exc_unindexed.value).lower()
 
     symlink_escape = storage_dir / "escape_link.cbl"
     symlink_escape.symlink_to(secret_file)

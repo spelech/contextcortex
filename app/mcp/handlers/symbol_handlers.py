@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional, Annotated, Tuple
 from pydantic import Field
 
 from app.services.database import get_db_connection
+from app.services.indexing.sync_status import get_active_sync_status
 from app.services.search import trace_symbol_path
 from app.services.source_paths import LocalSourceRoots
 
@@ -139,7 +140,7 @@ async def handle_find_symbol(
         has_more = (safe_offset + safe_limit) < total
         next_offset = (safe_offset + safe_limit) if has_more else None
 
-        return json.dumps({
+        payload = {
             "query": sym_name,
             "exact": exact,
             "total": total,
@@ -148,7 +149,11 @@ async def handle_find_symbol(
             "has_more": has_more,
             "next_offset": next_offset,
             "symbols": paged_symbols,
-        })
+        }
+        sync_info = get_active_sync_status(repo)
+        if sync_info:
+            payload.update(sync_info)
+        return json.dumps(payload)
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_find_symbol: {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})
@@ -224,6 +229,9 @@ async def handle_trace_path(
                 "has_more": False,
                 "next_offset": None,
             })
+            sync_info = get_active_sync_status(repo)
+            if sync_info:
+                parsed.update(sync_info)
             return json.dumps(parsed, separators=(",", ":"))
 
         paged_callers, total_callers = _paginate_trace_tree(
@@ -249,6 +257,9 @@ async def handle_trace_path(
         parsed["has_more"] = has_more
         parsed["next_offset"] = next_offset
         parsed["truncated"] = bool(has_more or parsed.get("truncated", False))
+        sync_info = get_active_sync_status(repo)
+        if sync_info:
+            parsed.update(sync_info)
         return json.dumps(parsed, separators=(",", ":"))
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_trace_path: {fe}")

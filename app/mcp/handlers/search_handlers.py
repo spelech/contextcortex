@@ -4,6 +4,7 @@ import sys
 from typing import Literal, Optional, Annotated, Tuple
 from pydantic import Field
 
+from app.services.indexing.sync_status import get_active_sync_status
 from app.services.search import execute_hybrid_search, normalize_search_mode
 
 logger = logging.getLogger("contextcortex")
@@ -121,7 +122,7 @@ async def handle_search(
                 item["permalink"] = permalink
             results.append(item)
 
-        return json.dumps({
+        payload = {
             "query": clean_query,
             "scope": clean_scope,
             "mode": requested_mode,
@@ -132,7 +133,11 @@ async def handle_search(
             "has_more": has_more,
             "next_offset": next_offset,
             "results": results,
-        })
+        }
+        sync_info = get_active_sync_status(repo)
+        if sync_info:
+            payload.update(sync_info)
+        return json.dumps(payload)
     except ForbiddenError as fe:
         logger.warning(f"Forbidden error in handle_search: {fe}")
         return json.dumps({"error": f"Forbidden: {str(fe)}", "forbidden": True})

@@ -181,6 +181,70 @@ class FilePathResolver:
         except Exception:
             return False
 
+    def is_file_indexed(self, clean_path: str, repo_name: str) -> bool:
+        """Returns True if clean_path has a row in indexed_files for repo_name."""
+        if not clean_path or not repo_name:
+            return False
+        rel = clean_path.replace("\\", "/").lstrip("/")
+        if not rel:
+            return False
+        repo_uri = f"{repo_name}://{rel}"
+        try:
+            with self._get_db_connection() as conn:
+                row = conn.execute(
+                    "SELECT 1 FROM indexed_files WHERE repo = ? AND "
+                    "(REPLACE(filepath, '\\', '/') = ? OR REPLACE(filepath, '\\', '/') = ?) LIMIT 1",
+                    (repo_name, repo_uri, rel),
+                ).fetchone()
+                return row is not None
+        except Exception:
+            return False
+
+    def suggest_similar_indexed_files(self, clean_path: str, repo_name: str, limit: int = 5) -> List[str]:
+        """Returns up to `limit` close indexed paths in repo_name (same filename in other folders or stem/Test variants)."""
+        if not clean_path or not repo_name:
+            return []
+        rel = clean_path.replace("\\", "/").lstrip("/")
+        basename = os.path.basename(rel)
+        stem, _ = os.path.splitext(basename)
+        if not basename:
+            return []
+        try:
+            with self._get_db_connection() as conn:
+                rows = conn.execute(
+                    "SELECT filepath FROM indexed_files WHERE repo = ? AND "
+                    "(LOWER(REPLACE(filepath, '\\', '/')) LIKE ? OR LOWER(REPLACE(filepath, '\\', '/')) LIKE ?) "
+                    "LIMIT 40",
+                    (repo_name, f"%/{basename.lower()}", f"%{stem.lower()}%"),
+                ).fetchall()
+        except Exception:
+            return []
+
+        prefix = f"{repo_name}://"
+        base_low = basename.lower()
+        stem_low = stem.lower()
+        scored: List[Tuple[int, int, str]] = []
+        seen = set()
+        for r in rows:
+            fp = str(r["filepath"] or "").replace("\\", "/")
+            clean_fp = fp[len(prefix):] if fp.startswith(prefix) else fp.lstrip("/")
+            if not clean_fp or clean_fp in seen:
+                continue
+            seen.add(clean_fp)
+            cand_base = os.path.basename(clean_fp).lower()
+            cand_stem = os.path.splitext(cand_base)[0]
+            if cand_base == base_low:
+                rank = 0
+            elif cand_stem in (f"{stem_low}test", f"{stem_low}tests", f"{stem_low}_test", f"test_{stem_low}"):
+                rank = 1
+            elif stem_low in cand_base:
+                rank = 2
+            else:
+                rank = 3
+            scored.append((rank, len(clean_fp), clean_fp))
+        scored.sort(key=lambda item: (item[0], item[1], item[2]))
+        return [item[2] for item in scored[:limit]]
+
     def resolve_safe_path(
         self,
         path: str,

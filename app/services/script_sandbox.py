@@ -25,7 +25,7 @@ class ScriptToolError(Exception):
 
 @dataclass
 class ScriptLimits:
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 60.0
     max_tool_calls: int = 50
     max_memory_bytes: int = 64 * 1024 * 1024
 
@@ -38,6 +38,7 @@ class ScriptOutcome:
     logs: List[str] = field(default_factory=list)
     execution_time_ms: int = 0
     tool_calls_count: int = 0
+    partial_results: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def code_mode_available() -> bool:
@@ -123,26 +124,94 @@ async def run_script(
     started = time.perf_counter()
     logs: List[str] = []
     calls = [0]
+    call_records: List[Dict[str, Any]] = []
+
+    def _summarize_args(tool_args: Any) -> Dict[str, Any]:
+        if not isinstance(tool_args, dict):
+            return {}
+        summary: Dict[str, Any] = {}
+        for k, v in tool_args.items():
+            if isinstance(v, str) and len(v) > 120:
+                summary[k] = v[:120] + "..."
+            else:
+                summary[k] = v
+        return summary
 
     async def bridge(name: Any, args_json: Any) -> str:
         calls[0] += 1
-        if calls[0] > limits.max_tool_calls:
+        call_idx = calls[0]
+        if call_idx > limits.max_tool_calls:
             return json.dumps({"error": f"Maximum tool calls limit ({limits.max_tool_calls}) exceeded in a single script execution"})
+        tool_name = str(name)
+        call_started = time.perf_counter()
+        record: Dict[str, Any] = {
+            "call": call_idx,
+            "tool": tool_name,
+            "args": {},
+            "status": "running",
+            "duration_ms": 0,
+        }
+        call_records.append(record)
         try:
             tool_args = json.loads(args_json) if args_json else {}
             if not isinstance(tool_args, dict):
                 raise ScriptToolError("tool arguments must be an object")
-            value = await call_tool(str(name), tool_args)
+            record["args"] = _summarize_args(tool_args)
+            value = await call_tool(tool_name, tool_args)
         except ScriptToolError as e:
+            record["status"] = "error"
+            record["duration_ms"] = int((time.perf_counter() - call_started) * 1000)
+            record["error"] = str(e)
             return json.dumps({"error": str(e)})
         except Exception as e:  # a tool raised: the script gets a JavaScript Error
-            return json.dumps({"error": f"{name} failed: {e}"})
+            record["status"] = "error"
+            record["duration_ms"] = int((time.perf_counter() - call_started) * 1000)
+            record["error"] = f"{tool_name} failed: {e}"
+            return json.dumps({"error": f"{tool_name} failed: {e}"})
+        record["status"] = "ok"
+        record["duration_ms"] = int((time.perf_counter() - call_started) * 1000)
+        record["result"] = value
         return json.dumps({"value": value}, default=str)
 
-    def outcome(ok: bool, result: Any = None, error: Optional[str] = None) -> ScriptOutcome:
-        return ScriptOutcome(ok=ok, result=result, error=error, logs=logs,
-                             execution_time_ms=int((time.perf_counter() - started) * 1000),
-                             tool_calls_count=min(calls[0], limits.max_tool_calls))
+    def _timeout_message_and_partials() -> tuple[str, List[Dict[str, Any]]]:
+        if not call_records:
+            return f"Script timed out after {limits.timeout_seconds:g} seconds", []
+        now = time.perf_counter()
+        partials: List[Dict[str, Any]] = []
+        completed_count = 0
+        for rec in call_records:
+            if rec["status"] == "running":
+                partials.append({
+                    **rec,
+                    "status": "timed_out",
+                    "duration_ms": int((now - started) * 1000) - sum(r["duration_ms"] for r in partials),
+                })
+            else:
+                completed_count += 1
+                partials.append(rec)
+        total_count = len(partials)
+        msg = (
+            f"Script timed out after {limits.timeout_seconds:g} seconds. "
+            f"{completed_count} of {total_count} nested tool calls completed (see partial_results). "
+            "Split the script into smaller batches or use fewer search/diagnose_issue calls per script."
+        )
+        return msg, partials
+
+    def outcome(
+        ok: bool,
+        result: Any = None,
+        error: Optional[str] = None,
+        partial_results: Optional[List[Dict[str, Any]]] = None,
+    ) -> ScriptOutcome:
+        return ScriptOutcome(
+            ok=ok,
+            result=result,
+            error=error,
+            logs=logs,
+            execution_time_ms=int((time.perf_counter() - started) * 1000),
+            tool_calls_count=min(calls[0], limits.max_tool_calls),
+            partial_results=partial_results or [],
+        )
 
     deadline = started + limits.timeout_seconds
 
@@ -162,7 +231,8 @@ async def run_script(
                 text = await asyncio.wait_for(promise, timeout=remaining()) if hasattr(promise, "__await__") else promise
                 result = outcome(True, result=json.loads(text) if isinstance(text, str) else text)
             except (asyncio.TimeoutError, JSTimeoutException):
-                result = outcome(False, error=f"Script timed out after {limits.timeout_seconds:g} seconds")
+                timeout_msg, partials = _timeout_message_and_partials()
+                result = outcome(False, error=timeout_msg, partial_results=partials)
             except JSOOMException:
                 result = outcome(False, error=f"Memory limit of {limits.max_memory_bytes // (1024 * 1024)} MB exceeded")
             except Exception as e:  # syntax errors, uncaught JavaScript errors, rejected promises

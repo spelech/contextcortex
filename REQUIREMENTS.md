@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1373 Automated Tests** (1009 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1384 Automated Tests** (1020 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1648,6 +1648,19 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_known_names_still_trace`
 - `test_unknown_bare_name_has_no_candidates`
 - `test_candidates_merge_copies_of_the_same_source` - _The same source indexed as many repos gives one candidate per symbol, file, and line, not one per copy._
+
+#### `tests/test_usage_fixes_191_195.py` (11 tests)
+- `test_191_single_repo_sync_marks_fingerprint_so_startup_does_not_force_reindex`
+- `test_191_deleting_repo_clears_index_format_fingerprint`
+- `test_192_modified_file_keeps_old_chunks_and_symbols_until_batch_persists`
+- `test_192_search_tools_include_index_status_while_repo_is_syncing`
+- `test_193_plain_language_diagnose_matches_semantic_search_results`
+- `test_193_error_terms_exclude_alphanumeric_data_values_but_keep_cobol_and_code`
+- `test_194_read_file_nonexistent_path_in_ephemeral_repo_says_not_in_repo_with_suggestions`
+- `test_194_mcp_handle_read_file_surfaces_not_in_repo_message`
+- `test_195_default_timeout_is_60s_and_description_documents_budget`
+- `test_195_timeout_returns_completed_partial_results_and_guidance`
+- `test_195_handle_execute_script_includes_partial_results_on_timeout`
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`

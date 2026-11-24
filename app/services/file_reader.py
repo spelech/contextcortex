@@ -211,14 +211,26 @@ class FileReaderService:
                 return vec_res
 
             if effective_repo and self._resolver.is_ephemeral_git_repo_absent(effective_repo):
+                if self._resolver.is_file_indexed(clean_lookup_path, effective_repo):
+                    raise FileNotFoundError(
+                        f"File '{clean_lookup_path}' in repository '{effective_repo}' is not available on disk "
+                        f"(ephemeral Git clone was cleaned up after indexing) and could not be reconstructed from "
+                        f"indexed vector chunks. Enable persistent shallow clone (keep_shallow) and re-sync '{effective_repo}'."
+                    ) from orig_err
+                suggestions = self._resolver.suggest_similar_indexed_files(clean_lookup_path, effective_repo)
+                hint = f" Similar indexed paths: {', '.join(suggestions)}." if suggestions else ""
                 raise FileNotFoundError(
-                    f"File '{clean_lookup_path}' in repository '{effective_repo}' is not available on disk "
-                    f"(ephemeral Git clone was cleaned up after indexing) and could not be reconstructed from "
-                    f"indexed vector chunks. Enable persistent shallow clone (keep_shallow) and re-sync '{effective_repo}'."
+                    f"File '{clean_lookup_path}' is not in repository '{effective_repo}' (not indexed).{hint}"
                 ) from orig_err
 
             if isinstance(orig_err, ValueError):
                 raise
+            if effective_repo and effective_repo != "local_storage" and not self._resolver.is_file_indexed(clean_lookup_path, effective_repo):
+                suggestions = self._resolver.suggest_similar_indexed_files(clean_lookup_path, effective_repo)
+                hint = f" Similar indexed paths: {', '.join(suggestions)}." if suggestions else ""
+                raise FileNotFoundError(
+                    f"File '{clean_lookup_path}' is not in repository '{effective_repo}' (not indexed).{hint}"
+                ) from orig_err
             raise FileNotFoundError(f"File not found: {path}") from orig_err
 
         if os.path.isdir(abs_path):

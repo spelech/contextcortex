@@ -90,6 +90,17 @@ def set_metadata(key: str, value: str) -> None:
         logger.error(f"Failed to set metadata key {key}: {e}")
 
 
+def delete_metadata(key: str) -> None:
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                TABLES["system_metadata"].delete().where(TABLES["system_metadata"].c.key == key)
+            )
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to delete metadata key {key}: {e}")
+
+
 def ensure_git_repositories_columns(conn=None) -> None:
     """Ensures keep_shallow and retain_commits_count columns exist on git_repositories table."""
     try:
@@ -248,6 +259,7 @@ __all__ = [
     "init_db",
     "get_metadata",
     "set_metadata",
+    "delete_metadata",
     "get_default_vector_storage_path",
     "_resolve_default_vector_store_config",
     "get_vector_store_db_config",

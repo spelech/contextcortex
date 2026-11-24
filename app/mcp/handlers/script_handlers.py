@@ -39,9 +39,9 @@ def _env_number(name: str, default: float, low: float, high: float) -> float:
 
 
 def code_mode_limits() -> ScriptLimits:
-    """Limits from the environment (same defaults and ranges as model-context-gateway)."""
+    """Limits from the environment (default 60 s timeout, up to 300 s)."""
     return ScriptLimits(
-        timeout_seconds=_env_number("CODE_MODE_TIMEOUT_SECONDS", 30, 1, 300),
+        timeout_seconds=_env_number("CODE_MODE_TIMEOUT_SECONDS", 60, 1, 300),
         max_tool_calls=int(_env_number("CODE_MODE_MAX_TOOL_CALLS", 50, 1, 500)),
         max_memory_bytes=int(_env_number("CODE_MODE_MAX_MEMORY_MB", 64, 8, 512)) * 1024 * 1024,
     )
@@ -116,8 +116,18 @@ def _response(payload: Dict[str, Any]) -> str:
     text = json.dumps(payload, separators=(",", ":"), default=str)
     if len(text) <= MAX_RESULT_CHARS:
         return text
+    if payload.get("partial_results"):
+        trimmed = [
+            {k: v for k, v in item.items() if k != "result"}
+            if len(json.dumps(item, default=str)) > 4000 else item
+            for item in payload["partial_results"]
+        ]
+        shrunk = {**payload, "partial_results": trimmed, "truncated": True}
+        shrunk_text = json.dumps(shrunk, separators=(",", ":"), default=str)
+        if len(shrunk_text) <= MAX_RESULT_CHARS:
+            return shrunk_text
     preview = json.dumps(payload.get("result"), separators=(",", ":"), default=str)[:MAX_RESULT_CHARS]
-    return json.dumps({**payload, "result": None, "truncated": True, "resultPreview": preview,
+    return json.dumps({**payload, "result": None, "partial_results": None, "truncated": True, "resultPreview": preview,
                        "hint": "Return less data: select fields, slice lists, or summarize in the script."},
                       separators=(",", ":"))
 
@@ -160,7 +170,10 @@ async def handle_execute_script(
         message = outcome.error or ""
         if _FIELD_ERROR.search(message):
             message = f"{message}\n{FIELD_HINT}"
-        return _response({"error": "script_failed", "message": message, **payload})
+        err_payload: Dict[str, Any] = {"error": "script_failed", "message": message, **payload}
+        if outcome.partial_results:
+            err_payload["partial_results"] = outcome.partial_results
+        return _response(err_payload)
     except ForbiddenError as fe:
         return json.dumps({"error": "forbidden", "message": str(fe)})
     except Exception as e:

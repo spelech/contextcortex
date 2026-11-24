@@ -43,3 +43,8 @@ def is_stale(source: str, fingerprint: str) -> bool:
 
 def mark_current(source: str, fingerprint: str) -> None:
     db_service.set_metadata(_key(source), fingerprint)
+
+
+def clear(source: str) -> None:
+    """Removes the stored fingerprint for a deleted source."""
+    db_service.delete_metadata(_key(source))

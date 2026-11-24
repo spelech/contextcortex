@@ -8,6 +8,7 @@ These candidates come before free-text semantic hits.
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Set
 
 from app.services.graph_traversal import trace_symbol_path
@@ -16,7 +17,7 @@ from app.services.search_ranking import (
     hybrid_candidate_limit,
     is_low_signal_diagnostic_hit,
 )
-from app.services.stack_trace_parser import _is_test_path
+from app.services.stack_trace_parser import _is_test_path, build_semantic_query
 
 logger = logging.getLogger("contextcortex.diagnostics")
 
@@ -138,13 +139,43 @@ def collect_route_path_symbols(
     return results
 
 
+_MD_SYNTAX_RE = re.compile(r"(?:^|\s)[#>*`-]+(?=\s)|[*_`~]+")
+
+
+def clean_plain_language_query(issue_text: str) -> str:
+    """Strips Markdown punctuation from a plain-language report while preserving full sentence context."""
+    cleaned = _MD_SYNTAX_RE.sub(" ", issue_text or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return (cleaned or (issue_text or "").strip())[:2000]
+
+
+def build_diagnostic_semantic_query(
+    issue_text: str,
+    signals: Optional[Dict[str, Any]],
+    frames: Optional[List[Dict[str, Any]]],
+    has_resolved_identifiers: Optional[bool] = None,
+) -> str:
+    """Uses the clean full issue text for plain-language reports, and symbol-focused query when identifiers resolved."""
+    sig = signals or {}
+    has_identifiers = (
+        bool(has_resolved_identifiers)
+        if has_resolved_identifiers is not None
+        else bool(sig.get("symbols") or sig.get("exceptions") or sig.get("routes") or frames)
+    )
+    if not has_identifiers:
+        return clean_plain_language_query(issue_text)
+    if sig or frames:
+        return build_semantic_query(issue_text, sig, frames or [])
+    return (issue_text or "")[:2000]
+
+
 def diagnostic_search_kwargs(
     signals: Optional[Dict[str, Any]],
     frames: Optional[List[Dict[str, Any]]],
     limit: int,
     has_resolved_identifiers: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    """Returns expanded candidate pool limit and higher dense_weight for plain-language bug reports."""
+    """Returns expanded candidate pool limit and semantic mode for plain-language bug reports."""
     sig = signals or {}
     if has_resolved_identifiers is not None:
         has_identifiers = bool(has_resolved_identifiers)
@@ -153,6 +184,7 @@ def diagnostic_search_kwargs(
     kwargs: Dict[str, Any] = {"limit": hybrid_candidate_limit(limit)}
     if not has_identifiers:
         kwargs["dense_weight"] = PLAIN_LANGUAGE_DIAGNOSTIC_DENSE_WEIGHT
+        kwargs["search_mode"] = "semantic"
     return kwargs
 
 

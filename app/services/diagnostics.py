@@ -7,7 +7,7 @@ from app.services.database import get_db_connection
 from app.services.diagnostic_error_terms import extract_error_terms
 from app.services.diagnostic_evidence_chain import build_call_chain
 from app.services.diagnostic_working_path import compare_working_path
-from app.services.diagnostic_route_path import collect_route_path_symbols, diagnostic_search_kwargs, keep_semantic_hit, language_family
+from app.services.diagnostic_route_path import build_diagnostic_semantic_query, collect_route_path_symbols, diagnostic_search_kwargs, keep_semantic_hit, language_family
 from app.services.file_reader import get_file_reader_service
 from app.services.git_manager import format_git_permalink
 from app.services.search import execute_hybrid_search
@@ -17,8 +17,7 @@ from app.services.stack_trace_parser import (
     RE_CSHARP_FRAME, RE_EXCEPTION_NAME, RE_GENERIC_FRAME, RE_HTTP_ROUTE,
     RE_JAVA_FRAME, RE_NODE_AT_FRAME, RE_PYTHON_FRAME, RE_QUOTED_ERROR,
     RE_SYMBOL_CANDIDATE, _STOP_IDENTIFIERS, _clean_diag_path, _is_test_path,
-    build_semantic_query as _build_semantic_query, candidate_path_suffixes,
-    extract_diagnostic_signals, normalize_stack_path, parse_stack_frames,
+    candidate_path_suffixes, extract_diagnostic_signals, normalize_stack_path, parse_stack_frames,
 )
 
 logger = logging.getLogger("contextcortex.diagnostics")
@@ -430,7 +429,7 @@ def find_semantic_candidates(
         remaining = limit - len(candidates)
         hits = []
         if remaining > 0:
-            query_str = _build_semantic_query(issue_text, signals or {}, frames or []) if (signals or frames) else issue_text[:2000]
+            query_str = build_diagnostic_semantic_query(issue_text, signals, frames, has_resolved_identifiers)
             try:
                 hits = execute_hybrid_search(query_text=query_str, doc_type="code", repo=repo, **diagnostic_search_kwargs(signals, frames, limit, has_resolved_identifiers))
             except Exception as e:

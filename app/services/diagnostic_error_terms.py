@@ -68,6 +68,32 @@ _STOP_WORDS = {
 _IDENT_PARTS = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9_]{3,}")
 _GENERIC_EXCEPTION_PARTS = {"invalid", "operation", "exception", "error", "argument", "system", "runtime"}
+_HEX_ID_RE = re.compile(r"^[0-9a-f]{8,}$")
+_DATA_CODE_RE = re.compile(r"^(?:[a-z]{1,4}[-_]?\d{3,}|\d{2,}[-_][a-z0-9]{2,}|[a-z0-9]{2,}-\d{2,}(?:-[a-z0-9]+)*)$")
+
+
+def is_data_value_token(token: str) -> bool:
+    """True for alphanumeric data values (product numbers, SKUs, IDs, hex hashes) that are not code terms."""
+    t = (token or "").strip().lower()
+    if not t:
+        return True
+    alnum = [c for c in t if c.isalnum()]
+    digits = sum(1 for c in alnum if c.isdigit())
+    if digits == 0:
+        return False
+    if digits == len(alnum):
+        return True
+    if _HEX_ID_RE.fullmatch(t):
+        return True
+    # Keep COBOL paragraph/section identifiers that have >= 2 alphabetic words (e.g. 1000-calc-tax).
+    alpha_segments = [seg for seg in re.split(r"[-_]", t) if seg.isalpha() and len(seg) >= 2]
+    if "-" in t and len(alpha_segments) >= 2:
+        return False
+    if _DATA_CODE_RE.fullmatch(t):
+        return True
+    if digits >= 3 and (digits / max(1, len(alnum))) >= 0.4:
+        return True
+    return False
 
 
 def identifier_parts(text: str) -> List[str]:
@@ -80,7 +106,7 @@ def identifier_parts(text: str) -> List[str]:
 
 def _add(terms: Dict[str, float], term: str, weight: float) -> None:
     term = term.lower().strip()
-    if len(term) >= 3 and term not in _STOP_WORDS:
+    if len(term) >= 3 and term not in _STOP_WORDS and not is_data_value_token(term):
         terms[term] = max(terms.get(term, 0.0), weight)
 
 

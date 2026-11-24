@@ -9,6 +9,7 @@ from app.services.compact_results import group_grep_matches
 from app.services.code_grep_scanner import execute_code_grep, looks_like_regex
 from app.services.database.connection import get_db_connection
 from app.services.file_reader import get_file_reader_service
+from app.services.indexing.sync_status import get_active_sync_status
 
 logger = logging.getLogger("contextcortex.mcp.grep")
 
@@ -154,6 +155,9 @@ async def handle_grep_code(
         if shared_repo:
             payload["repo"] = shared_repo
         payload["files"] = files
+        sync_info = get_active_sync_status(repo)
+        if sync_info:
+            payload.update(sync_info)
         return json.dumps(payload, separators=(",", ":"))
 
     except ForbiddenError as fe:
