@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1424 Automated Tests** (1060 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1429 Automated Tests** (1065 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1713,6 +1713,13 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_223_best_of_each_query_slot_preserves_strong_single_query_hit`
 - `test_224_search_auto_expands_plain_language_reports_and_respects_expand_false`
 - `test_224_instructions_and_tool_descriptions_align_on_search_expansion`
+
+#### `tests/test_usage_fixes_227_228.py` (5 tests)
+- `test_227_prose_slashes_are_not_routes_and_auto_expand_triggers`
+- `test_227_real_http_routes_still_detected_and_skip_auto_expand`
+- `test_228_transient_503_retries_once_and_round1_fallback_not_cached_under_llm_key`
+- `test_228_round2_llm_failure_skips_noisy_symbol_fallback_and_reports_per_round_status`
+- `test_228_llm_failure_counters_logged_and_exposed_in_admin_stats`
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`

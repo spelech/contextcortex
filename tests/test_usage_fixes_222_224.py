@@ -129,26 +129,29 @@ def test_222_llm_failure_logs_once_per_model_and_reports_expansion_mode(isolated
     failing_client = MagicMock()
     failing_client.chat.completions.create.side_effect = RuntimeError("Error code: 500 - gateway down")
 
-    with caplog.at_level(logging.WARNING, logger="contextcortex.query_expansion"), \
+    with caplog.at_level(logging.INFO, logger="contextcortex.query_expansion"), \
+         patch("app.services.llm_client.time.sleep"), \
          patch("app.services.query_expansion._build_llm_client", return_value=failing_client):
         q1, src1 = expand_report_to_code_queries("Accessory missing on catalog page when no filter is set.", repo="shop")
         q2, src2 = expand_report_to_code_queries("Second different bug report about product filter visibility.", repo="shop")
 
     assert src1 == "heuristic" and src2 == "heuristic" and q1 and q2
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "broken-model" in r.message]
-    assert len(warnings) == 1
+    infos = [r for r in caplog.records if r.levelno == logging.INFO and "broken-model" in r.message]
+    assert len(warnings) == 1 and len(infos) >= 1
 
-    # Both diagnose_issue and search(expand=True) expose `expansion: "heuristic" | "llm"`.
+    # Both diagnose_issue and search(expand=True) expose per-round `expansion`.
     hit = _hit("h1", "Services/Catalog/Filter.cs", "Filter.Run", 0.8, "if (active) return items;")
-    with patch("app.services.query_expansion._build_llm_client", return_value=failing_client), \
+    with patch("app.services.llm_client.time.sleep"), \
+         patch("app.services.query_expansion._build_llm_client", return_value=failing_client), \
          patch("app.services.diagnostics.execute_hybrid_search", return_value=[hit]), \
          patch("app.mcp.tools.execute_hybrid_search", return_value=[hit]):
         diag = diagnose_issue("Accessory missing inline on catalog page unless spec filter is applied.", repo="shop")
         srch = json.loads(asyncio.run(handle_search(
             query="Accessory missing inline on catalog page unless spec filter is applied.", scope="code", repo="shop", expand=True
         )))
-    assert diag["expansion"] == "heuristic"
-    assert srch["expansion"] == "heuristic" and srch["expanded"] is True
+    assert diag["expansion"] == {"round1": "heuristic", "round2": "skipped"}
+    assert srch["expansion"] == {"round1": "heuristic", "round2": "skipped"} and srch["expanded"] is True
 
 
 # --- Issue #223: corpus-grounded round 2 from round-1 symbol names + best-of-each-query slot ---
@@ -250,7 +253,7 @@ def test_224_search_auto_expands_plain_language_reports_and_respects_expand_fals
         short_res = json.loads(asyncio.run(handle_search(query="related products", scope="code", repo="shop")))
 
     assert auto_res["expanded"] is True
-    assert auto_res["expansion"] == "heuristic"
+    assert auto_res["expansion"]["round1"] == "heuristic"
     assert len(auto_res["queries"]) >= 3 and auto_res["areas"]
     assert "expanded" not in disabled_res and "queries" not in disabled_res
     assert "expanded" not in short_res and "queries" not in short_res
