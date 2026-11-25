@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.8](https://github.com/spelech/contextcortex/compare/v2.28.7...v2.28.8) (2026-11-25)
+
+
+### Bug Fixes
+
+* **search:** resolve [#222](https://github.com/spelech/contextcortex/issues/222)-[#224](https://github.com/spelech/contextcortex/issues/224) (chat param compatibility, round-2 corpus-grounded expansion + per-query slots, and auto-expand plain-language search) ([#225](https://github.com/spelech/contextcortex/issues/225)) ([60cb20b](https://github.com/spelech/contextcortex/commit/60cb20b39625e982b5efd2d85bd6ab37b27e6d1e))
+
 ## [2.28.7](https://github.com/spelech/contextcortex/compare/v2.28.6...v2.28.7) (2026-11-24)
 
 
