@@ -279,4 +279,4 @@ def run_plain_language_diagnosis(
             {**a, "file": (clean_fp := diag_file_fn(roots, a["file"])), "area": area_key_for_path(clean_fp)}
             for a in expanded.areas
         ]
-    return expanded.queries, areas, sem_cands, expanded.source
+    return expanded.queries, areas, sem_cands, expanded.expansion

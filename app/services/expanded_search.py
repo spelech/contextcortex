@@ -1,17 +1,19 @@
-"""Multi-round expanded code search, corpus-grounded PRF, RRF + per-query slot preservation, and area diversification (#219, #223, #224)."""
+"""Multi-round expanded code search, corpus-grounded PRF, RRF + per-query slot preservation, and area diversification (#219, #223, #224, #227, #228)."""
 
 import contextvars
 import logging
 import os
 from collections import Counter, OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.services.diagnostic_error_terms import _STOP_WORDS, identifier_parts, is_data_value_token
 from app.services.query_router import classify_query_intent
 from app.services.search_ranking import cap_results_per_file
-from app.services.stack_trace_parser import RE_EXCEPTION_NAME, RE_HTTP_ROUTE, RE_SYMBOL_CANDIDATE, _is_test_path, parse_stack_frames
+from app.services.stack_trace_parser import (
+    RE_EXCEPTION_NAME, RE_SYMBOL_CANDIDATE, _is_test_path, extract_http_routes, parse_stack_frames,
+)
 from app.services.vector_store.base import VectorSearchResult
 
 logger = logging.getLogger("contextcortex.expanded_search")
@@ -20,6 +22,7 @@ RRF_K = 60
 _MAX_EVIDENCE_CHARS = 160
 _MAX_ROUND2_QUERIES = 4
 _ROUND1_SYMBOL_TOP_N = 20
+_HEURISTIC_R2_RRF_WEIGHT = 0.5
 
 _EVIDENCE_STOP_WORDS = _STOP_WORDS | frozenset({
     "all", "and", "any", "are", "bug", "but", "can", "did", "does", "for", "get", "has", "had",
@@ -28,9 +31,10 @@ _EVIDENCE_STOP_WORDS = _STOP_WORDS | frozenset({
     "were", "what", "who", "why", "yes", "yet", "you", "your",
 })
 _SYMBOL_BOILERPLATE = _EVIDENCE_STOP_WORDS | frozenset({
-    "abstract", "async", "base", "class", "controller", "default", "dto", "handler", "helper",
-    "impl", "interface", "internal", "manager", "model", "private", "public", "service", "spec",
-    "static", "task", "test", "tests", "util", "utils", "view", "void",
+    "abstract", "async", "base", "class", "controller", "convert", "default", "dto", "entity",
+    "enumerable", "handler", "helper", "impl", "interface", "internal", "manager", "model",
+    "private", "public", "repository", "selection", "service", "spec", "static", "status",
+    "task", "test", "tests", "track", "tracking", "util", "utils", "view", "void",
 })
 _SYNONYM_GROUPS: Tuple[frozenset, ...] = (
     frozenset({"accessor", "link", "attach", "relat", "associat", "component", "child", "addon"}),
@@ -39,9 +43,14 @@ _SYNONYM_GROUPS: Tuple[frozenset, ...] = (
     frozenset({"primar", "main", "master", "root", "parent"}),
     frozenset({"lookup", "find", "fetch", "retriev", "resolv", "map", "build"}),
 )
+_NON_CODE_BRAND_WORDS = frozenset({
+    "ios", "ipad", "iphone", "macos", "android", "github", "gitlab", "graphql", "postgresql",
+    "mysql", "mongodb", "javascript", "typescript", "dotnet", "aspnet", "openai", "litellm", "oauth",
+})
 _AUTO_EXPAND_SYMPTOM_MARKERS = (
     " but ", " however ", " unless ", " when ", " instead ", " does not ", " doesn't ",
     " missing ", " wrong ", " fails ", " broken ", " not show", " never ", " only when ",
+    " empty ", " shows ", " visible ", " pops ",
 )
 _BOILERPLATE_PREFIXES = ("using ", "import ", "from ", "package ", "namespace ", "#include", "export {")
 _DECL_PREFIXES = (
@@ -63,6 +72,7 @@ class ExpandedSearchOutcome:
     hits: List[VectorSearchResult]
     areas: List[Dict[str, Any]]
     source: str = "heuristic"
+    expansion: Dict[str, str] = field(default_factory=lambda: {"round1": "heuristic", "round2": "skipped"})
 
 
 def _simple_stem(token: str) -> str:
@@ -80,31 +90,43 @@ def _simple_stem(token: str) -> str:
     return t[:-1] if (len(t) > 3 and t.endswith("s") and not t.endswith("ss")) else t
 
 
+def _has_real_code_symbol(text: str) -> bool:
+    """True when `text` contains a real code identifier (ignoring brand/platform words like iOS/macOS and data SKUs)."""
+    for match in RE_SYMBOL_CANDIDATE.finditer(text):
+        tok = match.group(0)
+        low = tok.lower()
+        if low in _NON_CODE_BRAND_WORDS or is_data_value_token(tok):
+            continue
+        if len(tok) <= 3 and "." not in tok and "_" not in tok:
+            continue
+        return True
+    return False
+
+
 def should_auto_expand_search_query(query: str, scope: str = "all") -> bool:
-    """True when `search` receives a plain-language bug report (20+ words or 2+ sentences) with no code identifiers (#224)."""
+    """True when `search` receives a plain-language bug report with no code identifiers or real HTTP routes (#224, #227)."""
     if (scope or "all").strip().lower() in ("docs", "doc"):
         return False
     text = " ".join((query or "").split())
     words = text.split()
-    if len(words) < 10 or classify_query_intent(text).intent == "lexical_exact":
+    if len(words) < 7:
         return False
-    if parse_stack_frames(text) or RE_HTTP_ROUTE.search(text) or RE_EXCEPTION_NAME.search(text) or RE_SYMBOL_CANDIDATE.search(text):
+    if parse_stack_frames(text) or extract_http_routes(text) or RE_EXCEPTION_NAME.search(text) or _has_real_code_symbol(text):
+        return False
+    if len(words) < 12 and classify_query_intent(text).intent == "lexical_exact" and ('"' in text or "::" in text or "->" in text):
         return False
     sentence_ends = sum(1 for i, c in enumerate(text) if c in ".!?" and (i + 1 == len(text) or text[i + 1].isspace()))
     if len(words) >= 20 or sentence_ends >= 2:
         return True
-    return len(words) >= 12 and any(m in f" {text.lower()} " for m in _AUTO_EXPAND_SYMPTOM_MARKERS)
+    return any(m in f" {text.lower()} " for m in _AUTO_EXPAND_SYMPTOM_MARKERS)
 
 
 def _norm_rel_path(payload: Dict[str, Any]) -> str:
     raw = str(payload.get("rel_path") or payload.get("path") or payload.get("filepath") or "").replace("\\", "/")
-    if "://" in raw:
-        raw = raw.split("://", 1)[1]
-    return raw.lstrip("/")
+    return (raw.split("://", 1)[1] if "://" in raw else raw).lstrip("/")
 
 
 def area_key_for_path(rel_path: str) -> str:
-    """Groups file paths into folder/project areas for result diversification."""
     norm = (rel_path or "").replace("\\", "/").lstrip("/")
     if "://" in norm:
         norm = norm.split("://", 1)[1].lstrip("/")
@@ -113,13 +135,10 @@ def area_key_for_path(rel_path: str) -> str:
 
 
 def extract_evidence_line(content: str, matched_queries: Sequence[str]) -> str:
-    """Selects one concise, high-signal code line from a chunk as evidence for an area."""
+    """Selects one concise, high-signal executable code line from a chunk as evidence for an area."""
     if not content:
         return ""
-    q_terms = {
-        tok for q in matched_queries for tok in identifier_parts(q)
-        if len(tok) >= 3 and tok not in _EVIDENCE_STOP_WORDS
-    }
+    q_terms = {tok for q in matched_queries for tok in identifier_parts(q) if len(tok) >= 3 and tok not in _EVIDENCE_STOP_WORDS}
     best_line, best_score, first_non_empty = "", -999, ""
     for raw_line in content.splitlines():
         line = " ".join(raw_line.strip().split())
@@ -175,15 +194,15 @@ def _build_round2_queries(
     round1_queries: Sequence[str],
     round1_ranked_entries: Sequence[Dict[str, Any]],
     *,
-    use_llm: bool,
+    llm_mode: bool,
     max_queries: int = _MAX_ROUND2_QUERIES,
-) -> List[str]:
-    """Derives 2-4 corpus-grounded round-2 queries from top round-1 symbol names (#223)."""
+) -> Tuple[List[str], str]:
+    """Derives 2-4 corpus-grounded round-2 queries; returns `(queries, round2_source)` (#223, #228)."""
     from app.services.query_expansion import expand_round2_with_llm
 
     anchors = _anchor_stems(report_text, round1_queries)
     if not anchors or not round1_ranked_entries:
-        return []
+        return [], "skipped"
 
     report_stems = {_simple_stem(t) for t in identifier_parts(report_text or "") if len(t) >= 3}
     existing_sets = [frozenset(identifier_parts(q)) for q in round1_queries]
@@ -227,36 +246,34 @@ def _build_round2_queries(
             word_df[w] += 1
 
     if not word_df:
-        return []
+        return [], "skipped"
     top_symbol_words = [w for w, _cnt in word_df.most_common(40)]
 
-    if use_llm:
+    # When an LLM is configured, prefer skipping round 2 over fusing noisy symbol-phrase fallback queries (#228).
+    if llm_mode:
         llm_r2 = expand_round2_with_llm(report_text, top_symbol_words, max_queries=max_queries)
         if llm_r2:
             filtered = [q for q in llm_r2 if frozenset(identifier_parts(q)) not in existing_sets]
             if filtered:
-                return filtered[:max_queries]
+                return filtered[:max_queries], "llm"
+        return [], "skipped"
 
     candidate_phrases.sort(key=lambda item: item[0], reverse=True)
-    out: List[str] = []
-    out_sets: List[frozenset] = list(existing_sets)
+    out, out_sets = [], list(existing_sets)
     for _score, words in candidate_phrases:
         sig = frozenset(words)
-        if sig in out_sets:
-            continue
-        out_sets.append(sig)
-        out.append(" ".join(words))
-        if len(out) >= max_queries:
-            break
-
-    # Synthesize a bridge query pairing top newly-discovered symbol words with matching stems if under 2 queries.
+        if sig not in out_sets:
+            out_sets.append(sig)
+            out.append(" ".join(words))
+            if len(out) >= max_queries:
+                break
     if len(out) < min(2, max_queries) and len(top_symbol_words) >= 3:
-        novel_words = [w for w in top_symbol_words if _simple_stem(w) not in report_stems][:4]
-        anchor_words = [w for w in top_symbol_words if _simple_stem(w) in report_stems][:2]
-        combo = list(OrderedDict.fromkeys(novel_words + anchor_words))[:6]
+        novel = [w for w in top_symbol_words if _simple_stem(w) not in report_stems][:4]
+        anchor = [w for w in top_symbol_words if _simple_stem(w) in report_stems][:2]
+        combo = list(OrderedDict.fromkeys(novel + anchor))[:6]
         if len(combo) >= 2 and frozenset(combo) not in out_sets:
             out.append(" ".join(combo))
-    return out[:max_queries]
+    return (out[:max_queries], "heuristic") if out else ([], "skipped")
 
 
 def _run_batch(queries: Sequence[str], run_one: Callable[[str], List[VectorSearchResult]]) -> List[List[VectorSearchResult]]:
@@ -265,8 +282,7 @@ def _run_batch(queries: Sequence[str], run_one: Callable[[str], List[VectorSearc
     if len(queries) == 1:
         return [run_one(queries[0])]
     with ThreadPoolExecutor(max_workers=min(len(queries), 6), thread_name_prefix="ctx-expand") as pool:
-        futures = [pool.submit(contextvars.copy_context().run, run_one, q) for q in queries]
-        return [f.result() for f in futures]
+        return [f.result() for f in [pool.submit(contextvars.copy_context().run, run_one, q) for q in queries]]
 
 
 def _accumulate_rrf(
@@ -278,6 +294,7 @@ def _accumulate_rrf(
     filter_fn: Optional[Callable[[Dict[str, Any]], bool]],
     min_raw_score: Optional[float],
     per_query_top_files: Dict[int, List[Tuple[str, str]]],
+    rrf_weight: float = 1.0,
 ) -> None:
     for offset, hits in enumerate(per_query_hits):
         q_idx = start_q_idx + offset
@@ -287,9 +304,7 @@ def _accumulate_rrf(
         for hit in hits:
             p = dict(getattr(hit, "payload", None) or {})
             raw_score = float(hit.score) if isinstance(getattr(hit, "score", None), (int, float)) else 0.0
-            if min_raw_score is not None and raw_score < min_raw_score:
-                continue
-            if filter_fn is not None and not filter_fn(p):
+            if (min_raw_score is not None and raw_score < min_raw_score) or (filter_fn is not None and not filter_fn(p)):
                 continue
             rank += 1
             rel_path = _norm_rel_path(p)
@@ -302,13 +317,10 @@ def _accumulate_rrf(
             bucket = sym if sym else f"line:{int(p.get('start_line') or 0) // 15}"
             dedup_key = (hit_repo or "", rel_path.lower(), bucket)
             entry = fused_map.get(dedup_key)
-            rrf_delta = 1.0 / float(RRF_K + rank)
+            rrf_delta = float(rrf_weight) / float(RRF_K + rank)
             cloned = VectorSearchResult(
-                id=str(getattr(hit, "id", dedup_key)),
-                score=raw_score,
-                payload=p,
-                dense_score=getattr(hit, "dense_score", None),
-                sparse_score=getattr(hit, "sparse_score", None),
+                id=str(getattr(hit, "id", dedup_key)), score=raw_score, payload=p,
+                dense_score=getattr(hit, "dense_score", None), sparse_score=getattr(hit, "sparse_score", None),
             )
             if entry is None:
                 fused_map[dedup_key] = {"rrf": rrf_delta, "max_raw": raw_score, "matched_by": {q_idx}, "hit": cloned}
@@ -344,24 +356,18 @@ def _build_areas_with_per_query_slots(
             lines = [start_l, end_l] if start_l is not None and end_l is not None else None
             matched_texts = [query_texts[i] for i in q_indices if 0 <= i < len(query_texts)]
             by_file[fkey] = {
-                "area": area_key_for_path(rel_path),
-                "repo": hit_repo,
-                "file": rel_path,
-                "symbol": p.get("full_symbol") or p.get("symbol"),
-                "lines": lines,
-                "matched_by": list(q_indices),
-                "evidence": extract_evidence_line(str(p.get("content") or ""), matched_texts),
+                "area": area_key_for_path(rel_path), "repo": hit_repo, "file": rel_path,
+                "symbol": p.get("full_symbol") or p.get("symbol"), "lines": lines,
+                "matched_by": list(q_indices), "evidence": extract_evidence_line(str(p.get("content") or ""), matched_texts),
                 "score": round(float(h.score or 0.0), 4),
             }
         else:
             existing = by_file[fkey]
-            merged = sorted(set(existing["matched_by"]) | set(q_indices))
-            existing["matched_by"] = merged
+            existing["matched_by"] = sorted(set(existing["matched_by"]) | set(q_indices))
             if not existing["evidence"]:
-                matched_texts = [query_texts[i] for i in merged if 0 <= i < len(query_texts)]
+                matched_texts = [query_texts[i] for i in existing["matched_by"] if 0 <= i < len(query_texts)]
                 existing["evidence"] = extract_evidence_line(str(p.get("content") or ""), matched_texts)
 
-    # 1. Start with top RRF consensus leaders (folder-diversified).
     rrf_diversified = _diversify_by_area(
         list(by_file.values()), area_fn=lambda a: str(a.get("area") or ""), limit=area_limit, max_per_area=max_per_area
     )
@@ -369,21 +375,15 @@ def _build_areas_with_per_query_slots(
     selected: List[Dict[str, Any]] = list(rrf_diversified[:leader_slots])
     selected_keys: Set[Tuple[str, str]] = {(str(a.get("repo") or ""), str(a["file"]).lower()) for a in selected}
 
-    # 2. Reserve "best of each query" slots (rank 1 then rank 2) so strong single-query hits are never dropped (#223).
     for slot_rank in (0, 1):
         for q_idx in sorted(per_query_top_files):
             if len(selected) >= area_limit:
                 break
             q_files = per_query_top_files[q_idx]
-            if slot_rank >= len(q_files):
-                continue
-            fkey = q_files[slot_rank]
-            if fkey in selected_keys or fkey not in by_file:
-                continue
-            selected.append(by_file[fkey])
-            selected_keys.add(fkey)
+            if slot_rank < len(q_files) and q_files[slot_rank] not in selected_keys and q_files[slot_rank] in by_file:
+                selected.append(by_file[q_files[slot_rank]])
+                selected_keys.add(q_files[slot_rank])
 
-    # 3. Backfill remaining slots with next highest RRF-diversified areas.
     for area in rrf_diversified[leader_slots:]:
         if len(selected) >= area_limit:
             break
@@ -417,11 +417,12 @@ def run_expanded_code_search(
     enable_round2: bool = True,
 ) -> ExpandedSearchOutcome:
     """Runs round-1 expansion + corpus-grounded round-2 PRF, RRF fusion with per-query slots, and area diversification."""
+    from app.services.database.connection import get_chat_model
     from app.services.query_expansion import expand_report_to_code_queries
 
-    round1_queries, source = expand_report_to_code_queries(report_text, repo=repo, max_queries=max_queries, use_llm=use_llm)
+    round1_queries, round1_source = expand_report_to_code_queries(report_text, repo=repo, max_queries=max_queries, use_llm=use_llm)
     if not round1_queries:
-        return ExpandedSearchOutcome(queries=[], hits=[], areas=[], source=source)
+        return ExpandedSearchOutcome(queries=[], hits=[], areas=[], source=round1_source, expansion={"round1": round1_source, "round2": "skipped"})
 
     q_limit = max(int(per_query_limit or max(limit * 2, 10)), 1)
 
@@ -442,27 +443,32 @@ def run_expanded_code_search(
     r1_hits = _run_batch(round1_queries, _run_one)
     _accumulate_rrf(
         fused_map, r1_hits, 0, repo=repo, filter_fn=filter_fn, min_raw_score=min_raw_score,
-        per_query_top_files=per_query_top_files,
+        per_query_top_files=per_query_top_files, rrf_weight=1.0,
     )
 
-    query_entries: List[Dict[str, Any]] = [{"query": q, "round": 1} for q in round1_queries]
+    query_entries: List[Dict[str, Any]] = [{"query": q, "round": 1, "source": round1_source} for q in round1_queries]
     query_texts: List[str] = list(round1_queries)
+    round2_source = "skipped"
+    total_rrf_weight = float(len(round1_queries))
 
+    llm_configured = bool(use_llm and get_chat_model())
     if enable_round2 and fused_map and doc_type in (None, "code"):
         r1_ranked = sorted(fused_map.values(), key=lambda e: (e["rrf"], len(e["matched_by"]), e["max_raw"]), reverse=True)
-        r2_queries = _build_round2_queries(
-            report_text, round1_queries, r1_ranked, use_llm=(use_llm and source == "llm"), max_queries=_MAX_ROUND2_QUERIES
+        r2_queries, round2_source = _build_round2_queries(
+            report_text, round1_queries, r1_ranked, llm_mode=llm_configured, max_queries=_MAX_ROUND2_QUERIES
         )
         if r2_queries:
+            r2_weight = 1.0 if round2_source == "llm" else _HEURISTIC_R2_RRF_WEIGHT
             r2_hits = _run_batch(r2_queries, _run_one)
             _accumulate_rrf(
                 fused_map, r2_hits, len(query_texts), repo=repo, filter_fn=filter_fn, min_raw_score=min_raw_score,
-                per_query_top_files=per_query_top_files,
+                per_query_top_files=per_query_top_files, rrf_weight=r2_weight,
             )
-            query_entries.extend({"query": q, "round": 2} for q in r2_queries)
+            query_entries.extend({"query": q, "round": 2, "source": round2_source} for q in r2_queries)
             query_texts.extend(r2_queries)
+            total_rrf_weight += r2_weight * float(len(r2_queries))
 
-    max_rrf = float(len(query_texts)) / float(RRF_K + 1)
+    max_rrf = total_rrf_weight / float(RRF_K + 1)
     ranked_entries = sorted(fused_map.values(), key=lambda e: (e["rrf"], len(e["matched_by"]), e["max_raw"]), reverse=True)
     fused_hits: List[VectorSearchResult] = []
     hit_matched_by: Dict[int, List[int]] = {}
@@ -480,14 +486,10 @@ def run_expanded_code_search(
     areas = _build_areas_with_per_query_slots(
         fused_hits, hit_matched_by, query_texts, per_query_top_files, repo, target_areas, max_per_area
     )
-    return ExpandedSearchOutcome(queries=query_entries, hits=diversified_hits, areas=areas, source=source)
+    return ExpandedSearchOutcome(
+        queries=query_entries, hits=diversified_hits, areas=areas, source=round1_source,
+        expansion={"round1": round1_source, "round2": round2_source},
+    )
 
 
-__all__ = [
-    "ExpandedSearchOutcome",
-    "RRF_K",
-    "area_key_for_path",
-    "extract_evidence_line",
-    "run_expanded_code_search",
-    "should_auto_expand_search_query",
-]
+__all__ = ["ExpandedSearchOutcome", "RRF_K", "area_key_for_path", "extract_evidence_line", "run_expanded_code_search", "should_auto_expand_search_query"]

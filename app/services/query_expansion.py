@@ -22,7 +22,7 @@ from app.services.expanded_search import (
     run_expanded_code_search,
     should_auto_expand_search_query,
 )
-from app.services.llm_client import create_chat_completion, get_llm_extra_headers
+from app.services.llm_client import create_chat_completion, get_llm_call_stats, get_llm_extra_headers
 
 logger = logging.getLogger("contextcortex.query_expansion")
 
@@ -97,17 +97,19 @@ def _cache_set(key: Tuple[str, str, str, int], queries: List[str], source: str) 
             _EXPANSION_CACHE.popitem(last=False)
 
 
-def _log_llm_failure_once(chat_model: str, exc: Exception) -> None:
+def _log_llm_failure(chat_model: str, stage: str, exc: Exception) -> None:
     key = (chat_model or "").strip().lower()
     with _CACHE_LOCK:
         first_time = key not in _LOGGED_LLM_FAILURES
         if first_time:
             _LOGGED_LLM_FAILURES.add(key)
-    msg = f"LLM report-to-query expansion failed ({chat_model}); falling back to heuristic: {exc}"
+    stats = get_llm_call_stats().get(chat_model) or {}
+    ratio = f" ({stats.get('failures', 1)}/{stats.get('calls', 1)} failures/calls)" if stats else ""
+    msg = f"LLM {stage} expansion failed for '{chat_model}'{ratio}: {exc}"
     if first_time:
         logger.warning(msg)
     else:
-        logger.debug(msg)
+        logger.info(msg)
 
 
 def _stem_token(token: str) -> str:
@@ -123,9 +125,7 @@ def _stem_token(token: str) -> str:
         return t[:-2]
     if len(t) > 4 and t.endswith("es") and not t.endswith(("ses", "zes")):
         return t[:-1]
-    if len(t) > 3 and t.endswith("s") and not t.endswith("ss"):
-        return t[:-1]
-    return t
+    return t[:-1] if (len(t) > 3 and t.endswith("s") and not t.endswith("ss")) else t
 
 
 def _strip_list_marker(line: str) -> str:
@@ -138,9 +138,7 @@ def _strip_list_marker(line: str) -> str:
     i = 0
     while i < len(s) and s[i].isdigit():
         i += 1
-    if 0 < i < len(s) and s[i] in (".", ")", ":"):
-        return s[i + 1 :].strip()
-    return s
+    return s[i + 1 :].strip() if (0 < i < len(s) and s[i] in (".", ")", ":")) else s
 
 
 def _parse_llm_query_list(raw_text: str, max_queries: int) -> List[str]:
@@ -150,10 +148,8 @@ def _parse_llm_query_list(raw_text: str, max_queries: int) -> List[str]:
         return []
     if text.startswith("```"):
         lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
+        lines = lines[1:] if (lines and lines[0].startswith("```")) else lines
+        lines = lines[:-1] if (lines and lines[-1].strip().startswith("```")) else lines
         text = "\n".join(lines).strip()
 
     parsed: Optional[List[Any]] = None
@@ -173,19 +169,14 @@ def _parse_llm_query_list(raw_text: str, max_queries: int) -> List[str]:
             continue
 
     raw_items = [str(item) for item in parsed] if parsed is not None else [_strip_list_marker(ln) for ln in text.splitlines()]
-    cleaned: List[str] = []
-    seen = set()
+    cleaned, seen = [], set()
     for item in raw_items:
         q = " ".join(item.strip().strip("\"'").split())[:120]
-        if len(q) < 3:
-            continue
-        low = q.lower()
-        if low in seen:
-            continue
-        seen.add(low)
-        cleaned.append(q)
-        if len(cleaned) >= max_queries:
-            break
+        if len(q) >= 3 and q.lower() not in seen:
+            seen.add(q.lower())
+            cleaned.append(q)
+            if len(cleaned) >= max_queries:
+                break
     return cleaned
 
 
@@ -209,7 +200,11 @@ def _build_llm_client() -> Any:
         or os.getenv("LITELLM_API_KEY")
         or "dummy"
     ).strip()
-    return OpenAI(base_url=base_url, api_key=api_key, default_headers=get_llm_extra_headers(), timeout=15.0)
+    try:
+        timeout_s = float(os.getenv("LLM_EXPANSION_TIMEOUT_SECONDS", "25"))
+    except ValueError:
+        timeout_s = 25.0
+    return OpenAI(base_url=base_url, api_key=api_key, default_headers=get_llm_extra_headers(), timeout=max(5.0, timeout_s))
 
 
 def _expand_with_llm(report_text: str, chat_model: str, max_queries: int) -> Optional[List[str]]:
@@ -229,7 +224,7 @@ def _expand_with_llm(report_text: str, chat_model: str, max_queries: int) -> Opt
         queries = _parse_llm_query_list(content, max_queries=max_queries)
         return queries if queries else None
     except Exception as exc:
-        _log_llm_failure_once(chat_model, exc)
+        _log_llm_failure(chat_model, "round-1", exc)
         return None
 
 
@@ -267,7 +262,7 @@ def expand_round2_with_llm(
             return queries
         return None
     except Exception as exc:
-        _log_llm_failure_once(chat_model, exc)
+        _log_llm_failure(chat_model, "round-2", exc)
         return None
 
 
@@ -475,6 +470,8 @@ def expand_report_to_code_queries(
         if llm_queries:
             _cache_set(cache_key, llm_queries, "llm")
             return llm_queries, "llm"
+        # Do not cache transient LLM fallbacks under the LLM key (#228).
+        return _expand_with_heuristic(norm_text, repo=repo, max_queries=clamped_max), "heuristic"
 
     heur_queries = _expand_with_heuristic(norm_text, repo=repo, max_queries=clamped_max)
     _cache_set(cache_key, heur_queries, "heuristic")

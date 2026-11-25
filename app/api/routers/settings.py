@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from app.services.auth import Role
+from app.services.llm_client import get_llm_call_stats
 from app.api.routers.auth import require_role
 from app.api.routers.ai_settings import (
     router as ai_settings_router,
@@ -183,6 +184,7 @@ async def api_get_stats():
             "sparse_model": emb_cfg["sparse_model"],
             "vision_ocr_model": emb_cfg.get("vision_ocr_model"),
             "chat_model": emb_cfg.get("chat_model"),
+            "llm_stats": get_llm_call_stats(),
             "embedding_threads": emb_cfg["threads"],
             "embedding_batch_size": emb_cfg["batch_size"],
             "system_cpus": emb_cfg.get("system_cpus", 2),

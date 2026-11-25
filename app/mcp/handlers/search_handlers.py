@@ -92,7 +92,7 @@ def _execute_search_sync(
             hits = expanded.hits
             expanded_queries = expanded.queries
             expanded_areas = expanded.areas
-            expanded_source = expanded.source
+            expanded_source = expanded.expansion
         else:
             hits = search_fn(
                 query_text=clean_query,

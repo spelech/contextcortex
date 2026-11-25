@@ -78,9 +78,13 @@ RE_SYMBOL_CANDIDATE = re.compile(
     r')\b'
 )
 RE_HTTP_ROUTE = re.compile(
-    r'(?:(GET|POST|PUT|DELETE|PATCH)\s+(?:https?://[^/\s]+)?)?(/[\w\-/{}:]+(?:/[\w\-/{}:]*)*)',
+    r"(?:(?P<method>GET|POST|PUT|DELETE|PATCH)\s+(?:https?://[^/\s]+)?(?P<mpath>/[\w\-/{}:.]+)"
+    r"|(?P<url>https?://[^/\s]+(?P<upath>/[\w\-/{}:.?=&]+))"
+    r"|(?:^|(?<=[\s'\"`(\[]))(?P<bpath>/[\w\-/{}:.]+(?:\?[^\s'\"`)\]]*)?))",
     re.IGNORECASE,
 )
+_FS_NON_ROUTE_PREFIXES = ("/app/", "/src/", "/usr/", "/var/", "/opt/", "/home/", "/tmp/")
+_SINGLE_SEG_ROUTE_EXTS = (".json", ".xml", ".php", ".aspx", ".ashx", ".svc")
 
 _STOP_IDENTIFIERS = {
     "RuntimeError", "ValueError", "TypeError", "KeyError", "AttributeError", "IndexError",
@@ -320,6 +324,46 @@ def parse_stack_frames(text: str) -> List[Dict[str, Any]]:
     return frames
 
 
+def extract_http_routes(text: str) -> List[Tuple[Optional[str], str]]:
+    """Extracts realistic HTTP routes while ignoring prose slashes like `in/is`, `and/or`, `iOS/Android`, `1/2` (#227)."""
+    routes: List[Tuple[Optional[str], str]] = []
+    seen = set()
+    for line in (text or "").splitlines():
+        if "http://" in line or "https://" in line:
+            stripped = line.strip()
+            if RE_NODE_BARE_FRAME.match(stripped) or RE_NODE_PAREN_FRAME.match(stripped):
+                continue
+        for m in RE_HTTP_ROUTE.finditer(line):
+            meth = m.group("method").upper() if m.group("method") else None
+            if meth:
+                raw_p = m.group("mpath") or ""
+                has_query = False
+                explicit = True
+            elif m.group("upath"):
+                raw_p = m.group("upath") or ""
+                has_query = "?" in raw_p
+                explicit = True
+            else:
+                raw_p = m.group("bpath") or ""
+                has_query = "?" in raw_p
+                explicit = False
+            p = raw_p.split("?", 1)[0].strip().rstrip(".,;:!?)'\"`]")
+            if len(p) <= 1 or p.endswith("//") or p.startswith("//"):
+                continue
+            if not meth and p.lower().startswith(_FS_NON_ROUTE_PREFIXES):
+                continue
+            if not explicit:
+                segs = [seg for seg in p.split("/") if seg]
+                has_marker = has_query or "{" in p or ":" in p or p.lower().endswith(_SINGLE_SEG_ROUTE_EXTS)
+                if len(segs) < 2 and not has_marker:
+                    continue
+            key = (meth, p)
+            if key not in seen:
+                seen.add(key)
+                routes.append(key)
+    return routes
+
+
 def extract_diagnostic_signals(text: str) -> Dict[str, Any]:
     """Extracts quoted error strings, exception/abend identifiers, code symbols, and HTTP routes."""
     errors: List[str] = []
@@ -367,24 +411,7 @@ def extract_diagnostic_signals(text: str) -> Dict[str, Any]:
             seen_sym.add(c)
             symbols.append(c)
 
-    for line in src.splitlines():
-        if "http://" in line or "https://" in line:
-            if RE_NODE_BARE_FRAME.match(line.strip()) or RE_NODE_PAREN_FRAME.match(line.strip()):
-                continue
-        for m in RE_HTTP_ROUTE.finditer(line):
-            meth = m.group(1).upper() if m.group(1) else None
-            p = m.group(2).strip()
-            if len(p) <= 1 or p.endswith("//") or p.startswith("//"):
-                continue
-            if not meth and any(
-                p.lower().startswith(src_prefix)
-                for src_prefix in ("/app/", "/src/", "/usr/", "/var/", "/opt/", "/home/", "/tmp/")
-            ):
-                continue
-            key = (meth, p)
-            if key not in seen_routes:
-                seen_routes.add(key)
-                routes.append(key)
+    routes = extract_http_routes(src)
 
     return {
         "quoted_errors": errors[:25],
