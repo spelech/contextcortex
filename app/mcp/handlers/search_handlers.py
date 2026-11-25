@@ -6,7 +6,7 @@ from typing import Literal, Optional, Annotated, Tuple
 from pydantic import Field
 
 from app.services.indexing.sync_status import get_active_sync_status
-from app.services.query_expansion import run_expanded_code_search
+from app.services.query_expansion import run_expanded_code_search, should_auto_expand_search_query
 from app.services.search import execute_hybrid_search, normalize_search_mode
 
 logger = logging.getLogger("contextcortex")
@@ -54,7 +54,7 @@ def _execute_search_sync(
     offset: int,
     max_snippet_chars: int,
     include_permalinks: bool,
-    expand: bool = False,
+    expand: Optional[bool] = None,
 ) -> str:
     clean_query = query.strip() if query else ""
     if not clean_query:
@@ -72,9 +72,11 @@ def _execute_search_sync(
 
         requested_mode = normalize_search_mode(mode)
         search_fn = _get_tools_attr("execute_hybrid_search", execute_hybrid_search)
+        should_expand = bool(expand) if expand is not None else should_auto_expand_search_query(clean_query, clean_scope)
         expanded_queries = None
         expanded_areas = None
-        if expand:
+        expanded_source = None
+        if should_expand:
             expanded = run_expanded_code_search(
                 report_text=clean_query,
                 search_fn=search_fn,
@@ -90,6 +92,7 @@ def _execute_search_sync(
             hits = expanded.hits
             expanded_queries = expanded.queries
             expanded_areas = expanded.areas
+            expanded_source = expanded.source
         else:
             hits = search_fn(
                 query_text=clean_query,
@@ -164,6 +167,8 @@ def _execute_search_sync(
         if dense_leg_empty and requested_mode == "hybrid":
             payload["dense_fallback_lexical_only"] = True
         if expanded_queries is not None:
+            payload["expanded"] = True
+            payload["expansion"] = expanded_source
             payload["queries"] = expanded_queries
             payload["areas"] = expanded_areas or []
         sync_info = get_active_sync_status(repo)
@@ -193,7 +198,7 @@ async def handle_search(
     offset: Annotated[int, Field(description="0-based result offset for pagination (default 0). Advance using next_offset when has_more is True.")] = 0,
     max_snippet_chars: Annotated[int, Field(description="Maximum characters per returned snippet, clamped to 200..6000 (default 2000).")] = 2000,
     include_permalinks: Annotated[bool, Field(description="Include Git web permalinks on search hits (default False keeps results compact).")] = False,
-    expand: Annotated[bool, Field(description="Set True for plain-language bug reports or multi-part descriptions: splits the query into 3-6 code-concept queries, runs each, fuses via RRF, diversifies by file and folder, and returns `queries` and `areas` alongside `results` (default False).")] = False,
+    expand: Annotated[Optional[bool], Field(description="Multi-round code-concept query expansion with RRF fusion, per-query best-hit slots, and area diversification. Omit (default) to auto-expand plain-language bug reports (20+ words or 2+ sentences without identifiers); set True to force expansion or False to disable it.")] = None,
 ) -> str:
     """Hybrid semantic + BM25 search across AST-chunked source code and documentation with bounded snippets and pagination."""
     return await asyncio.to_thread(

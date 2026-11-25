@@ -1,4 +1,4 @@
-"""Plain-language bug report expansion into 3-6 code-concept queries via CHAT_MODEL or corpus heuristic (#219)."""
+"""Plain-language bug report expansion into 3-6 code-concept queries via CHAT_MODEL or corpus heuristic (#219, #222, #223)."""
 
 import hashlib
 import json
@@ -7,7 +7,7 @@ import os
 import re
 import threading
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from openai import OpenAI
 
@@ -20,8 +20,9 @@ from app.services.expanded_search import (
     area_key_for_path,
     extract_evidence_line,
     run_expanded_code_search,
+    should_auto_expand_search_query,
 )
-from app.services.llm_client import get_llm_extra_headers
+from app.services.llm_client import create_chat_completion, get_llm_extra_headers
 
 logger = logging.getLogger("contextcortex.query_expansion")
 
@@ -49,13 +50,23 @@ _EXPANSION_STOP_WORDS = _STOP_WORDS | frozenset({
 })
 
 _SYSTEM_PROMPT = (
-    "Rewrite this plain-language bug report as 3 to 6 short search queries in source-code terms. "
-    "Remove product names, part numbers, SKUs, filter values, and literal UI labels; keep underlying "
-    "code concepts, data relationships, visibility or filtering rules, and behaviors. "
-    "Return ONLY a JSON array of 3 to 6 short strings (each 3 to 10 words)."
+    "Rewrite this plain-language bug report as 3 to 6 short search queries in source-code concepts. "
+    "The report's nouns are user/support terms (not class names): replace product names, part numbers, "
+    "SKUs, filter values, and UI labels, and include 1-2 generic code synonyms for key user nouns and "
+    "behaviors (for example: 'linked item' -> 'related', 'association'; 'missing' -> 'exclude', 'remove', 'filter'). "
+    "Do NOT invent camelCase or PascalCase identifiers. "
+    "Return ONLY a JSON array of 3 to 6 short plain-word strings (each 3 to 10 words)."
+)
+
+_ROUND2_SYSTEM_PROMPT = (
+    "Rewrite this plain-language bug report as 2 to 4 short search queries grounded in the codebase's own "
+    "vocabulary listed below (words extracted from indexed symbols returned in round 1). "
+    "Prefer those exact vocabulary words and natural phrases; do NOT invent camelCase identifiers. "
+    "Return ONLY a JSON array of 2 to 4 short plain-word strings (each 3 to 10 words)."
 )
 
 _EXPANSION_CACHE: "OrderedDict[Tuple[str, str, str, int], Tuple[List[str], str]]" = OrderedDict()
+_LOGGED_LLM_FAILURES: Set[str] = set()
 _CACHE_LOCK = threading.Lock()
 _TEST_PATH_PATTERNS = (
     "%/test/%", "%/tests/%", "%/testdata/%", "%/test_data/%", "%/fixtures/%", "%tests.cs", "%test.py", "%.test.%",
@@ -63,9 +74,10 @@ _TEST_PATH_PATTERNS = (
 
 
 def clear_expansion_cache() -> None:
-    """Clears the in-memory report-to-query expansion cache (used in tests)."""
+    """Clears the in-memory report-to-query expansion cache and per-model warning state (used in tests)."""
     with _CACHE_LOCK:
         _EXPANSION_CACHE.clear()
+        _LOGGED_LLM_FAILURES.clear()
 
 
 def _cache_get(key: Tuple[str, str, str, int]) -> Optional[Tuple[List[str], str]]:
@@ -83,6 +95,19 @@ def _cache_set(key: Tuple[str, str, str, int], queries: List[str], source: str) 
         _EXPANSION_CACHE.move_to_end(key)
         while len(_EXPANSION_CACHE) > _EXPANSION_CACHE_MAX:
             _EXPANSION_CACHE.popitem(last=False)
+
+
+def _log_llm_failure_once(chat_model: str, exc: Exception) -> None:
+    key = (chat_model or "").strip().lower()
+    with _CACHE_LOCK:
+        first_time = key not in _LOGGED_LLM_FAILURES
+        if first_time:
+            _LOGGED_LLM_FAILURES.add(key)
+    msg = f"LLM report-to-query expansion failed ({chat_model}); falling back to heuristic: {exc}"
+    if first_time:
+        logger.warning(msg)
+    else:
+        logger.debug(msg)
 
 
 def _stem_token(token: str) -> str:
@@ -192,19 +217,57 @@ def _expand_with_llm(report_text: str, chat_model: str, max_queries: int) -> Opt
         return None
     try:
         client = _build_llm_client()
-        response = client.chat.completions.create(
+        response = create_chat_completion(
+            client,
             model=chat_model,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": report_text[:3000]},
             ],
-            temperature=0.1,
         )
-        content = (response.choices[0].message.content or "").strip()
+        content = (response.choices[0].message.content or "").strip() if response.choices else ""
         queries = _parse_llm_query_list(content, max_queries=max_queries)
         return queries if queries else None
     except Exception as exc:
-        logger.warning(f"LLM report-to-query expansion failed ({chat_model}); falling back to heuristic: {exc}")
+        _log_llm_failure_once(chat_model, exc)
+        return None
+
+
+def expand_round2_with_llm(
+    report_text: str,
+    symbol_words: Sequence[str],
+    max_queries: int = 4,
+) -> Optional[List[str]]:
+    """Uses CHAT_MODEL to rewrite a report into 2-4 queries grounded in round-1 codebase symbol words (#223)."""
+    chat_model = get_chat_model()
+    words = [w for w in symbol_words if w][:40]
+    if not chat_model or len(words) < 2:
+        return None
+    norm_text = " ".join((report_text or "").split())[:3000]
+    digest = hashlib.sha256(f"{norm_text}\n{' '.join(words)}".encode("utf-8")).hexdigest()
+    cache_key = (digest, "", f"llm-r2:{chat_model}", max_queries)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached[0]
+    try:
+        client = _build_llm_client()
+        user_msg = f"Codebase symbol words: {', '.join(words)}\n\nBug report:\n{norm_text}"
+        response = create_chat_completion(
+            client,
+            model=chat_model,
+            messages=[
+                {"role": "system", "content": _ROUND2_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+        )
+        content = (response.choices[0].message.content or "").strip() if response.choices else ""
+        queries = _parse_llm_query_list(content, max_queries=max_queries)
+        if queries:
+            _cache_set(cache_key, queries, "llm")
+            return queries
+        return None
+    except Exception as exc:
+        _log_llm_failure_once(chat_model, exc)
         return None
 
 
@@ -422,9 +485,12 @@ __all__ = [
     "DEFAULT_MAX_QUERIES",
     "ExpandedSearchOutcome",
     "RRF_K",
+    "_stem_token",
     "area_key_for_path",
     "clear_expansion_cache",
     "expand_report_to_code_queries",
+    "expand_round2_with_llm",
     "extract_evidence_line",
     "run_expanded_code_search",
+    "should_auto_expand_search_query",
 ]

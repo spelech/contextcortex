@@ -459,9 +459,9 @@ def diagnose_issue(issue_text: str, repo: Optional[str] = None, context_lines: i
         chain = build_call_chain(conn, terms, matched_routes, frames, symbols, repo, detail)
         working = compare_working_path(conn, safe_text, terms, chain, matched_routes, repo)
     has_resolved = bool(frames or matched_routes or symbols or signals.get("exceptions"))
-    expanded_queries, expanded_areas = None, None
+    expanded_queries, expanded_areas, expanded_source = None, None, None
     if not has_resolved and not chain["steps"] and safe_text.strip():
-        expanded_queries, expanded_areas, sem_cands = run_plain_language_diagnosis(
+        expanded_queries, expanded_areas, sem_cands, expanded_source = run_plain_language_diagnosis(
             safe_text, repo, clamped_limit, detail,
             search_fn=execute_hybrid_search, build_candidate_fn=_build_candidate,
             diag_file_fn=_diag_file, max_candidate_chars=MAX_CANDIDATE_CHARS,
@@ -476,7 +476,7 @@ def diagnose_issue(issue_text: str, repo: Optional[str] = None, context_lines: i
         "matched_routes": matched_routes, "matched_symbols": symbols, "semantic_candidates": sem_cands,
     }
     if expanded_queries is not None:
-        out["queries"], out["areas"] = expanded_queries, expanded_areas or []
+        out["expansion"], out["queries"], out["areas"] = expanded_source, expanded_queries, expanded_areas or []
     if not has_resolved and not sem_cands:
         out["hint"] = "No stack frames, routes, symbols, or high-confidence semantic code matches were found. Use search(query=..., scope='code', expand=True) with key domain concepts or grep_code for UI strings."
     return out
