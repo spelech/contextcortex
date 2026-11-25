@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.28.9](https://github.com/spelech/contextcortex/compare/v2.28.8...v2.28.9) (2026-11-25)
+
+
+### Bug Fixes
+
+* **search:** resolve [#227](https://github.com/spelech/contextcortex/issues/227)-[#228](https://github.com/spelech/contextcortex/issues/228) (prose-slash route detection, transient LLM retry, fallback cache hygiene, per-round expansion status, and LLM stats) ([#229](https://github.com/spelech/contextcortex/issues/229)) ([f16ed35](https://github.com/spelech/contextcortex/commit/f16ed350dcf15aa26fa413086fd6b80211f317ce))
+
 ## [2.28.8](https://github.com/spelech/contextcortex/compare/v2.28.7...v2.28.8) (2026-11-25)
 
 
