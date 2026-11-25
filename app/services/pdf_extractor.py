@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Union, Optional
 import pymupdf
 from openai import OpenAI
 from app.services.database import get_vision_ocr_model, get_embedding_db_config
-from app.services.llm_client import get_llm_extra_headers
+from app.services.llm_client import create_chat_completion, get_llm_extra_headers
 
 logger = logging.getLogger("contextcortex.pdf")
 
@@ -120,7 +120,8 @@ def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
             "Preserve list structures and code blocks where applicable. Do not summarize or extrapolate."
         )
 
-        response = client.chat.completions.create(
+        response = create_chat_completion(
+            client,
             model=active_model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -133,7 +134,6 @@ def _call_vision_ocr(png_bytes: bytes, model_name: Optional[str] = None) -> str:
                 },
             ],
             max_tokens=4096,
-            temperature=0.0,
         )
         if response.choices and len(response.choices) > 0:
             return response.choices[0].message.content or ""

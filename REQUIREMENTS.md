@@ -2,7 +2,7 @@
 
 > **Note:** This document is automatically generated and verified against the live test suite by `scripts/generate_requirements.py` and `tests/backend/test_requirements_sync.py`.
 
-**Test Verification Baseline:** **1418 Automated Tests** (1054 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
+**Test Verification Baseline:** **1424 Automated Tests** (1060 Pytest Backend + 314 Vitest Frontend + 50 Playwright E2E).
 
 ---
 
@@ -1705,6 +1705,14 @@ over the PostgresConnectionAdapter using an initialized test engine._
 - `test_219_rrf_fusion_diversifies_files_and_folders_with_evidence`
 - `test_219_diagnose_issue_expands_plain_language_and_skips_when_resolved`
 - `test_219_mcp_search_expand_flag_returns_queries_and_areas`
+
+#### `tests/test_usage_fixes_222_224.py` (6 tests)
+- `test_222_llm_expansion_omits_temperature_and_retries_400_for_reasoning_models`
+- `test_222_llm_failure_logs_once_per_model_and_reports_expansion_mode`
+- `test_223_round2_grounds_in_round1_symbols_and_reaches_rule_file`
+- `test_223_best_of_each_query_slot_preserves_strong_single_query_hit`
+- `test_224_search_auto_expands_plain_language_reports_and_respects_expand_false`
+- `test_224_instructions_and_tool_descriptions_align_on_search_expansion`
 
 #### `tests/test_utf16_file_reads.py` (4 tests)
 - `test_text_samples_are_not_binary`

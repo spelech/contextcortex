@@ -10,7 +10,7 @@ from app.services.database.connection import (
     get_chat_model,
     get_embedding_db_config,
 )
-from app.services.llm_client import get_llm_extra_headers
+from app.services.llm_client import create_chat_completion, get_llm_extra_headers
 from app.services.vector_store.base import VectorDocument, VectorStore
 from app.services.vector_store.manager import get_vector_store
 
@@ -168,7 +168,8 @@ class SummarizerService:
         user_prompt = format_user_prompt(filepath=rel_path, content=content, repo=repo)
 
         try:
-            response = self.client.chat.completions.create(
+            response = create_chat_completion(
+                self.client,
                 model=active_model or "unconfigured",
                 messages=[
                     {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
